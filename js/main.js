@@ -15,7 +15,10 @@ const onSignOut = async () => { await signOut(); history.replaceState(null, "", 
 // 「다른 카카오 계정으로」 — 카카오 세션이 남아 있으면 자동으로 같은 계정으로 돌아오니 prompt:login 을 요청한다
 const onSwitch = async () => {
   await signOut();
-  signInWithKakao(true).catch((e) => toast("카카오 로그인을 열지 못했어요 — " + (e?.message || e)));
+  signInWithKakao(true).catch((e) => {
+    toast("카카오 로그인을 열지 못했어요 — " + (e?.message || e));
+    boot();   // 로그아웃한 채 등록 화면에 남지 않게 — 로그인 화면으로 되돌린다
+  });
 };
 async function register(identity) {
   const r = await call("register", { identity });
@@ -29,11 +32,20 @@ async function boot() {
   try {
     me = null;
     document.body.classList.remove("nav-open");
-    // 카카오/Supabase 가 로그인 실패로 돌려보내면 주소에 ?error=…&error_description=… 가 붙는다
-    const errDesc = new URLSearchParams(location.search).get("error_description");
+    // 카카오/Supabase 가 로그인 실패로 돌려보내면 주소에 ?error=…&error_description=… 가 붙는다.
+    // error_description 은 영어 원문 그대로라 성도님께 그대로 보이면 안 된다 — error 값으로만 문구를 고른다.
+    const params = new URLSearchParams(location.search);
+    const err = params.get("error");
+    const errDesc = params.get("error_description");
     if (errDesc) history.replaceState(null, "", location.pathname + location.hash);
+    if (err) console.warn("카카오 로그인 실패:", err, errDesc);
     const session = await currentSession();
-    if (!session) return renderLogin(app, { onKakao, notice: errDesc ? "카카오 로그인이 되지 않았어요 — " + errDesc : "" });
+    if (!session) {
+      const notice = err
+        ? (err === "access_denied" ? "카카오 로그인을 취소하셨어요" : "카카오 로그인이 되지 않았어요 — 잠시 뒤 다시 해 주세요")
+        : "";
+      return renderLogin(app, { onKakao, notice });
+    }
     const r = await call("me");
     if (!r.ok) {
       if (r.error === "unauthenticated") {
