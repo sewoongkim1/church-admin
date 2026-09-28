@@ -12,6 +12,11 @@ let booting = false;
 
 const onKakao = () => signInWithKakao().catch((e) => toast("카카오 로그인을 열지 못했어요 — " + (e?.message || e)));
 const onSignOut = async () => { await signOut(); history.replaceState(null, "", location.pathname); boot(); };
+// 「다른 카카오 계정으로」 — 카카오 세션이 남아 있으면 자동으로 같은 계정으로 돌아오니 prompt:login 을 요청한다
+const onSwitch = async () => {
+  await signOut();
+  signInWithKakao(true).catch((e) => toast("카카오 로그인을 열지 못했어요 — " + (e?.message || e)));
+};
 async function register(identity) {
   const r = await call("register", { identity });
   if (r.ok) await boot();
@@ -24,14 +29,23 @@ async function boot() {
   try {
     me = null;
     document.body.classList.remove("nav-open");
+    // 카카오/Supabase 가 로그인 실패로 돌려보내면 주소에 ?error=…&error_description=… 가 붙는다
+    const errDesc = new URLSearchParams(location.search).get("error_description");
+    if (errDesc) history.replaceState(null, "", location.pathname + location.hash);
     const session = await currentSession();
-    if (!session) return renderLogin(app, { onKakao });
+    if (!session) return renderLogin(app, { onKakao, notice: errDesc ? "카카오 로그인이 되지 않았어요 — " + errDesc : "" });
     const r = await call("me");
-    if (!r.ok) return renderError(app, { message: errorText(r), onRetry: boot });
-    if (!r.registered) return renderRegister(app, { nickname: r.kakao_nickname, onSubmit: register, onSignOut });
+    if (!r.ok) {
+      if (r.error === "unauthenticated") {
+        await signOut();
+        return renderLogin(app, { onKakao, notice: "로그인이 풀렸어요 — 다시 로그인해 주세요" });
+      }
+      return renderError(app, { message: errorText(r), onRetry: boot, onSignOut });
+    }
+    if (!r.registered) return renderRegister(app, { nickname: r.kakao_nickname, onSubmit: register, onSignOut, onSwitch });
     if (r.status === "pending") {
       return renderPending(app, { member: r.member, onRefresh: boot, onSignOut,
-        onEdit: () => renderRegister(app, { nickname: r.kakao_nickname, member: r.member, onSubmit: register, onSignOut }) });
+        onEdit: () => renderRegister(app, { nickname: r.kakao_nickname, member: r.member, onSubmit: register, onSignOut, onSwitch }) });
     }
     if (r.status !== "active") return renderDisabled(app, { onSignOut });
     me = r;
@@ -97,7 +111,9 @@ function renderHome(host, menus) {
     <p class="muted" style="margin-bottom:12px">${esc(affiliation(me.member))} · ${esc(me.roles_info.map((r) => r.label).join(" · ") || "역할 없음")}</p>
     ${menus.length
       ? menus.map((m) => `<a class="card home-card" href="#/${m.id}">${m.icon} <b>${esc(m.label)}</b><br><span class="muted">${esc(m.desc)}</span></a>`).join("")
-      : `<p class="empty">아직 쓸 수 있는 메뉴가 없어요 — 총괄 관리자에게 역할을 받아 주세요</p>`}`;
+      : me.roles.length
+        ? `<p class="empty">이 역할의 메뉴는 곧 열려요</p>`
+        : `<p class="empty">아직 쓸 수 있는 메뉴가 없어요 — 총괄 관리자에게 역할을 받아 주세요</p>`}`;
 }
 
 let lostAt = 0;

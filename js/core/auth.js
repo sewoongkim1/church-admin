@@ -12,12 +12,12 @@ export async function currentSession() {
 }
 
 // 카카오를 거치면 # 뒤가 사라진다 — 보던 화면을 적어 두었다가 돌아와서 연다
-export async function signInWithKakao() {
+// forceLogin: 카카오에 「다른 계정으로 로그인」을 요청한다(카카오 세션이 남아 자동으로 같은 계정으로 돌아오지 않게)
+export async function signInWithKakao(forceLogin = false) {
   try { sessionStorage.setItem("ca-return", location.hash || ""); } catch { /* 사생활 보호 모드 */ }
-  const { error } = await sb.auth.signInWithOAuth({
-    provider: "kakao",
-    options: { redirectTo: location.origin + location.pathname },
-  });
+  const options = { redirectTo: location.origin + location.pathname };
+  if (forceLogin) options.queryParams = { prompt: "login" };
+  const { error } = await sb.auth.signInWithOAuth({ provider: "kakao", options });
   if (error) throw error;
 }
 
@@ -30,5 +30,6 @@ export function takeReturnHash() {
 }
 
 export async function signOut() {
-  await sb.auth.signOut();
+  // scope 기본값(global)은 PC 에서 로그아웃하면 폰 세션까지 폐기한다 — 이 브라우저만 끊는다
+  await sb.auth.signOut({ scope: "local" });
 }

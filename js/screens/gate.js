@@ -5,16 +5,18 @@ import { esc, errorText, busy, affiliation } from "../core/ui.js";
 const GU_LIST = ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨", "새가족"];
 const BU_LIST = ["사랑부", "영아부", "유아부", "유치부", "유년부", "초등부", "중등부", "고등부", "청년부"];
 
-export function renderLogin(el, { onKakao }) {
+export function renderLogin(el, { onKakao, notice = "" }) {
   el.innerHTML = `<div class="gate"><div class="card">
     <h2>고척교회 관리</h2>
     <p>교회 담당자만 들어올 수 있어요.<br>카카오로 로그인한 뒤 승인을 받으면 메뉴가 열려요.</p>
+    ${notice ? `<p class="err">${esc(notice)}</p>` : ""}
     <button type="button" class="kakao">카카오로 시작하기</button>
+    <p class="muted" style="margin-top:14px">로그인하면 카카오 회원번호·별명·사진(이메일은 동의한 경우)과 적으신 이름·소속을 담당자 확인에 써요. <a href="privacy.html">개인정보 안내</a></p>
   </div></div>`;
   el.querySelector(".kakao").onclick = onKakao;
 }
 
-export function renderRegister(el, { nickname = "", member = null, onSubmit, onSignOut }) {
+export function renderRegister(el, { nickname = "", member = null, onSubmit, onSignOut, onSwitch }) {
   const v = member || { type: "교구", gu: "", mok: "", bu: "", grade: "", name: "" };
   el.innerHTML = `<div class="gate"><div class="card">
     <h2>${member ? "적은 것 고치기" : "처음 오셨어요"}</h2>
@@ -25,7 +27,7 @@ export function renderRegister(el, { nickname = "", member = null, onSubmit, onS
       </div>
       <div data-for="교구">
         <label class="field"><span>교구</span><select name="gu"><option value="">고르기</option>${GU_LIST.map((g) => `<option>${g}</option>`).join("")}</select></label>
-        <label class="field"><span>목장</span><input name="mok" inputmode="numeric" placeholder="예: 20" autocomplete="off"></label>
+        <label class="field"><span>목장</span><input name="mok" placeholder="숫자 또는 남성 (예: 3, 남성, 없으면 99)" autocomplete="off"></label>
       </div>
       <div data-for="교회학교">
         <label class="field"><span>부서</span><select name="bu"><option value="">고르기</option>${BU_LIST.map((b) => `<option>${b}</option>`).join("")}</select></label>
@@ -33,6 +35,7 @@ export function renderRegister(el, { nickname = "", member = null, onSubmit, onS
       </div>
       <label class="field"><span>이름</span><input name="name" autocomplete="name"></label>
       <p class="err" aria-live="polite"></p>
+      <p class="muted">로그인하면 카카오 회원번호·별명·사진(이메일은 동의한 경우)과 적으신 이름·소속을 담당자 확인에 써요. <a href="privacy.html">개인정보 안내</a></p>
       <button type="submit" class="btn primary wide">승인 요청하기</button>
     </form>
     <div class="stack" style="margin-top:12px"><button type="button" class="btn wide out">다른 카카오 계정으로</button></div>
@@ -47,7 +50,7 @@ export function renderRegister(el, { nickname = "", member = null, onSubmit, onS
   el.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => setType(b.dataset.t)));
   for (const k of ["gu", "mok", "bu", "grade", "name"]) f.elements[k].value = v[k] || "";
   setType(type);
-  el.querySelector(".out").onclick = onSignOut;
+  el.querySelector(".out").onclick = onSwitch;
   f.onsubmit = (e) => {
     e.preventDefault();
     const identity = { type, name: f.elements.name.value };
@@ -83,10 +86,14 @@ export function renderDisabled(el, { onSignOut }) {
   el.querySelector(".o").onclick = onSignOut;
 }
 
-export function renderError(el, { message, onRetry }) {
+export function renderError(el, { message, onRetry, onSignOut }) {
   el.innerHTML = `<div class="gate"><div class="card">
     <h2>열지 못했어요</h2><p>${esc(message)}</p>
-    <div class="stack"><button type="button" class="btn primary wide r">다시 시도</button></div>
+    <div class="stack">
+      <button type="button" class="btn primary wide r">다시 시도</button>
+      ${onSignOut ? `<button type="button" class="btn wide o">로그아웃</button>` : ""}
+    </div>
   </div></div>`;
   el.querySelector(".r").onclick = onRetry;
+  if (onSignOut) el.querySelector(".o").onclick = onSignOut;
 }

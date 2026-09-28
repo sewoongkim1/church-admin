@@ -54,10 +54,12 @@ export function dialog({ title = "", text = "", html = "", ok = "확인", cancel
     // 바깥을 **눌렀다 뗄 때 모두** 바깥이어야 닫는다(글을 끌어 고르다 밖에서 떼면 닫히던 사고 — 2026-09-17)
     let downOut = false;
     dim.addEventListener("pointerdown", (e) => { downOut = e.target === dim; });
+    // 뜬 뒤 300ms 동안은 바깥 클릭을 무시한다 — 두 번 누르는 버릇이 있는 분이 여는 순간 창을 닫아 버리지 않게
+    const openedAt = Date.now();
     dim.addEventListener("click", (e) => {
       const b = e.target.closest("button[data-v]");
       if (b) return done(b.dataset.v === "1");
-      if (e.target === dim && downOut && cancel) done(false);
+      if (e.target === dim && downOut && cancel && Date.now() - openedAt > 300) done(false);
     });
     document.addEventListener("keydown", onKey);
     document.body.appendChild(dim);
@@ -86,6 +88,7 @@ const MESSAGES = {
   "gu-mok-required": "교구와 목장을 적어 주세요",
   "bu-grade-required": "부서와 학년을 적어 주세요",
   "too-long": "한 칸에 40자까지 적을 수 있어요",
+  "bad-char": "이름·소속에는 \" \\ , ( ) | 를 쓸 수 없어요",
   "invalid-type": "교구·교회학교 중에서 골라 주세요",
   "already-registered": "이미 등록되어 있어요",
   "not-found": "그분을 찾지 못했어요 — 새로 불러와 주세요",
