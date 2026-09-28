@@ -26,12 +26,25 @@ export function dupBadgeHtml(dup) {
   ].join("");
 }
 
+// 상태 메뉴 — 카드도 표도 이 마크업을 쓴다(`.pl-drop` … `data-id`). 같은 click 처리(status.js)로
+// 바꾸고 지운다 — 여기 하나만 고치면 카드·표 어느 쪽에서 눌러도 그대로 이어진다.
+function statusMenuHtml(r) {
+  const cls = CLS[r.status] || "";
+  const id = esc(r.id);
+  return `<div class="pl-drop">
+        <button type="button" class="pl-sel ${cls}" data-act="drop" data-id="${id}" aria-haspopup="listbox" aria-expanded="false">${esc(short(r.status))}</button>
+        <div class="pl-menu" role="listbox">
+          ${STATES.map((x) => `<button type="button" class="pl-opt ${CLS[x]}${x === r.status ? " on" : ""}" data-act="set" data-id="${id}" data-st="${esc(x)}" role="option">${esc(short(x))}</button>`).join("")}
+          <button type="button" class="pl-opt pl-del" data-act="del" data-id="${id}" role="option">🗑 삭제</button>
+        </div>
+      </div>`;
+}
+
 // 신청 한 건 = 카드 하나. 세 보기가 모두 이것을 쓴다 — 상태 바꾸기·삭제가 어느 보기에서나 그대로 된다.
 // inView: 묶음 안 카드면 "person"·"team" — 머리에 이미 적힌 것은 카드에서 뺀다
 //   (사람별 카드 = 사역·상태·신청일, 사역별 카드 = 사람·번호·상태).
 export function cardHtml(r, inView, dupHtml) {
   const cls = CLS[r.status] || "";
-  const id = esc(r.id);
   const opt = r.option ? `<i>(${esc(r.option)})</i>` : "";
   // 신청한 사역은 카드에서 가장 잘 보여야 한다 — 이름 아래 굵게, 위원회는 작게
   const teams = `<div class="mn-team-main"><span class="mn-team-ico" aria-hidden="true">🤝</span><b>${esc(r.team)}</b>${opt}<span class="mn-team-com">${esc(r.committee)}</span></div>`;
@@ -46,18 +59,37 @@ export function cardHtml(r, inView, dupHtml) {
   return `<div class="pl-card ${cls}${inView ? " mn-in" : ""}">
     <div class="pl-hd">
       <div class="pl-nm">${nm}</div>
-      <div class="pl-drop">
-        <button type="button" class="pl-sel ${cls}" data-act="drop" data-id="${id}" aria-haspopup="listbox" aria-expanded="false">${esc(short(r.status))}</button>
-        <div class="pl-menu" role="listbox">
-          ${STATES.map((x) => `<button type="button" class="pl-opt ${CLS[x]}${x === r.status ? " on" : ""}" data-act="set" data-id="${id}" data-st="${esc(x)}" role="option">${esc(short(x))}</button>`).join("")}
-          <button type="button" class="pl-opt pl-del" data-act="del" data-id="${id}" role="option">🗑 삭제</button>
-        </div>
-      </div>
+      ${statusMenuHtml(r)}
     </div>
     ${inView ? "" : teams}
     ${inView === "person" ? "" : `<div class="mn-contact">${phoneHtml(r.phone)}${dupHtml ? `<span class="mn-dups">${dupHtml}</span>` : ""}</div>`}
     ${r.note ? `<div class="mn-note">📝 ${esc(r.note)} <i>(관리자만 봄)</i></div>` : ""}
   </div>`;
+}
+
+// PC(≥1024px) 건별 표 — 한 행 = 한 건. 칸: 이름(직분) · 소속 · 부서 › 사역팀(하위) · 신청일 · 전화 · 상태.
+// 상태 칸은 카드와 같은 statusMenuHtml 을 그대로 써 status.js 의 click 처리(변경·삭제)가 손대지 않고도 통한다.
+// dupM 은 명단 전체로 만든 dupMap(status.js 가 넘겨준다) — groupsHtml 과 같은 규칙.
+export function tableHtml(rows, dupM) {
+  if (!rows.length) return `<p class="empty">조건에 맞는 신청이 없어요</p>`;
+  const head = `<tr><th>이름(직분)</th><th>소속</th><th>부서 › 사역팀</th><th>신청일</th><th>전화</th><th>상태</th></tr>`;
+  const body = rows.map((r) => {
+    const cls = CLS[r.status] || "";
+    const opt = r.option ? `<i>(${esc(r.option)})</i>` : "";
+    const paper = r.source === "paper" ? `<em class="mn-paper" title="담당자가 올린 종이 명단">📋 종이</em>` : "";
+    const push = `<span class="mn-tbl-push" title="${r.canPush ? "앱 알림 켜심" : "앱 알림 안 켜심"}" aria-hidden="true">${r.canPush ? "🔔" : "🔕"}</span>`;
+    const at = esc(String(r.at || "").replace(/-/g, "."));
+    const dupHtml = dupBadgeHtml(dupOthers(dupM, r));
+    return `<tr class="${cls}">
+      <td class="mn-tbl-nm"><b>${esc(r.name)}</b>${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${push}${paper}</td>
+      <td>${esc(r.who)}</td>
+      <td class="mn-tbl-team"><i>${esc(r.committee)}</i> › <b>${esc(r.team)}</b>${opt}</td>
+      <td class="mn-date">${at}</td>
+      <td class="mn-tbl-tel">${phoneHtml(r.phone)}${dupHtml ? `<span class="mn-dups">${dupHtml}</span>` : ""}</td>
+      <td class="mn-tbl-st">${statusMenuHtml(r)}</td>
+    </tr>`;
+  }).join("");
+  return `<table class="mn-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
 // 묶음 머리의 줄 목록 — 접어 둔 채로도 사람별은 신청한 사역을, 사역별은 신청한 사람을 상태와 함께 본다.

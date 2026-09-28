@@ -326,4 +326,28 @@ a.mn-tel.sm{padding:2px 8px}
 .mn-modal-foot button{flex:1;min-height:var(--tap-lg);font-size:1rem;font-weight:800;border-radius:10px;cursor:pointer}
 .mn-modal-foot .no{background:#fff;color:#41506b;border:1.5px solid #dde3ee}
 .mn-modal-foot .yes{background:var(--error);color:#fff;border:none}
+
+/* 건별을 표로(PC ≥1024px · Task 6) — .mn-list 에 감싸개 없이 그대로 놓는다(감싸서 overflow 를
+   주면 .pl-menu 가 잘린다). 대신 table-layout:fixed + 줄바꿈으로 폭을 맞춘다. 머리행은 붙이지
+   않는다(sticky 로 두면 붙는 머리 .mn-head 와 겹친다) — JS(mqWide)가 1024px 미만에서는 아예
+   이 표를 그리지 않으므로 좁은 화면을 위한 별도 처리는 없다. */
+.mn-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px}
+.mn-table th,.mn-table td{padding:8px 10px;border-bottom:1px solid #eef1f6;text-align:left;vertical-align:top;
+  word-break:break-word;overflow-wrap:anywhere}
+.mn-table thead th{font-size:13px;font-weight:800;color:var(--gray)}
+.mn-table tbody tr:last-child td{border-bottom:none}
+.mn-table tbody tr:hover{background:#f8fafd}
+.mn-table th:nth-child(1),.mn-table td:nth-child(1){width:19%}
+.mn-table th:nth-child(2),.mn-table td:nth-child(2){width:12%}
+.mn-table th:nth-child(3),.mn-table td:nth-child(3){width:26%}
+.mn-table th:nth-child(4),.mn-table td:nth-child(4){width:10%}
+.mn-table th:nth-child(5),.mn-table td:nth-child(5){width:18%}
+.mn-table th:nth-child(6),.mn-table td:nth-child(6){width:15%}
+.mn-tbl-nm b{font-size:14px;color:var(--navy)}
+.mn-tbl-nm .mn-pos,.mn-tbl-nm .mn-paper{margin-left:4px}
+.mn-tbl-push{font-size:13px;margin-left:5px}
+.mn-tbl-team i{font-style:normal;color:var(--gray)}
+.mn-tbl-team b{color:var(--navy)}
+.mn-tbl-tel{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.mn-tbl-tel .mn-dup{white-space:normal}
 .mn-modal-foot .yes:disabled{opacity:.45;cursor:default}

@@ -8,7 +8,7 @@
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts }
   from "./status-logic.js";
-import { cardHtml, groupsHtml, dupBadgeHtml, askCancelReason, confirmAppoint, confirmDelete } from "./status-ui.js";
+import { cardHtml, groupsHtml, dupBadgeHtml, tableHtml, askCancelReason, confirmAppoint, confirmDelete } from "./status-ui.js";
 
 const TITLE = `<h2 class="page-title">📋 신청 현황</h2>`;
 const VIEWS = [["row", "건별", "건"], ["person", "사람별", "명"], ["team", "사역별", "팀"]];
@@ -71,6 +71,8 @@ export async function render(el, { call }) {
   el.querySelector(".mn-to").value = to;
   const list = el.querySelector(".mn-list");
   const find = (id) => rows.find((x) => String(x.id) === String(id));
+  // PC(≥1024px) 건별만 표로 — 창 폭을 바꾸면 다시 그린다(detach 는 아래 document 리스너와 함께 묶는다)
+  const mqWide = matchMedia("(min-width:1024px)");
 
   const draw = () => {
     const now = new Date();
@@ -101,8 +103,10 @@ export async function render(el, { call }) {
     });
     // ⚠️ 같은 번호는 명단 **전체**로 — 거르기로 한쪽이 가려져도 표시는 남는다
     const dupM = dupMap(rows);
+    // 건별 + PC(≥1024px)면 표로 — 사람별·사역별은 그대로 묶음
+    const wide = view === "row" && mqWide.matches;
     list.innerHTML = !shown.length ? `<p class="empty">조건에 맞는 신청이 없어요</p>`
-      : view === "row" ? shown.map((r) => cardHtml(r, "", dupBadgeHtml(dupOthers(dupM, r)))).join("")
+      : view === "row" ? (wide ? tableHtml(shown, dupM) : shown.map((r) => cardHtml(r, "", dupBadgeHtml(dupOthers(dupM, r)))).join(""))
       : groupsHtml(shown, view, openSet, dupM);
     // 팀별 신청 수 — **지금 걸러진 목록**으로 센다. 어느 보기에서나 아래에 있다
     const tc = teamCounts(shown);
@@ -240,7 +244,12 @@ export async function render(el, { call }) {
     if (g.open) openSet.add(g.dataset.gk); else openSet.delete(g.dataset.gk);
   }, true);
   // 메뉴 바깥(머리줄·여백 포함)을 누르거나 Esc — 닫는다(원문 plCloseMenus). 이 화면이 사라지면 스스로 떨어진다.
-  const detach = () => { document.removeEventListener("click", onDoc); document.removeEventListener("keydown", onKey); };
+  // mqWide 의 change(창 폭을 바꿔 1024px 을 넘나들 때)도 같은 자리에서 붙이고 뗀다.
+  const detach = () => {
+    document.removeEventListener("click", onDoc);
+    document.removeEventListener("keydown", onKey);
+    mqWide.removeEventListener("change", onMqChange);
+  };
   const onDoc = (e) => {
     if (!el.isConnected) return detach();
     if (!(e.target instanceof Element) || !e.target.closest(".pl-drop")) closeMenus();
@@ -249,7 +258,12 @@ export async function render(el, { call }) {
     if (!el.isConnected) return detach();
     if (e.key === "Escape") closeMenus();
   };
+  const onMqChange = () => {
+    if (!el.isConnected) return detach();
+    draw();
+  };
   document.addEventListener("click", onDoc);
   document.addEventListener("keydown", onKey);
+  mqWide.addEventListener("change", onMqChange);
   draw();
 }
