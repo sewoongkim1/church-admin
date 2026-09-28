@@ -348,6 +348,11 @@ a.mn-tel.sm{padding:2px 8px}
 .mn-tbl-push{font-size:13px;margin-left:5px}
 .mn-tbl-team i{font-style:normal;color:var(--gray)}
 .mn-tbl-team b{color:var(--navy)}
-.mn-tbl-tel{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-.mn-tbl-tel .mn-dup{white-space:normal}
+/* ⚠️ td 에 display:flex 를 주면 표 칸 노릇을 그만두고 글자 폭으로 쪼그라든다(2026-09-29 전화 칸이 한 자씩 세로로) —
+   칸은 그대로 두고 안쪽 상자에 flex 를 준다 */
+.mn-tbl-telbox{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.mn-table .mn-p4{white-space:nowrap}
+.mn-table .mn-p4.none{white-space:normal;word-break:keep-all;overflow-wrap:normal}
+.mn-tbl-tel .mn-dup{white-space:normal;word-break:keep-all}
+.mn-table td.mn-date::before{content:none}
 .mn-modal-foot .yes:disabled{opacity:.45;cursor:default}

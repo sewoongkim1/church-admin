@@ -7,10 +7,13 @@ import { STATES, SHORT, CLS, personKey, teamKey, dupOthers } from "./status-logi
 
 const short = (st) => SHORT[st] || st;
 
-// 전화번호 — 누르면 전화(tel:). 번호가 지워졌으면(결정 뒤) 안내만. small=true 는 묶음 머리 줄 목록용 작은 꼴.
-export function phoneHtml(phone, small) {
+// 전화번호 — 누르면 전화(tel:). 번호가 없으면 안내만. small=true 는 묶음 머리 줄 목록용 작은 꼴.
+// status 를 주면 까닭을 가른다 — 결정(임명·취소) 뒤면 서버가 지운 것, 그 전이면 처음부터 없는 것
+// (결정 전 건에 「결정 후 삭제」라고 쓰면 사실이 아니다 — 2026-09-29 표에서 보임).
+const DECIDED = ["임명확정", "미채택", "취소"];
+export function phoneHtml(phone, small, status) {
   const digits = String(phone || "").replace(/[^0-9]/g, "");
-  if (!digits) return small ? "" : `<span class="mn-p4 none">번호 없음 · 결정 후 삭제</span>`;
+  if (!digits) return small ? "" : `<span class="mn-p4 none">${DECIDED.includes(status) ? "번호 지움 · 결정 뒤" : "번호 없음"}</span>`;
   return `<a class="mn-p4 mn-tel${small ? " sm" : ""}" href="tel:${digits}" title="전화 걸기">📞 <b>${esc(phone)}</b></a>`;
 }
 
@@ -62,7 +65,7 @@ export function cardHtml(r, inView, dupHtml) {
       ${statusMenuHtml(r)}
     </div>
     ${inView ? "" : teams}
-    ${inView === "person" ? "" : `<div class="mn-contact">${phoneHtml(r.phone)}${dupHtml ? `<span class="mn-dups">${dupHtml}</span>` : ""}</div>`}
+    ${inView === "person" ? "" : `<div class="mn-contact">${phoneHtml(r.phone, false, r.status)}${dupHtml ? `<span class="mn-dups">${dupHtml}</span>` : ""}</div>`}
     ${r.note ? `<div class="mn-note">📝 ${esc(r.note)} <i>(관리자만 봄)</i></div>` : ""}
   </div>`;
 }
@@ -85,7 +88,7 @@ export function tableHtml(rows, dupM) {
       <td>${esc(r.who)}</td>
       <td class="mn-tbl-team"><i>${esc(r.committee)}</i> › <b>${esc(r.team)}</b>${opt}</td>
       <td class="mn-date">${at}</td>
-      <td class="mn-tbl-tel">${phoneHtml(r.phone)}${dupHtml ? `<span class="mn-dups">${dupHtml}</span>` : ""}</td>
+      <td class="mn-tbl-tel"><div class="mn-tbl-telbox">${phoneHtml(r.phone, false, r.status)}${dupHtml ? `<span class="mn-dups">${dupHtml}</span>` : ""}</div></td>
       <td class="mn-tbl-st">${statusMenuHtml(r)}</td>
     </tr>`;
   }).join("");
