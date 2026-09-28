@@ -59,8 +59,15 @@ const PROBE = {
   membersSetStatus: { member_id: ZERO, status: "disabled" },
   auditList: { limit: 1 },
   ministryAppointed: {},
+  ministryList: {},
+  ministrySetStatus: { id: 0, status: "접수완료" },
+  ministryDelete: { id: 0 },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
+
+// 신청 현황(3단계) 시험 자료 — users 한 줄 + ministry_orders 두 줄(서로 다른 사역팀)
+let minTestUserId = null;
+const minTestOrderIds = [];
 
 before(async () => {
   for (const k of ["none", "pending", "disabled", "ministry", "super"]) people[k] = await makeUser(k);
@@ -68,12 +75,34 @@ before(async () => {
   await makeMember(people.disabled, "disabled", ["super"]);
   await makeMember(people.ministry, "active", ["ministry"]);
   await makeMember(people.super, "active", ["super"]);
+
+  const [u] = await rest("users", "POST", {
+    type: "교구", gu: "시험", mok: "0", name: "ca-test-min",
+    identity_key: "교구|시험|0|||ca-test-min-" + STAMP,
+  });
+  minTestUserId = u.id;
+  // team_id 는 not null + (year,user_id,team_id) 유일 제약이 있다 — 가짜 id 를 만들지 않고
+  // 개발 ministry_catalog 에서 서로 다른 두 줄의 id 를 그대로 읽어 쓴다.
+  const cats = await rest("ministry_catalog?select=id&order=id&limit=2", "GET");
+  assert.ok(cats.length >= 2, "ministry_catalog 에 팀이 둘 이상 있어야 한다");
+  const cfg = await rest("app_config?select=value&key=eq.ministry", "GET");
+  const year = Number(cfg[0]?.value?.year) || 2027;
+  for (const [team_id, team] of [[cats[0].id, "시험팀A"], [cats[1].id, "시험팀B"]]) {
+    const [row] = await rest("ministry_orders", "POST", {
+      year, user_id: minTestUserId, team_id, committee: "시험부", team,
+      status: "신청완료", phone: "010-0000-0000", source: "app",
+    });
+    minTestOrderIds.push(row.id);
+  }
 });
 
 after(async () => {
   for (const p of Object.values(people)) {
     if (p.uid) await fetch(URL_ + "/auth/v1/admin/users/" + p.uid, { method: "DELETE", headers: svc });
   }
+  // ministry_orders 먼저, 그다음 users — 이미 지워진(id) 것이 있어도 오류로 보지 않는다
+  for (const id of minTestOrderIds) await rest("ministry_orders?id=eq." + id, "DELETE");
+  if (minTestUserId) await rest("users?id=eq." + minTestUserId, "DELETE");
 });
 
 test("역할이 필요한 액션마다 시험 입력(PROBE)이 있다", () => {
@@ -195,4 +224,42 @@ test("임명현황: 임명확정만 · 여덟 칸만 · 개수가 DB 와 같다"
     { headers: { ...svc, Prefer: "count=exact", Range: "0-0" } });
   const total = Number((res.headers.get("content-range") || "").split("/")[1]);
   assert.equal(r.body.rows.length, total, "DB 의 임명확정 수와 다르다");
+});
+
+test("신청 현황: 목록 모양 · 동시 수정 · 취소 사유 · 임명 알림(개발 api 내부 액션) · 삭제 · 바꾼 기록", async () => {
+  const m = people.ministry.token;
+  const list = await call(m, "ministryList");
+  assert.equal(list.body.ok, true);
+  const mine = list.body.list.filter((x) => x.name === "ca-test-min");
+  assert.equal(mine.length, 2);
+  for (const x of mine) {
+    assert.equal("user_id" in x, false);
+    assert.equal(x.phone, "010-0000-0000");
+    assert.equal(x.canPush, false);
+  }
+  const [a, bRow] = mine.sort((x, y) => x.team.localeCompare(y.team));
+  // 접수 → 같은 expect 로 한 번 더 → conflict
+  assert.equal((await call(m, "ministrySetStatus", { id: a.id, status: "접수완료", expect: "신청완료" })).body.ok, true);
+  const c = await call(m, "ministrySetStatus", { id: a.id, status: "임명확정", expect: "신청완료" });
+  assert.equal(c.body.error, "conflict");
+  assert.equal(c.body.status, "접수완료");
+  // 임명 → 알림 안 켜심(시험 사용자는 구독이 없다) · 번호 지움
+  const ap = await call(m, "ministrySetStatus", { id: a.id, status: "임명확정", expect: "접수완료" });
+  assert.equal(ap.body.ok, true, JSON.stringify(ap.body));
+  assert.equal(ap.body.pushed, 0);
+  assert.equal(ap.body.pushError, "not-subscribed");
+  assert.equal(ap.body.phoneCleared, true);
+  // 취소 — 사유 없이는 안 됨
+  assert.equal((await call(m, "ministrySetStatus", { id: bRow.id, status: "취소", expect: "신청완료" })).body.error, "cancel-note-required");
+  assert.equal((await call(m, "ministrySetStatus", { id: bRow.id, status: "취소", expect: "신청완료", note: "시험 취소" })).body.ok, true);
+  const after = (await call(m, "ministryList")).body.list.filter((x) => x.name === "ca-test-min");
+  assert.equal(after.find((x) => x.id === bRow.id).note, "시험 취소");
+  assert.equal(after.find((x) => x.id === bRow.id).phone, "");
+  // 삭제
+  const del = await call(m, "ministryDelete", { id: bRow.id });
+  assert.equal(del.body.ok, true);
+  assert.equal(del.body.deleted.name, "ca-test-min");
+  assert.equal((await call(m, "ministryDelete", { id: bRow.id })).body.error, "not-found");
+  const acts = (await call(people.super.token, "auditList", { limit: 20 })).body.rows.map((r) => r.action);
+  assert.ok(acts.includes("ministry.status") && acts.includes("ministry.delete"), JSON.stringify(acts));
 });

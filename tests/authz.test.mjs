@@ -48,7 +48,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const ministryActions = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "ministry");
-  assert.deepEqual(ministryActions, ["ministryAppointed"]);
+  assert.deepEqual(ministryActions.sort(), ["ministryAppointed", "ministryDelete", "ministryList", "ministrySetStatus"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
   assert.deepEqual(knownRoles(), ["ministry", "super"]);
 });

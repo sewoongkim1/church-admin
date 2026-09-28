@@ -16,6 +16,10 @@ export const ACTION_ROLES: Record<string, string | null> = {
   auditList: "super",
   // 사역신청(2단계 · 2026-09-28) — 임명현황. 읽기만, 임명확정만, 번호·메모 없음.
   ministryAppointed: "ministry",
+  // 사역신청(3단계) — 신청 현황. 목록은 번호·메모를 담는다(관리 화면 전용). 상태 바꾸기·삭제는 바꾼 기록에 남는다.
+  ministryList: "ministry",
+  ministrySetStatus: "ministry",
+  ministryDelete: "ministry",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

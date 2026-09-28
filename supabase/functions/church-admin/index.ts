@@ -9,6 +9,7 @@
 // ============================================================
 import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 import { canCall, identityCandidates, kakaoAvatar, kakaoNickname, norm, parseIdentity, parseRoles } from "./authz.ts";
+import { statusPatch } from "./ministry.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -317,6 +318,108 @@ async function ministryAppointed() {
   };
 }
 
+// ---------- 사역신청 — 신청 현황 (3단계 · 2026-09-28) ----------
+// 원문: docs/port/ministry-status-legacy.md 1.4~1.7. 옛 화면과 같은 규칙 + 동시 수정 대조(expect).
+async function ministryList() {
+  const year = await ministryYear();
+  const { data, error } = await db.from("ministry_orders")
+    .select("id,user_id,committee,team,option,position,status,created_at,decided_at,name,who,note,notified_at,phone,source")
+    .eq("year", year).order("created_at", { ascending: false }).limit(5000);
+  if (error) throw error;
+  const rows = (data ?? []) as any[];
+  const need = [...new Set(rows.filter((r) => !r.name || !r.who).map((r) => r.user_id).filter(Boolean))];
+  const umap = new Map<string, any>();
+  if (need.length) {
+    const { data: us, error: e2 } = await db.from("users").select("id,type,gu,mok,bu,grade,name").in("id", need);
+    if (e2) throw e2;
+    for (const u of (us ?? []) as any[]) umap.set(u.id, u);
+  }
+  // 알림을 켜 두지 않은 분은 푸시가 안 간다 — 담당자가 게시·연락으로 메워야 하므로 화면이 알 수 있게 한다
+  const hasPush = new Set<string>();
+  const ids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
+  for (let i = 0; i < ids.length; i += 200) {   // .in() 주소 길이를 넘지 않게 나눠 묻는다
+    const { data: subs, error: e3 } = await db.from("push_subscriptions").select("user_id").in("user_id", ids.slice(i, i + 200));
+    if (e3) throw e3;
+    for (const s of (subs ?? []) as any[]) hasPush.add(s.user_id);
+  }
+  return {
+    ok: true,
+    year,
+    list: rows.map((r) => {
+      const u = umap.get(r.user_id);
+      const uWho = u ? (u.type === "교구" ? [u.gu, u.mok ? u.mok + "목장" : ""] : [u.bu, u.grade]).filter(Boolean).join(" ") : "";
+      return {
+        id: r.id, committee: r.committee ?? "", team: r.team ?? "", option: r.option ?? "", position: r.position ?? "",
+        status: r.status, at: r.created_at ? kstDay(r.created_at) : "", decided_at: r.decided_at ?? null,
+        name: r.name || u?.name || "", who: r.who || uWho,
+        note: r.note ?? "", notified_at: r.notified_at ?? null, canPush: hasPush.has(r.user_id),
+        phone: r.phone ?? "", source: r.source === "paper" ? "paper" : "app",
+      };
+    }),
+  };
+}
+
+// 임명 알림은 성경암송 api 의 내부 액션이 보낸다(한 벌) — 실패해도 상태 바꾸기는 이미 끝났으니 결과만 알린다
+async function notifyAppointed(id: number) {
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  try {
+    const res = await fetch(Deno.env.get("SUPABASE_URL") + "/functions/v1/api", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-key": key },
+      body: JSON.stringify({ action: "internalMinistryNotify", id }),
+    });
+    const j = await res.json().catch(() => null);
+    if (!j || j.ok !== true) return { pushed: 0, pushError: "notify-failed", already: false };
+    return { pushed: Number(j.pushed) || 0, pushError: j.pushError ?? null, already: !!j.already };
+  } catch (e) {
+    console.error("notifyAppointed", e);
+    return { pushed: 0, pushError: "notify-failed", already: false };
+  }
+}
+
+async function ministrySetStatus(ctx: Ctx, b: any) {
+  const id = Number(b.id) || 0;
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "not-found" };
+  const { data: row, error } = await db.from("ministry_orders")
+    .select("id,status,name,who,committee,team").eq("id", id).maybeSingle();
+  if (error) throw error;
+  if (!row) return { ok: false, error: "not-found" };
+  // 화면이 본 상태와 지금 상태가 다르면 — 다른 담당자가 먼저 바꿨다
+  if (typeof b.expect === "string" && b.expect !== row.status) return { ok: false, error: "conflict", status: row.status };
+  const p = statusPatch(row.status, b.status, b.note, new Date().toISOString());
+  if (!p.ok) return { ok: false, error: p.error };
+  const { data: upd, error: e2 } = await db.from("ministry_orders").update(p.patch)
+    .eq("id", id).eq("status", row.status).select("id");
+  if (e2) throw e2;
+  if (!upd?.length) {
+    const { data: now } = await db.from("ministry_orders").select("status").eq("id", id).maybeSingle();
+    return { ok: false, error: "conflict", status: now?.status ?? null };
+  }
+  await audit(ctx, "ministry.status", String(id), {
+    name: row.name ?? "", who: row.who ?? "", team: row.team ?? "", before: row.status, after: p.patch.status,
+    ...(typeof p.patch.note === "string" ? { note: p.patch.note } : {}),
+  });
+  const n = p.notify ? await notifyAppointed(id) : { pushed: 0, pushError: null, already: false };
+  return { ok: true, status: p.patch.status, pushed: n.pushed, pushError: n.pushError, already: n.already,
+    phoneCleared: p.patch.phone === null };
+}
+
+// 신청 한 건을 아주 지운다(되돌릴 수 없다 — 화면이 두 번 묻는다). 3개 상한의 자리도 도로 빈다.
+async function ministryDelete(ctx: Ctx, b: any) {
+  const id = Number(b.id) || 0;
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "not-found" };
+  const { data: row, error } = await db.from("ministry_orders")
+    .select("id,name,who,committee,team,status").eq("id", id).maybeSingle();
+  if (error) throw error;
+  if (!row) return { ok: false, error: "not-found" };
+  const { error: e2 } = await db.from("ministry_orders").delete().eq("id", id);
+  if (e2) throw e2;
+  const deleted = { id: row.id, name: row.name ?? "", who: row.who ?? "", committee: row.committee ?? "",
+    team: row.team ?? "", status: row.status };
+  await audit(ctx, "ministry.delete", String(id), deleted);
+  return { ok: true, deleted };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -344,6 +447,9 @@ Deno.serve(async (req) => {
       case "membersSetStatus": return json(await membersSetStatus(ctx, b));
       case "auditList":        return json(await auditList(b));
       case "ministryAppointed": return json(await ministryAppointed());
+      case "ministryList":      return json(await ministryList());
+      case "ministrySetStatus": return json(await ministrySetStatus(ctx, b));
+      case "ministryDelete":    return json(await ministryDelete(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);
