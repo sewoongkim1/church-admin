@@ -5,15 +5,21 @@ import { esc, errorText, busy, affiliation } from "../core/ui.js";
 const GU_LIST = ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨", "새가족"];
 const BU_LIST = ["사랑부", "영아부", "유아부", "유치부", "유년부", "초등부", "중등부", "고등부", "청년부"];
 
-export function renderLogin(el, { onKakao, notice = "" }) {
+// onSwitch — 「다른 카카오 계정으로」. 로그아웃해도 브라우저의 카카오 로그인은 남아 「카카오로 시작하기」가
+// 같은 계정으로 바로 들어가므로, 공용 PC 에서 다른 분이 들어오려면 카카오에 계정을 다시 묻게 해야 한다.
+export function renderLogin(el, { onKakao, onSwitch, notice = "" }) {
   el.innerHTML = `<div class="gate"><div class="card">
     <h2>고척교회 관리</h2>
     <p>교회 담당자만 들어올 수 있어요.<br>카카오로 로그인한 뒤 승인을 받으면 메뉴가 열려요.</p>
     ${notice ? `<p class="err">${esc(notice)}</p>` : ""}
-    <button type="button" class="kakao">카카오로 시작하기</button>
+    <div class="stack">
+      <button type="button" class="kakao">카카오로 시작하기</button>
+      <button type="button" class="btn wide other">다른 카카오 계정으로</button>
+    </div>
     <p class="muted" style="margin-top:14px">로그인하면 카카오 회원번호·별명·사진(이메일은 동의한 경우)과 적으신 이름·소속을 담당자 확인에 써요. <a href="privacy.html">개인정보 안내</a></p>
   </div></div>`;
   el.querySelector(".kakao").onclick = onKakao;
+  el.querySelector(".other").onclick = onSwitch;
 }
 
 export function renderRegister(el, { nickname = "", member = null, onSubmit, onSignOut, onSwitch }) {

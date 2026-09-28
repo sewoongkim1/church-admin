@@ -12,7 +12,7 @@ let booting = false;
 
 const onKakao = () => signInWithKakao().catch((e) => toast("카카오 로그인을 열지 못했어요 — " + (e?.message || e)));
 const onSignOut = async () => { await signOut(); history.replaceState(null, "", location.pathname); boot(); };
-// 「다른 카카오 계정으로」 — 카카오 세션이 남아 있으면 자동으로 같은 계정으로 돌아오니 prompt:login 을 요청한다
+// 「다른 카카오 계정으로」(로그인 화면 · 등록 화면) — 카카오 세션이 남아 있으면 자동으로 같은 계정으로 돌아오니 prompt:login 을 요청한다
 const onSwitch = async () => {
   await signOut();
   signInWithKakao(true).catch((e) => {
@@ -44,13 +44,13 @@ async function boot() {
       const notice = err
         ? (err === "access_denied" ? "카카오 로그인을 취소하셨어요" : "카카오 로그인이 되지 않았어요 — 잠시 뒤 다시 해 주세요")
         : "";
-      return renderLogin(app, { onKakao, notice });
+      return renderLogin(app, { onKakao, onSwitch, notice });
     }
     const r = await call("me");
     if (!r.ok) {
       if (r.error === "unauthenticated") {
         await signOut();
-        return renderLogin(app, { onKakao, notice: "로그인이 풀렸어요 — 다시 로그인해 주세요" });
+        return renderLogin(app, { onKakao, onSwitch, notice: "로그인이 풀렸어요 — 다시 로그인해 주세요" });
       }
       return renderError(app, { message: errorText(r), onRetry: boot, onSignOut });
     }
