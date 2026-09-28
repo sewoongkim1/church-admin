@@ -13,12 +13,17 @@
 --   ④ authenticated 만 실행할 수 있는 함수(RPC) — SECURITY DEFINER 면 표 권한을 건너뛴다
 --   ⑤ auth.users 에 걸린 가입 트리거
 --   ⑥ anon·authenticated 둘 다 실행할 수 있지만 함수 몸통 안에서 auth.*()·request.jwt() 로 갈리는 함수
+-- 빼고 보는 것(2026-09-28): 다른 앱 표 다섯을 「그 앱 허가 명단」에 묶은 정책(조건에 legacy_app_users 가 든 것)과
+--   그 명단 표 자체(자기 줄만 읽는 정책 · authenticated SELECT) — 002_gate_legacy_app_tables.sql 이 일부러 둔 것이다.
+--   ⚠️ 정책 조건에 legacy_app_users 만 넣고 다른 길을 열면 여기서 안 보인다 — 그 표들의 정책을 고칠 때는 이 점검을 믿지 말고 눈으로 볼 것.
 select * from (
   -- ① authenticated 에게만 열린 정책 — 명령 종류(SELECT·INSERT·UPDATE·DELETE·ALL) 무관, 모든 스키마(storage 포함)
   select '1 로그인 전용 정책' as kind, p.schemaname as schema_name, p.tablename as name,
          p.policyname || ' · ' || p.cmd || ' · ' || p.permissive || ' · ' || array_to_string(p.roles, ',') as detail
   from pg_policies p
   where 'authenticated' = any(p.roles) and not ('anon' = any(p.roles) or 'public' = any(p.roles))
+    and not (p.schemaname = 'public' and p.tablename = 'legacy_app_users')
+    and coalesce(p.qual, '') || coalesce(p.with_check, '') not like '%legacy_app_users%'
   union all
   -- ② 조건 안에서 로그인 여부를 보는 정책(public·authenticated 에 걸린 것) — auth.role()·auth.uid()·auth.jwt()·auth.email()·request.jwt()
   select '2 조건에 auth.*', p.schemaname, p.tablename,
@@ -26,6 +31,8 @@ select * from (
   from pg_policies p
   where ('public' = any(p.roles) or 'authenticated' = any(p.roles))
     and (coalesce(p.qual, '') ~ 'auth\.(role|uid|jwt|email)|request\.jwt' or coalesce(p.with_check, '') ~ 'auth\.(role|uid|jwt|email)|request\.jwt')
+    and not (p.schemaname = 'public' and p.tablename = 'legacy_app_users')
+    and coalesce(p.qual, '') || coalesce(p.with_check, '') not like '%legacy_app_users%'
   union all
   -- ③ authenticated 만 가진 표 권한 — RLS 가 켜져 있어도 본다(RLS 켜짐 + TO public USING(true) 정책 +
   --   anon 만 SELECT 뺀 경우 로그인한 사람은 전부 읽는데 ①·②는 못 잡는다)
@@ -38,6 +45,7 @@ select * from (
          || (case when c.relkind in ('v', 'm') then ' · 뷰' when c.relrowsecurity then ' · RLS 켜짐' else ' · RLS 꺼짐' end)
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname in ('public', 'storage') and c.relkind in ('r', 'p', 'v', 'm')
+    and not (n.nspname = 'public' and c.relname = 'legacy_app_users')
     and ((has_table_privilege('authenticated', c.oid, 'SELECT') and not has_table_privilege('anon', c.oid, 'SELECT'))
       or (has_table_privilege('authenticated', c.oid, 'INSERT') and not has_table_privilege('anon', c.oid, 'INSERT'))
       or (has_table_privilege('authenticated', c.oid, 'UPDATE') and not has_table_privilege('anon', c.oid, 'UPDATE'))
