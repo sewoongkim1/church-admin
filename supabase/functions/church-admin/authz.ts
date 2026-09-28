@@ -93,7 +93,8 @@ export function parseRoles(x: unknown, known: string[]):
   return { ok: true, roles };
 }
 
-// 카카오 별명 — 2026-09-28 확인: Supabase 는 user_metadata.name(·full_name·preferred_username·user_name)에 담는다.
+// 카카오 별명 — index.ts 가 카카오 identity 의 identity_data 를 넘긴다(user_metadata 가 아니다 —
+// 본인이 auth.updateUser 로 고칠 수 있어서). 2026-09-28 확인: name·full_name·preferred_username·user_name 칸에 담긴다.
 // nickname 칸은 오지 않지만 판이 바뀔 때를 대비해 여럿을 본다.
 export function kakaoNickname(meta: unknown): string {
   const m = (meta && typeof meta === "object" ? meta : {}) as Record<string, unknown>;

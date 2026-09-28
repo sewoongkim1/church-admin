@@ -31,7 +31,7 @@ function pendingCard(m, roles) {
   return `<div class="card" data-id="${esc(m.id)}">
     <div class="who-row">${avatar(m)}<div>${who(m)}</div></div>
     <div class="muted">카카오 「${esc(m.kakao_nickname || "별명 없음")}」 · 요청 ${esc(kstTime(m.created_at))}</div>
-    ${m.known_ministry_staff ? `<p style="margin-top:6px"><span class="badge">ℹ️ 사역 담당자 명단의 이름·소속과 같아요 — 카카오 별명·사진으로 본인인지 확인해 주세요</span></p>` : ""}
+    ${m.known_ministry_staff ? `<p class="muted" style="margin-top:6px">ℹ️ 사역 담당자 명단의 이름·소속과 같아요 — 카카오 별명·사진으로 본인인지 확인해 주세요</p>` : ""}
     ${roleChecks(roles, [])}
     <div class="acts">
       <button type="button" class="btn danger" data-act="reject">거절</button>

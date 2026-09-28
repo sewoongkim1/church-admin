@@ -7,7 +7,11 @@
 <title>고척교회 관리 — 개인정보 안내</title>
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/admin.css">
-<style>.card h3{margin-bottom:8px;color:var(--navy-dark);font-size:15px}.card p{color:#222;font-size:14px;line-height:1.7}</style>
+<style>
+.card h3{margin-bottom:8px;color:var(--navy-dark);font-size:15px}
+.card p{color:#222;font-size:14px;line-height:1.7}
+@media (min-width:1024px){ .view{ margin:0 auto; max-width:900px; } }  /* 이 화면엔 옆 메뉴가 없다 */
+</style>
 </head>
 <body>
 <main class="view">
@@ -24,7 +28,8 @@
     <h3>2. 모으는 것</h3>
     <p>카카오 로그인으로 받는 것: 카카오 회원번호, 카카오 별명, 프로필 사진 주소, 이메일(동의하신 경우만).<br>
       직접 적는 것: 이름, 교구·목장(교회학교는 부서·학년).<br>
-      쓰는 동안 남는 것: 마지막 접속 시각, 관리 화면에서 바꾼 기록(누가·언제·무엇을).</p>
+      쓰는 동안 남는 것: 마지막 접속 시각, 로그인 기록(접속한 IP 주소와 브라우저 정보 — 로그인 서비스(Supabase)가 보안을 위해
+      자동으로 남겨요), 관리 화면에서 바꾼 기록(누가·언제·무엇을).</p>
   </div>
 
   <div class="card">
