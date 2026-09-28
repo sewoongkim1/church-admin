@@ -115,3 +115,215 @@ a.card{display:block;color:inherit;text-decoration:none}
   .ap-list{columns:2;column-gap:var(--gap)}
   .ap-g{break-inside:avoid}
 }
+
+/* ── 📋 신청 현황(성경암송 admin-stats.html 의 .mn-*·.pl-* 를 옮김 · 2026-09-28) ──────────────
+   원문: docs/port/ministry-status-legacy.md 2.15·2.16. 옛 표준 v1 덮어쓰기는 한 규칙으로 합쳤다.
+   크기는 토큰(--tap-lg 48 · --tap 44 · --chip 36 · --gap 10), 11~12px 글씨는 13px, 작은 글씨 회색은 --gray 까지만.
+   ⚠️ .mn-grp[open] 과 카드·패널에 overflow:hidden 을 두지 말 것 — 묶음 안 카드의 상태 메뉴(.pl-menu)가 잘려
+      사람별·사역별에서 임명·취소를 누를 수 없게 된다(2026-09-18 점검에서 발견). */
+.mn-acts{margin-bottom:var(--gap)}
+/* 붙는 머리 — 우리 머리줄 아래에 붙고, 카드 여백까지 덮게 음수 여백. 「지금 무엇을 보고 있나」만 둔다 */
+.mn-head{position:sticky;top:var(--head-h);z-index:20;background:#fff;max-height:40vh;overflow-y:auto;
+  margin:calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) var(--gap);padding:10px var(--card-pad) 8px;
+  border-radius:14px 14px 0 0;border-bottom:1px solid #eef1f6}
+.mn-stlb,.mn-vlb{font-size:13px;font-weight:800;color:var(--gray);margin:0 2px 3px;line-height:1.2}
+.mn-stlb i{font-style:normal;font-weight:700}
+.mn-vlb{margin-top:10px}
+/* 상태 숫자 막대 — 누르면 그 상태만, 더 누르면 더하고, 「전체」는 모두 */
+.mn-stbar{display:grid;grid-template-columns:repeat(5,1fr);margin:0 0 6px;border:1px solid #dde3ee;border-radius:12px;
+  overflow:hidden;background:#fff}
+.mn-stbar button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:var(--tap);
+  padding:6px 2px;border:none;border-right:1px solid #eef1f6;background:#fff;color:var(--gray);cursor:pointer}
+.mn-stbar button:last-child{border-right:none}
+.mn-stbar b{font-size:17px;line-height:1.1;font-weight:800}
+.mn-stbar span{font-size:13px;font-weight:700}
+.mn-stbar button.on{color:var(--navy);background:var(--ghost-bg);box-shadow:inset 0 -3px 0 var(--navy)}
+.mn-stbar button.s2.on{color:#7a5f16;background:#fdf6e3;box-shadow:inset 0 -3px 0 #d9b45c}
+.mn-stbar button.s3.on{color:#1f5c3a;background:#eaf6ee;box-shadow:inset 0 -3px 0 #5aab7c}
+.mn-stbar button.s4.on{color:#5a6273;background:#f4f6fa;box-shadow:inset 0 -3px 0 #a0a9b8}
+/* 📅 신청일 — 접힌 채로도 걸린 조건이 요약으로 보인다 */
+.mn-condbar{display:flex;gap:6px;align-items:stretch}
+.mn-cond-toggle{flex:1;min-width:0;display:flex;align-items:center;gap:6px;height:var(--tap);padding:0 10px;
+  border:1px solid #dde3ee;border-radius:10px;background:#fff;cursor:pointer;color:#41506b}
+.mn-cond-t{font-size:13px;font-weight:800;flex:none}
+.mn-cond-sum{flex:1;min-width:0;text-align:left;font-size:13px;color:var(--gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mn-cond-sum.on{color:var(--navy);font-weight:700}
+.mn-cond-arrow{flex:none;font-size:13px;color:var(--gray);transition:transform .15s}
+.mn-cond-toggle[aria-expanded="true"] .mn-cond-arrow{transform:rotate(180deg)}
+.mn-cond{margin:0 0 10px}
+.mn-range{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:0 0 6px}
+.mn-range-lb{font-size:13px;font-weight:700;color:var(--gray);margin-right:2px}
+.mn-range button{min-height:var(--chip);padding:0 14px;font-size:13px;font-weight:700;color:#5a6273;background:#fff;
+  border:1px solid #dde3ee;border-radius:999px;cursor:pointer}
+.mn-range button.on{color:#fff;background:var(--navy);border-color:var(--navy)}
+.mn-custom{display:flex;align-items:center;gap:6px;margin:0 0 4px}
+.mn-custom input{flex:1 1 0;min-width:0;height:var(--tap);font-size:1rem;padding:0 8px;border:1px solid var(--border);
+  border-radius:10px;background:#fff;color:#222}
+.mn-custom span{color:var(--gray);font-weight:700}
+/* 보기: 건별 · 사람별 · 사역별 — 숫자는 지금 걸러진 것 */
+.mn-view{display:flex;margin:0 0 8px;padding:3px;gap:3px;background:#eef1f6;border-radius:11px}
+.mn-view button{flex:1;min-width:0;min-height:var(--chip);padding:0 6px;font-size:13px;font-weight:800;color:#5a6273;
+  background:transparent;border:none;border-radius:8px;cursor:pointer}
+.mn-view button em{font-style:normal;font-weight:700;opacity:.75;margin-left:2px}
+.mn-view button.on{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(13,27,62,.12)}
+/* 팀별 신청 수 — 눌리지 않는 칩이라 테두리 없이 회색 */
+.mn-teams{margin-top:14px}
+.mn-teams-t{font-size:13px;font-weight:800;color:var(--gray);margin-bottom:6px}
+.mn-teams-t i{font-style:normal;font-weight:700;margin-left:4px;color:var(--navy)}
+.mn-tcount{display:inline-block;font-size:13px;color:#41506b;background:#f3f6fb;border-radius:7px;padding:4px 8px;margin:0 5px 5px 0}
+.mn-tcount b{color:var(--navy)}
+
+/* 신청 한 건 = 카드 하나 */
+.pl-card{border:1px solid #dde3ee;border-radius:12px;background:#fff;padding:12px 14px;margin-bottom:var(--gap)}
+.pl-card.s1{border-left:4px solid #6f9be0}
+.pl-card.s2{border-left:4px solid #d9b45c}
+.pl-card.s3{border-left:4px solid #5aab7c}
+.pl-card.s4{border-left:4px solid #c3cad6}
+.pl-hd{display:flex;align-items:flex-start;gap:8px;flex-wrap:nowrap}
+.pl-nm{flex:1 1 auto;min-width:0}
+.pl-nm b{font-size:16px;color:var(--navy)}
+.pl-nm i{font-style:normal;font-size:13px;color:var(--gray);margin-left:6px;white-space:nowrap}
+.mn-pos{font-style:normal;font-size:13px;font-weight:700;color:#8a6a1e;background:#fbf1d8;border-radius:999px;padding:1px 8px;margin-left:6px}
+.mn-paper{font-style:normal;font-size:13px;font-weight:800;color:#41506b;background:#eef1f8;border:1px solid #dde3ee;
+  border-radius:999px;padding:1px 7px;margin-left:5px;white-space:nowrap}
+/* 둘째 줄: 소속 · 신청일 */
+.mn-sub{display:block;margin-top:3px;white-space:nowrap}
+.mn-list .mn-sub i{margin-left:0}
+.mn-date{font-size:13px;color:var(--gray)}
+.mn-date::before{content:"·";margin:0 5px;color:#c3cad6}
+/* 카드의 신청 사역 — 이름 아래 굵게, 위원회는 작게 */
+.mn-team-main{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 6px;margin:9px 0 2px;padding:7px 10px;
+  background:#f3f6fb;border-left:3px solid var(--navy);border-radius:8px}
+.mn-team-ico{font-size:14px;align-self:center}
+.mn-team-main b{font-size:16px;font-weight:800;color:var(--navy)}
+.mn-team-main i{font-style:normal;font-size:13px;color:#41506b}
+.mn-team-com{font-size:13px;color:var(--gray)}
+/* 전화번호(누르면 전화) + 오른쪽에 같은 번호 배지 */
+.mn-contact{display:flex;align-items:flex-start;gap:6px;margin-top:8px}
+.mn-contact .mn-p4{flex:none;white-space:nowrap}
+.mn-contact .mn-p4 b{letter-spacing:.02em}
+.mn-dups{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px}
+.mn-dups .mn-dup{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;padding:3px 8px;
+  align-self:flex-start;max-width:100%}
+.mn-p4{font-size:13px;font-weight:700;color:#41506b;background:#eef1f8;border-radius:7px;padding:3px 8px}
+.mn-p4 b{letter-spacing:.08em;color:var(--navy)}
+.mn-p4.none{color:var(--gray);background:#f5f6f8;font-weight:600}
+a.mn-tel{text-decoration:none;cursor:pointer}
+a.mn-tel:active{background:#dfe6f3}
+a.mn-tel.sm{padding:2px 8px}
+.mn-dup{font-size:13px;font-weight:800;border-radius:999px;padding:3px 9px;background:#fff4d6;color:#8a5a00;border:1px solid #f0d58a;white-space:normal}
+.mn-dup.other{background:#f3f6fb;color:#41506b;border-color:#dde3ee}
+/* 전화번호 옆 같은 번호 정보를 한 줄로 — 좁으면 배지 끝만 줄임표 */
+.mn-phone-line{align-items:center}
+.mn-phone-line a.mn-tel{flex:none}
+.mn-phone-line a.mn-tel b{letter-spacing:.01em}
+.mn-phone-line .mn-dup{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mn-note{font-size:13px;color:#7a5f1e;background:#fbf1d8;border-radius:8px;padding:6px 9px;margin-top:6px;line-height:1.5}
+.mn-note i{color:#8a6a1e;font-style:normal}
+
+/* 상태 고르기 — 브라우저 기본 목록을 쓰지 않고 직접 만든다. 가장 많이 누르는 것이라 44px */
+.pl-drop{position:relative;flex:none}
+.pl-sel{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;min-height:var(--tap);padding:0 30px 0 14px;
+  border:1.5px solid;border-radius:999px;cursor:pointer;font-size:14px;font-weight:800;font-family:inherit;line-height:1.3;
+  white-space:nowrap;background-repeat:no-repeat;background-position:right 11px center;background-size:10px 6px;
+  transition:box-shadow .12s,filter .12s}
+.pl-hd .pl-sel{align-self:flex-start}
+.pl-sel:hover{filter:brightness(.97)}
+.pl-sel:disabled{opacity:.6;cursor:default}
+.pl-drop.open .pl-sel{box-shadow:0 0 0 3px rgba(26,58,107,.14)}
+.pl-sel.s1{background-color:#eef3fb;border-color:#a9c3e8;color:#1a3a6b;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%231a3a6b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.pl-sel.s2{background-color:#fdf6e3;border-color:#e6cf94;color:#7a5f16;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%237a5f16' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.pl-sel.s3{background-color:#eaf6ee;border-color:#a9d8bb;color:#1f5c3a;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%231f5c3a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.pl-sel.s4{background-color:#f4f6fa;border-color:#c3cad6;color:#5a6273;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235a6273' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.pl-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:150px;padding:6px;border-radius:12px;
+  background:#fff;border:1px solid #dde3ee;box-shadow:0 10px 26px rgba(26,42,72,.16)}
+.pl-drop.open .pl-menu{display:block}
+/* 아래 여유가 모자라면 위로 연다 */
+.pl-drop.up .pl-menu{top:auto;bottom:calc(100% + 6px)}
+.pl-opt{display:flex;align-items:center;width:100%;min-height:var(--tap);padding:0 14px;text-align:left;cursor:pointer;
+  font-family:inherit;font-size:14px;font-weight:700;border:none;border-radius:8px;background:transparent;color:#4a5568;white-space:nowrap}
+.pl-opt:hover{background:#f2f5fb}
+.pl-opt.on{font-weight:800}
+.pl-opt.on::after{content:"✓";margin-left:auto;padding-left:10px}
+.pl-opt.s1.on{background:#eef3fb;color:#1a3a6b}
+.pl-opt.s2.on{background:#fdf6e3;color:#7a5f16}
+.pl-opt.s3.on{background:#eaf6ee;color:#1f5c3a}
+.pl-opt.s4.on{background:#f4f6fa;color:#5a6273}
+.pl-opt.s4{margin-top:6px;border-top:1px solid #eef1f6}   /* 되돌릴 수 없는 「취소」만 떼어 놓는다 */
+/* 삭제는 상태가 아니라 하는 일이다 — 줄을 긋고 붉은 꼴로 */
+.pl-opt.pl-del{margin-top:6px;border-top:1px solid #eef1f6;color:var(--error);font-weight:800}
+.pl-opt.pl-del:hover{background:var(--danger-bg)}
+
+/* 사람별·사역별 묶음 — 접힘 = 요약(머리의 줄 목록), 펼침 = 처리(카드) */
+.mn-grp-tools{display:flex;justify-content:flex-end;gap:8px;margin:-2px 2px 8px}
+.mn-grp-tools button{min-height:var(--chip);padding:0 14px;font-size:13px;font-weight:700;color:var(--navy);
+  background:var(--ghost-bg);border:1.5px solid var(--ghost-bd);border-radius:999px;cursor:pointer}
+.mn-grp{border:1px solid #dde3ee;border-radius:12px;background:#f8fafd;margin-bottom:var(--gap)}
+.mn-grp > summary{list-style:none;cursor:pointer;padding:11px 13px;display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
+.mn-grp > summary::-webkit-details-marker{display:none}
+.mn-grp > summary::before{content:"▸";color:var(--gray);font-size:13px;width:10px}
+.mn-grp-t{font-size:15px;font-weight:800;color:var(--navy)}
+.mn-grp-t em{font-style:normal;font-size:13px;color:var(--gray);font-weight:700;margin-right:4px}
+.mn-grp-t i{font-style:normal;font-size:13px;color:var(--gray);font-weight:600;margin-left:5px}
+.mn-grp-n{font-size:13px;font-weight:800;color:#41506b;margin-left:auto;white-space:nowrap}
+.mn-grp-sub{flex-basis:100%;display:flex;flex-wrap:nowrap;min-width:0;gap:5px;padding-left:18px}
+.mn-grp-body{padding:0 10px 2px}
+/* 묶음 머리의 줄 목록 — 줄마다 오른쪽에 상태를 글자로(색만으로 짐작하지 않게) */
+.mn-grp-rows{flex-basis:100%;display:flex;flex-direction:column;margin:2px 0 0 18px;background:#fff;
+  border:1px solid #e3e8f1;border-radius:10px;overflow:hidden}
+.mn-rowi{display:flex;flex-direction:column;gap:4px;padding:7px 10px;border-top:1px solid #eef1f6}
+.mn-rowi:first-child{border-top:none}
+.mn-rowi-top{display:flex;align-items:center;gap:8px}
+.mn-rowi-ex{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;min-width:0}
+.mn-rowi-ex .mn-dup{padding:2px 8px}
+.mn-rowi-t{flex:1;min-width:0;display:flex;align-items:baseline;gap:6px;white-space:nowrap;overflow:hidden}
+.mn-rowi-t b{font-size:14px;font-weight:800;color:var(--navy);overflow:hidden;text-overflow:ellipsis}
+.mn-rowi-t small{font-size:13px;color:var(--gray);flex:none}
+.mn-rowi-st{flex:none;font-size:13px;font-weight:800;border-radius:999px;padding:2px 9px;background:#eef3fb;color:var(--navy)}
+.mn-rowi-st.s2{background:#fdf6e3;color:#7a5f16}
+.mn-rowi-st.s3{background:#eaf6ee;color:#1f5c3a}
+.mn-rowi-st.s4{background:#f1f3f7;color:#5a6273}
+.mn-rowi.s4 .mn-rowi-t{opacity:.55}
+/* 펼친 묶음 — 머리를 짙게 칠해 「이 묶음 안」이 한눈에. 머리의 줄 목록은 숨기고 카드가 대신한다 */
+.mn-grp[open]{background:#fff;border-color:var(--navy)}
+.mn-grp[open] > summary{background:var(--navy);color:#fff;padding:10px 13px;border-radius:11px 11px 0 0}
+.mn-grp[open] > summary::before{content:"▾";color:#c9d6ec}
+.mn-grp[open] > summary .mn-grp-rows{display:none}
+.mn-grp[open] .mn-grp-t{color:#fff}
+.mn-grp[open] .mn-grp-t em,.mn-grp[open] .mn-grp-t i{color:#c9d6ec}
+.mn-grp[open] .mn-grp-n{color:#e4ebf7}
+.mn-grp[open] > summary .mn-p4{background:rgba(255,255,255,.14);color:#e4ebf7}
+.mn-grp[open] > summary .mn-p4 b{color:#fff}
+.mn-grp[open] > summary .mn-dup.other{background:rgba(255,255,255,.14);color:#e4ebf7;border-color:rgba(255,255,255,.25)}
+.mn-grp[open] > .mn-grp-body{padding:10px 10px 2px;background:#f3f6fb;border-radius:0 0 11px 11px}
+/* 묶음 안 카드 — 머리에 있는 것은 뺐다 */
+.pl-card.mn-in{padding:10px 12px}
+.mn-in-team{display:flex;align-items:baseline;gap:5px;flex-wrap:wrap}
+.mn-in-team b{font-size:16px;font-weight:800;color:var(--navy)}
+.mn-in-team i{font-style:normal;font-size:13px;color:#41506b;margin:0}
+.mn-in .mn-sub{margin-top:2px}
+.mn-list .mn-sub .mn-in-opt{margin-left:5px;color:#41506b}   /* .mn-sub i{margin-left:0} 보다 세게(원문은 같은 세기라 붙어 보였다) */
+
+/* 임명 확인 창(ui.js dialog) 안의 알림 안내 — 켜신 분은 초록, 안 켜신 분은 붉게 */
+.dlg .mn-dlg-note{margin-top:12px;padding:10px 12px;border-radius:10px;background:#f3f6fb;color:#41506b;line-height:1.55}
+.dlg .mn-dlg-note.on{background:#e7f3e8;color:var(--green)}
+.dlg .mn-dlg-note.off{background:var(--danger-bg);color:var(--error)}
+/* 취소 사유 창 — 프리셋 넷 + 자유 입력. 길면 스크롤되고 단추는 남는다 */
+.mn-modal{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;
+  padding:16px 16px 24px;background:rgba(13,27,62,.45)}
+.mn-modal-box{width:100%;max-width:420px;margin:auto 0;background:#fff;border-radius:16px;padding:20px 18px 16px;
+  box-shadow:0 12px 40px rgba(13,27,62,.25)}
+.mn-modal-box h3{margin:0 0 6px;font-size:1.08rem;color:var(--error)}
+.mn-modal-box p{margin:0 0 12px;font-size:14px;color:#41506b;line-height:1.55}
+.mn-modal-box p b{color:var(--navy)}
+.mn-modal-presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.mn-modal-presets button{min-height:var(--chip);padding:4px 14px;font-size:13px;font-weight:700;line-height:1.3;text-align:left;
+  color:var(--navy);background:var(--ghost-bg);border:1.5px solid var(--ghost-bd);border-radius:999px;cursor:pointer}
+.mn-modal-box textarea{display:block;width:100%;min-height:84px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
+  font:inherit;font-size:1rem;resize:vertical}
+.mn-modal-hint{font-size:13px;color:var(--gray);margin:6px 2px 12px}
+.mn-modal-foot{position:sticky;bottom:0;display:flex;gap:8px;padding-top:8px;background:#fff}
+.mn-modal-foot button{flex:1;min-height:var(--tap-lg);font-size:1rem;font-weight:800;border-radius:10px;cursor:pointer}
+.mn-modal-foot .no{background:#fff;color:#41506b;border:1.5px solid #dde3ee}
+.mn-modal-foot .yes{background:var(--error);color:#fff;border:none}
+.mn-modal-foot .yes:disabled{opacity:.45;cursor:default}

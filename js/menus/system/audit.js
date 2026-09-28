@@ -5,6 +5,7 @@ const TITLE = `<h2 class="page-title">📜 바꾼 기록</h2>`;
 const LABEL = {
   register: "승인 요청", "register.update": "요청 고침",
   "members.approve": "승인", "members.roles": "역할 바꿈", "members.status": "상태 바꿈",
+  "ministry.status": "사역 상태 바꿈", "ministry.delete": "사역 신청 삭제",
 };
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };
 
@@ -14,6 +15,8 @@ function detailText(r) {
   if (r.action === "members.roles") return (d.before || []).join(", ") + " → " + (d.after || []).join(", ");
   if (r.action === "members.status") return (STATUS[d.before] || d.before || "") + " → " + (STATUS[d.after] || d.after || "");
   if (r.action.startsWith("register")) return [d.gu, d.mok, d.bu, d.grade].filter(Boolean).join(" ");
+  if (r.action === "ministry.status") return `${d.name || ""} · ${d.team || ""} · ${d.before || ""} → ${d.after || ""}${d.note ? " · 사유: " + d.note : ""}`;
+  if (r.action === "ministry.delete") return `${d.name || ""} · ${d.who || ""} · ${d.committee || ""} ${d.team || ""} (${d.status || ""})`;
   return "";
 }
 

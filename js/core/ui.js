@@ -99,6 +99,8 @@ const MESSAGES = {
   "unknown-role": "없는 역할이에요",
   "use-approve": "승인 대기 중인 분은 「승인」으로 처리해 주세요",
   "invalid-status": "잘못된 요청이에요",
+  "cancel-note-required": "취소 사유를 적어 주세요 (담당자만 봐요)",
+  "note-too-long": "사유는 500자까지 적을 수 있어요",
   self: "자기 자신은 정지할 수 없어요",
   "self-super": "자기 자신의 총괄 관리자 역할은 뺄 수 없어요",
   "last-super": "총괄 관리자가 한 분은 남아 있어야 해요",
