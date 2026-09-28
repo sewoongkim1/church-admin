@@ -1,6 +1,7 @@
 // 담당자·역할 — 총괄 관리자(super)만.
 //   승인 대기 → 승인(역할 고르기) / 거절 · 사용 중 → 역할 바꾸기 / 정지 · 정지됨 → 다시 사용
 // 막는 것은 서버다(스스로 정지·스스로 super 빼기·마지막 super 는 서버가 거절한다). 화면은 그 단추를 미리 감출 뿐.
+// ⚠️ 기존 담당자 표시(known_ministry_staff)는 본인이 적은 이름·소속만 맞춘 것 — 권한의 근거가 아니다.
 import { esc, affiliation, kstTime, toast, dialog, busy, errorText } from "../../core/ui.js";
 
 const TITLE = `<h2 class="page-title">🔑 담당자·역할</h2>`;
@@ -30,8 +31,8 @@ function pendingCard(m, roles) {
   return `<div class="card" data-id="${esc(m.id)}">
     <div class="who-row">${avatar(m)}<div>${who(m)}</div></div>
     <div class="muted">카카오 「${esc(m.kakao_nickname || "별명 없음")}」 · 요청 ${esc(kstTime(m.created_at))}</div>
-    ${m.known_ministry_staff ? `<p style="margin-top:6px"><span class="badge ok">✅ 기존 사역 담당자와 같은 분</span></p>` : ""}
-    ${roleChecks(roles, m.known_ministry_staff ? ["ministry"] : [])}
+    ${m.known_ministry_staff ? `<p style="margin-top:6px"><span class="badge">ℹ️ 사역 담당자 명단의 이름·소속과 같아요 — 카카오 별명·사진으로 본인인지 확인해 주세요</span></p>` : ""}
+    ${roleChecks(roles, [])}
     <div class="acts">
       <button type="button" class="btn danger" data-act="reject">거절</button>
       <button type="button" class="btn primary" data-act="approve">승인</button>
@@ -87,7 +88,9 @@ function draw(el, r, me, call) {
     if (act === "approve") {
       const roles = picked(card);
       if (!roles.length) return toast("역할을 하나 이상 골라 주세요");
-      if (!(await dialog({ title: "승인할까요?", text: `${name} 님을 승인하고\n「${labelsOf(r.roles, roles)}」 역할을 드려요.`, ok: "승인" }))) return;
+      let text = `${name} 님을 승인하고\n「${labelsOf(r.roles, roles)}」 역할을 드려요.`;
+      if (roles.includes("super")) text += `\n${name} 님은 모든 메뉴와 담당자 승인·정지를 할 수 있게 돼요.`;
+      if (!(await dialog({ title: "승인할까요?", text, ok: "승인" }))) return;
       res = await busy(el, () => call("membersApprove", { member_id: m.id, roles }));
     } else if (act === "reject") {
       if (!(await dialog({ title: "거절할까요?", text: `${name} 님의 요청을 거절해요.\n「정지됨」으로 옮겨지고 들어올 수 없어요.`, ok: "거절", danger: true }))) return;
@@ -95,6 +98,9 @@ function draw(el, r, me, call) {
     } else if (act === "roles") {
       const roles = picked(card);
       if (!roles.length) return toast("역할을 하나 이상 골라 주세요 — 못 들어오게 하려면 「정지」를 눌러 주세요");
+      if (!m.roles.includes("super") && roles.includes("super")) {
+        if (!(await dialog({ title: "총괄 관리자 역할을 드릴까요?", text: `${name} 님은 모든 메뉴와 담당자 승인·정지를 할 수 있게 돼요.`, ok: "드리기" }))) return;
+      }
       res = await busy(el, () => call("membersSetRoles", { member_id: m.id, roles }));
     } else if (act === "disable") {
       if (!(await dialog({ title: "정지할까요?", text: `${name} 님은 다음 요청부터 바로 아무 메뉴도 쓸 수 없어요.`, ok: "정지", danger: true }))) return;
