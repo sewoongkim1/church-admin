@@ -88,3 +88,30 @@ a.card{display:block;color:inherit;text-decoration:none}
 .dlg{background:#fff;border-radius:16px;max-width:420px;width:100%;max-height:85vh;overflow-y:auto;padding:22px 20px}
 .dlg h3{font-size:1.05rem;color:var(--navy-dark);margin-bottom:8px}
 .dlg .body{font-size:14px;color:#333;margin-bottom:16px;white-space:pre-line}
+
+/* 찾기 칸 · 보기 칩(표준 v1: 한 줄 입력 44 · 칩 36 · 글씨 13 이상) */
+.search{width:100%;min-height:var(--tap);padding:0 12px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:1rem;margin-bottom:10px}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.tabs button{min-height:var(--chip);padding:0 14px;border-radius:999px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer}
+.tabs button.on{background:var(--navy);border-color:var(--navy);color:#fff;font-weight:700}
+.tabs em{font-style:normal;font-weight:800;margin-left:2px}
+.ap-sum{margin:4px 0 10px}
+.ap-sum i{font-style:normal}
+
+/* 임명현황 묶음(성경암송 .mapl-* 를 옮김 · 작은 글씨는 13px 로 올림) */
+.ap-g{border:1px solid var(--border);border-radius:12px;background:#fff;padding:10px 12px;margin-bottom:var(--gap)}
+.ap-h{display:flex;align-items:baseline;gap:8px;border-bottom:1px solid var(--light);padding-bottom:7px;margin-bottom:8px}
+.ap-h b{font-size:15px;font-weight:800;color:var(--navy)}
+.ap-h em{font-style:normal;font-size:13px;font-weight:800;color:#41506b;margin-left:auto}
+.ap-t{margin:0 0 9px}
+.ap-tn{font-size:13px;font-weight:800;color:#41506b;margin-bottom:4px}
+.ap-tn i{font-style:normal;font-size:13px;font-weight:700;color:var(--gray);margin-left:3px}
+.ap-ps{display:flex;flex-wrap:wrap;gap:5px}
+.ap-p{display:inline-block;font-size:13px;font-weight:700;color:#41506b;background:#f3f6fb;border-radius:8px;padding:4px 8px}
+.ap-one{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-top:1px solid var(--light)}
+.ap-one:first-child{border-top:none}
+.ap-tm{font-size:13px;color:#41506b;min-width:0}
+@media (min-width:1024px){
+  .ap-list{columns:2;column-gap:var(--gap)}
+  .ap-g{break-inside:avoid}
+}
