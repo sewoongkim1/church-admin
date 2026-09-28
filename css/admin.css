@@ -1,0 +1,90 @@
+/* 관리 화면 표준 v1 부품 — 값은 css/tokens.css 에서만 */
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}   /* display:flex 가 hidden 을 이기던 사고(2026-09-17) */
+html{-webkit-text-size-adjust:100%}
+body{font-family:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  background:var(--cream);color:#222;font-size:15px;line-height:1.5;min-height:100vh}
+button,input,select{font:inherit;color:inherit}
+a{color:var(--navy)}
+.boot{padding:40vh 20px 0;text-align:center;color:var(--gray)}
+
+/* 머리줄 — 늘 위에 붙는다 */
+.top{position:sticky;top:0;z-index:30;height:var(--head-h);display:flex;align-items:center;gap:var(--gap);
+  padding:0 12px;background:linear-gradient(135deg,var(--navy-dark),var(--navy));color:#fff}
+.top h1{font-size:1.05rem;font-weight:800;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .icon-btn{width:var(--tap);height:var(--tap);border:0;border-radius:10px;background:rgba(255,255,255,.12);color:#fff;font-size:1.2rem;cursor:pointer}
+.top .who{font-size:13px;opacity:.9;white-space:nowrap;max-width:30vw;overflow:hidden;text-overflow:ellipsis}
+.top .out{height:var(--chip);padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.35);
+  background:rgba(255,255,255,.12);color:#fff;font-size:13px;cursor:pointer;white-space:nowrap}
+
+/* 메뉴 — 폰: 왼쪽에서 나오는 서랍 / PC: 늘 보이는 옆 메뉴 */
+.nav{position:fixed;top:var(--head-h);left:0;bottom:0;width:min(var(--nav-w),84vw);background:#fff;
+  border-right:1px solid var(--border);overflow-y:auto;z-index:25;transform:translateX(-100%);transition:transform .2s;padding:8px 0 24px}
+body.nav-open .nav{transform:none}
+.nav-dim{position:fixed;top:var(--head-h);left:0;right:0;bottom:0;background:rgba(0,0,0,.3);z-index:24}
+.nav h3{font-size:13px;color:var(--gray);padding:14px 16px 6px;font-weight:700}
+.nav a{display:flex;align-items:center;gap:8px;min-height:var(--tap);padding:0 16px;color:#222;text-decoration:none;font-size:15px}
+.nav a.on{background:var(--ghost-bg);color:var(--navy);font-weight:700;border-left:4px solid var(--navy);padding-left:12px}
+.view{max-width:900px;margin:0 auto;padding:16px 16px 96px}
+@media (min-width:1024px){
+  .top .icon-btn.menu{display:none}
+  .nav{transform:none;transition:none}
+  .nav-dim{display:none!important}
+  .view{margin-left:var(--nav-w);max-width:none;padding:24px 32px 96px}
+}
+
+/* 단추 — 주 동작 48 · 보조 44 · 위험 44 */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:var(--tap);padding:0 16px;
+  border-radius:10px;border:1px solid var(--ghost-bd);background:var(--ghost-bg);color:var(--navy);
+  font-size:.95rem;font-weight:600;cursor:pointer;text-decoration:none}
+.btn.primary{min-height:var(--tap-lg);font-size:1rem;background:var(--navy);border-color:var(--navy);color:#fff}
+.btn.danger{background:var(--danger-bg);border-color:var(--danger-bd);color:var(--error)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.wide{width:100%}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.acts .btn{flex:1 1 0;min-width:0}
+.stack{display:flex;flex-direction:column;gap:8px}
+summary.btn{list-style:none}
+summary.btn::-webkit-details-marker{display:none}
+
+/* 카드·글 */
+.page-title{font-size:1.15rem;font-weight:800;color:var(--navy);margin:4px 0 12px}
+.sec-title{font-size:15px;font-weight:800;color:var(--navy-dark);margin:20px 0 8px}
+.card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin-bottom:var(--gap)}
+a.card{display:block;color:inherit;text-decoration:none}
+.muted{color:var(--gray);font-size:13px}
+.badge{display:inline-flex;align-items:center;min-height:24px;padding:0 8px;border-radius:999px;font-size:13px;background:var(--light);color:#333}
+.badge.ok{background:#e6f2e6;color:var(--green)}
+.who-row{display:flex;align-items:center;gap:10px}
+.avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;background:var(--light)}
+.empty{padding:28px 0;text-align:center;color:var(--gray);font-size:14px}
+
+/* 입력 */
+.field{display:block;margin-bottom:12px}
+.field > span{display:block;font-size:13px;color:var(--gray);margin-bottom:4px}
+.field input,.field select{width:100%;min-height:var(--tap);padding:0 12px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:1rem}
+.seg{display:flex;gap:8px;margin-bottom:12px}
+.seg button{flex:1;min-height:var(--chip);border-radius:999px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer}
+.seg button.on{background:var(--navy);border-color:var(--navy);color:#fff;font-weight:700}
+.checks{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.checks label{display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);padding:0 12px;border:1px solid var(--border);
+  border-radius:999px;background:#fff;font-size:13px;cursor:pointer}
+.checks input{width:18px;height:18px}
+
+/* 들어오는 화면 */
+.gate{max-width:380px;margin:10vh auto 0;padding:0 16px}
+.gate .card{padding:28px 22px;text-align:center}
+.gate h2{font-size:1.25rem;color:var(--navy);margin-bottom:8px}
+.gate p{color:var(--gray);font-size:14px;margin-bottom:18px}
+.gate form{text-align:left}
+.kakao{width:100%;min-height:var(--tap-lg);border:0;border-radius:10px;background:#FEE500;color:#191600;font-size:1rem;font-weight:700;cursor:pointer}
+.err{color:var(--error);font-size:14px;margin:6px 0 10px;min-height:1.2em}
+
+/* 토스트·확인 창 */
+.adm-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  max-width:min(92vw,480px);background:#222;color:#fff;padding:12px 16px;border-radius:12px;font-size:14px;z-index:60;
+  box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.dlg-dim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+.dlg{background:#fff;border-radius:16px;max-width:420px;width:100%;max-height:85vh;overflow-y:auto;padding:22px 20px}
+.dlg h3{font-size:1.05rem;color:var(--navy-dark);margin-bottom:8px}
+.dlg .body{font-size:14px;color:#333;margin-bottom:16px;white-space:pre-line}

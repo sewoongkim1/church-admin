@@ -1,0 +1,1 @@
+export async function render(el) { el.innerHTML = `<h2 class="page-title">📜 바꾼 기록</h2><p class="empty">준비 중</p>`; }
