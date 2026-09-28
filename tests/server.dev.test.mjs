@@ -89,7 +89,7 @@ before(async () => {
   const year = Number(cfg[0]?.value?.year) || 2027;
   for (const [team_id, team] of [[cats[0].id, "시험팀A"], [cats[1].id, "시험팀B"]]) {
     const [row] = await rest("ministry_orders", "POST", {
-      year, user_id: minTestUserId, team_id, committee: "시험부", team,
+      year, user_id: minTestUserId, team_id, committee: "시험부", team, name: "ca-test-min",
       status: "신청완료", phone: "010-0000-0000", source: "app",
     });
     minTestOrderIds.push(row.id);
