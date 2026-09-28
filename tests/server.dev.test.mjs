@@ -237,6 +237,7 @@ test("신청 현황: 목록 모양 · 동시 수정 · 취소 사유 · 임명 �
     assert.equal(x.phone, "010-0000-0000");
     assert.equal(x.canPush, false);
   }
+  for (const x of mine) assert.equal(x.who, "시험 0목장");
   const [a, bRow] = mine.sort((x, y) => x.team.localeCompare(y.team));
   // 접수 → 같은 expect 로 한 번 더 → conflict
   assert.equal((await call(m, "ministrySetStatus", { id: a.id, status: "접수완료", expect: "신청완료" })).body.ok, true);

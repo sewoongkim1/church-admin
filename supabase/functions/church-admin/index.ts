@@ -276,6 +276,23 @@ async function auditList(b: any) {
 // 연도는 성경암송과 같은 app_config('ministry').year(없으면 2027).
 const kstDay = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
+// PostgREST 는 한 번에 max_rows(기본 1000)까지만 돌려준다 — .limit 을 크게 줘도 **오류 없이 조용히** 잘린다.
+// 그래서 빈 쪽이 나올 때까지 쪽을 넘긴다(실제로 받은 줄 수만큼 넘기므로 max_rows 가 얼마든 빠지지 않는다).
+// ⚠️ 쪽을 넘길 때 차례가 흔들리지 않게 부르는 쪽은 order 를 id 까지 준다.
+const PAGE = 1000;
+async function allRows(build: () => any): Promise<any[]> {
+  const out: any[] = [];
+  for (let from = 0, guard = 0; guard < 100; guard++) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error) throw error;
+    const got = (data ?? []) as any[];
+    if (!got.length) return out;
+    out.push(...got);
+    from += got.length;
+  }
+  throw new Error("too-many-pages");
+}
+
 async function ministryYear(): Promise<number> {
   const { data, error } = await db.from("app_config").select("value").eq("key", "ministry").maybeSingle();
   if (error) throw error;
@@ -284,12 +301,10 @@ async function ministryYear(): Promise<number> {
 
 async function ministryAppointed() {
   const year = await ministryYear();
-  const { data, error } = await db.from("ministry_orders")
+  const rows = await allRows(() => db.from("ministry_orders")
     .select("user_id,name,who,committee,team,option,created_at,decided_at,source")
     .eq("year", year).eq("status", "임명확정")
-    .order("created_at", { ascending: true }).limit(5000);
-  if (error) throw error;
-  const rows = (data ?? []) as any[];
+    .order("created_at", { ascending: true }).order("id", { ascending: true }));
   // 이름·소속이 비어 있는 옛 행은 users 에서 채운다(api ministryList 와 같은 규칙)
   const need = [...new Set(rows.filter((r) => !r.name || !r.who).map((r) => r.user_id).filter(Boolean))];
   const umap = new Map<string, any>();
@@ -322,11 +337,9 @@ async function ministryAppointed() {
 // 원문: docs/port/ministry-status-legacy.md 1.4~1.7. 옛 화면과 같은 규칙 + 동시 수정 대조(expect).
 async function ministryList() {
   const year = await ministryYear();
-  const { data, error } = await db.from("ministry_orders")
+  const rows = await allRows(() => db.from("ministry_orders")
     .select("id,user_id,committee,team,option,position,status,created_at,decided_at,name,who,note,notified_at,phone,source")
-    .eq("year", year).order("created_at", { ascending: false }).limit(5000);
-  if (error) throw error;
-  const rows = (data ?? []) as any[];
+    .eq("year", year).order("created_at", { ascending: false }).order("id", { ascending: false }));
   const need = [...new Set(rows.filter((r) => !r.name || !r.who).map((r) => r.user_id).filter(Boolean))];
   const umap = new Map<string, any>();
   if (need.length) {
@@ -363,13 +376,18 @@ async function ministryList() {
 async function notifyAppointed(id: number) {
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   try {
+    // 성경암송 api 가 멈춰도 담당자의 「임명」이 오래 걸리지 않게 8초에서 끊고 「알림 실패」로 알린다.
     const res = await fetch(Deno.env.get("SUPABASE_URL") + "/functions/v1/api", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-internal-key": key },
       body: JSON.stringify({ action: "internalMinistryNotify", id }),
+      signal: AbortSignal.timeout(8000),
     });
     const j = await res.json().catch(() => null);
-    if (!j || j.ok !== true) return { pushed: 0, pushError: "notify-failed", already: false };
+    if (!j || j.ok !== true) {
+      console.error("notifyAppointed", res.status, j);
+      return { pushed: 0, pushError: "notify-failed", already: false };
+    }
     return { pushed: Number(j.pushed) || 0, pushError: j.pushError ?? null, already: !!j.already };
   } catch (e) {
     console.error("notifyAppointed", e);
