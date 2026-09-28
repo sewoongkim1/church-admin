@@ -58,6 +58,7 @@ const PROBE = {
   membersSetRoles: { member_id: ZERO, roles: ["ministry"] },
   membersSetStatus: { member_id: ZERO, status: "disabled" },
   auditList: { limit: 1 },
+  ministryAppointed: {},
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
@@ -97,9 +98,14 @@ test("모르는 액션 → 400", async () => {
 });
 
 test("권한 표: 사람 다섯 × 역할이 필요한 액션", async () => {
-  const want = { none: "not-registered", pending: "pending", disabled: "disabled", ministry: "forbidden", super: null };
+  const want = (who, role) => ({
+    none: "not-registered", pending: "pending", disabled: "disabled",
+    ministry: role === "ministry" ? null : "forbidden", super: null,
+  })[who];
   for (const [a, payload] of Object.entries(PROBE)) {
-    for (const [who, gate] of Object.entries(want)) {
+    const role = ACTION_ROLES[a];
+    for (const who of ["none", "pending", "disabled", "ministry", "super"]) {
+      const gate = want(who, role);
       const r = await call(people[who].token, a, payload);
       if (gate) {
         assert.equal(r.status, 403, `${who} ${a} ${JSON.stringify(r.body)}`);
@@ -172,4 +178,21 @@ test("승인 · 역할 · 정지 한 바퀴 + 스스로 잠그지 않기 + 기�
   for (const a of ["register", "register.update", "members.approve", "members.roles", "members.status"]) {
     assert.ok(acts.includes(a), "기록에 없음: " + a + " — " + JSON.stringify(acts));
   }
+});
+
+test("임명현황: 임명확정만 · 여덟 칸만 · 개수가 DB 와 같다", async () => {
+  const r = await call(people.ministry.token, "ministryAppointed");
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.ok(Number.isInteger(r.body.year));
+  const allowed = ["name", "who", "committee", "team", "option", "at", "decided_at", "source"];
+  for (const row of r.body.rows) {
+    assert.deepEqual(Object.keys(row).sort(), [...allowed].sort());
+    assert.match(row.at, /^(\d{4}-\d{2}-\d{2})?$/);
+    assert.ok(row.source === "app" || row.source === "paper");
+  }
+  // 옛 화면과 같은 명단인지 — 서비스 키로 DB 를 직접 세어 맞댄다
+  const res = await fetch(`${URL_}/rest/v1/ministry_orders?select=id&year=eq.${r.body.year}&status=eq.${encodeURIComponent("임명확정")}`,
+    { headers: { ...svc, Prefer: "count=exact", Range: "0-0" } });
+  const total = Number((res.headers.get("content-range") || "").split("/")[1]);
+  assert.equal(r.body.rows.length, total, "DB 의 임명확정 수와 다르다");
 });

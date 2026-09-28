@@ -269,6 +269,54 @@ async function auditList(b: any) {
   };
 }
 
+// ---------- 사역신청 (2단계 · 2026-09-28) ----------
+// 성경암송 api 의 ministryList 에서 임명현황에 필요한 칸만 옮겨 왔다 — 「누가 어디에」만.
+// ⚠️ 번호(phone)·담당자 메모(note)·user_id 는 싣지 않는다. 현황(3단계)이 오면 ministryList 를 따로 옮긴다.
+// 연도는 성경암송과 같은 app_config('ministry').year(없으면 2027).
+const kstDay = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+
+async function ministryYear(): Promise<number> {
+  const { data, error } = await db.from("app_config").select("value").eq("key", "ministry").maybeSingle();
+  if (error) throw error;
+  return Number((data?.value as any)?.year) || 2027;
+}
+
+async function ministryAppointed() {
+  const year = await ministryYear();
+  const { data, error } = await db.from("ministry_orders")
+    .select("user_id,name,who,committee,team,option,created_at,decided_at,source")
+    .eq("year", year).eq("status", "임명확정")
+    .order("created_at", { ascending: true }).limit(5000);
+  if (error) throw error;
+  const rows = (data ?? []) as any[];
+  // 이름·소속이 비어 있는 옛 행은 users 에서 채운다(api ministryList 와 같은 규칙)
+  const need = [...new Set(rows.filter((r) => !r.name || !r.who).map((r) => r.user_id).filter(Boolean))];
+  const umap = new Map<string, any>();
+  if (need.length) {
+    const { data: us, error: e2 } = await db.from("users").select("id,type,gu,mok,bu,grade,name").in("id", need);
+    if (e2) throw e2;
+    for (const u of (us ?? []) as any[]) umap.set(u.id, u);
+  }
+  return {
+    ok: true,
+    year,
+    rows: rows.map((r) => {
+      const u = umap.get(r.user_id);
+      const uWho = u ? (u.type === "교구" ? [u.gu, u.mok ? u.mok + "목장" : ""] : [u.bu, u.grade]).filter(Boolean).join(" ") : "";
+      return {
+        name: r.name || u?.name || "",
+        who: r.who || uWho,
+        committee: r.committee ?? "",
+        team: r.team ?? "",
+        option: r.option ?? "",
+        at: r.created_at ? kstDay(r.created_at) : "",
+        decided_at: r.decided_at ?? null,
+        source: r.source === "paper" ? "paper" : "app",
+      };
+    }),
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -295,6 +343,7 @@ Deno.serve(async (req) => {
       case "membersSetRoles":  return json(await membersSetRoles(ctx, b));
       case "membersSetStatus": return json(await membersSetStatus(ctx, b));
       case "auditList":        return json(await auditList(b));
+      case "ministryAppointed": return json(await ministryAppointed());
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);

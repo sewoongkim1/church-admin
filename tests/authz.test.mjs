@@ -38,6 +38,21 @@ test("knownRoles 는 super 를 늘 담는다", () => {
   assert.deepEqual(knownRoles(), [...knownRoles()].sort());
 });
 
+test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통과, 역할 없는 분은 막힘", () => {
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["ministry"] }, "pending"],
+    [{ status: "disabled", roles: ["ministry"] }, "disabled"],
+    [{ status: "active", roles: [] }, "forbidden"],
+    [{ status: "active", roles: ["ministry"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  const ministryActions = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "ministry");
+  assert.deepEqual(ministryActions, ["ministryAppointed"]);
+  for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
+  assert.deepEqual(knownRoles(), ["ministry", "super"]);
+});
+
 test("norm — 공백·자모분리(NFD)", () => {
   assert.equal(norm("  김   세웅 "), "김 세웅");
   assert.equal(norm("\u1100\u1175\u11B7"), "김");

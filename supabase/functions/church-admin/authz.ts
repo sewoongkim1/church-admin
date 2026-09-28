@@ -14,6 +14,8 @@ export const ACTION_ROLES: Record<string, string | null> = {
   membersSetRoles: "super",
   membersSetStatus: "super",
   auditList: "super",
+  // 사역신청(2단계 · 2026-09-28) — 임명현황. 읽기만, 임명확정만, 번호·메모 없음.
+  ministryAppointed: "ministry",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";
