@@ -65,6 +65,11 @@ test("parseIdentity — 틀린 입력", () => {
   assert.deepEqual(parseIdentity({ gu: "화평", mok: "20", name: "가".repeat(41) }), { ok: false, error: "too-long" });
 });
 
+test("parseIdentity — 특수문자(postgrest .in() 을 깨는 문자)는 거절", () => {
+  assert.deepEqual(parseIdentity({ gu: "화평", mok: "20", name: '김,"' }), { ok: false, error: "bad-char" });
+  assert.deepEqual(parseIdentity({ gu: "화평", mok: "2|0", name: "김세웅" }), { ok: false, error: "bad-char" });
+});
+
 test("identityKey — 성경암송 앱 users.identity_key 와 같은 꼴", () => {
   assert.equal(identityKey({ type: "교구", gu: "화평", mok: "20", bu: "", grade: "", name: "김세웅" }), "교구|화평|20|||김세웅");
 });
@@ -102,4 +107,6 @@ test("kakaoAvatar — http 는 https 로, 주소가 아니면 비움", () => {
   assert.equal(kakaoAvatar({ avatar_url: 'https://a.b/x" onerror="y' }), "");
   assert.equal(kakaoAvatar({}), "");
   assert.equal(kakaoAvatar(null), "");
+  assert.equal(kakaoAvatar({ avatar_url: "https://evil.example/x.jpg" }), "");
+  assert.equal(kakaoAvatar({ avatar_url: "http://img1.kakaocdn.net/dn/a.jpg" }), "https://img1.kakaocdn.net/dn/a.jpg");
 });

@@ -138,6 +138,8 @@ test("공개 키·로그인 사용자 모두 admin_* 표를 직접 못 읽는다
 });
 
 test("register: 틀린 칸 → 등록 → 대기 중엔 고치기 → 승인된 분은 못 바꿈", async () => {
+  const badChar = await call(people.none.token, "register", { identity: { type: "교구", gu: "사랑", mok: "1", name: '김,"' } });
+  assert.equal(badChar.body.error, "bad-char");
   const bad = await call(people.none.token, "register", { identity: { type: "교구", gu: "사랑", name: "" } });
   assert.equal(bad.body.error, "name-required");
   const r1 = await call(people.none.token, "register", { identity: { type: "교구", gu: "사랑", mok: "1", name: "시험등록" } });

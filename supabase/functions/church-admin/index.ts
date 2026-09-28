@@ -79,7 +79,8 @@ async function activeSuperIds(): Promise<string[]> {
 // ---------- 기존 사역 담당자와 같은 분인지 (갈아타기 동안 승인을 돕는 표시일 뿐 — 권한을 주지 않는다) ----------
 // ⚠️ 키가 아니라 사람(user_id)으로 맞댄다 — 소속을 고친 분의 옛 키는 user_identity_aliases 로 간다(2026-09-17 리뷰).
 async function keysToUserIds(list: string[]): Promise<Map<string, string>> {
-  const uniq = [...new Set(list.map((k) => norm(k)).filter(Boolean))];
+  // 옛 app_config.ministryAdmins 에 이상한 키가 섞여 있어도 .in() 이 깨지지 않게 걸러 낸다(authz.parseIdentity 의 bad-char 참고)
+  const uniq = [...new Set(list.map((k) => norm(k)).filter((k) => k && !/["\\,()]/.test(k)))];
   const out = new Map<string, string>();
   if (!uniq.length) return out;
   const { data: us, error: e1 } = await db.from("users").select("id,identity_key").in("identity_key", uniq);
@@ -126,8 +127,13 @@ async function register(ctx: Ctx, b: any) {
   if (!p.ok) return { ok: false, error: p.error };
   const row = { ...p.identity, kakao_nickname: kakaoNickname(ctx.meta), kakao_avatar: kakaoAvatar(ctx.meta) };
   if (ctx.member) {
-    const { error } = await db.from("admin_members").update(row).eq("id", ctx.member.id).eq("status", "pending");
+    // 바뀐 칸이 없으면(여섯 칸 + kakao 두 칸) 업데이트·기록 없이 바로 돌려준다
+    const unchanged = (Object.keys(row) as (keyof typeof row)[]).every((k) => (ctx.member as any)[k] === row[k]);
+    if (unchanged) return await me(ctx);
+    const { data: upd, error } = await db.from("admin_members").update(row)
+      .eq("id", ctx.member.id).eq("status", "pending").select("id");
     if (error) throw error;
+    if (!upd?.length) return { ok: false, error: "already-registered" };   // 그 사이 승인됨
   } else {
     const { error } = await db.from("admin_members").insert({ ...row, auth_user_id: ctx.uid, status: "pending" });
     if (error) {
@@ -245,7 +251,7 @@ async function auditList(b: any) {
   const limit = Math.min(Math.max(Number(b.limit) || 100, 1), 200);
   let q = db.from("admin_audit").select("id,at,member_id,action,target,detail").order("id", { ascending: false }).limit(limit);
   const beforeId = Number(b.before);
-  if (Number.isFinite(beforeId) && beforeId > 0) q = q.lt("id", beforeId);
+  if (Number.isSafeInteger(beforeId) && beforeId > 0) q = q.lt("id", beforeId);
   const { data, error } = await q;
   if (error) throw error;
   const rows = (data ?? []) as any[];
@@ -275,7 +281,10 @@ Deno.serve(async (req) => {
   if (!b || typeof b !== "object" || Array.isArray(b)) return json({ ok: false, error: "bad-json" }, 400);
   const action = String(b.action ?? "");
   try {
-    const ctx = await loadCtx(ud.user.id, ud.user.user_metadata);
+    // user_metadata 는 로그인한 본인이 auth.updateUser 로 고칠 수 있다 — 승인 목록의 별명·사진은 카카오가 준 원본에서 읽는다
+    const kakao = (ud.user.identities ?? []).find((i: any) => i.provider === "kakao");
+    const meta = kakao?.identity_data ?? {};
+    const ctx = await loadCtx(ud.user.id, meta);
     const gate = canCall(action, ctx.member ? { status: ctx.member.status, roles: ctx.roles } : null);
     if (gate !== "ok") return json({ ok: false, error: gate }, gate === "unknown-action" ? 400 : 403);
     switch (action) {
@@ -291,7 +300,9 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "unknown-action" }, 400);
   } catch (e) {
     console.error(action, e);
-    const code = String((e as any)?.code ?? (e as any)?.message ?? e).slice(0, 80);
+    // e.message 를 응답에 싣지 않는다 — 내부 사정(표 이름·SQL 조각)이 클라이언트로 새 나갈 수 있다. 메시지는 로그로만.
+    const rawCode = (e as any)?.code;
+    const code = typeof rawCode === "string" ? rawCode.slice(0, 40) : "unknown";
     return json({ ok: false, error: "server", code }, 500);
   }
 });

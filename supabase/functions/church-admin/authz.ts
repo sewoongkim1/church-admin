@@ -58,6 +58,9 @@ export function parseIdentity(x: unknown): ParsedIdentity {
     ? { type, gu: f("gu"), mok: f("mok"), bu: "", grade: "", name: f("name") }
     : { type, gu: "", mok: "", bu: f("bu"), grade: f("grade"), name: f("name") };
   if (Object.values(identity).some((v) => v.length > MAX_LEN)) return { ok: false, error: "too-long" };
+  // supabase-js 의 .in() 은 값에 , ( ) 가 있으면 "…" 로 감싸기만 하고 " \ 를 이스케이프하지 않는다 —
+  // 이름을 김," 로 등록하면 membersList 가 그 사람이 대기하는 동안 500 이 된다. | 는 identity_key 의 구분자.
+  if (Object.values(identity).some((v) => /["\\,()|]/.test(v))) return { ok: false, error: "bad-char" };
   if (!identity.name) return { ok: false, error: "name-required" };
   if (type === "교구" && (!identity.gu || !identity.mok)) return { ok: false, error: "gu-mok-required" };
   if (type === "교회학교" && (!identity.bu || !identity.grade)) return { ok: false, error: "bu-grade-required" };
@@ -99,10 +102,11 @@ export function kakaoNickname(meta: unknown): string {
 }
 
 // 카카오 프로필 사진 — 승인 목록에서 본인 확인용(카카오 동의항목에 그렇게 적었다).
-// 카카오는 http:// 로 준다 → https 페이지에서 막히지 않게 https:// 로. 주소 꼴이 아니면 버린다(<img src> 에 들어간다).
+// 카카오는 http:// 로 준다 → https 페이지에서 막히지 않게 https:// 로.
+// 호스트를 카카오 CDN 만 허용한다 — 다른 서버 주소면 목록을 여는 관리자의 IP·시각이 그 서버에 남는다.
 export function kakaoAvatar(meta: unknown): string {
   const m = (meta && typeof meta === "object" ? meta : {}) as Record<string, unknown>;
   const v = String(m.avatar_url || m.picture || "").trim();
-  if (!/^https?:\/\/[^\s"'<>]+$/i.test(v)) return "";
+  if (!/^https?:\/\/([a-z0-9-]+\.)*kakaocdn\.net\/[^\s"'<>]*$/i.test(v)) return "";
   return v.replace(/^http:\/\//i, "https://").slice(0, 500);
 }
