@@ -1,0 +1,43 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # 여기서 실패하면 아래 배포 단계가 아예 안 돈다.
+      - name: 배포 전 점검
+        run: python3 tools/preflight.py
+      - name: 파일마다 캐시 해시 붙이기(커밋하지 않음)
+        run: python3 tools/stamp.py
+      - uses: actions/configure-pages@v5
+      # 화면 파일만 올린다 — supabase/·tests/·tools/·docs 는 사이트에 나가지 않는다.
+      - name: 올릴 것만 모으기
+        run: |
+          mkdir _site
+          cp -r index.html js css _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: "_site"
+      - id: deployment
+        uses: actions/deploy-pages@v4

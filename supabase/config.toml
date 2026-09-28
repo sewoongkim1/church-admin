@@ -1,0 +1,6 @@
+# supabase CLI 가 이 폴더를 프로젝트로 알아보게 하는 최소 설정. 배포 대상은 명령마다 --project-ref 로 준다.
+project_id = "church-admin"
+
+[functions.church-admin]
+# 게이트웨이 검사는 끈다 — 토큰은 index.ts 가 요청마다 auth.getUser 로 검사한다.
+verify_jwt = false

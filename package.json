@@ -1,0 +1,9 @@
+{
+  "name": "church-admin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/authz.test.mjs tests/router.test.mjs tests/ui.test.mjs tests/registry.test.mjs",
+    "preflight": "python tools/preflight.py"
+  }
+}

@@ -1,0 +1,9 @@
+:root{
+  --navy:#1a3a6b; --navy-dark:#0d1b3e; --gold:#c8a84b;
+  --cream:#fdf8f0; --gray:#6b778c; --border:#ddd6c8; --light:#f3f0ea;
+  --green:#2c5f2d; --error:#c0392b;
+  --ghost-bg:#eef3fb; --ghost-bd:#a9c3e8; --danger-bg:#fdeceb; --danger-bd:#e7b3ad;
+  /* 관리 화면 표준 v1 (bible-memorize-church-app-v2 docs/notes/ministry-admin-ui.md) */
+  --tap-lg:48px; --tap:44px; --chip:36px; --gap:10px; --gap-s:6px; --card-pad:18px;
+  --head-h:56px; --nav-w:240px;
+}
