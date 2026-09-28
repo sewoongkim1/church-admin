@@ -40,7 +40,7 @@ test("knownRoles 는 super 를 늘 담는다", () => {
 
 test("norm — 공백·자모분리(NFD)", () => {
   assert.equal(norm("  김   세웅 "), "김 세웅");
-  assert.equal(norm("김"), "김");
+  assert.equal(norm("\u1100\u1175\u11B7"), "김");
   assert.equal(norm(null), "");
   assert.equal(norm(20), "20");
 });
