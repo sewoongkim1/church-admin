@@ -35,7 +35,7 @@ jobs:
       - name: 올릴 것만 모으기
         run: |
           mkdir _site
-          cp -r index.html privacy.html js css _site/
+          cp -r index.html privacy.html favicon.png apple-touch-icon.png img js css _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: "_site"
