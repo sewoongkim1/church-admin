@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sourceLine, affText, initialOf, csvText, EXPORT_COLS, detailRows, searchPayload, pageInfo, exportName, familyOrder }
+import { sourceLine, affText, initialOf, csvText, EXPORT_COLS, detailRows, searchPayload, pageInfo, exportName, familyOrder,
+  pickSummary, filterChoices, sameSet }
   from "../js/menus/people/people-logic.js";
 import { churchBadgeHtml, hasChurch } from "../js/menus/people/church-badge.js";
 
@@ -26,9 +27,48 @@ test("initialOf · pageInfo · exportName · searchPayload", () => {
   assert.deepEqual(pageInfo(120, 1, 50), { from: 51, to: 100, hasPrev: true, hasNext: true });
   assert.deepEqual(pageInfo(0, 0, 50), { from: 0, to: 0, hasPrev: false, hasNext: false });
   assert.equal(exportName({ source_date: "2026-09-29" }, 12), "교인명부_2026-09-29_12명.csv");
-  assert.deepEqual(searchPayload({ q: "김", mok1: "", kind2: "", kind3: "", position: "", noPhoto: 1, page: 2 }),
-    { q: "김", mok1: "", kind2: "", kind3: "", position: "", noPhoto: true, household: null, page: 2 });
+  assert.deepEqual(searchPayload({ q: "김", mok1: [], kind2: [], kind3: [], position: [], noPhoto: 1, page: 2 }),
+    { q: "김", mok1: [], kind2: [], kind3: [], position: [], noPhoto: true, household: null, page: 2 });
   assert.equal(searchPayload({ household: 45458 }).household, 45458);
+  // 거르기는 배열 — 여러 개 · 빈 값 빼기 · 문자열 하나(옛 조건)는 한 칸짜리로 · 없으면 빈 배열
+  const p = searchPayload({ mok1: ["기쁨", "", "소망"], kind2: "청년" });
+  assert.deepEqual(p.mok1, ["기쁨", "소망"]);
+  assert.deepEqual(p.kind2, ["청년"]);
+  assert.deepEqual(p.kind3, []);
+  assert.deepEqual(p.position, []);
+  const src = { mok1: ["기쁨"] };
+  searchPayload(src).mok1.push("x");
+  assert.deepEqual(src.mok1, ["기쁨"], "화면 상태를 건드리지 않는다(사본)");
+});
+
+test("pickSummary — 없음 「전체」 · 1~2개는 잇고 · 3개 이상은 「첫째 외 N」", () => {
+  assert.equal(pickSummary([]), "전체");
+  assert.equal(pickSummary(undefined), "전체");
+  assert.equal(pickSummary(["기쁨"]), "기쁨");
+  assert.equal(pickSummary(["기쁨", "소망"]), "기쁨 · 소망");
+  assert.equal(pickSummary(["기쁨", "소망", "믿음"]), "기쁨 외 2");
+  assert.equal(pickSummary(["a", "b", "c", "d", "e"]), "a 외 4");
+});
+
+test("filterChoices — 현황(stats)에서 [값, 인원] · 「없음」 칸은 뺀다", () => {
+  const c = filterChoices({
+    gu: [{ gu: "믿음", n: 3, moks: 1 }, { gu: "기쁨", n: 2, moks: 2 }, { gu: "(목장 없음)", n: 9, moks: 0 }],
+    kind2: [["장년", 4], ["(없음)", 2], ["청년", 1]],
+    kind3: [["출석교인", 5]],
+    position: [["집사", 2], ["(없음)", 7]],
+  });
+  assert.deepEqual(c.mok1, [["믿음", 3], ["기쁨", 2]]);
+  assert.deepEqual(c.kind2, [["장년", 4], ["청년", 1]]);
+  assert.deepEqual(c.kind3, [["출석교인", 5]]);
+  assert.deepEqual(c.position, [["집사", 2]]);
+  assert.deepEqual(filterChoices({}), { mok1: [], kind2: [], kind3: [], position: [] });
+});
+
+test("sameSet — 판이 닫힐 때 고른 것이 바뀌었나(차례는 보지 않는다)", () => {
+  assert.equal(sameSet([], []), true);
+  assert.equal(sameSet(["a", "b"], ["b", "a"]), true);
+  assert.equal(sameSet(["a"], ["a", "b"]), false);
+  assert.equal(sameSet(["a"], ["b"]), false);
 });
 
 test("familyOrder — 세대주가 맨 앞, 그다음 나이 많은 차례, 같으면 가나다", () => {

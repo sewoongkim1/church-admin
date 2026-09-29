@@ -16,7 +16,7 @@ test("parseSearch — 숫자 4자리 이상은 전화 뒷자리, 그 밖은 이�
   assert.equal(parseSearch({ page: 1.5 }).ok, false);
   assert.equal(parseSearch({ noPhoto: "true" }).s.noPhoto, false);  // 참은 true 만
   assert.equal(parseSearch({ noPhoto: true }).s.noPhoto, true);
-  assert.equal(parseSearch({ mok1: " 기쁨 " }).s.mok1, "기쁨");
+  assert.deepEqual(parseSearch({ mok1: " 기쁨 " }).s.mok1, ["기쁨"]);   // 문자열 하나 → 한 칸짜리 배열(옛 화면 호환)
   assert.equal(parseSearch({}).s.household, null);                  // 가족 보기(세대주 교인ID)
   assert.equal(parseSearch({ household: 45458 }).s.household, 45458);
   assert.equal(parseSearch({ household: "45458" }).s.household, 45458);
@@ -27,8 +27,32 @@ test("parseSearch — 숫자 4자리 이상은 전화 뒷자리, 그 밖은 이�
   assert.equal(PHOTO_TTL, 600);   // 사진 주소 10분 — 설계 값
 });
 
+test("parseSearch — 거르기 넷은 여러 개(배열) · 다듬기 · 겹침 · 50개 · 따옴표/역슬래시는 invalid", () => {
+  const s = parseSearch({ mok1: [" 기쁨 ", "소망", "기쁨", "", null], kind2: [], kind3: "", position: ["집사"] }).s;
+  assert.deepEqual(s.mok1, ["기쁨", "소망"]);                        // trim · 겹침 · 빈 값 빼기
+  assert.deepEqual(s.kind2, []);
+  assert.deepEqual(s.kind3, []);
+  assert.deepEqual(s.position, ["집사"]);
+  assert.deepEqual(parseSearch({}).s.mok1, []);
+  assert.deepEqual(parseSearch({ kind3: "청년(대예배출석)" }).s.kind3, ["청년(대예배출석)"]);   // 괄호는 받는다(.in() 이 따옴표로 싼다)
+  assert.deepEqual(parseSearch({ kind2: ["a, b"] }).s.kind2, ["a, b"]);
+  assert.deepEqual(parseSearch({ mok1: ["가".repeat(30)] }).s.mok1, ["가".repeat(20)]);        // 20자
+  assert.deepEqual(parseSearch({ mok1: ["가"] }).s.mok1, ["가"]);           // NFC(자모 분리 → 완성형)
+  assert.equal(parseSearch({ mok1: ['기"쁨'] }).ok, false);           // .in() 이 이스케이프하지 않는다
+  assert.equal(parseSearch({ position: ["집\\사"] }).ok, false);        // 역슬래시도
+  assert.equal(parseSearch({ kind2: 'a"' }).ok, false);
+  const many = Array.from({ length: 51 }, (_, i) => "v" + i);
+  assert.equal(parseSearch({ mok1: many }).ok, false);                // 한 거르기에 50개까지
+  assert.equal(parseSearch({ mok1: many.slice(0, 50) }).s.mok1.length, 50);
+  assert.equal(parseSearch({ mok1: [...many.slice(0, 50), "v0"] }).s.mok1.length, 50);   // 겹침은 뺀 뒤 센다
+  assert.equal(parseSearch({ mok1: { a: 1 } }).ok, false);            // 배열·문자열이 아니면 invalid
+  assert.equal(parseSearch({ mok1: [{}] }).ok, false);
+});
+
 test("searchDetail — 빈 거르기는 기록에 남기지 않는다", () => {
-  assert.deepEqual(searchDetail(parseSearch({ mok1: "기쁨", noPhoto: true }).s), { mok1: "기쁨", noPhoto: true });
+  assert.deepEqual(searchDetail(parseSearch({ mok1: "기쁨", noPhoto: true }).s), { mok1: ["기쁨"], noPhoto: true });
+  assert.deepEqual(searchDetail(parseSearch({ mok1: ["기쁨", "소망"], kind2: [], position: ["집사"] }).s),
+    { mok1: ["기쁨", "소망"], position: ["집사"] });
   assert.deepEqual(searchDetail(parseSearch({ household: 45458 }).s), { household: "45458" });
   assert.deepEqual(searchDetail(parseSearch({}).s), {});
 });

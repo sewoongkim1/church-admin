@@ -4,13 +4,36 @@ import { MATCH_GU } from "./people-match.ts";
 export const PAGE_SIZE = 50;    // 목록 한 쪽
 export const PHOTO_TTL = 600;   // 사진 주소 만료(초) — 새어 나가도 10분 뒤 닫힌다
 
+// 거르기 넷(교구·구분·출석·직분)은 여러 개 — 빈 배열이면 거르지 않는다(2026-09-29 체크박스)
+export const FILTER_KEYS = ["mok1", "kind2", "kind3", "position"] as const;
+export const FILTER_MAX = 50;   // 한 거르기에 고를 수 있는 값 — 가장 긴 목록(직분·교구)도 이보다 짧다
+
 export type Search = {
-  name: string; tail: string; mok1: string; kind2: string; kind3: string; position: string; noPhoto: boolean;
+  name: string; tail: string; mok1: string[]; kind2: string[]; kind3: string[]; position: string[]; noPhoto: boolean;
   household: number | null;   // 가족 보기 — 신앙세대주의 교인ID
   page: number;
 };
 
 const clean = (s: unknown, max = 20): string => String(s ?? "").normalize("NFC").trim().slice(0, max);
+
+// 거르기 값 목록 — 문자열 하나(옛 화면)는 한 칸짜리로. 값마다 NFC·trim·20자, 빈 값·겹침은 뺀다.
+// ⚠️ supabase-js .in() 은 , ( ) 는 따옴표로 싸 주지만 " 와 \ 는 이스케이프하지 않는다 — 그런 값은 받지 않는다.
+//    괄호가 든 값(「청년(대예배출석)」)은 실제로 있으니 받아야 한다.
+function cleanList(v: unknown): string[] | null {
+  if (v === undefined || v === null) return [];
+  const raw = typeof v === "string" ? [v] : Array.isArray(v) ? v : null;
+  if (!raw) return null;
+  const out: string[] = [];
+  for (const x of raw) {
+    if (x === null || x === undefined) continue;
+    if (typeof x !== "string") return null;
+    const t = x.normalize("NFC");
+    if (t.includes('"') || t.includes("\\")) return null;
+    const c = clean(t);
+    if (c && !out.includes(c)) out.push(c);
+  }
+  return out.length > FILTER_MAX ? null : out;
+}
 
 // 검색어 하나로 이름과 전화 뒷자리를 가른다 — 숫자(띄어쓰기·- 빼고)만 4~11자리면 전화, 그 밖은 이름.
 // 이름은 한글·영문·숫자·- 만 남긴다(ilike 의 % _ 가 사용자 글자로 들어가지 않게).
@@ -24,14 +47,20 @@ export function parseSearch(b: any): { ok: true; s: Search } | { ok: false; erro
   const hv = b?.household;
   const household = hv === undefined || hv === null || hv === "" ? null : Number(hv);
   if (household !== null && (!Number.isSafeInteger(household) || household <= 0)) return { ok: false, error: "invalid" };
-  return { ok: true, s: { name, tail, mok1: clean(b?.mok1), kind2: clean(b?.kind2), kind3: clean(b?.kind3),
-    position: clean(b?.position), noPhoto: b?.noPhoto === true, household, page } };
+  const f: Record<string, string[]> = {};
+  for (const k of FILTER_KEYS) {
+    const list = cleanList(b?.[k]);
+    if (!list) return { ok: false, error: "invalid" };
+    f[k] = list;
+  }
+  return { ok: true, s: { name, tail, mok1: f.mok1, kind2: f.kind2, kind3: f.kind3, position: f.position,
+    noPhoto: b?.noPhoto === true, household, page } };
 }
 
-// 열람 기록에 남길 거르기 — 빈 것은 뺀다
-export function searchDetail(s: Search): Record<string, string | boolean> {
-  const out: Record<string, string | boolean> = {};
-  for (const k of ["mok1", "kind2", "kind3", "position"] as const) if (s[k]) out[k] = s[k];
+// 열람 기록에 남길 거르기 — 빈 것은 뺀다. 여러 개는 배열 그대로(바꾼 기록 화면이 「기쁨·소망」으로 잇는다)
+export function searchDetail(s: Search): Record<string, string[] | string | boolean> {
+  const out: Record<string, string[] | string | boolean> = {};
+  for (const k of FILTER_KEYS) if (s[k].length) out[k] = [...s[k]];
   if (s.noPhoto) out.noPhoto = true;
   if (s.household) out.household = String(s.household);
   return out;

@@ -13,7 +13,7 @@ import { statusPatch } from "./ministry.ts";
 import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINISTRY_FREQ_COLS, MINISTRY_FREQ_KEYS } from "./catalog.ts";
 import { appIdentityKey, legacyNorm, ministryPaperKeys, ministryPaperOne, paperName, PAPER_MAX_ROWS } from "./paper.ts";
 import { applicantFromPaper, applicantFromWho, churchFor, lookupKeys, toCand, type Cand } from "./people-match.ts";
-import { parseSearch, searchDetail, statsOf, PAGE_SIZE, PHOTO_TTL, type Search } from "./people-query.ts";
+import { parseSearch, searchDetail, statsOf, PAGE_SIZE, PHOTO_TTL, FILTER_KEYS, type Search } from "./people-query.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -859,10 +859,8 @@ async function churchLookup(names: unknown[]): Promise<Map<string, Cand[]> | nul
 function peopleFilter(q: any, s: Search) {
   if (s.name) q = q.ilike("name_key", `%${s.name}%`);
   if (s.tail) q = q.ilike("phone_digits", `%${s.tail}%`);
-  if (s.mok1) q = q.eq("mok1", s.mok1);
-  if (s.kind2) q = q.eq("kind2", s.kind2);
-  if (s.kind3) q = q.eq("kind3", s.kind3);
-  if (s.position) q = q.eq("position", s.position);
+  // 거르기 넷은 여러 개(.in) — 빈 배열이면 거르지 않는다. 값의 " \ 는 parseSearch 가 이미 막았다(.in() 이 이스케이프 안 함)
+  for (const k of FILTER_KEYS) if (s[k].length) q = q.in(k, s[k]);
   if (s.noPhoto) q = q.eq("has_photo", false);
   if (s.household) q = q.eq("household_id", s.household);
   return q;
