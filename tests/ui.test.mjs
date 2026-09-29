@@ -53,3 +53,15 @@ test("dialog — cls 는 .dlg 에 클래스로 · 빈 제목이면 h3 를 숨긴
   assert.equal(b.querySelector("h3").textContent, "지울까요?");
   assert.equal(b.querySelector(".body").textContent, "되돌릴 수 없어요");
 }));
+
+test("성경필사(암송) 오류 코드 — 모두 한국말(「처리하지 못했어요」로 새지 않게 · 설계 §6)", () => {
+  const codes = ["not-found", "conflict", "already", "app-row-note-only", "app-row", "eligibility-event", "needs-confirm",
+    "exists", "bad-event-id", "no-title", "bad-period", "period-reversed", "bad-status", "bad-list-until",
+    "list-until-before-close", "before-eligibility", "bad-char", "too-long", "bad-type", "no-name", "bad-group",
+    "no-group", "bad-sub", "note-too-long", "too-many"];
+  for (const c of codes) assert.notEqual(errorText({ error: c }), "처리하지 못했어요", c);
+  // 사역 취소 사유와 이 메뉴의 담당자 메모가 같은 코드를 쓴다 — 한 문장이 둘 다에 맞게
+  assert.equal(errorText({ error: "note-too-long" }), "메모·사유는 500자까지 적을 수 있어요");
+  // 서버 checkRow 는 교구 줄에도 no-group 을 준다(소속이 비면) — 「부서」만 말하지 않는다
+  assert.match(errorText({ error: "no-group" }), /교구/);
+});
