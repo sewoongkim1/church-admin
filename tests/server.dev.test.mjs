@@ -134,15 +134,17 @@ before(async () => {
   catalogRow = row0;
 
   // 교인명부 — 두 분(하나는 사진 있음) + 올린 기록 한 줄(명부 기준일이 있어야 교적 표시가 나온다) + 사진 한 장
-  await rest("church_people", "POST", [
+  // ⚠️ PostgREST 배치 insert 는 배열 안 객체들의 칸이 전부 같아야 한다(PGRST102) — 두 분의 칸이
+  //   달라(주소·직분 등) 한 번에 넣으면 실패하므로 따로 넣는다.
+  await rest("church_people", "POST",
     { person_id: 990000001, name: "ca-test-min", name_key: "ca-test-min", mok1: "시험", mok2: "시험", mok3: "시험-0목장",
       mok_path: "시험 > 시험 > 시험-0목장", kind1: "교인", kind2: "장년", kind3: "출석교인", position: "집사",
       phone1: "010-0000-0000", phone_digits: "01000000000", address: "시험시 비밀주소 " + STAMP, has_photo: true, photo_hash: "t",
-      household_id: 990000001, household_head: "ca-test-min", household_rel: "본인" },
+      household_id: 990000001, household_head: "ca-test-min", household_rel: "본인" });
+  await rest("church_people", "POST",
     { person_id: 990000002, name: PAPER_NAME, name_key: PAPER_NAME, mok1: "시험", mok2: "시험", mok3: "시험-5목장",
       phone1: "010-1234-5678", phone_digits: "01012345678", has_photo: false,
-      household_id: 990000001, household_head: "ca-test-min", household_rel: "아들1" },   // 두 분은 한 가족
-  ]);
+      household_id: 990000001, household_head: "ca-test-min", household_rel: "아들1" });   // 두 분은 한 가족
   const [imp] = await rest("church_people_imports", "POST",
     { source_date: "2000-01-01", total: 2, added: 2, changed: 0, removed: 0, photos: 1 });
   peopleImportId = imp.id;
