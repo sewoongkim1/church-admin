@@ -12,7 +12,6 @@ const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
 const BLANK = { q: "", mok1: "", kind2: "", kind3: "", position: "", noPhoto: false, page: 0, household: null, householdName: "" };
 let state = { ...BLANK };
 let options = null;   // 거르기 목록 — 교인 현황(peopleStats)에서 한 번 받는다
-const mqWide = window.matchMedia("(min-width:1024px)");
 
 const iniHtml = (name, cls) => `<span class="${cls} pp-ini" aria-hidden="true">${esc(initialOf(name))}</span>`;
 const photoHtml = (p, cls) => p.photo
@@ -36,7 +35,7 @@ const cardsHtml = (rows) => rows.map((p) => `<div class="pp-card" data-id="${esc
 
 const tableHtml = (rows) => `<table class="pp-table"><thead><tr><th>사진</th><th>이름(직분)</th><th>성별·나이</th>` +
   `<th>소속</th><th>구분</th><th>연락처</th></tr></thead><tbody>` +
-  rows.map((p) => `<tr class="pp-row" data-id="${esc(p.person_id)}" tabindex="0"><td>${photoHtml(p, "pp-ph sm")}</td>` +
+  rows.map((p) => `<tr class="pp-row" data-id="${esc(p.person_id)}" role="button" tabindex="0"><td>${photoHtml(p, "pp-ph sm")}</td>` +
     `<td>${relHtml(p)}<b>${esc(p.name)}</b>${posHtml(p)}</td><td>${esc(ageText(p))}</td><td>${esc(affText(p))}</td>` +
     `<td>${esc(p.kind2 || "")}</td><td>${telHtml(p.phone1)}</td></tr>`).join("") + `</tbody></table>`;
 
@@ -109,6 +108,8 @@ export async function render(el, { call, query }) {
   const form = el.querySelector(".pp-form");
   form.q.value = state.q;
   let last = null;
+  // 이 화면을 다시 열 때마다 새로 만든다 — 리스너도 옛 객체와 함께 버려지게(status.js 와 같은 방식)
+  const mqWide = matchMedia("(min-width:1024px)");
 
   const readForm = () => {
     state.q = form.q.value.trim();
@@ -154,7 +155,16 @@ export async function render(el, { call, query }) {
 
   async function load() {
     const r = await busy(el, () => call("peopleSearch", searchPayload(state)));
-    if (!r.ok) { el.querySelector(".pp-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`; return; }
+    if (!r.ok) {
+      // 실패한 조건의 옛 명수·가족 보기 줄·앞/다음 단추가 그대로 남으면 사실과 다르다 — 함께 지운다.
+      // 기준일 줄(.pp-src)은 그대로 둔다 — 명부 자체는 실패와 무관하다.
+      last = null;
+      el.querySelector(".pp-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`;
+      el.querySelector(".pp-sum").textContent = "";
+      el.querySelector(".pp-famon").hidden = true;
+      el.querySelector(".pp-pager").hidden = true;
+      return;
+    }
     last = r;
     const src = sourceLine(r.source, new Date().toISOString().slice(0, 10));
     const srcEl = el.querySelector(".pp-src");

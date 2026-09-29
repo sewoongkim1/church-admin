@@ -142,7 +142,7 @@ export function groupsHtml(rows, view, openSet, dupM) {
         `<span class="mn-grp-n">${list.length}건 · ${people}명</span>` +
         rowsHtml(list, (r) => r.name, (r) => r.who, (r) => {
           const dup = dupOthers(dupM, r);
-          return (r.phone || dup.length) ? phoneHtml(r.phone, true) + dupBadgeHtml(dup) : "";
+          return churchBadgeHtml(r.church) + ((r.phone || dup.length) ? phoneHtml(r.phone, true) + dupBadgeHtml(dup) : "");
         });
     }
     const cards = list.map((r) => cardHtml(r, view, dupBadgeHtml(dupOthers(dupM, r)))).join("");
