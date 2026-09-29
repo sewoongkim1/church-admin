@@ -135,6 +135,8 @@ const PROBE = {
   evUploadCheck: { event_id: "ca-test-probe-none", rows: [], fill: false },
   evUploadSave: { event_id: "ca-test-probe-none", rows: [], fill: false },
   evPeopleLookup: { name: "" },
+  // 이름을 누르면 교적 창(Task 16) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
+  evPerson: { name: "" },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
@@ -1707,4 +1709,121 @@ test("성경필사 교인명부 찾기: 이름이 정확히 같은 분만 · 20�
   assert.equal(logs.find((r) => r.detail.q === upName("다")).detail.count, 20);
   const changes = (await call(people.super.token, "auditList", { limit: 100 })).body.rows.map((r) => r.action);
   assert.ok(!changes.includes("people.lookup") && !changes.includes("people.fill"), "교인명부 열람이 「바꾼 기록」 기본 보기에 섞였다");
+});
+
+// ---------- 성경필사(암송) — 이름을 누르면 교적 창 evPerson (계획 Task 16) ----------
+// 교인명부는 before() 의 세 분(990000001~3)과 Task 8 upFixtures 의 스물다섯 분(ca-test-up-<STAMP>-정·무·기·기·다×21)을 쓴다.
+// 「성경필사 + 교인명부」 두 역할을 가진 분은 처음 부를 때 한 번 만든다 — people 에 먼저 넣어 두면 after() 가 지운다
+// (권한 표는 사람 이름을 따로 적어 돌므로 이분은 거기 끼지 않는다). 함수 선언이라 파일 끝에 있어도 먼저 읽힌다.
+async function bedirPerson() {
+  if (!people.bedir) {
+    people.bedir = await makeUser("bedir");
+    await makeMember(people.bedir, "active", ["bibleevent", "directory"]);
+  }
+  return people.bedir;
+}
+
+test("성경필사 이름을 누르면(evPerson) — 성경필사 역할만: 다섯 칸 + 교적 표시 · 교인ID·연락처·주소 없음 · 고르는 규칙은 명단의 교적 표시와 같다 · people.lookup", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const ask = (name, who_type, group, sub) => call(t, "evPerson", { name, who_type, group, sub });
+  const none = "ca-test-pp-" + STAMP;   // 명부에 없는 이름 — 이 두 시험만 쓴다(기록 세기)
+
+  // ① 소속까지 같은 분 한 분(명부 믿음 1) → 그분 한 분만(같은 이름의 사랑 2 분은 싣지 않는다)
+  const one = await ask(upName("기"), "교구", "믿음", "1");
+  assert.equal(one.body.ok, true, JSON.stringify(one.body));
+  assert.deepEqual(Object.keys(one.body).sort(), ["church", "mode", "ok", "people", "pick", "total"]);
+  assert.deepEqual([one.body.mode, one.body.pick, one.body.total], ["basic", 0, 2], "total 은 명부의 같은 이름 수(고른 한 분만 싣더라도)");
+  assert.deepEqual(one.body.people, [{ name: upName("기"), who_type: "교구", group: "믿음", sub: "1", position: "집사" }]);
+  assert.deepEqual(one.body.church, { state: "맞음", reason: "" });
+  // ② 같은 소속이 없고 동명이인 둘 → 고르지 않고 둘 다(교인ID 차례)
+  const two = await ask(upName("기"), "교구", "믿음", "3");
+  assert.deepEqual([two.body.pick, two.body.total], [null, 2]);
+  assert.deepEqual(two.body.people.map((p) => p.group), ["믿음", "사랑"]);
+  assert.deepEqual(two.body.church, { state: "확인 필요", reason: "같은 이름 2명" });
+  // ③ 이름이 명부에 한 분뿐 → 소속이 달라도 그분(교적 표시는 「확인 필요」 그대로 함께 간다)
+  const lone = await ask(upName("정"), "교구", "화평", "5");
+  assert.deepEqual([lone.body.pick, lone.body.total], [0, 1]);
+  assert.deepEqual(lone.body.people.map((p) => [p.group, p.sub, p.position]), [["소망", "12", "권사"]]);
+  assert.deepEqual(lone.body.church, { state: "확인 필요", reason: "같은 이름 1명" });
+  // ④ 명단(evRoster)의 교적 표시와 같다 — 같은 줄로 물으면 같은 표시(같은 함수·같은 후보)
+  const ros = await call(t, "evRoster", { event_id: EV_ID });
+  for (const row of ros.body.rows) {
+    const r = await ask(row.name, row.who_type, row.group, row.sub);
+    assert.deepEqual(r.body.church, row.church, row.name);
+  }
+  // ⑤ 명부에 없는 이름 → 빈 목록 · 「없음」
+  const miss = await ask(none, "교구", "시험", "7");
+  assert.deepEqual([miss.body.mode, miss.body.pick, miss.body.total, miss.body.people, miss.body.church],
+    ["basic", null, 0, [], { state: "없음", reason: "" }]);
+  // ⑥ 못 고르면 스무 분까지(evPeopleLookup 과 같은 상한) — total 은 자르기 전 수(화면이 「21분(앞 20분만)」으로 적는다)
+  const many = (await ask(upName("다"), "교구", "화평", "1")).body;
+  assert.deepEqual([many.pick, many.people.length, many.total], [null, 20, 21]);
+  // ⑦ 새어 나가지 않는다 — 교인ID(숫자)·UUID·명부에만 있는 전화·주소·원래 칸
+  const min = await ask("ca-test-min", "교구", "시험", "0");
+  assert.deepEqual(min.body.people, [{ name: "ca-test-min", who_type: "", group: "", sub: "", position: "집사" }],
+    "명부 교구 칸이 일곱 교구 밖(시험)이면 소속 세 칸은 비운다(옮겨 적기 규칙)");
+  const text = JSON.stringify([one.body, two.body, lone.body, min.body]);
+  assert.ok(!UP_UUID.test(text), "UUID 꼴 값이 실렸다");
+  for (const id of [990000001, 990000003, ...UP_DIR_IDS]) assert.ok(!text.includes(String(id)), "교인ID 가 실렸다: " + id);
+  for (const k of ["person_id", CHURCH_ONLY_PHONE, "010-0000-0000", "비밀주소", "photo", "name_key", "mok1", "mok3", "kind2",
+    "position_detail", "소망-12목장"]) assert.ok(!text.includes(k), "새어 나감: " + k);
+  for (const b of [one.body, two.body, lone.body, min.body]) for (const p of b.people) assert.deepEqual(Object.keys(p).sort(), UP_ROW_KEYS);
+  // ⑧ 틀린 이름은 명부에 묻지 않는다
+  assert.equal((await ask("", "교구", "화평", "1")).body.error, "no-name");
+  assert.equal((await ask("홍,길동", "교구", "화평", "1")).body.error, "bad-char");
+  assert.equal((await ask("가".repeat(41), "교구", "화평", "1")).body.error, "too-long");
+  // ⑨ 기록 — 부를 때마다 people.lookup {q, count}(「교인명부 기록」 · evPeopleLookup 과 같은 모양) · 명부에 없는 이름도
+  const logs = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
+    .filter((r) => r.action === "people.lookup");
+  const mine = logs.filter((r) => r.detail.q === none);
+  assert.equal(mine.length, 1, JSON.stringify(mine));
+  assert.deepEqual(mine[0].detail, { q: none, count: 0 });
+  assert.ok(logs.some((r) => r.detail.q === upName("기") && r.detail.count === 1), "고른 한 분만 보여 준 것도 남는다(결과 수 1)");
+});
+
+test("성경필사 이름을 누르면(evPerson) — 교인명부 역할도 있으면·총괄: 교인ID 로 「자세히」 창 · 못 고르면 후보 · 한 분을 골랐으면 기록하지 않고 못 고르면 people.lookup", async () => {
+  await upFixtures();
+  const bedir = await bedirPerson();
+  const q = { name: upName("기"), who_type: "교구", group: "믿음", sub: "1" };
+  // 교인명부 기록 가운데 mark(기록 id) 뒤에 남은 people.lookup — 최근 것이 앞(auditList 는 id 내림차순)
+  const lookupsAfter = async (mark) => (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
+    .filter((r) => r.id > mark && r.action === "people.lookup").map((r) => r.detail);
+  const mark = (await call(people.super.token, "auditList", { limit: 1, kind: "people" })).body.rows[0]?.id ?? 0;
+  for (const who of ["bedir", "super"]) {
+    const r = await call(people[who].token, "evPerson", q);
+    assert.equal(r.body.ok, true, who + " " + JSON.stringify(r.body));
+    assert.deepEqual(Object.keys(r.body).sort(), ["candidates", "mode", "ok", "pick", "total"], who);
+    assert.deepEqual([r.body.mode, r.body.pick, r.body.total], ["full", 0, 2], who);
+    assert.deepEqual(r.body.candidates, [{ person_id: 990000013, name: upName("기"), label: "믿음 1목장", position: "집사" }], who);
+  }
+  // 한 분을 골랐으면(pick 0) 여기서는 남기지 않는다 — 화면이 곧바로 「자세히」 창을 열고 peoplePerson 이 people.view 를 남긴다
+  assert.deepEqual(await lookupsAfter(mark), [], "pick 0 인 full 이 people.lookup 을 남겼다(이름 한 번에 두 줄이 된다)");
+  // 못 고르면 후보 — 교인ID 차례 · 이때는 이름·소속·직분·교인ID 가 여러 분 나가므로 people.lookup {q, count}
+  const two = await call(bedir.token, "evPerson", { ...q, sub: "3" });
+  assert.deepEqual([two.body.pick, two.body.total], [null, 2]);
+  assert.deepEqual(two.body.candidates.map((c) => [c.person_id, c.label]), [[990000013, "믿음 1목장"], [990000014, "사랑 2목장"]]);
+  assert.deepEqual(await lookupsAfter(mark), [{ q: upName("기"), count: 2 }]);
+  // 연락처·주소·사진·원래 칸은 full 에도 없다 — 그것은 「자세히」 창(peoplePerson)이 교인명부 역할을 다시 확인하고 준다
+  const min = await call(bedir.token, "evPerson", { name: "ca-test-min", who_type: "교구", group: "시험", sub: "0" });
+  assert.deepEqual(min.body.candidates, [{ person_id: 990000001, name: "ca-test-min", label: "시험", position: "집사" }]);
+  const text = JSON.stringify([min.body, two.body]);
+  assert.ok(!UP_UUID.test(text), "UUID 꼴 값이 실렸다");
+  for (const k of [CHURCH_ONLY_PHONE, "010-0000-0000", "비밀주소", "photo", "household", "name_key", "mok3", "kind2", "position_detail"]) {
+    assert.ok(!text.includes(k), "새어 나감: " + k);
+  }
+  const pp = await call(bedir.token, "peoplePerson", { id: min.body.candidates[0].person_id });
+  assert.equal(pp.body.ok, true, JSON.stringify(pp.body));
+  assert.equal(pp.body.person.name, "ca-test-min");
+  // 명부에 없는 이름 → 빈 후보(pick null) · 못 고른 것이니 people.lookup {q, count: 0} — 앞 시험의 basic 한 줄과 합해 두 줄
+  //   (ca-test-min 은 명부에 한 분뿐이라 골랐다(pick 0) — 그 부름은 기록이 없고, 위 peoplePerson 이 people.view 를 남겼다)
+  const none = "ca-test-pp-" + STAMP;
+  const miss = await call(bedir.token, "evPerson", { name: none, who_type: "교구", group: "시험", sub: "7" });
+  assert.deepEqual([miss.body.mode, miss.body.pick, miss.body.total, miss.body.candidates], ["full", null, 0, []]);
+  assert.deepEqual(await lookupsAfter(mark), [{ q: none, count: 0 }, { q: upName("기"), count: 2 }]);
+  const logs = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows;
+  assert.equal(logs.filter((r) => r.action === "people.lookup" && r.detail.q === none).length, 2, "basic(앞 시험) 한 줄 + 못 고른 full 한 줄");
+  // 교인명부 역할만 있는 분은 이 액션을 못 부른다(성경필사 메뉴의 액션 — 권한 표도 PROBE 로 본다)
+  const dir = await call(people.directory.token, "evPerson", q);
+  assert.deepEqual([dir.status, dir.body.error], [403, "forbidden"]);
 });

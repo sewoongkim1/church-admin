@@ -27,6 +27,9 @@ import { ADD_TAG, askableKeys, checkChanged, formRow, oddPosition, rowPatch, sam
 // 성경필사(암송) 명단 올리기·교인명부 찾기(Task 8) — 이 과제의 이름은 events-upload.ts 에서만 가져온다(CONTRACT 5)
 import { applyFill, fillNames, filledNames, judgeUpload, lookupName, lookupOut, LOOKUP_MAX, tidyUpload, tooManyRows, uploadCounts, uploadEventError, uploadKeys, uploadOut, uploadRecords } from "./events-upload.ts";
 
+// 성경필사(암송) 이름을 누르면 교적 창(Task 16) — 이 과제의 이름은 events-person.ts 에서만 가져온다(CONTRACT 5)
+import { personAsk, personOut, type PersonCand } from "./events-person.ts";
+
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -1473,6 +1476,35 @@ async function evPeopleLookup(ctx: Ctx, b: any) {
   return { ok: true, source: { date: src.source_date, total: src.total }, people };
 }
 
+// ---------- 성경필사(암송) — 이름을 누르면 교적 창 (Task 16 · 2026-09-30) ----------
+// 설계 §0 「이름을 누르면 교적 창」·§2 evPerson·§3 · 친구 결정 §8-8. 고르는 규칙·응답 모양은 events-person.ts(순수 함수)에 있다.
+// ⚠️ 모양은 **부른 분의 역할**로 여기서 정한다(ctx.roles — 화면이 보낸 것을 믿지 않는다):
+//    「교인명부」(directory) 또는 총괄(super) → full: 교인ID·이름·소속 한 줄·직분. 화면은 그 교인ID 로 peoplePerson(「자세히」 창)을
+//    부른다 — 사진·연락처·주소·가족은 **그 액션**이 directory 역할을 다시 확인하고 내준다(여기서는 싣지 않는다).
+//    그 밖(성경필사 역할만) → basic: 이름·구분·소속·세부·직분 다섯 칸 + 교적 표시. 교인ID 는 싣지 않는다(설계 §0 「교인명부 쓰기」).
+// ⚠️ 기록 — people.lookup {q, count}(evPeopleLookup 과 같은 action·같은 모양 → 「교인명부 기록」 · audit.js 가 그대로 읽는다 · count = 보여 준 분 수).
+//    basic 은 늘 남긴다. full 은 **고르지 못했을 때(pick null — 후보 스무 분까지·빈 후보)만** 남긴다 — 이름·소속·직분·교인ID 가
+//    여러 분 나가는데, 고르개를 닫으면 people.view 도 없어 여기서 안 남기면 기록이 아예 없다.
+//    한 분을 골랐으면(pick 0) 남기지 않는다: 화면이 곧바로 「자세히」 창을 열고 peoplePerson 이 people.view(그분 이름·교인ID)를
+//    남긴다. 여기서도 남기면 이름 한 번 누를 때마다 교인명부 기록이 두 줄씩 쌓여 누가 누구를 봤는지 읽기 어려워진다.
+// ⚠️ 읽는 칸은 EV_PERSON_COLS 뿐 — Task 8 의 EV_LOOKUP_COLS(이름 + 옮겨 적기 재료 일곱)에 교인ID 하나. 연락처·주소·생년월일·사진은 읽지 않는다.
+// ⚠️ 같은 이름을 **모두** 읽는다(allRows) — 같은 소속인 분이 교인ID 차례로 스무 번째 뒤에 있어도 고르는 규칙이 틀리지 않게(total 도 이 수).
+const EV_PERSON_COLS = "person_id," + EV_LOOKUP_COLS;
+
+async function evPerson(ctx: Ctx, b: any) {
+  const q = lookupName(b.name);                                     // no-name · bad-char · too-long(evPeopleLookup 과 같은 규칙)
+  if (q.error) return { ok: false, error: q.error };
+  if (!(await peopleSource())) return { ok: true, mode: "none" };   // 명부가 한 번도 안 올라왔다 — 묻지도 기록하지도 않는다
+  const cands = await allRows(() => db.from("church_people").select(EV_PERSON_COLS)
+    .eq("name_key", q.key).order("person_id", { ascending: true }));
+  const full = ctx.roles.includes("directory") || ctx.roles.includes("super");
+  const out = personOut(cands as PersonCand[], personAsk(b, q.name), full);
+  if (out.mode === "basic" || out.pick === null) {
+    await audit(ctx, "people.lookup", "", { q: q.name, count: out.mode === "basic" ? out.people.length : out.candidates.length });
+  }
+  return { ok: true, ...out };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -1524,6 +1556,7 @@ Deno.serve(async (req) => {
       case "evUploadCheck":  return json(await evUpload(ctx, b, false));
       case "evUploadSave":   return json(await evUpload(ctx, b, true));
       case "evPeopleLookup": return json(await evPeopleLookup(ctx, b));
+      case "evPerson":       return json(await evPerson(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);

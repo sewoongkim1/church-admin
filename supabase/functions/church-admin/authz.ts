@@ -55,6 +55,9 @@ export const ACTION_ROLES: Record<string, string | null> = {
   evUploadCheck: "bibleevent",
   evUploadSave: "bibleevent",
   evPeopleLookup: "bibleevent",
+  // 성경필사(암송) — 이름을 누르면 교적 창(계획 Task 16 · 2026-09-30). 모양은 index.ts evPerson 이 부른 분의 역할로 정한다:
+  // 교인명부 역할·총괄이면 교인ID(「자세히」 창은 peoplePerson 이 역할을 다시 본다), 아니면 다섯 칸 + 교적 표시(people.lookup).
+  evPerson: "bibleevent",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";
