@@ -4,6 +4,7 @@
 // ⚠️ ui.js dialog 의 본문은 white-space:pre-line 이다 — dialog 에 넘기는 html 에는 줄바꿈 글자를 넣지 않는다.
 import { esc, dialog } from "../../core/ui.js";
 import { STATES, SHORT, CLS, personKey, teamKey, dupOthers } from "./status-logic.js";
+import { churchBadgeHtml } from "../people/church-badge.js";
 
 const short = (st) => SHORT[st] || st;
 
@@ -57,7 +58,7 @@ export function cardHtml(r, inView, dupHtml) {
   const nm = inView === "person"
     ? `<div class="mn-in-team"><b>${esc(r.team)}</b>${opt}</div>` +
       `<span class="mn-sub"><i>${esc(r.committee)}</i><span class="mn-date" title="신청일">${at} 신청</span></span>`
-    : `<b>${esc(r.name)}</b>${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${paper}` +
+    : `<b>${esc(r.name)}</b>${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${paper}${churchBadgeHtml(r.church)}` +
       `<span class="mn-sub"><i>${esc(r.who)}</i>${inView === "team" && r.option ? `<i class="mn-in-opt">(${esc(r.option)})</i>` : ""}<span class="mn-date" title="신청일">${at}</span></span>`;
   return `<div class="pl-card ${cls}${inView ? " mn-in" : ""}">
     <div class="pl-hd">
@@ -84,7 +85,7 @@ export function tableHtml(rows, dupM) {
     const at = esc(String(r.at || "").replace(/-/g, "."));
     const dupHtml = dupBadgeHtml(dupOthers(dupM, r));
     return `<tr class="${cls}">
-      <td class="mn-tbl-nm"><b>${esc(r.name)}</b>${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${push}${paper}</td>
+      <td class="mn-tbl-nm"><b>${esc(r.name)}</b>${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${push}${paper}${churchBadgeHtml(r.church)}</td>
       <td>${esc(r.who)}</td>
       <td class="mn-tbl-team"><i>${esc(r.committee)}</i> › <b>${esc(r.team)}</b>${opt}</td>
       <td class="mn-date">${at}</td>
@@ -131,7 +132,7 @@ export function groupsHtml(rows, view, openSet, dupM) {
       const phone = list.map((r) => r.phone).find(Boolean) || "";
       const teams = new Set(list.map(teamKey)).size;
       const dup = dupOthers(dupM, list);
-      title = `<span class="mn-grp-t">${esc(r0.name)}${pos ? ` <em>${esc(pos)}</em>` : ""}<i>${esc(r0.who)}</i></span>` +
+      title = `<span class="mn-grp-t">${esc(r0.name)}${churchBadgeHtml(r0.church)}${pos ? ` <em>${esc(pos)}</em>` : ""}<i>${esc(r0.who)}</i></span>` +
         `<span class="mn-grp-n">${teams}개 사역</span>` +
         ((phone || dup.length) ? `<span class="mn-grp-sub mn-phone-line">${phone ? phoneHtml(phone) : ""}${dupBadgeHtml(dup)}</span>` : "") +
         rowsHtml(list, (r) => r.team, (r) => r.committee);

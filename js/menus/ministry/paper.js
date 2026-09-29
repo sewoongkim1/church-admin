@@ -21,6 +21,7 @@
 //   ③ 엑셀 읽기 실패는 원문의 세 갈래 안내 대신 한 가지로 통일했다(사역신청 4·5단계 결정) — 결국
 //      "복사해 붙여넣어 주세요"로 돌아가는 안내라 가짓수를 늘릴 실익이 적다.
 import { esc, dialog, busy, errorText } from "../../core/ui.js";
+import { churchBadgeHtml, CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
 
 const TITLE = `<h2 class="page-title">📋 종이 명단 올리기</h2>`;
 
@@ -107,7 +108,7 @@ function rowHtml(r) {
   const { cls, mark } = rowMark(r);
   return `<div class="mp-item ${cls}">
     <div class="mp-i-top"><span class="mp-i-ic">${mark}</span>
-      <b>${esc(r.name || "(이름 없음)")}</b><small>${esc([r.gu, r.mok].filter(Boolean).join(" "))}</small>
+      <b>${esc(r.name || "(이름 없음)")}</b><small>${esc([r.gu, r.mok].filter(Boolean).join(" "))}</small>${churchBadgeHtml(r.church)}
       ${r.status ? `<span class="mp-i-st${r.status === "취소" ? " off" : ""}">${esc(paperShort(r.status))}</span>` : ""}
       <span class="mp-i-team">${esc(r.team || "")}${r.committee ? ` <i>${esc(r.committee)}</i>` : ""}</span></div>
     ${r.error ? `<div class="mp-i-msg bad">${esc(r.error)}</div>` : ""}
@@ -177,7 +178,7 @@ export async function render(el, { call }) {
       : `살펴본 줄 <b>${mpRows.length}</b> · 넣을 것 <b>${okN}</b>` +
         `${sameN ? ` · 그대로 둘 것 <b>${sameN}</b>` : ""}${badN ? ` · 고칠 것 <b>${badN}</b>` : ""}`;
     saveBtn.hidden = !saveVisible(mpRows, saved);
-    listEl.innerHTML = mpRows.map(rowHtml).join("");
+    listEl.innerHTML = (hasChurch(mpRows) ? CHURCH_LEGEND : "") + mpRows.map(rowHtml).join("");
   };
 
   async function run(save) {

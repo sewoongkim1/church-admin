@@ -9,6 +9,7 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts }
   from "./status-logic.js";
 import { cardHtml, groupsHtml, dupBadgeHtml, tableHtml, askCancelReason, confirmAppoint, confirmDelete } from "./status-ui.js";
+import { CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
 
 const TITLE = `<h2 class="page-title">📋 신청 현황</h2>`;
 const VIEWS = [["row", "건별", "건"], ["person", "사람별", "명"], ["team", "사역별", "팀"]];
@@ -25,7 +26,7 @@ let condOpen = false;                  // 📅 신청일 칸 — 처음엔 접�
 const openSet = new Set();             // 펼쳐 둔 묶음 — 다시 그려도 접히지 않게
 
 const normalize = (x) => ({
-  id: x.id, at: String(x.at || "").replace(/\./g, "-"), who: x.who || "", name: x.name || "",
+  id: x.id, at: String(x.at || "").replace(/\./g, "-"), who: x.who || "", name: x.name || "", church: x.church || null,
   status: x.status, canPush: !!x.canPush, notified_at: x.notified_at || null,
   phone: x.phone || "", position: x.position || "", note: x.note || "", source: x.source || "app",
   committee: x.committee || "", team: x.team || "", option: x.option || "",
@@ -42,6 +43,7 @@ export async function render(el, { call }) {
   // ⚠️ 붙는 머리(.mn-head)에는 「지금 무엇을 보고 있나」만 둔다 — 보기 단추·찾기·신청일 칸은 머리 밖에
   el.innerHTML = `<h2 class="page-title">📋 신청 현황 <span class="muted">${esc(res.year)}년</span></h2>
     <div class="acts mn-acts"><button type="button" class="btn" data-act="reload">↻ 새로 불러오기</button></div>
+    ${hasChurch(rows) ? CHURCH_LEGEND : ""}
     <div class="card mn-panel">
       <div class="mn-head">
         <div class="mn-stlb">상태 <i>(전체 기준)</i></div>
