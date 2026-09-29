@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { personDetailHtml } from "../js/menus/people/person-detail.js";
+import { personDetailHtml, FEW_FIELDS } from "../js/menus/people/person-detail.js";
 
 const FULL = {
   person_id: 900001, name: "김하늘", position: "집사", position_detail: "서리집사", gender: "남", age: 45,
@@ -70,4 +70,32 @@ test("personDetailHtml — 세대주 필드가 없어도 가족이 있으면 가
   const html = personDetailHtml({ name: "김하늘", household_id: 7 }, FAM);
   assert.ok(html.includes(">가족<"));
   assert.ok(html.includes('data-fam-all="7"'));
+});
+
+test("personDetailHtml — 값 속 「 > 」는 옅은 › 로(esc 한 뒤에 바꾼다)", () => {
+  const html = personDetailHtml({ ...FULL, school_path: "교육위원회 > 고등부" }, FAM);
+  assert.ok(html.includes('교육위원회 <span class="pd-sep" aria-hidden="true">›</span> 고등부'));
+  assert.equal(html.includes(" &gt; "), false);
+  // 사용자 글자 속 꺾쇠 태그는 여전히 esc 된 채로 남는다
+  const bad = personDetailHtml({ name: "가", guide: "<b> > x" }, []);
+  assert.ok(bad.includes("&lt;b&gt;"));
+  assert.equal(bad.includes("<b>"), false);
+});
+
+test("personDetailHtml — 적힌 것이 적으면 창을 좁히는 표식(.pd-empty · .pd-few)", () => {
+  assert.ok(personDetailHtml({ name: "가", phone1: "010-0000-0000" }, []).includes('class="pd-wrap pd-empty"'));
+  assert.ok(personDetailHtml({ name: "가", kind2: "장년", registered: "2026-08-02" }, []).includes('class="pd-wrap pd-few"'));
+  const many = { name: "가", birth: "2000-01-01", kind2: "장년", registered: "2026-08-02", guide: "나", email: "a@b.c" };
+  assert.equal(Object.keys(many).length - 1 > FEW_FIELDS, true);
+  assert.ok(personDetailHtml(many, []).includes('class="pd-wrap"'));
+  // 가족 단추가 있으면 칸이 적어도 넓은 창(가족 칩이 들어갈 자리)
+  assert.ok(personDetailHtml({ name: "가", household_id: 7, household_head: "가" }, FAM).includes('class="pd-wrap"'));
+});
+
+test("personDetailHtml — 가족은 있는데 세대주가 명단에 없으면 그렇다고 적는다", () => {
+  const html = personDetailHtml({ name: "이슬", household_id: 7, household_rel: "처" }, FAM);
+  assert.ok(html.includes("<dt>신앙세대주</dt><dd>(명단에 없음) · 처</dd>"));
+  assert.equal((html.match(/신앙세대주/g) || []).length, 1);
+  // 가족이 없으면 적지 않는다
+  assert.equal(personDetailHtml({ name: "이슬", household_id: 7 }, []).includes("명단에 없음"), false);
 });

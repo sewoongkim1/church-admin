@@ -59,9 +59,10 @@ export function csvText(rows) {
   return "﻿" + [head, ...body].map((row) => row.map(cell).join(",")).join("\r\n");
 }
 
-// 자세히 보기의 오른쪽 묶음 — [{ key, title, fields:[{ label, value, tel?, wide? }] }]. 빈 값·빈 묶음은 뺀다.
+// 자세히 보기의 오른쪽 묶음 — [{ key, title, fields:[{ label, value, wide? }] }]. 빈 값·빈 묶음은 뺀다.
 // 왼쪽(사진 옆)에 이미 있는 것 — 이름·직분·소속·성별·나이·연락처 — 는 여기 되풀이하지 않는다(person-detail.js).
-// wide 는 칸 두 개 폭(긴 주소·교회학교 경로). 화면은 빈자리를 채워 가며 놓는다(grid dense).
+// wide 는 칸 두 개 폭(긴 주소·교회학교 경로). 화면은 이 차례 그대로 놓는다(grid dense 를 안 쓴다 — 화면 차례 = 읽는 차례).
+// 소속은 교회학교(넓게) 바로 뒤에 교사가 오도록 · 목장 리더는 교사 옆 칸을 채우고 · 장년이면 목장 리더와 선교회가 한 줄에.
 export function detailSections(p) {
   const has = (v) => v !== undefined && v !== null && String(v).trim() !== "";
   const join = (sep, ...xs) => xs.filter(has).map((x) => String(x).trim()).join(sep);
@@ -80,9 +81,9 @@ export function detailSections(p) {
       f("지번 주소", p.address_jibun, W),
     ] },
     { key: "affil", title: "소속", fields: [
-      f("목장 리더", p.mok_leader),
       f("교회학교", p.school_path, W),
       f("교사", p.teacher),
+      f("목장 리더", p.mok_leader),
       f("청년", p.youth_path, W),
       f("선교회", p.mission),
     ] },
