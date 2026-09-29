@@ -25,6 +25,10 @@ export const ACTION_ROLES: Record<string, string | null> = {
   ministryCatalogAdmin: "ministry",
   ministryCatalogSave: "ministry",
   ministryCatalogOrder: "ministry",
+  // 사역신청(4·5단계 Task 5 · 2026-09-29) — 종이(오프라인) 명단 올리기. 살펴보기(check)는 아무것도
+  // 안 바꾸고, 넣기(save)만 계정·신청을 만든다 — 둘 다 담당자만.
+  ministryPaperCheck: "ministry",
+  ministryPaperSave: "ministry",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

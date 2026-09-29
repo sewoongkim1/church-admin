@@ -11,6 +11,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 import { canCall, identityCandidates, kakaoAvatar, kakaoNickname, norm, parseIdentity, parseRoles } from "./authz.ts";
 import { statusPatch } from "./ministry.ts";
 import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINISTRY_FREQ_COLS, MINISTRY_FREQ_KEYS } from "./catalog.ts";
+import { appIdentityKey, legacyNorm, ministryPaperKeys, ministryPaperOne, paperName, PAPER_MAX_ROWS } from "./paper.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -593,6 +594,216 @@ async function ministryCatalogOrder(ctx: Ctx, b: any) {
   return { ok: true, n: ids.length };
 }
 
+// ---------- 사역신청 — 종이(오프라인) 명단 올리기 (4·5단계 Task 5 · 2026-09-29) ----------
+// 원문: docs/port/ministry-paper-legacy.md 1.2·1.3·1.5·1.6~1.13. 원문의 게이트(ministryAdminError)는
+// 옮기지 않는다 — canCall(ministry)이 dispatch 전에 이미 막으므로(ministryCatalogAdmin 과 같은 판단).
+// ⚠️ save=false(살펴보기)·save=true(넣기)가 **같은 판정을 처음부터 다시** 돈다 — 화면이 보낸 살펴보기
+//    결과를 믿지 않는다(그 사이 성도가 앱으로 신청했을 수 있다).
+// ⚠️ 신청 기간(ministryPeriod)은 원문처럼 확인하지 않는다 — 종이 명단은 기간과 무관하게 언제나 열려 있다.
+
+// 원문 1.5 — 종이 명단이 참조하는 잠금·상한 규칙만(isLocked·MINISTRY_LOCKED 는 ministryPaper 안에서
+// 쓰이지 않아 옮기지 않는다 — 원문 발견 사항과 같다).
+const MINISTRY_MAX = 3;
+const countsToCap = (st: string) => st !== "미채택" && st !== "취소";
+
+// 원문 1.3 ministryKeysToUsers → paperKeysToUsers. ⚠️ legacyNorm(NFC 로 바꾸지 않음)을 쓴다 —
+// 위 keysToUserIds(authz 담당자 대조용)는 NFC 로 맞추므로 여기서는 쓸 수 없다(paper.ts 머리 설명 참고).
+async function paperKeysToUsers(list: string[]): Promise<Map<string, string>> {
+  const uniq = [...new Set(list.map((k) => legacyNorm(k)).filter(Boolean))];
+  const out = new Map<string, string>();
+  if (!uniq.length) return out;
+  const { data: us, error: e1 } = await db.from("users").select("id,identity_key").in("identity_key", uniq);
+  if (e1) throw e1;
+  for (const u of (us ?? []) as any[]) out.set(u.identity_key, u.id);
+  const rest = uniq.filter((k) => !out.has(k));
+  if (rest.length) {
+    const { data: al, error: e2 } = await db.from("user_identity_aliases").select("identity_key,user_id").in("identity_key", rest);
+    if (e2) throw e2;
+    for (const a of (al ?? []) as any[]) out.set(a.identity_key, a.user_id);
+  }
+  return out;
+}
+
+// 원문 1.12 본체. ⚠️ ministry_catalog·ministry_orders 읽기는 원문의 평범한 select(.limit(5000))가
+// 아니라 이 저장소의 allRows(PostgREST max_rows 로 조용히 잘리지 않게, 위 ministryList 등과 같은 규칙)로
+// 옮겼다 — 유일한 의도적 변형.
+async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
+  const year = await ministryYear();
+  const status = "임명확정";
+  const raws = Array.isArray(b.rows) ? b.rows : [];
+  if (!raws.length) return { ok: false, error: "올릴 줄이 없습니다" };
+  if (raws.length > PAPER_MAX_ROWS) {
+    return { ok: false, error: "한 번에 " + PAPER_MAX_ROWS + "줄까지 올릴 수 있습니다 (지금 " + raws.length + "줄)" };
+  }
+
+  // 사역팀 — 이름만 적어도 찾게 하되, 같은 이름이 둘이면 위원회를 물어본다
+  const cat = await allRows(() => db.from("ministry_catalog").select("id,committee,team,kind").eq("year", year));
+  const flat = (s: string) => legacyNorm(s).replace(/\s+/g, "").toLowerCase();
+  const byTeam = new Map<string, any[]>();
+  const byFull = new Map<string, any>();
+  for (const t of cat as any[]) {
+    const k = flat(t.team);
+    if (!byTeam.has(k)) byTeam.set(k, []);
+    byTeam.get(k)!.push(t);
+    byFull.set(flat(t.committee) + "|" + k, t);
+  }
+
+  // 올해 신청 전부 — 3개 상한·같은 사역 중복·같은 이름/번호 확인에 쓴다
+  const orders = await allRows(() => db.from("ministry_orders")
+    .select("id,user_id,name,phone,team_id,status").eq("year", year));
+
+  const rows = raws.map((r: any, i: number) => ministryPaperOne(r, i));
+
+  // 줄마다 계정 찾기 — 있으면 잇고, 없으면 save 때 만든다
+  const keyOf = new Map<number, string[]>();
+  const allKeys: string[] = [];
+  for (const r of rows) {
+    if (r.error) continue;
+    const ks = ministryPaperKeys(r.gu, r.mok, r.name);
+    keyOf.set(r.i, ks);
+    allKeys.push(...ks);
+  }
+  const found = allKeys.length
+    ? await paperKeysToUsers([...new Set(allKeys)]) : new Map<string, string>();
+
+  // 이 뭉치 안에서 같은 사람이 여러 줄이면 그 수도 상한에 더한다
+  const addedBy = new Map<string, number>();
+  const heldOf = (uid: string) =>
+    orders.filter((o: any) => o.user_id === uid && countsToCap(o.status)).length;
+
+  for (const r of rows) {
+    if (r.error) continue;
+    const tk = flat(r.team);
+    const cand = r.committee
+      ? [byFull.get(flat(r.committee) + "|" + tk)].filter(Boolean)
+      : (byTeam.get(tk) ?? []);
+    if (!cand.length) { r.error = "사역 목록에 없는 이름입니다"; continue; }
+    if (cand.length > 1) {
+      r.error = "같은 이름의 사역이 " + cand.length + "개입니다 — 위원회도 적어 주세요 (" +
+        cand.map((t: any) => t.committee).join(", ") + ")";
+      continue;
+    }
+    const t = cand[0];
+    const st = r.rowStatus || status;                 // 줄에 적었으면 그 줄만 그대로
+    r.status = st;
+    // 취소는 까닭 없이 못 한다 — 그 줄에 사유가 있어야 한다(한 건씩 바꿀 때와 같은 규칙)
+    if (st === "취소" && !r.rowNote) {
+      r.error = "취소 사유를 적어 주세요 (사유 칸)";
+      continue;
+    }
+    if (t.kind === "appoint" && st !== "임명확정") {
+      r.error = "지명으로 정해지는 자리입니다";
+      continue;
+    }
+    r.team_id = t.id; r.committee = t.committee; r.team = t.team;
+
+    const uid = (keyOf.get(r.i) ?? []).map((k) => found.get(k)).find(Boolean) || "";
+    r.user_id = uid;
+    r.isNew = !uid;
+
+    if (uid) {
+      // ⚠️ 앱으로 낸 것과 겹치면 새로 넣지 않고 그 건의 상태만 바꾼다(2026-09-18 성도님).
+      //    종이는 결정 난 명단이라, 같은 사역이 두 건이 되는 것이 아니라 그 신청이 임명된 것이다.
+      const had = orders.find((o: any) => o.user_id === uid && Number(o.team_id) === Number(t.id));
+      if (had) {
+        r.dupId = had.id;
+        r.same = had.status === st;
+        r.warn = r.same
+          ? "이미 " + paperName(st) + " 상태입니다 — 그대로 둡니다"
+          : "앱으로 낸 신청(" + paperName(had.status) + ")이 있습니다 — 그 건을 " +
+            paperName(st) + "으로 바꿉니다";
+        r.ok = true;
+        continue;
+      }
+      if (countsToCap(st)) {
+        const held = heldOf(uid) + (addedBy.get(uid) ?? 0);
+        if (held + 1 > MINISTRY_MAX) {
+          r.error = "이미 " + held + "건이라 " + MINISTRY_MAX + "개를 넘습니다"; continue;
+        }
+        addedBy.set(uid, (addedBy.get(uid) ?? 0) + 1);
+      }
+    }
+
+    // 막지 않고 알리기만 하는 것들
+    const warns: string[] = [];
+    if (r.isNew) warns.push("앱에 없는 분 — 계정을 새로 만듭니다");
+    if (orders.some((o: any) => o.name === r.name && o.phone === r.phone && o.user_id !== uid)) {
+      warns.push("같은 이름·번호로 낸 다른 신청이 있습니다");
+    }
+    r.warn = warns.join(" · ");
+    r.ok = true;
+  }
+
+  const good = rows.filter((r: any) => r.ok);
+  if (!save) {
+    return { ok: true, year, rows, okCount: good.length, badCount: rows.length - good.length };
+  }
+
+  // ── 넣기 ──────────────────────────────────────────────────────
+  // ⚠️ 한 줄이 실패해도 나머지는 들어간다 — 담당자가 고친 줄만 다시 올리면 된다.
+  // ⚠️ 결정이 난 상태(임명확정·취소)면 한 건씩 바꿀 때와 같이 휴대폰 번호를 지우고 decided_at 을 찍는다.
+  const now = new Date().toISOString();
+  let added = 0;
+  for (const r of good) {
+    try {
+      const st = r.status || status;
+      const decided = st === "임명확정" || st === "취소";
+      const why = r.rowNote || "";
+      if (r.same) { r.saved = true; continue; }          // 이미 그 상태다 — 건드리지 않는다
+      if (r.dupId) {                                      // 앱 신청이 있다 — 상태만 바꾼다
+        // ⚠️ 신청일은 앱에 남은 그대로 둔다 — 성도님이 실제로 낸 날이다. 임명일만 종이 것으로.
+        const patch: Record<string, unknown> = { status: st, updated_at: now };
+        if (decided) { patch.decided_at = r.decidedAt || now; patch.phone = null; }
+        if (why) patch.note = why;
+        const { error: e5 } = await db.from("ministry_orders").update(patch).eq("id", r.dupId);
+        if (e5) throw e5;
+        r.saved = true; r.changed = true; added++;
+        continue;
+      }
+      let uid = r.user_id;
+      if (!uid) {
+        const mok = r.mok.replace(/목장$/, "");
+        const profile = { type: "교구", gu: r.gu, mok, bu: null, grade: null, name: r.name };
+        const { data: u, error: e3 } = await db.rpc("member_login", {
+          p_profile: { ...profile, identity_key: appIdentityKey({ type: "교구", gu: r.gu, mok, bu: "", grade: "", name: r.name }) } });
+        if (e3) throw e3;
+        uid = u.id;
+      }
+      // 종이에 적힌 날짜가 있으면 그것을 쓴다 — 없으면 지금
+      const insert: Record<string, unknown> = {
+        year, user_id: uid, name: r.name,
+        who: r.gu + " " + r.mok.replace(/목장$/, "") + "목장",
+        position: r.position, phone: decided ? null : r.phone,
+        team_id: r.team_id, committee: r.committee, team: r.team, option: r.option || "",
+        status: st, source: "paper", note: why || null,
+        decided_at: decided ? (r.decidedAt || now) : null, updated_at: now,
+      };
+      if (r.appliedAt) insert.created_at = r.appliedAt;
+      const { error: e4 } = await db.from("ministry_orders").insert(insert);
+      if (e4) throw e4;
+      r.saved = true; added++;
+    } catch (ex) {
+      r.ok = false; r.saved = false;
+      r.error = "넣지 못했습니다: " + String((ex as any)?.message ?? ex).slice(0, 120);
+    }
+  }
+  // 이름·번호는 싣지 않는다 — 몇 건을 어떻게 처리했는지만 남긴다
+  const byStatus: Record<string, number> = {};
+  for (const r of good) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+  await audit(ctx, "ministry.paper", String(year), {
+    saved: added,
+    created: good.filter((r: any) => r.saved && !r.dupId && !r.same).length,
+    same: good.filter((r: any) => r.same).length,
+    errors: rows.filter((r: any) => !r.saved).length,
+    byStatus,
+  });
+  return { ok: true, year, rows, added,
+           changed: good.filter((r: any) => r.changed).length,
+           same: good.filter((r: any) => r.same).length,
+           failed: good.filter((r: any) => !r.saved).length,
+           badCount: rows.length - good.length };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -626,6 +837,8 @@ Deno.serve(async (req) => {
       case "ministryCatalogAdmin": return json(await ministryCatalogAdmin());
       case "ministryCatalogSave":  return json(await ministryCatalogSave(ctx, b));
       case "ministryCatalogOrder": return json(await ministryCatalogOrder(ctx, b));
+      case "ministryPaperCheck": return json(await ministryPaper(ctx, b, false));
+      case "ministryPaperSave":  return json(await ministryPaper(ctx, b, true));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);

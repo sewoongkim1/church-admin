@@ -15,6 +15,7 @@ const svc = { apikey: SERVICE, "Content-Type": "application/json",
   ...(SERVICE.startsWith("sb_secret_") ? {} : { Authorization: "Bearer " + SERVICE }) };
 const STAMP = Date.now();
 const ZERO = "00000000-0000-0000-0000-000000000000";
+const PAPER_NAME = "ca-test-paper-" + STAMP;   // 종이 명단(Task 5) 시험 인물 — 교구 시험, 목장 0
 const people = {};
 
 async function body(res) { const t = await res.text(); try { return JSON.parse(t); } catch { return { raw: t }; } }
@@ -65,6 +66,8 @@ const PROBE = {
   ministryCatalogAdmin: {},
   ministryCatalogSave: { id: 0 },
   ministryCatalogOrder: { ids: [] },
+  ministryPaperCheck: { rows: [] },
+  ministryPaperSave: { rows: [] },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
@@ -137,6 +140,17 @@ after(async () => {
       time_from: catalogRow.time_from, time_to: catalogRow.time_to,
     });
   }
+  // ⚠️ 종이 명단(Task 5) — 저장 시험이 계정을 만들었을 수도, 살펴보기만으로 끝나 안 만들었을 수도
+  //   있다. 그 이름의 users 를 찾아 딸린 ministry_orders·user_identity_aliases 를 먼저 지우고,
+  //   마지막으로 users 자체를 지운다 — assert 가 시험 도중 던졌어도 이 after() 는 항상 돈다.
+  const paperUsers = await rest(`users?select=id&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
+  for (const u of paperUsers) {
+    await rest(`ministry_orders?user_id=eq.${u.id}`, "DELETE");
+    await rest(`user_identity_aliases?user_id=eq.${u.id}`, "DELETE");
+  }
+  if (paperUsers.length) await rest(`users?name=eq.${encodeURIComponent(PAPER_NAME)}`, "DELETE");
+  const paperRemain = await rest(`users?select=id&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
+  assert.equal(paperRemain.length, 0, "종이 명단 시험 계정이 지워지지 않았다: " + PAPER_NAME);
 });
 
 test("역할이 필요한 액션마다 시험 입력(PROBE)이 있다", () => {
@@ -355,4 +369,83 @@ test("사역팀 정보: 목록 모양 · 설명 고치기(원래대로 되돌림
   const acts = (await call(people.super.token, "auditList", { limit: 30 })).body.rows.map((r) => r.action);
   assert.ok(acts.includes("ministry.catalog"), JSON.stringify(acts));
   assert.ok(acts.includes("ministry.order"), JSON.stringify(acts));
+});
+
+test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 생성 · 재업로드는 멱등 · 취소 사유 없음 · 없는 팀 · 4번째 줄 상한 · 결정줄 번호 비움 · 지명 팀 · 바뀐 기록", async () => {
+  const m = people.ministry.token;
+  const cfg = await rest("app_config?select=value&key=eq.ministry", "GET");
+  const year = Number(cfg[0]?.value?.year) || 2027;
+  const cat = await rest(`ministry_catalog?select=id,committee,team,kind&year=eq.${year}&order=id`, "GET");
+  const normal = cat.filter((t) => t.kind !== "appoint");
+  assert.ok(normal.length >= 4, "지명이 아닌 팀이 넷 이상 있어야 한다(종이 명단 시험)");
+  const appointTeam = cat.find((t) => t.kind === "appoint") || null;
+
+  const rowFor = (t, extra = {}) => ({
+    gu: "시험", mok: "0", name: PAPER_NAME, position: "집사", phone: "010-1234-5678",
+    committee: t.committee, team: t.team, ...extra,
+  });
+
+  // 1) 살펴보기 — 아무것도 안 만든다
+  const chk1 = await call(m, "ministryPaperCheck", { rows: [rowFor(normal[0])] });
+  assert.equal(chk1.body.ok, true, JSON.stringify(chk1.body));
+  assert.equal(chk1.body.okCount, 1, JSON.stringify(chk1.body));
+  assert.equal(chk1.body.rows[0].error, "");
+  const before1 = await rest(`users?select=id&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
+  assert.equal(before1.length, 0, "살펴보기만으로 계정이 생기면 안 된다");
+
+  // 2) 넣기 — 저장됨 · 계정 생김 · 결정 상태라 번호를 지우고 임명일을 찍는다
+  const save1 = await call(m, "ministryPaperSave", { rows: [rowFor(normal[0])] });
+  assert.equal(save1.body.ok, true, JSON.stringify(save1.body));
+  assert.equal(save1.body.added, 1, JSON.stringify(save1.body));
+  assert.equal(save1.body.rows[0].saved, true);
+  const [u1] = await rest(`users?select=id,identity_key&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
+  assert.ok(u1, "계정이 생겨야 한다");
+  assert.equal(u1.identity_key, "교구|시험|0|||" + PAPER_NAME);
+  const [order1] = await rest(`ministry_orders?select=id,status,phone,decided_at,team_id&user_id=eq.${u1.id}`, "GET");
+  assert.equal(order1.status, "임명확정");
+  assert.equal(order1.phone, null, "결정 상태 줄은 번호를 지운다");
+  assert.ok(order1.decided_at, "결정 상태 줄은 임명일을 찍는다");
+  assert.equal(order1.team_id, normal[0].id);
+
+  // 3) 같은 명단 다시 넣기 — 모두 「그대로」(멱등)
+  const save2 = await call(m, "ministryPaperSave", { rows: [rowFor(normal[0])] });
+  assert.equal(save2.body.ok, true, JSON.stringify(save2.body));
+  assert.equal(save2.body.added, 0, JSON.stringify(save2.body));
+  assert.equal(save2.body.same, 1, JSON.stringify(save2.body));
+  assert.equal(save2.body.rows[0].same, true);
+
+  // 4) 취소 줄에 사유 없음 — 그 줄만 오류
+  const chkCancel = await call(m, "ministryPaperCheck", { rows: [rowFor(normal[1], { status: "취소" })] });
+  assert.equal(chkCancel.body.ok, true, JSON.stringify(chkCancel.body));
+  assert.equal(chkCancel.body.okCount, 0);
+  assert.equal(chkCancel.body.rows[0].error, "취소 사유를 적어 주세요 (사유 칸)");
+
+  // 5) 없는 팀 이름 — 그 줄만 오류
+  const chkNoTeam = await call(m, "ministryPaperCheck",
+    { rows: [{ gu: "시험", mok: "0", name: PAPER_NAME, position: "집사", phone: "010-1234-5678", team: "존재하지않는팀-" + STAMP }] });
+  assert.equal(chkNoTeam.body.ok, true, JSON.stringify(chkNoTeam.body));
+  assert.equal(chkNoTeam.body.rows[0].error, "사역 목록에 없는 이름입니다");
+
+  // 6) 한 사람 4줄(이미 저장된 1건 + 이번 3줄) — 넷째 줄(이번 배치의 셋째 줄)이 상한 오류
+  //    계정이 이미 있어(2번) 상한 계산이 실제로 걸린다 — held=1(2번 저장분)+addedBy 로 1→2→3→초과
+  const capRows = [normal[1], normal[2], normal[3]].map((t) => rowFor(t));
+  const chkCap = await call(m, "ministryPaperCheck", { rows: capRows });
+  assert.equal(chkCap.body.ok, true, JSON.stringify(chkCap.body));
+  assert.equal(chkCap.body.rows[0].error, "", JSON.stringify(chkCap.body.rows[0]));
+  assert.equal(chkCap.body.rows[1].error, "", JSON.stringify(chkCap.body.rows[1]));
+  assert.equal(chkCap.body.rows[2].error, "이미 3건이라 3개를 넘습니다", JSON.stringify(chkCap.body.rows[2]));
+  assert.equal(chkCap.body.okCount, 2);
+  assert.equal(chkCap.body.badCount, 1);
+
+  // 7) 지명 팀에는 「임명확정」 외 상태를 못 넣는다(개발 catalog 에 지명 팀이 있을 때만)
+  if (appointTeam) {
+    const chkAppoint = await call(m, "ministryPaperCheck", { rows: [rowFor(appointTeam, { status: "신청" })] });
+    assert.equal(chkAppoint.body.rows[0].error, "지명으로 정해지는 자리입니다", JSON.stringify(chkAppoint.body.rows[0]));
+  } else {
+    console.log("종이 명단 시험: 개발 ministry_catalog 에 지명(kind='appoint') 팀이 없어 그 검증은 건너뜀");
+  }
+
+  // 8) 바뀐 기록 — ministry.paper 한 줄 이상
+  const acts = (await call(people.super.token, "auditList", { limit: 30 })).body.rows.map((r) => r.action);
+  assert.ok(acts.includes("ministry.paper"), JSON.stringify(acts));
 });
