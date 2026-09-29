@@ -34,6 +34,13 @@ export const ACTION_ROLES: Record<string, string | null> = {
   peoplePerson: "directory",
   peopleStats: "directory",
   peopleExport: "directory",
+  // 성경필사(암송)(2026-09-29) — 성경암송 앱의 이벤트 명단(events·event_signups). 여기는 읽기 넷
+  // (회차 목록·명단·사람별 이력·통계). 줄은 이름·소속·직분·담당자 메모·교적 표시만 — user_id·신원 키·
+  // 성도님 전화·메모·답은 싣지 않는다. 쓰기(회차 설정·줄 고치기·올리기)는 Task 6~8 이 이 아래에 더한다.
+  evEvents: "bibleevent",
+  evRoster: "bibleevent",
+  evHistory: "bibleevent",
+  evStats: "bibleevent",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

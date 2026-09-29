@@ -44,6 +44,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     [{ status: "pending", roles: ["ministry"] }, "pending"],
     [{ status: "disabled", roles: ["ministry"] }, "disabled"],
     [{ status: "active", roles: [] }, "forbidden"],
+    [{ status: "active", roles: ["bibleevent"] }, "forbidden"],
     [{ status: "active", roles: ["ministry"] }, "ok"],
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
@@ -52,7 +53,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
     "ministrySetStatus"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
-  assert.deepEqual(knownRoles(), ["directory", "ministry", "super"]);
+  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "ministry", "super"]);
 });
 
 test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄만 통과, 사역 담당은 막힘", () => {
@@ -60,12 +61,30 @@ test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄�
     [null, "not-registered"],
     [{ status: "pending", roles: ["directory"] }, "pending"],
     [{ status: "disabled", roles: ["directory"] }, "disabled"],
+    [{ status: "active", roles: ["bibleevent"] }, "forbidden"],
     [{ status: "active", roles: ["ministry"] }, "forbidden"],
     [{ status: "active", roles: ["directory"] }, "ok"],
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "directory");
   assert.deepEqual(acts.sort(), ["peopleExport", "peoplePerson", "peopleSearch", "peopleStats"]);
+  for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
+});
+
+test("bibleevent(성경필사(암송)) 액션 × 사람 — 이 역할·총괄만 통과, 사역·교인명부 담당은 막힘", () => {
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["bibleevent"] }, "pending"],
+    [{ status: "disabled", roles: ["bibleevent"] }, "disabled"],
+    [{ status: "active", roles: [] }, "forbidden"],
+    [{ status: "active", roles: ["ministry"] }, "forbidden"],
+    [{ status: "active", roles: ["directory"] }, "forbidden"],
+    [{ status: "active", roles: ["bibleevent"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "bibleevent");
+  // ⚠️ Task 6~8 이 bibleevent 액션을 더할 때마다 이 목록에도 더한다 — 빠진 액션이 다른 역할로 새지 않게
+  assert.deepEqual(acts.sort(), ["evEvents", "evHistory", "evRoster", "evStats"]);
   for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 
