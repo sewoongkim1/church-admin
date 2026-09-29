@@ -4,7 +4,7 @@
 //    여기 한 번 더 적고, 시험이 두 함수를 같은 id 들로 맞대 본다(한쪽만 고치면 시험이 실패한다).
 // ⚠️ 사람 묶음은 근삿값이다(같은 이름·같은 소속 또는 같은 앱 계정) — 화면과 내려받기에 늘 그렇게 적는다.
 // ⚠️ 여러 번 참여한 분(repeaters)의 label 은 **소속만**이다(CONTRACT 5절) — 이름은 name 칸. 화면은 「이름 · 소속」, CSV 는 두 칸.
-import { whoText } from "./roster-logic.js";
+import { whoText, csvCell } from "./roster-logic.js";
 
 export const APPROX = "같은 이름·같은 소속(또는 같은 앱 계정)을 한 분으로 셌어요 — 근삿값이에요. 목장을 옮기신 해는 따로 나올 수 있어요.";
 export const MIN_REPEAT = 3;   // 서버 statsOf 의 minRepeat 기본값 — 서버는 3회 이상만 보낸다
@@ -75,8 +75,9 @@ export const repeatersAt = (repeaters, min) => (repeaters || []).filter((x) => x
 
 // 통계 내려받기 — 엑셀에서 바로 열리게 CSV(BOM · \r\n). 세 표를 빈 줄로 나눠 한 파일에.
 // 여러 번 참여한 분은 「이름」「소속」 두 칸(repeaters 의 name·label — label 은 소속만).
+// 칸은 roster-logic.js csvCell 로 감싼다 — 이름·소속은 서버가 준 값(앱 계정·교인명부)이라 「=…」로 시작하면
+// 엑셀이 수식으로 읽을 수 있어, 그 앞에 ' 를 붙여 막는다(roster-logic.js 「수식으로 안 읽히게」와 같은 규칙).
 export function statsCsv(stats, labels, min) {
-  const cell = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
   const x = crossTable(stats, labels);
   const lines = [["회차별 인원"], ["회차", "인원"]];
   for (const e of stats?.perEvent || []) lines.push([e.title || e.id, e.count]);
@@ -91,7 +92,7 @@ export function statsCsv(stats, labels, min) {
   for (const p of repeatersAt(stats?.repeaters, min)) {
     lines.push([p.name, p.label, p.times, (p.events || []).map((id) => lb(labels, id)).join(" · ")]);
   }
-  return "﻿" + lines.map((row) => row.map(cell).join(",")).join("\r\n");
+  return "﻿" + lines.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 // 파일 이름 — 한국 날짜
 export function csvName(now = new Date()) {

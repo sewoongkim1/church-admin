@@ -126,6 +126,15 @@ test("statsCsv — BOM · \\r\\n · 세 표 · 따옴표 · 회차 id 는 짧은
     .includes('"홍""길동"'));
 });
 
+test("statsCsv — 수식으로 안 읽히게(roster-logic.js csvCell) — 이름·소속이 = + - @ 로 시작하면 앞에 '", () => {
+  const csv = statsCsv({ ...STATS, repeaters: [
+    { n: 1, name: '=HYPERLINK("x")', label: "화평 20목장", times: 4, events: [] },
+    { n: 2, name: "홍길동", label: "-소망 남성", times: 3, events: [] },
+  ] }, new Map(), 3);
+  assert.ok(csv.includes('"\'=HYPERLINK(""x"")"'), csv);
+  assert.ok(csv.includes('"\'-소망 남성"'), csv);
+});
+
 test("csvName — 한국 날짜(UTC 자정 넘은 저녁은 다음 날)", () => {
   assert.equal(csvName(new Date("2026-09-29T14:59:00Z")), "성경필사_통계_20260929.csv");
   assert.equal(csvName(new Date("2026-09-29T15:00:00Z")), "성경필사_통계_20260930.csv");

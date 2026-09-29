@@ -129,18 +129,19 @@ export function positionCounts(rows) {
   return [...m.entries()].sort((a, b) => b[1] - a[1] || (a[0] === "") - (b[0] === "") || byKo(a[0], b[0]));
 }
 
-// 내려받기 — 엑셀에서 바로 열리게(BOM · \r\n). **받은 차례 그대로**(화면에 보이는 차례를 부르는 쪽이 넘긴다). 메모는 싣지 않는다.
-// = + - @ 로 시작하는 칸은 앞에 ' — 엑셀이 수식으로 읽지 않게.
-const cell = (v) => {
+// CSV 한 칸 — 엑셀에서 바로 열리게 따옴표로 감싼다. = + - @ 로 시작하는 칸은 앞에 ' — 엑셀이 수식으로 읽지 않게.
+// 성경필사(암송) 안의 다른 CSV(history-logic.js statsCsv 등)도 이 것을 쓴다 — 따로 만들지 않는다.
+export const csvCell = (v) => {
   let s = String(v ?? "");
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return `"${s.replace(/"/g, '""')}"`;
 };
+// 내려받기 — 엑셀에서 바로 열리게(BOM · \r\n). **받은 차례 그대로**(화면에 보이는 차례를 부르는 쪽이 넘긴다). 메모는 싣지 않는다.
 export function csvText(rows) {
   const head = ["이름", "구분", "소속", "세부", "직분", "출처", "교적"];
   const body = (rows || []).map((r) => [r.name, r.who_type, r.group, r.sub, r.position, SRC_TEXT[r.source] || r.source || "",
     r.church ? [r.church.state, r.church.reason].filter(Boolean).join(" · ") : ""]);
-  return "﻿" + [head, ...body].map((row) => row.map(cell).join(",")).join("\r\n");
+  return "﻿" + [head, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
 // 회차 칩 — 시작일 최근 먼저, 같으면 id 거꾸로
