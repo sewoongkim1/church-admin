@@ -2,8 +2,8 @@
 // DOM 을 쓰는 부분(pickOne·pickMany·pickDate·pickTime)은 여기서 시험하지 않는다(브라우저에서 본다).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { monthGrid, timeSlots, fmtDateLabel, fmtTimeLabel, hourLabel, kstToday, addMonth, placePopover, dayAllowed }
-  from "../js/core/picker.js";
+import { monthGrid, timeSlots, fmtDateLabel, fmtTimeLabel, hourLabel, kstToday, addMonth, placePopover, dayAllowed,
+  popHeight, POP_MAX_H, calStart, timeColumns, shiftTime, timeScrollTarget } from "../js/core/picker.js";
 
 test("monthGrid — 일요일 시작 · 앞뒤 빈칸 · 한 주 7칸", () => {
   // 2026년 9월 1일은 화요일
@@ -117,4 +117,70 @@ test("placePopover — 단추 아래 · 밑이 모자라면 위로 · 오른쪽�
   // 어느 쪽도 240px 이 안 된다 → 화면 안으로 올려 덮는다
   assert.deepEqual(placePopover({ left: 10, top: 150, bottom: 194, right: 100 }, { width: 280, height: 300 }, { width: 400, height: 400 }),
     { left: 10, top: 92 });
+});
+
+test("popHeight — 판 높이는 CSS 상한(480px)·화면 높이-16 으로 자른다", () => {
+  assert.equal(POP_MAX_H, 480);
+  assert.equal(popHeight(100, 200, 900), 300);          // 넉넉하면 제 키
+  assert.equal(popHeight(100, 900, 900), 480);          // 긴 목록 — 480 에서 멈춘다
+  assert.equal(popHeight(100, 900, 400), 384);          // 낮은 화면 — 화면-16
+  assert.equal(popHeight(0, 0, 10), 0);
+});
+
+test("popHeight + placePopover — 긴 목록을 단추 위에 붙여도 틈이 없다(2바퀴 지적 ⑥)", () => {
+  // 단추가 화면 아래쪽(top 700) · 목록 제 키 900(자르기 전) → 자르면 480, 위 자리(686)에 들어간다
+  const a = { left: 20, top: 700, bottom: 744, right: 300 };
+  const vp = { width: 1366, height: 900 };
+  const h = popHeight(120, 780, vp.height);
+  const r = placePopover(a, { width: 300, height: h }, vp);
+  assert.equal(h, 480);
+  assert.equal(r.maxHeight, undefined);
+  assert.equal(r.top + h, a.top - 6);                   // 판 아래 끝이 단추 위 6px 에 딱 붙는다
+});
+
+test("calStart — 처음 보여 줄 달: 지금 값 → 오늘 → min → max", () => {
+  const today = "2026-09-29";
+  assert.deepEqual(calStart({ value: "2026-03-15", today }), [2026, 3]);                        // 지금 값
+  assert.deepEqual(calStart({ value: "", today }), [2026, 9]);                                    // 오늘
+  assert.deepEqual(calStart({ value: "nope", today }), [2026, 9]);                                // 이상한 값은 없는 것
+  assert.deepEqual(calStart({ today, min: "2026-11-02" }), [2026, 11]);                           // 오늘이 시작일 앞 → min
+  assert.deepEqual(calStart({ today, max: "2026-07-31" }), [2026, 7]);                            // 오늘이 끝날 뒤 → max
+  assert.deepEqual(calStart({ today, min: "2026-09-01", max: "2026-10-31" }), [2026, 9]);         // 기간 안이면 오늘
+  assert.deepEqual(calStart({ value: "2025-12-25", today, min: "2026-11-02" }), [2025, 12]);      // 지금 값이 늘 먼저
+  assert.deepEqual(calStart({ today, min: "bad", max: "2026-07-31" }), [2026, 7]);                // 이상한 min 은 없는 것
+});
+
+test("timeColumns — 간격에 안 맞는 지금 값(09:07)은 분 목록에 끼운다", () => {
+  const a = timeColumns(5, "09:07");
+  assert.equal(a.h, "09");
+  assert.equal(a.mi, "07");
+  assert.deepEqual(a.minutes.slice(0, 4), ["00", "05", "07", "10"]);
+  assert.equal(a.minutes.length, 13);
+  const b = timeColumns(5, "09:30");                    // 맞는 값은 그대로
+  assert.equal(b.minutes.length, 12);
+  const c = timeColumns(15, "");                        // 빈 값
+  assert.equal(c.h, "");
+  assert.equal(c.mi, "");
+  assert.deepEqual(c.minutes, ["00", "15", "30", "45"]);
+  assert.equal(timeColumns(5, "9:07").h, "");           // 꼴이 아니면 빈 값
+  assert.equal(timeColumns(15, "23:59").minutes.at(-1), "59");
+});
+
+test("shiftTime — 한 시간 앞뒤 · 하루 밖으로 안 나간다", () => {
+  assert.equal(shiftTime("09:30", 60), "10:30");
+  assert.equal(shiftTime("10:30", -60), "09:30");
+  assert.equal(shiftTime("23:30", 60), "23:59");
+  assert.equal(shiftTime("00:20", -60), "00:00");
+  assert.equal(shiftTime("", 60), "");
+  assert.equal(shiftTime("9:30", 60), "");
+});
+
+test("timeScrollTarget — 지금 값 → near → 오전 9시", () => {
+  const minutes = timeSlots(5).minutes;
+  assert.deepEqual(timeScrollTarget({ h: "14", mi: "05", minutes, near: "10:30" }), { h: "14", m: "05" });   // 지금 값이 먼저
+  assert.deepEqual(timeScrollTarget({ minutes, near: "10:30" }), { h: "10", m: "30" });                      // 끝 시각 = 시작+1시간
+  assert.deepEqual(timeScrollTarget({ minutes, near: "10:32" }), { h: "10", m: "30" });                      // 가장 가까운 칸
+  assert.deepEqual(timeScrollTarget({ minutes: ["00", "15", "30", "45"], near: "10:50" }), { h: "10", m: "45" });
+  assert.deepEqual(timeScrollTarget({ minutes, near: "" }), { h: "09", m: "00" });
+  assert.deepEqual(timeScrollTarget({ minutes, near: "bad" }), { h: "09", m: "00" });
 });

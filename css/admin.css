@@ -148,7 +148,7 @@ a.card{display:block;color:inherit;text-decoration:none}
 .mn-cond-t{font-size:13px;font-weight:800;flex:none}
 .mn-cond-sum{flex:1;min-width:0;text-align:left;font-size:13px;color:var(--gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mn-cond-sum.on{color:var(--navy);font-weight:700}
-.mn-cond-arrow{flex:none;font-size:13px;color:var(--gray);transition:transform .15s}
+/* 접기 표시 — 고르개 단추와 같은 쉐브론(.pk-field-x · 2026-09-29). 펼치면 뒤집힌다 */
 .mn-cond-toggle[aria-expanded="true"] .mn-cond-arrow{transform:rotate(180deg)}
 .mn-cond{margin:0 0 10px}
 .mn-range{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:0 0 6px}
@@ -375,11 +375,12 @@ a.mn-tel.sm{padding:2px 8px}
 .mc-pick-l{font-size:13px;font-weight:800;color:var(--gray);flex:none}
 .mc-pick b{flex:1;min-width:0;text-align:left;font-size:14px;font-weight:800;color:var(--navy);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mc-pick-x{flex:none;font-size:13px;color:var(--gray);transition:transform .15s}
+/* 부서 고르기 표시 — 고르개 단추와 같은 쉐브론(.pk-field-x). 펼치면 뒤집힌다 */
 .mc-pick[aria-expanded="true"] .mc-pick-x{transform:rotate(180deg)}
 .mc-head-b{display:flex;align-items:center;gap:8px;margin:0 0 8px}
-.mc-only{display:flex;align-items:center;gap:5px;min-height:var(--chip);font-size:13px;font-weight:700;color:#41506b;cursor:pointer}
-.mc-only input[type=checkbox]{width:20px;height:20px}
+/* 글자까지 label 이라 어디를 눌러도 켜진다 — 누름 자리는 --tap(44px) 높이 · 글자 뒤 여백까지(2026-09-29) */
+.mc-only{display:flex;align-items:center;gap:8px;min-height:var(--tap);padding:0 10px 0 2px;margin-left:-2px;font-size:13px;font-weight:700;color:#41506b;cursor:pointer}
+.mc-only input[type=checkbox]{flex:none;width:20px;height:20px;margin:0;accent-color:var(--navy)}
 .mc-found{margin-left:auto;font-size:13px;color:var(--gray)}
 .mc-found b{color:var(--navy)}
 .mc-found i{font-style:normal;color:#a0a9b8}
@@ -458,12 +459,23 @@ a.mn-tel.sm{padding:2px 8px}
   font-weight:600;color:#41506b;border:1px solid var(--border);border-radius:10px;cursor:pointer}
 .mc-when label i{font-style:normal;font-weight:500;font-size:13px;color:#9aa4b4;margin-left:2px}
 .mc-when input[type=checkbox]{width:20px;height:20px;flex:none;margin:0}
-/* 주일 시각 — 「시작 ~ 끝」이 한 쌍으로 읽히게 한 줄 격자(같은 폭 두 칸 + 가운데 ~). 폰(카드 안쪽 약 270px)에서도
-   줄이 안 갈린다 — 단추 글자는 「오전 10:30」이 가장 길다 */
-.mc-w-r.mc-w-time{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:6px}
+/* 주일 시각 — 넓으면 「시작 ~ 끝」이 한 쌍으로 읽히게 한 줄 격자(같은 폭 두 칸 + 가운데 ~).
+   좁으면(한 칸이 가장 긴 글자 「오전 10:30」을 다 못 담는 폭 — 폰 폭 360·320) 두 단추를 한 줄씩 전체 폭으로 놓고
+   앞에 「시작」「끝」 작은 글자를 붙인다(~ 는 감춘다 · 2026-09-29 — 「오전 9:…」로 잘리던 것).
+   ⚠️ 문턱 290px 은 재어 정했다 — 한 줄 두 칸이 안 잘리는 가장 좁은 칸 폭 261px(맑은 고딕 「오전 10:30」) + 기기 글꼴 여유
+   약 10%. 폰 390(칸 268px)은 한 줄씩, 414(칸 292px)부터 한 줄. 단추 글자·여백을 바꾸면 다시 잴 것. */
+.mc-w-r.mc-w-time{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:6px;
+  container-type:inline-size}
 .mc-w-time>b,.mc-w-time .mc-w-off{grid-column:1/-1}
 .mc-w-time>b{margin-bottom:2px}
-.mc-when .pk-field{min-width:0;padding:0 10px}
+.mc-t-slot{display:flex;align-items:center;gap:8px;min-width:0}
+.mc-t-k{display:none;flex:none;min-width:2.4em;font-size:13px;font-weight:700;color:#6b7688}
+.mc-when .pk-field{flex:1 1 auto;min-width:0;padding:0 10px}
+@container (max-width:290px){
+  .mc-t-slot{grid-column:1/-1}
+  .mc-t-k{display:block}
+  .mc-w-tw{display:none}
+}
 .mc-w-off{font-style:normal;font-size:13px;color:#a3701e}
 .mc-w-tw{font-size:13px;color:var(--gray)}
 .mc-in-acts{display:flex;gap:8px;align-items:stretch;margin-top:2px}
@@ -528,51 +540,27 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-src{margin:-4px 0 12px}
 .pp-src.stale{color:var(--error);font-weight:700}
 /* 거르기 — 「여러 개 고르기」 단추 넷(교구·구분·출석·직분). 폰 2×2, 넓으면 한 줄.
-   판(.pp-pan) — 좁을 때: .pp-pick 을 display:contents 로 풀어 판을 격자의 한 줄(전체 폭)로 끼운다. 그 단추가 있는
-   줄 바로 아래에 열리고 아래 줄을 밀어낸다(dense 가 옆 단추를 제자리에 채운다). 덮어 뜨게 하면 윗줄 판이
-   아랫줄 단추를 가려 못 누른다(2026-09-29 시험에서 확인).
-   넓을 때: 단추 아래에 덮어 뜬다 — 그 단추 폭 이상(최소 260px). */
-.pp-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense;gap:8px;margin-bottom:10px}
-.pp-pick{display:contents}
-.pp-pick-b{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:6px;width:100%;
+   누르면 공용 고르개 pickMany(js/core/picker.js) — 폰은 바텀 시트, 넓으면 단추 아래 작은 판(자체 판은 2026-09-29 에 걷어 냈다). */
+.pp-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.pp-pick-b{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:6px;width:100%;min-width:0;
   min-height:var(--tap-lg);padding:4px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;
   color:#222;font-family:inherit;text-align:left;cursor:pointer}
 .pp-pick-b:disabled{cursor:default}
 .pp-pick-b:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:2px}
-.pp-pick-b.on{border-color:var(--navy);box-shadow:inset 0 0 0 1px var(--navy)}
+.pp-pick-b.on,.pp-pick-b[aria-expanded="true"]{border-color:var(--navy)}
+.pp-pick-b.on{box-shadow:inset 0 0 0 1px var(--navy)}
 .pp-pick-l{grid-column:1;font-size:12px;line-height:1.2;color:var(--gray)}
 .pp-pick-v{grid-column:1;font-size:15px;font-weight:600;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pp-pick-b.on .pp-pick-v{color:var(--navy);font-weight:800}
-/* ▾ 대신 CSS 로 그린 쉐브론 — 글자 ▾ 는 너무 작고 흐렸다(2026-09-29 비평) */
-.pp-pick-a{grid-column:2;grid-row:1 / span 2;width:10px;height:10px;margin:0 4px 5px;
-  border-right:2.5px solid var(--navy);border-bottom:2.5px solid var(--navy);transform:rotate(45deg);transition:transform .12s}
-.pp-pick.open .pp-pick-a{transform:translateY(4px) rotate(-135deg)}
-.pp-pan{grid-column:1 / -1;padding:6px;background:#fff;
-  border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 26px rgba(26,42,72,.16)}
-.pp-pan-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 4px 6px;
-  border-bottom:1px solid var(--light);font-size:13px}
-.pp-pan-clear{min-height:var(--chip);padding:0 12px;border:1px solid var(--ghost-bd);border-radius:999px;background:var(--ghost-bg);
-  color:var(--navy);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
-.pp-pan-clear:disabled{opacity:.45;cursor:default}   /* 고른 것이 없을 때 */
-/* 일곱 줄 반 — 여덟째 줄이 반만 보여 「아래에 더 있다」가 드러난다(4px = 위 여백) */
-.pp-pan-list{max-height:calc(var(--tap) * 7.5 + 4px);overflow-y:auto;overscroll-behavior:contain;padding-top:4px}
-.pp-pan-none{padding:8px}
-.pp-opt{display:flex;align-items:center;gap:10px;min-height:var(--tap);padding:0 8px;border-radius:8px;font-size:15px;cursor:pointer}
-.pp-opt:hover{background:var(--ghost-bg)}
-.pp-opt input{flex:none;width:20px;height:20px;accent-color:var(--navy)}
-.pp-opt-t{flex:1;min-width:0;overflow-wrap:anywhere}
-.pp-opt-n{flex:none;font-size:13px;color:var(--gray);font-variant-numeric:tabular-nums}
+/* 쉐브론 — 고르개 단추(.pk-field-x)와 같은 그림. 열리면 뒤집힌다 */
+.pp-pick-b .pk-field-x{grid-column:2;grid-row:1 / span 2}
+.pp-pick-b[aria-expanded="true"] .pk-field-x{transform:rotate(180deg)}
 .pp-nophoto{grid-column:1 / -1;justify-self:start;display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);
   padding:0 14px;border:1px solid var(--ghost-bd);border-radius:999px;background:var(--ghost-bg);color:var(--navy);
   font-family:inherit;font-size:14px;font-weight:700;cursor:pointer}
 .pp-np-i{font-size:1.15em;line-height:1}
 .pp-np-x{font-size:1.1em;line-height:1;font-weight:800}
-@media (min-width:640px){
-  .pp-filters{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .pp-pick{display:block;position:relative;min-width:0}
-  .pp-pan{position:absolute;left:0;top:100%;z-index:30;margin-top:6px;min-width:max(100%,260px)}
-  .pp-pick:nth-child(4) .pp-pan{left:auto;right:0}   /* 맨 오른쪽 단추의 판은 오른쪽에 맞춰 화면 밖으로 안 나가게 */
-}
+@media (min-width:640px){.pp-filters{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .pp-form .acts{margin-bottom:12px}
 .pp-sum{margin-bottom:8px}
 .pp-card{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:var(--gap);cursor:pointer}
@@ -747,6 +735,7 @@ a.mn-tel.sm{padding:2px 8px}
 .pk{display:flex;flex-direction:column;background:#fff;color:#222}
 .pk-dim.sheet .pk{width:100%;max-width:560px;max-height:80vh;max-height:80dvh;border-radius:16px 16px 0 0;
   padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -6px 24px rgba(0,0,0,.18);animation:pk-up .18s ease-out}
+/* ⚠️ 480px = js/core/picker.js POP_MAX_H (판 자리 계산이 이 상한을 쓴다 — 함께 바꿀 것) */
 .pk-dim.pop .pk{position:fixed;max-width:calc(100vw - 16px);max-height:min(480px,calc(100vh - 16px));
   border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px rgba(13,27,62,.18)}
 @keyframes pk-up{from{transform:translateY(100%)}to{transform:none}}
@@ -773,6 +762,10 @@ a.mn-tel.sm{padding:2px 8px}
 .pk-chk{display:flex;align-items:center;gap:10px;min-height:var(--tap);padding:0 12px;border-radius:10px;cursor:pointer}
 .pk-chk:hover{background:var(--light)}
 .pk-chk input{flex:none;width:22px;height:22px;margin:0;accent-color:var(--navy)}
+.pk-chk .pk-opt-t{overflow-wrap:anywhere}
+/* 여러 개 고르기의 hint(인원 수 등) — 항목 오른쪽 끝에 작게 */
+.pk-hint{flex:none;font-size:13px;color:var(--gray);font-variant-numeric:tabular-nums}
+.pk-none{padding:14px 12px;color:var(--gray)}
 /* 날짜 — 달력 */
 .pk-dim.pop .pk-date{width:340px}
 .pk-cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}

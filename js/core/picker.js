@@ -1,4 +1,4 @@
-// 공용 고르개 — 시스템 창(<select>·날짜·시각 칸) 대신 우리가 그리는 창(2026-09-29 · 친구 요구
+// 공용 고르개 — 시스템 창(select 목록·날짜·시각 칸) 대신 우리가 그리는 창(2026-09-29 · 친구 요구
 // 「모바일에서는 팝업을 우리 것으로, 시스템 팝업을 띄우지 말 것」).
 //   좁은 화면(≤719px) = 화면 아래에 붙는 바텀 시트 · 넓은 화면 = 누른 단추 바로 아래의 작은 판.
 //   모두 Promise — 고르면 값, 취소(Esc·뒤 막·「닫기」)면 null. 한 번에 하나만 열린다.
@@ -93,6 +93,56 @@ export function placePopover(a, size, vp) {
   return { left, top: Math.max(M, vp.height - M - size.height) };
 }
 
+// 작은 판의 높이 상한 — css/admin.css `.pk-dim.pop .pk{max-height:min(480px,calc(100vh - 16px))}` 와 같은 값.
+// ⚠️ 둘 중 하나를 바꾸면 다른 쪽도.
+export const POP_MAX_H = 480;
+// 판이 실제로 그려질 높이 — 틀(머리·아래 줄) + 내용 전체 높이를 CSS 상한으로 자른다. 자르지 않고 placePopover 에
+// 넘기면, 단추 위에 붙일 때 「넘치는 키」만큼 위로 올라가 판과 단추 사이에 틈이 생긴다(2바퀴 지적 ⑥).
+export function popHeight(chrome, content, vh, cap = POP_MAX_H) {
+  return Math.max(0, Math.min(chrome + content, cap, vh - 16));
+}
+
+// 달력을 처음 열 때 보여 줄 달 [해, 달] — 지금 값 → 오늘(고를 수 있으면) → 오늘이 시작일(min) 앞이면 min → 그 밖엔 끝날(max).
+// 날짜 꼴이 아닌 값·한계는 없는 것으로 본다.
+export function calStart({ value = "", today, min = "", max = "" } = {}) {
+  let s;
+  if (DATE_RE.test(value || "")) s = value;
+  else if (dayAllowed(today, min, max)) s = today;
+  else if (DATE_RE.test(min || "") && today < min) s = min;
+  else s = max;
+  const [y, m] = s.split("-").map(Number);
+  return [y, m];
+}
+
+// 시각 고르개의 두 열 — 시 24개 · 분 step 간격. 지금 값(value)의 분이 간격에 안 맞으면(예: 09:07) 분 목록에
+// 끼워 둔다 — 열었다 「확인」만 눌러도 값이 바뀌지 않게. h·mi 는 지금 값("" 이면 아직 안 고름).
+export function timeColumns(step, value) {
+  const { hours, minutes } = timeSlots(step);
+  const mm = TIME_RE.exec(value || "");
+  const h = mm ? mm[1] : "", mi = mm ? mm[2] : "";
+  if (mi && !minutes.includes(mi)) { minutes.push(mi); minutes.sort(); }
+  return { hours, minutes, h, mi };
+}
+
+// "09:30" 에 n분 더하기 — 하루 안에서만(00:00 ~ 23:59 로 자른다). 꼴이 아니면 "".
+export function shiftTime(v, n) {
+  const mm = TIME_RE.exec(String(v || ""));
+  if (!mm) return "";
+  const t = Math.min(23 * 60 + 59, Math.max(0, Number(mm[1]) * 60 + Number(mm[2]) + n));
+  return `${p2(Math.floor(t / 60))}:${p2(t % 60)}`;
+}
+
+// 처음 굴려 둘 자리 { h, m } — 지금 값이 있으면 그 자리, 없으면 near("HH:MM" · 예: 끝 시각 창이면 시작+1시간),
+// 그것도 없으면 오전 9시 정각. 분은 목록에서 가장 가까운 칸(near 가 간격에 안 맞아도 그 언저리로).
+export function timeScrollTarget({ h = "", mi = "", minutes = [], near = "" } = {}) {
+  if (h) return { h, m: mi || "00" };
+  const nm = TIME_RE.exec(near || "");
+  if (!nm) return { h: "09", m: "00" };
+  const want = Number(nm[2]);
+  const m = minutes.reduce((best, x) => (Math.abs(Number(x) - want) < Math.abs(Number(best) - want) ? x : best), minutes[0] || "00");
+  return { h: nm[1], m };
+}
+
 // ───────── 창 (브라우저에서만) ─────────
 
 let current = null;   // 지금 열린 창을 닫는 함수 — 한 번에 하나만
@@ -147,8 +197,8 @@ function openShell({ anchor, title, mode, cls = "", onBuild }) {
       if (sheet || !anchor || !anchor.isConnected) return;
       const r = anchor.getBoundingClientRect();
       // 제 키(자연 높이)는 높이 제한을 풀지 않고 계산한다 — 풀었다 다시 걸면 그 사이 내용 칸이 안 넘쳐
-      // 브라우저가 스크롤 자리를 0 으로 잘라 버린다(굴리던 달력이 맨 위로 튄다)
-      const natural = box.offsetHeight - body.clientHeight + body.scrollHeight;
+      // 브라우저가 스크롤 자리를 0 으로 잘라 버린다(굴리던 달력이 맨 위로 튄다). CSS 상한(480px)으로 자른다(popHeight).
+      const natural = popHeight(box.offsetHeight - body.clientHeight, body.scrollHeight, innerHeight);
       const { left, top, maxHeight } = placePopover(r, { width: box.offsetWidth, height: natural },
         { width: document.documentElement.clientWidth, height: innerHeight });
       box.style.left = left + "px";
@@ -205,22 +255,29 @@ export function pickOne({ anchor, title, options = [], value = "", mode } = {}) 
   } });
 }
 
-// 여러 개 고르기 — 체크박스 · 「모두 해제」 · 「확인」 → 고른 values 배열
+// 여러 개 고르기 — 체크박스 · 「모두 해제」 · 「확인」 → 고른 values 배열. hint 는 항목 오른쪽의 작은 글자(인원 수 등).
+// 고를 것이 없으면 「고를 것이 없어요」. 「모두 해제」는 켠 것이 하나도 없으면 잠긴다.
 export function pickMany({ anchor, title, options = [], values = [], mode } = {}) {
   const has = new Set((values || []).map(String));
   return openShell({ anchor, title, mode, cls: "pk-many", onBuild: ({ body, foot, close }) => {
-    body.innerHTML = `<div class="pk-list">${options.map((o, i) =>
-      `<label class="pk-chk"><input type="checkbox" data-i="${i}"${has.has(String(o.value)) ? " checked" : ""}>
-        <span class="pk-opt-t">${esc(o.label ?? o.value)}${o.hint ? `<small>${esc(o.hint)}</small>` : ""}</span></label>`).join("")}</div>`;
+    body.innerHTML = options.length ? `<div class="pk-list">${options.map((o, i) =>
+      `<label class="pk-chk"><input type="checkbox" data-i="${i}"${has.has(String(o.value)) ? " checked" : ""}>` +
+      `<span class="pk-opt-t">${esc(o.label ?? o.value)}</span>${o.hint ? `<small class="pk-hint">${esc(o.hint)}</small>` : ""}</label>`).join("")}</div>`
+      : `<p class="pk-none">고를 것이 없어요</p>`;
     foot.hidden = false;
-    foot.innerHTML = `<button type="button" class="btn" data-k="clear">모두 해제</button>
-      <button type="button" class="btn primary" data-k="ok">확인</button>`;
+    foot.innerHTML = `<button type="button" class="btn" data-k="clear">모두 해제</button>` +
+      `<button type="button" class="btn primary" data-k="ok">확인</button>`;
+    const boxes = () => [...body.querySelectorAll("input[type=checkbox]")];
+    const clear = foot.querySelector('[data-k="clear"]');
+    const sync = () => { clear.disabled = !boxes().some((c) => c.checked); };
+    sync();
+    body.addEventListener("change", sync);
     foot.addEventListener("click", (e) => {
       const k = e.target.closest("button[data-k]")?.dataset.k;
-      if (k === "clear") body.querySelectorAll("input[type=checkbox]").forEach((c) => { c.checked = false; });
-      if (k === "ok") close([...body.querySelectorAll("input[type=checkbox]")].filter((c) => c.checked).map((c) => options[Number(c.dataset.i)].value));
+      if (k === "clear") { boxes().forEach((c) => { c.checked = false; }); sync(); body.querySelector("input")?.focus({ preventScroll: true }); }
+      if (k === "ok") close(boxes().filter((c) => c.checked).map((c) => options[Number(c.dataset.i)].value));
     });
-    return body.querySelector("input");
+    return body.querySelector("input") || foot.querySelector('[data-k="ok"]');
   } });
 }
 
@@ -230,8 +287,7 @@ export function pickDate({ anchor, title, value = "", min = "", max = "", mode }
   const today = kstToday();
   const cur = DATE_RE.test(value || "") ? value : "";
   const ok = (ds) => dayAllowed(ds, min, max);
-  const start = cur || (ok(today) ? today : DATE_RE.test(min || "") && today < min ? min : max);
-  let [y, m] = start.split("-").map(Number);
+  let [y, m] = calStart({ value: cur, today, min, max });
   return openShell({ anchor, title, mode, cls: "pk-date", onBuild: ({ body, foot, close, redraw }) => {
     const draw = () => {
       const weeks = monthGrid(y, m);
@@ -278,12 +334,12 @@ export function pickDate({ anchor, title, value = "", min = "", max = "", mode }
 }
 
 // 시각 — 두 열(시 · 분). 「확인」 → "HH:MM" · 「지우기」 → ""
-export function pickTime({ anchor, title, value = "", step = 5, mode } = {}) {
-  const { hours, minutes } = timeSlots(step);
-  const mm = TIME_RE.exec(value || "");
-  let h = mm ? mm[1] : "", mi = mm ? mm[2] : "";
-  // 지금 값이 간격에 안 맞으면(예: 09:07) 목록에 끼워 둔다 — 열었다 확인만 눌러도 값이 바뀌지 않게
-  if (mi && !minutes.includes(mi)) { minutes.push(mi); minutes.sort(); }
+// near("HH:MM") — 빈 값으로 열 때 처음 굴려 둘 자리(예: 끝 시각 창은 시작+1시간). 고르지는 않는다(초점만 그 시에).
+export function pickTime({ anchor, title, value = "", step = 5, near = "", mode } = {}) {
+  const cols = timeColumns(step, value);
+  const { hours, minutes } = cols;
+  let { h, mi } = cols;
+  const aim = timeScrollTarget({ h, mi, minutes, near });
   return openShell({ anchor, title, mode, cls: "pk-time", onBuild: ({ body, foot, close }) => {
     const col = (k, list, lab, sel, name) => `<div class="pk-col" data-col="${k}" role="group" aria-label="${name}">${list.map((v) =>
       `<button type="button" class="pk-cell${v === sel ? " on" : ""}" data-${k}="${v}" aria-pressed="${v === sel}">${lab(v)}</button>`).join("")}</div>`;
@@ -313,15 +369,15 @@ export function pickTime({ anchor, title, value = "", step = 5, mode } = {}) {
       if (k === "clear") close("");
       if (k === "ok" && h) close(`${h}:${mi || "00"}`);
     });
-    // 지금 값(없으면 오전 9시)이 열 가운데 오게 미리 굴려 둔다
+    // 지금 값(없으면 near, 그것도 없으면 오전 9시)이 열 가운데 오게 미리 굴려 둔다
     requestAnimationFrame(() => {
       const center = (c, sel) => {
         const b = c.querySelector(sel);
         if (b) c.scrollTop = b.offsetTop - c.clientHeight / 2 + b.offsetHeight / 2;
       };
-      center(body.querySelector('[data-col="h"]'), `[data-h="${h || "09"}"]`);
-      center(body.querySelector('[data-col="m"]'), `[data-m="${mi || "00"}"]`);
+      center(body.querySelector('[data-col="h"]'), `[data-h="${aim.h}"]`);
+      center(body.querySelector('[data-col="m"]'), `[data-m="${aim.m}"]`);
     });
-    return body.querySelector("[data-h].on") || body.querySelector('[data-h="09"]');
+    return body.querySelector("[data-h].on") || body.querySelector(`[data-h="${aim.h}"]`);
   } });
 }

@@ -51,7 +51,7 @@ export async function render(el, { call }) {
         <div class="mn-stbar" role="group" aria-label="상태로 거르기">${stBtn("", "all", "전체")}${STATES.map((x) => stBtn(x, CLS[x], SHORT[x])).join("")}</div>
         <div class="mn-condbar">
           <button type="button" class="mn-cond-toggle" data-act="cond" aria-expanded="${condOpen}" aria-controls="mn-cond">
-            <span class="mn-cond-t">📅 신청일</span><span class="mn-cond-sum"></span><span class="mn-cond-arrow" aria-hidden="true">▾</span>
+            <span class="mn-cond-t">📅 신청일</span><span class="mn-cond-sum"></span><span class="mn-cond-arrow pk-field-x" aria-hidden="true"></span>
           </button>
         </div>
       </div>
@@ -64,10 +64,10 @@ export async function render(el, { call }) {
           `<button type="button" data-act="range" data-range="${k}">${t}</button>`).join("")}</div>
         <div class="mn-custom" hidden>
           <button type="button" class="pk-field mn-from" data-act="date" data-k="from" aria-haspopup="dialog" aria-expanded="false"
-            aria-label="신청일 시작"><span class="pk-field-v"></span><span class="pk-field-x" aria-hidden="true">▾</span></button>
+            aria-label="신청일 시작"><span class="pk-field-v"></span><span class="pk-field-x" aria-hidden="true"></span></button>
           <span>~</span>
           <button type="button" class="pk-field mn-to" data-act="date" data-k="to" aria-haspopup="dialog" aria-expanded="false"
-            aria-label="신청일 끝"><span class="pk-field-v"></span><span class="pk-field-x" aria-hidden="true">▾</span></button>
+            aria-label="신청일 끝"><span class="pk-field-v"></span><span class="pk-field-x" aria-hidden="true"></span></button>
         </div>
       </div>
       <div class="mn-list"></div>

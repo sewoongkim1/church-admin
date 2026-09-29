@@ -23,15 +23,18 @@ export function mcWhenText(r) {
   return [days, time, freq].filter(Boolean).join(" ");
 }
 // 주일 시각 단추 글자 — 값은 옆 hidden 칸(data-f="from"·"to")에, 단추는 「오전 9:30」처럼 읽기 쉬운 글자만.
-// 시스템 시각 칸(<input type="time">) 대신 picker.js 의 pickTime 을 연다(2026-09-29).
+// 시스템 시각 칸(input 의 time 꼴) 대신 picker.js 의 pickTime 을 연다(2026-09-29).
 export const MC_TIME_NONE = { from: "시작 시각", to: "끝 시각" };
 export const mcTimeText = (k, v) => fmtTimeLabel(v) || MC_TIME_NONE[k];
 // 단추 이름에 고른 시각도 함께 — 화면 읽기 프로그램이 「주일 시작 시각, 오전 9:30」으로 읽게(값을 바꾸면 catalog.js setTime 이 고친다)
 export const mcTimeAria = (k, v) => `주일 ${k === "from" ? "시작" : "끝"} 시각, ${fmtTimeLabel(v) || "비어 있음"}`;
-const timeField = (r, k) => `<input type="hidden" data-f="${k}" data-id="${r.id}" value="${esc(r[k])}">` +
+// 칸(.mc-t-slot)마다 「시작」「끝」 작은 글자 — 좁아서 두 단추가 한 줄씩 놓일 때만 보인다(css .mc-w-time @container).
+// hidden 칸과 단추는 같은 칸 안에 둔다 — catalog.js setTime 이 단추의 부모에서 hidden 칸을 찾는다.
+const timeField = (r, k) => `<span class="mc-t-slot"><small class="mc-t-k" aria-hidden="true">${k === "from" ? "시작" : "끝"}</small>` +
+  `<input type="hidden" data-f="${k}" data-id="${r.id}" value="${esc(r[k])}">` +
   `<button type="button" class="pk-field mc-time${r[k] ? "" : " empty"}" data-time="${k}" data-id="${r.id}"
     aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(mcTimeAria(k, r[k]))}"${r.sun ? "" : " disabled"}>` +
-  `<span class="pk-field-v">${esc(mcTimeText(k, r[k]))}</span><span class="pk-field-x" aria-hidden="true">▾</span></button>`;
+  `<span class="pk-field-v">${esc(mcTimeText(k, r[k]))}</span><span class="pk-field-x" aria-hidden="true"></span></button></span>`;
 
 // 「② 언제」 여덟 체크박스 중 하나라도 켜져 있거나 시각이 있으면 "채움"
 export const mcHasWhen = (r) => MC_WHEN_KEYS.some((k) => r[k]) || !!r.from || !!r.to;

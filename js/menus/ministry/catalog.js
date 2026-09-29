@@ -14,12 +14,13 @@
 //      안 보이는 팀과도 자리가 바뀔 수 있었다(원문 문서 체크리스트 17·18, "발견 사항"). 조건을 좁혀
 //      아예 그 상황을 만들지 않는다.
 //   ④ 저장 뒤 폼을 다시 그린다(원문은 그 칸만 DOM 패치) — 다른 화면(신청 현황)과 같은 결로 단순화.
-//   ⑤ 주일 시각은 시스템 시각 칸 대신 시각 단추(picker.js · 2026-09-29)라, 시각 단추에서 Enter 는
-//      저장이 아니라 고르개 열기다(옛 칸은 시각을 치고 Enter 로 바로 저장됐다). 고른 뒤 말없이 저장하지 않는다 —
-//      다른 칸의 「엔터로도 저장」은 그대로다.
+//   ⑤ 주일 시각은 시스템 시각 칸 대신 시각 단추(picker.js · 2026-09-29). 단추를 누르거나 Space 면 고르개가 열리고,
+//      단추에 초점이 있을 때 Enter 는 옛 시각 칸처럼 **저장**이다(다른 칸의 「엔터로도 저장」과 같게 · 2바퀴 지적).
+//      고르개가 열려 있는 동안의 Enter 는 고르개 몫이다 — 고르개는 body 에 붙어 이 화면(el)의 keydown 에 안 온다.
+//      고른 뒤 말없이 저장하지 않는다.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { MC_DAYS, MC_FREQS, MC_WHEN_KEYS, mcHasWhen, mcEmpty, mcHit, mcBrs, tabsHtml, cardHtml, mcTimeText, mcTimeAria } from "./catalog-ui.js";
-import { pickTime } from "../../core/picker.js";
+import { pickTime, shiftTime } from "../../core/picker.js";
 
 const TITLE = `<h2 class="page-title">🗂️ 사역팀 정보</h2>`;
 
@@ -61,7 +62,7 @@ export async function render(el, { call }) {
       <div class="mc-head">
         <input type="search" id="mc-q" class="search" placeholder="🔍 팀 · 부서 · 담당자 · 하는 일" autocomplete="off" aria-label="찾기">
         <button type="button" class="mc-pick" id="mc-pick-t" aria-expanded="false" aria-controls="mc-tabs">
-          <span class="mc-pick-l">부서</span><b id="mc-pick-n">전체</b><span class="mc-pick-x" aria-hidden="true">▾</span>
+          <span class="mc-pick-l">부서</span><b id="mc-pick-n">전체</b><span class="mc-pick-x pk-field-x" aria-hidden="true"></span>
         </button>
       </div>
       <div class="mc-head-b">
@@ -243,9 +244,12 @@ export async function render(el, { call }) {
   el.addEventListener("click", async (e) => {
     const tBtn = e.target.closest("[data-time]");
     if (tBtn) {
-      const hid = tBtn.parentElement.querySelector(`input[data-f="${tBtn.dataset.time}"]`);
-      const v = await pickTime({ anchor: tBtn, title: tBtn.dataset.time === "from" ? "주일 시작 시각" : "주일 끝 시각",
-        value: hid ? hid.value : "", step: 5 });
+      const k = tBtn.dataset.time;
+      const hid = tBtn.parentElement.querySelector(`input[data-f="${k}"]`);
+      // 빈 끝 시각은 시작+1시간 언저리를, 빈 시작 시각은 끝-1시간 언저리를 먼저 보여 준다(고르지는 않는다)
+      const other = tBtn.closest(".mc-w-time")?.querySelector(`input[data-f="${k === "from" ? "to" : "from"}"]`)?.value || "";
+      const v = await pickTime({ anchor: tBtn, title: k === "from" ? "주일 시작 시각" : "주일 끝 시각",
+        value: hid ? hid.value : "", step: 5, near: shiftTime(other, k === "from" ? -60 : 60) });
       if (v !== null && tBtn.isConnected && !tBtn.disabled) setTime(tBtn, v);
       return;
     }
@@ -320,9 +324,11 @@ export async function render(el, { call }) {
   });
 
   // 엔터로도 저장 — 여러 줄을 쓰는 「하는 일」·「지금 섬기는 분」은 빼고(줄바꿈이 막힌다).
-  // 시각 단추는 data-f 가 없어 여기 안 걸린다 — Enter 가 고르개를 연다(머리 ⑤)
+  // 시각 단추(data-time)도 Enter 는 저장 — preventDefault 로 단추의 click(고르개 열기)을 막는다(머리 ⑤)
   el.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
+    const tb = e.target.closest("[data-time][data-id]");
+    if (tb) { e.preventDefault(); save(Number(tb.dataset.id)); return; }
     const f = e.target.closest("[data-f][data-id]");
     if (!f || f.tagName === "TEXTAREA") return;
     e.preventDefault();

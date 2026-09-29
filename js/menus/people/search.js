@@ -3,8 +3,9 @@
 // ⚠️ 사진 주소는 10분 뒤 만료된다 — 목록 사진은 바로 불러오고(eager), 못 불러오면 이름 첫 글자로 바꾼다.
 //    자세히 보기는 열 때마다 서버가 새 주소를 준다.
 // ⚠️ 내려받기는 **마지막으로 찾은 조건** 그대로다(검색어를 고치고 「찾기」를 안 눌렀으면 옛 조건) — 화면의 수와 파일이 같게.
-// 거르기 넷(교구·구분·출석·직분)은 「여러 개 고르기」 판(체크박스). 판이 닫힐 때 고른 것이 바뀌었으면 곧바로 1쪽부터 다시 찾는다
-//   (안 바뀌었으면 찾지 않는다 — 열람 기록이 쓸데없이 쌓이지 않게 · 2026-09-29).
+// 거르기 넷(교구·구분·출석·직분)은 공용 고르개 pickMany(js/core/picker.js — 폰은 바텀 시트, PC 는 단추 아래 작은 판).
+//   「확인」으로 닫았고 고른 것이 바뀌었을 때만 곧바로 1쪽부터 다시 찾는다(취소·같으면 찾지 않는다 — 열람 기록이
+//   쓸데없이 쌓이지 않게 · 2026-09-29). 판을 여닫는 일(초점 가두기·Esc·바깥 누름·aria-expanded)은 고르개가 맡는다.
 // 「사진 없는 분만」은 거르기 줄에 없다 — 현황의 「사진 없는 분 N명」(#/people?nophoto=1)으로 들어올 때만 켜지고,
 //   그때는 줄 끝에 「📷 사진 없는 분만 ✕」 표시가 떠 누르면 풀린다.
 // 정렬(2026-09-29) — 넓으면 표 머리(이름·성별나이·소속·구분)를, 좁으면 목록 위 「정렬」 칩을 누른다. 같은 것을 다시 누르면
@@ -14,6 +15,7 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { sourceLine, affText, csvText, searchPayload, initialOf, exportName, pageInfo, familyOrder,
   FILTER_KEYS, pickSummary, filterChoices, sameSet, nextSort, sortMark, SORTS } from "./people-logic.js";
 import { personDetailHtml } from "./person-detail.js";
+import { pickMany } from "../../core/picker.js";
 
 const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
 // 찾기 조건은 메뉴를 옮겨 다녀도 남는다(임명현황과 같게) — 정렬(sort·dir)도. household = 가족 보기(세대주 교인ID)
@@ -74,23 +76,11 @@ const sortBarHtml = () => `<span class="pp-sortbar-l" id="pp-sortbar-l">정렬</
       ` aria-label="${l}${how}">${l}${on ? markHtml(k) : ""}</button>`;
   }).join("");
 
-// 「여러 개 고르기」 — 단추(라벨 · 고른 요약 · ▾) + 그 아래 판(체크박스 목록 · 인원 수 · 모두 해제)
-const pickHtml = (key, label) => {
-  const on = state[key], list = choices[key] || [];
-  const opts = list.length ? list.map(([v, n]) => `<label class="pp-opt"><input type="checkbox" value="${esc(v)}"` +
-    `${on.includes(v) ? " checked" : ""}><span class="pp-opt-t">${esc(v)}</span>` +
-    `<small class="pp-opt-n">${esc(Number(n || 0).toLocaleString("ko-KR"))}</small></label>`).join("")
-    : `<p class="muted pp-pan-none">고를 것이 없어요</p>`;
-  return `<div class="pp-pick" data-pick="${key}">
-    <button type="button" class="pp-pick-b${on.length ? " on" : ""}" data-act="pick" aria-expanded="false" aria-controls="pp-pan-${key}">
-      <span class="pp-pick-l">${label}</span><span class="pp-pick-v">${esc(pickSummary(on))}</span>
-      <span class="pp-pick-a" aria-hidden="true"></span></button>
-    <div class="pp-pan" id="pp-pan-${key}" role="group" aria-label="${label} 여러 개 고르기" hidden>
-      <div class="pp-pan-top"><span class="muted">여러 개 고를 수 있어요</span>
-        <button type="button" class="pp-pan-clear" data-act="clear"${on.length ? "" : " disabled"}>모두 해제</button></div>
-      <div class="pp-pan-list">${opts}</div>
-    </div></div>`;
-};
+// 「여러 개 고르기」 단추 — 라벨 · 고른 요약 · 쉐브론(고르개와 같은 .pk-field-x). 누르면 pickMany 가 열린다.
+// 요약 글자·on·이름은 syncPick 이 채운다(aria-expanded 는 고르개가 여닫을 때 바꾼다).
+const pickHtml = (key, label) => `<button type="button" class="pp-pick-b" data-act="pick" data-pick="${key}" ` +
+  `aria-haspopup="dialog" aria-expanded="false"><span class="pp-pick-l">${label}</span><span class="pp-pick-v"></span>` +
+  `<span class="pk-field-x" aria-hidden="true"></span></button>`;
 
 function download(text, name) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
@@ -173,7 +163,7 @@ export async function render(el, { call, query }) {
   const form = el.querySelector(".pp-form");
   form.q.value = state.q;
   let last = null;
-  let lastSent = null;   // 마지막으로 찾은 조건 — 내려받기는 이것 그대로(판에서 고르는 중인 것이 섞이지 않게)
+  let lastSent = null;   // 마지막으로 찾은 조건 — 내려받기는 이것 그대로(검색어 칸에 고쳐 적은 것이 섞이지 않게)
   // 이 화면을 다시 열 때마다 새로 만든다 — 리스너도 옛 객체와 함께 버려지게(status.js 와 같은 방식)
   const mqWide = matchMedia("(min-width:1024px)");
 
@@ -185,46 +175,33 @@ export async function render(el, { call, query }) {
   };
   const search = () => { readForm(); state.page = 0; return load(); };
 
-  // ── 여러 개 고르기 판 ── 한 번에 하나만 열린다
-  let openKey = null, openSnap = [];
-  const boxOf = (k) => el.querySelector(`.pp-pick[data-pick="${k}"]`);
+  // ── 여러 개 고르기 ── 단추 글자·on·이름을 state 에 맞춘다
+  const pickBtn = (k) => el.querySelector(`.pp-pick-b[data-pick="${k}"]`);
+  const labelOf = (k) => PICKS.find(([x]) => x === k)[1];
   function syncPick(key) {
-    const box = boxOf(key), on = state[key];
-    box.querySelector(".pp-pick-b").classList.toggle("on", on.length > 0);
-    box.querySelector(".pp-pick-v").textContent = pickSummary(on);
-    box.querySelectorAll(".pp-pan input[type=checkbox]").forEach((x) => { x.checked = on.includes(x.value); });
-    box.querySelector(".pp-pan-clear").disabled = !on.length;   // 고른 것이 없으면 「모두 해제」는 누를 것이 없다
+    const b = pickBtn(key), on = state[key];
+    b.classList.toggle("on", on.length > 0);
+    b.querySelector(".pp-pick-v").textContent = pickSummary(on);
+    b.setAttribute("aria-label", `${labelOf(key)}, ${on.length ? on.join(", ") : "전체"} — 여러 개 고르기`);
   }
   const syncFilters = () => {
     FILTER_KEYS.forEach(syncPick);
     el.querySelector(".pp-nophoto").hidden = !state.noPhoto;
   };
-  function openPick(key) {
-    const box = boxOf(key);
-    box.classList.add("open");
-    box.querySelector(".pp-pan").hidden = false;
-    box.querySelector(".pp-pick-b").setAttribute("aria-expanded", "true");
-    openKey = key;
-    openSnap = [...state[key]];
-  }
-  // 닫는다 — 고른 것이 바뀌었으면(run 이 참일 때) 곧바로 1쪽부터 다시 찾는다. 바뀌었는지를 돌려준다.
-  function closePick({ focus = false, run = true } = {}) {
-    if (!openKey) return false;
-    const key = openKey, box = boxOf(key);
-    openKey = null;
-    box.classList.remove("open");
-    box.querySelector(".pp-pan").hidden = true;
-    const b = box.querySelector(".pp-pick-b");
-    b.setAttribute("aria-expanded", "false");
-    if (focus) b.focus();
-    const changed = !sameSet(openSnap, state[key]);
-    if (changed && run) search();
-    return changed;
+  // 고르개를 연다 — 「확인」으로 닫았고 고른 것이 바뀌었을 때만 1쪽부터 다시 찾는다(취소 = null · 같으면 그대로)
+  async function openPick(b) {
+    const key = b.dataset.pick;
+    const before = [...state[key]];
+    const got = await pickMany({ anchor: b, title: `${labelOf(key)} — 여러 개 고르기`, values: before,
+      options: (choices[key] || []).map(([v, n]) => ({ value: v, label: v, hint: `${Number(n || 0).toLocaleString("ko-KR")}명` })) });
+    if (got === null || !el.isConnected || sameSet(before, got)) return;
+    state[key] = [...got];     // 늘 새 배열(blank() 머리 주석)
+    syncPick(key);
+    search();
   }
 
   // 가족 보기 — 다른 조건은 모두 비우고 세대주 교인ID 하나로 찾는다. 정렬은 남겨 둔다(가족 보기가 끝나면 원래 정렬로).
   const showFamily = (hid, headName) => {
-    closePick({ run: false });
     state = { ...blank(), household: hid, householdName: headName, sort: state.sort, dir: state.dir };
     form.q.value = "";
     syncFilters();
@@ -273,7 +250,6 @@ export async function render(el, { call, query }) {
       el.querySelector(".pp-famon").hidden = true;
       el.querySelector(".pp-pager").hidden = true;
       el.querySelector(".pp-sortbar").hidden = true;
-      FILTER_KEYS.forEach(syncPick);   // busy 가 되살린 「모두 해제」 잠금을 다시 맞춘다
       return;
     }
     last = r;
@@ -283,7 +259,6 @@ export async function render(el, { call, query }) {
     srcEl.textContent = src.text;
     srcEl.classList.toggle("stale", src.stale);
     draw();   // busy 가 단추를 되살린 뒤 — 앞/다음의 잠금은 여기서 다시 정한다
-    FILTER_KEYS.forEach(syncPick);   // 「모두 해제」 잠금도(기다리는 동안 고른 것이 바뀌었을 수 있다)
   }
 
   async function exportCsv() {
@@ -293,26 +268,19 @@ export async function render(el, { call, query }) {
     if (!yes) return;
     const r = await busy(el, () => call("peopleExport", searchPayload({ ...lastSent, page: 0 })));
     draw();
-    FILTER_KEYS.forEach(syncPick);
     if (!r.ok) { toast(errorText(r)); return; }
     download(csvText(r.rows), exportName(r.source, r.rows.length));
   }
 
-  form.addEventListener("submit", (e) => { e.preventDefault(); closePick({ run: false }); search(); });
+  form.addEventListener("submit", (e) => { e.preventDefault(); search(); });
   el.addEventListener("click", (e) => {
     if (e.target.closest("a")) return;   // 전화 걸기는 그대로
     const b = e.target.closest("button[data-act]");
     if (b) {
-      if (b.disabled) return;            // 판이 닫히며 다시 찾는 중(busy)이면 이 누름은 흘려보낸다
+      if (b.disabled) return;            // 다시 찾는 중(busy)이면 이 누름은 흘려보낸다
       const act = b.dataset.act;
-      if (act === "pick") {
-        const key = b.closest(".pp-pick").dataset.pick;
-        const again = openKey === key;
-        closePick();
-        if (!again) openPick(key);
-      }
-      if (act === "clear") { const key = b.closest(".pp-pick").dataset.pick; state[key] = []; syncPick(key); }
-      if (act === "nophoto-off") { closePick({ run: false }); state.noPhoto = false; syncFilters(); search(); }
+      if (act === "pick") openPick(b);
+      if (act === "nophoto-off") { state.noPhoto = false; syncFilters(); search(); }
       if (act === "prev" && state.page > 0) { state.page--; load(); }
       if (act === "next") { state.page++; load(); }
       if (act === "csv") exportCsv();
@@ -329,20 +297,6 @@ export async function render(el, { call, query }) {
     const row = e.target.closest("[data-id]");
     if (row) openPerson(call, row.dataset.id, showFamily, row);
   });
-  // 체크박스 — 고른 것은 곧바로 state 에(요약 글자도). 찾기는 판이 닫힐 때 한 번.
-  el.addEventListener("change", (e) => {
-    const cb = e.target.closest(".pp-pan input[type=checkbox]");
-    if (!cb) return;
-    const key = cb.closest(".pp-pick").dataset.pick;
-    state[key] = [...cb.closest(".pp-pan").querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value);
-    syncPick(key);
-  });
-  // Tab 으로 판 밖으로 나가면 닫는다(초점이 어디로 가는지 모를 때 — 누른 자리가 초점을 못 받는 경우 — 는 두고 본다)
-  el.addEventListener("focusout", (e) => {
-    if (!openKey) return;
-    const to = e.relatedTarget;
-    if (to instanceof Element && !boxOf(openKey).contains(to)) closePick();
-  });
   // role=button 이라 Enter 와 Space 둘 다 받는다(Space 는 화면이 내려가지 않게 막는다)
   el.addEventListener("keydown", (e) => {
     if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-id]")) {
@@ -350,29 +304,8 @@ export async function render(el, { call, query }) {
       openPerson(call, e.target.dataset.id, showFamily, e.target);
     }
   });
-  // 판 바깥을 누르거나 Esc — 닫는다. 이 화면이 사라지면 스스로 뗀다(status.js 와 같은 방식).
-  // 판이 닫히며 다시 찾았으면 그 누름은 삼킨다 — 앞/다음·내려받기·줄이 옛 목록에 대고 한 번 더 돌지 않게.
-  // 「찾기」를 눌렀으면 조용히 닫고(찾기가 곧 찾는다) 누름은 그대로 보낸다 — 두 번 찾지 않게.
-  const detach = () => {
-    document.removeEventListener("click", onDoc, true);
-    document.removeEventListener("keydown", onKey);
-    mqWide.removeEventListener("change", onMq);
-  };
-  const onDoc = (e) => {
-    if (!el.isConnected) return detach();
-    if (!openKey || !(e.target instanceof Element) || e.target.closest(`.pp-pick[data-pick="${openKey}"]`)) return;
-    const submit = e.target.closest('button[type="submit"]');
-    const changed = closePick({ run: !submit });
-    if (changed && !submit && !e.target.closest(".pp-pick")) { e.preventDefault(); e.stopPropagation(); }
-  };
-  const onKey = (e) => {
-    if (!el.isConnected) return detach();
-    if (e.key === "Escape" && openKey) { e.preventDefault(); closePick({ focus: true }); }
-  };
-  // 폭이 바뀌면 카드↔표
-  const onMq = () => { if (!el.isConnected) return detach(); draw(); };
-  document.addEventListener("click", onDoc, true);
-  document.addEventListener("keydown", onKey);
+  // 폭이 바뀌면 카드↔표 — 이 화면이 사라지면 스스로 뗀다(status.js 와 같은 방식)
+  const onMq = () => { if (!el.isConnected) return mqWide.removeEventListener("change", onMq); draw(); };
   mqWide.addEventListener("change", onMq);
   syncFilters();
   load();
