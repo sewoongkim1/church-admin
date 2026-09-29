@@ -1519,10 +1519,12 @@ test("성경필사 줄 빼기: 앱 줄은 app-row · 자격 회차 줄은 eligib
   assert.deepEqual([editLog.detail.before, editLog.detail.after], [{ sub: "3" }, { sub: "4" }]);   // 바뀐 칸만
   const noteLog = logs.find((r) => r.action === "event.edit" && r.target === String(RX.edit.id));
   assert.deepEqual([noteLog.detail.before, noteLog.detail.after],
-    [{ note: "원래: 화평 30 · 집사" }, { note: "원래: 화평 30 · 집사 / 확인함" }]);             // 메모는 note
+    [{ note: true }, { note: true }]);             // 메모는 고쳤다는 것만 — 글은 기록에 남기지 않는다(SEC-1)
   const delLog = logs.find((r) => r.action === "event.delete" && r.target === String(RX.added.id));
   assert.deepEqual(delLog.detail, { event_id: RX.ev, name: rxName("new"),
-    row: { who_type: "교구", group: "화평", sub: "7", position: "집사", note: "담당자가 더함 / 시험 메모", source: "import", hasUser: false } });
+    row: { who_type: "교구", group: "화평", sub: "7", position: "집사", hasNote: true, source: "import", hasUser: false } });
+  const logText = JSON.stringify(logs.map((r) => r.detail));
+  for (const memo of ["시험 메모", "확인함"]) assert.ok(!logText.includes(memo), "메모 글이 기록에 실렸다(SEC-1): " + memo);
 });
 
 // ---------- 성경필사(암송) — 명단 올리기 · 교인명부 찾기 (계획 Task 8) ----------

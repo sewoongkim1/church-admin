@@ -1327,7 +1327,9 @@ async function evRowSave(ctx: Ctx, b: any) {
 
   const before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
   for (const f of changed) { before[EV_AUDIT_FIELD[f]] = cur[f]; after[EV_AUDIT_FIELD[f]] = next[f]; }
-  if (noteChanged) { before.note = cur.note ?? ""; after.note = note; }
+  // 메모는 고쳤다는 것만(참) — 글은 남기지 않는다(SEC-1 · 기록은 지우지 않고 남으니 쓰이지 않는 글을 쌓지 않는다 ·
+  // 기록 화면 audit.js 는 after 에 note 칸이 있는지만 보고 「메모 고침」이라 적는다)
+  if (noteChanged) { before.note = true; after.note = true; }
   await audit(ctx, "event.edit", String(id), { event_id: cur.event_id, name: next.name, before, after });
   return { ok: true, row: rowOut(saved[0], church) };
 }
@@ -1351,7 +1353,7 @@ async function evRowDelete(ctx: Ctx, b: any) {
   await audit(ctx, "event.delete", String(id), {
     event_id: cur.event_id, name: cur.name,
     row: { who_type: cur.who_type, group: cur.group_name, sub: cur.sub_name, position: cur.position,
-      note: cur.note ?? "", source: cur.source, hasUser: !!cur.user_id },
+      hasNote: !!cur.note, source: cur.source, hasUser: !!cur.user_id },   // 메모는 있었는지만(SEC-1 — 글은 남기지 않는다)
   });
   return { ok: true, deleted: { id: cur.id, name: cur.name } };
 }

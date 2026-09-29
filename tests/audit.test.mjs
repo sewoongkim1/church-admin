@@ -46,20 +46,25 @@ test("event.add — 이름 · 소속(교구 줄의 숫자 목장에만 「목장
     "홍길동 · 중등부 2 · 학생 · 회차 lent-2026");
 });
 
-test("event.edit — 바꾼 칸만 · 메모는 글 없이 「메모 고침」", () => {
+test("event.edit — 바꾼 칸만 · 메모는 글 없이 「메모 고침」(서버는 메모 글을 남기지 않고 note: true 만 · SEC-1)", () => {
   const t = detailText(R("event.edit", { event_id: "lent-2026", name: "홍길동",
-    before: { sub: "20", position: "집사", note: "원래: 화평 30 · 집사" },
-    after: { sub: "21", position: "안수집사", note: "원래: 화평 30 · 집사 / 담당자가 더함" } }, "101"));
+    before: { sub: "20", position: "집사", note: true },
+    after: { sub: "21", position: "안수집사", note: true } }, "101"));
   assert.equal(t, "홍길동 · 회차 lent-2026 · 세부 20 → 21 · 직분 집사 → 안수집사 · 메모 고침");
-  assert.ok(!t.includes("원래"), "메모 글은 기록 줄에 싣지 않는다");
+  assert.ok(!t.includes("true"), "메모 표시(참)는 글자로 새지 않는다");
   assert.equal(detailText(R("event.edit", { event_id: "lent-2026", name: "홍길동",
     before: { position: "" }, after: { position: "권사" } })), "홍길동 · 회차 lent-2026 · 직분 (없음) → 권사");
   assert.equal(detailText(R("event.edit", { event_id: "lent-2026", name: "홍길동",
-    before: { note: "" }, after: { note: "담당자가 더함" } })), "홍길동 · 회차 lent-2026 · 메모 고침");
+    before: { note: true }, after: { note: true } })), "홍길동 · 회차 lent-2026 · 메모 고침");
+  // 옛 기록(메모 글을 싣던 때 · 2026-09-30 전 개발 DB)도 글을 보이지 않는다
+  const old = detailText(R("event.edit", { event_id: "lent-2026", name: "홍길동",
+    before: { note: "원래: 화평 30 · 집사" }, after: { note: "원래: 화평 30 · 집사 / 담당자가 더함" } }));
+  assert.equal(old, "홍길동 · 회차 lent-2026 · 메모 고침");
 });
 
 test("event.delete — 뺀 줄의 모양 · 출처 · 계정", () => {
-  const row = { who_type: "교구", group: "믿음", sub: "3", position: "성도", note: "담당자가 더함", source: "import", hasUser: false };
+  // 서버는 뺀 줄의 메모 글을 남기지 않는다 — 있었는지만(hasNote · SEC-1)
+  const row = { who_type: "교구", group: "믿음", sub: "3", position: "성도", hasNote: true, source: "import", hasUser: false };
   assert.equal(detailText(R("event.delete", { event_id: "summer-2026", name: "홍길동", row }, "102")),
     "홍길동 · 믿음 3목장 · 성도 · 회차 summer-2026 · 📋 이관");
   assert.equal(detailText(R("event.delete", { event_id: "summer-2026", name: "홍길동", row: { ...row, hasUser: true } })),
