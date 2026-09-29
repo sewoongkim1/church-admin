@@ -17,6 +17,10 @@ const STAMP = Date.now();
 const ZERO = "00000000-0000-0000-0000-000000000000";
 const PAPER_NAME = "ca-test-paper-" + STAMP;   // 종이 명단(Task 5) 시험 인물 — 교구 시험, 목장 0
 const people = {};
+// 교인명부(2026-09-29) 시험 자료 — 교인ID 990000001~ (가짜 명부 900001~ 와 겹치지 않게) · 끝나면 지운다
+const PEOPLE_IDS = [990000001, 990000002];
+const PHOTO_PATH = "church-people-photos/990000001.jpg";
+let peopleImportId = null;
 
 async function body(res) { const t = await res.text(); try { return JSON.parse(t); } catch { return { raw: t }; } }
 
@@ -68,6 +72,10 @@ const PROBE = {
   ministryCatalogOrder: { ids: [] },
   ministryPaperCheck: { rows: [] },
   ministryPaperSave: { rows: [] },
+  peopleSearch: { q: "ca-test-probe-없음" },
+  peoplePerson: { id: 0 },
+  peopleStats: {},
+  peopleExport: { q: "ca-test-probe-없음" },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
@@ -84,10 +92,11 @@ let catalogCommitteeIds = [];          // 그 위원회의 id 들 — sort_order
 let catalogCommitteeSlots = [];        // 그 id 들이 원래 갖고 있던 sort_order 값(같은 순서)
 
 before(async () => {
-  for (const k of ["none", "pending", "disabled", "ministry", "super"]) people[k] = await makeUser(k);
+  for (const k of ["none", "pending", "disabled", "ministry", "directory", "super"]) people[k] = await makeUser(k);
   await makeMember(people.pending, "pending", []);
   await makeMember(people.disabled, "disabled", ["super"]);
   await makeMember(people.ministry, "active", ["ministry"]);
+  await makeMember(people.directory, "active", ["directory"]);
   await makeMember(people.super, "active", ["super"]);
 
   const [u] = await rest("users", "POST", {
@@ -123,6 +132,23 @@ before(async () => {
   catalogCommitteeSlots = found.map((r) => r.sort_order);
   const [row0] = await rest(`ministry_catalog?select=id,desc_note,day_sun,time_from,time_to,capacity_note&id=eq.${found[0].id}`, "GET");
   catalogRow = row0;
+
+  // 교인명부 — 두 분(하나는 사진 있음) + 올린 기록 한 줄(명부 기준일이 있어야 교적 표시가 나온다) + 사진 한 장
+  await rest("church_people", "POST", [
+    { person_id: 990000001, name: "ca-test-min", name_key: "ca-test-min", mok1: "시험", mok2: "시험", mok3: "시험-0목장",
+      mok_path: "시험 > 시험 > 시험-0목장", kind1: "교인", kind2: "장년", kind3: "출석교인", position: "집사",
+      phone1: "010-0000-0000", phone_digits: "01000000000", address: "시험시 비밀주소 " + STAMP, has_photo: true, photo_hash: "t",
+      household_id: 990000001, household_head: "ca-test-min", household_rel: "본인" },
+    { person_id: 990000002, name: PAPER_NAME, name_key: PAPER_NAME, mok1: "시험", mok2: "시험", mok3: "시험-5목장",
+      phone1: "010-1234-5678", phone_digits: "01012345678", has_photo: false,
+      household_id: 990000001, household_head: "ca-test-min", household_rel: "아들1" },   // 두 분은 한 가족
+  ]);
+  const [imp] = await rest("church_people_imports", "POST",
+    { source_date: "2000-01-01", total: 2, added: 2, changed: 0, removed: 0, photos: 1 });
+  peopleImportId = imp.id;
+  const up = await fetch(`${URL_}/storage/v1/object/${PHOTO_PATH}`, { method: "POST",
+    headers: { ...svc, "Content-Type": "image/jpeg", "x-upsert": "true" }, body: new TextEncoder().encode("ca-test-photo") });
+  assert.ok(up.ok, "시험 사진 올리기 실패: " + await up.text());
 });
 
 after(async () => {
@@ -153,6 +179,11 @@ after(async () => {
   if (paperUsers.length) await rest(`users?name=eq.${encodeURIComponent(PAPER_NAME)}`, "DELETE");
   const paperRemain = await rest(`users?select=id&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
   assert.equal(paperRemain.length, 0, "종이 명단 시험 계정이 지워지지 않았다: " + PAPER_NAME);
+  // 교인명부 시험 자료
+  await rest(`church_people?person_id=in.(${PEOPLE_IDS.join(",")})`, "DELETE");
+  if (peopleImportId) await rest(`church_people_imports?id=eq.${peopleImportId}`, "DELETE");
+  await fetch(`${URL_}/storage/v1/object/church-people-photos`, { method: "DELETE", headers: svc,
+    body: JSON.stringify({ prefixes: ["990000001.jpg"] }) });
 });
 
 test("역할이 필요한 액션마다 시험 입력(PROBE)이 있다", () => {
@@ -179,11 +210,13 @@ test("모르는 액션 → 400", async () => {
 test("권한 표: 사람 다섯 × 역할이 필요한 액션", async () => {
   const want = (who, role) => ({
     none: "not-registered", pending: "pending", disabled: "disabled",
-    ministry: role === "ministry" ? null : "forbidden", super: null,
+    ministry: role === "ministry" ? null : "forbidden",
+    directory: role === "directory" ? null : "forbidden",
+    super: null,
   })[who];
   for (const [a, payload] of Object.entries(PROBE)) {
     const role = ACTION_ROLES[a];
-    for (const who of ["none", "pending", "disabled", "ministry", "super"]) {
+    for (const who of ["none", "pending", "disabled", "ministry", "directory", "super"]) {
       const gate = want(who, role);
       const r = await call(people[who].token, a, payload);
       if (gate) {
@@ -477,4 +510,72 @@ test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 
   // 8) 바뀐 기록 — ministry.paper 한 줄 이상
   const acts = (await call(people.super.token, "auditList", { limit: 30 })).body.rows.map((r) => r.action);
   assert.ok(acts.includes("ministry.paper"), JSON.stringify(acts));
+});
+
+test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 · 현황 · 내려받기 · 사진 주소 · 열람 기록은 따로", async () => {
+  const d = people.directory.token;
+  const s = await call(d, "peopleSearch", { q: "ca-test-min" });
+  assert.equal(s.body.ok, true, JSON.stringify(s.body));
+  assert.equal(s.body.source.source_date, "2000-01-01");
+  assert.equal(s.body.pageSize, 50);
+  const row = s.body.rows.find((x) => x.person_id === 990000001);
+  assert.ok(row, JSON.stringify(s.body));
+  assert.deepEqual(Object.keys(row).sort(),
+    ["age", "gender", "has_photo", "household_id", "household_rel", "kind2", "mok1", "mok3", "name", "person_id", "phone1",
+     "photo", "position", "school_dept"]);
+  assert.match(row.photo, /\/storage\/v1\/object\/sign\/church-people-photos\/990000001\.jpg\?token=/);
+  assert.equal((await fetch(row.photo)).status, 200, "서명 주소로 사진이 열려야 한다");
+  const t = await call(d, "peopleSearch", { q: "0000", mok1: "시험" });
+  assert.ok(t.body.rows.some((x) => x.person_id === 990000001), "전화 뒷자리로 찾기");
+  const np = await call(d, "peopleSearch", { q: PAPER_NAME, noPhoto: true });
+  assert.deepEqual(np.body.rows.map((x) => x.person_id), [990000002]);
+  assert.equal((await call(d, "peopleSearch", { page: -1 })).body.error, "invalid");
+  // 가족 보기 — 세대주 교인ID 로 한 가족만
+  const fam = await call(d, "peopleSearch", { household: 990000001 });
+  assert.deepEqual(fam.body.rows.map((x) => x.person_id).sort(), [990000001, 990000002]);
+  assert.equal((await call(d, "peopleSearch", { household: "x" })).body.error, "invalid");
+
+  const one = await call(d, "peoplePerson", { id: 990000001 });
+  assert.equal(one.body.ok, true, JSON.stringify(one.body));
+  assert.equal(one.body.person.address, "시험시 비밀주소 " + STAMP);
+  assert.equal(one.body.person.household_id, 990000001);
+  assert.deepEqual(one.body.family.map((f) => f.person_id), [990000002]);          // 자기는 빼고
+  assert.deepEqual(Object.keys(one.body.family[0]).sort(), ["age", "gender", "household_rel", "name", "person_id", "position"]);
+  for (const k of ["name_key", "phone_digits", "photo_hash", "birth_date", "registered_date", "updated_at"]) {
+    assert.equal(k in one.body.person, false, "내부 칸이 나갔다: " + k);
+  }
+  assert.equal((await call(d, "peoplePerson", { id: 1 })).body.error, "not-found");
+
+  const st = await call(d, "peopleStats");
+  assert.equal(st.body.ok, true, JSON.stringify(st.body));
+  assert.ok(st.body.stats.total >= 2);
+  assert.ok(st.body.stats.households >= 1);
+  assert.ok(st.body.stats.options.mok1.includes("시험"));
+
+  const ex = await call(d, "peopleExport", { q: "ca-test-min" });
+  assert.deepEqual(ex.body.rows.map((x) => x.person_id), [990000001]);
+
+  const logs = (await call(people.super.token, "auditList", { limit: 40, kind: "people" })).body.rows.map((r) => r.action);
+  for (const a of ["people.search", "people.view", "people.export"]) assert.ok(logs.includes(a), a + " " + JSON.stringify(logs));
+  const changes = (await call(people.super.token, "auditList", { limit: 100 })).body.rows.map((r) => r.action);
+  assert.ok(!changes.some((a) => a.startsWith("people.")), "바꾼 기록 기본 보기에 열람이 섞였다");
+});
+
+test("교인명부 표·사진은 공개 키·로그인 사용자 모두 못 연다", async () => {
+  for (const t of ["church_people", "church_people_imports"]) {
+    const a = await fetch(`${URL_}/rest/v1/${t}?select=*&limit=1`, { headers: { apikey: ANON } });
+    assert.notEqual(a.status, 200, "공개 키로 열림: " + t);
+    const b = await fetch(`${URL_}/rest/v1/${t}?select=*&limit=1`,
+      { headers: { apikey: ANON, Authorization: "Bearer " + people.super.token } });
+    assert.notEqual(b.status, 200, "로그인 사용자로 열림: " + t);
+  }
+  const pub = await fetch(`${URL_}/storage/v1/object/public/${PHOTO_PATH}`);
+  assert.notEqual(pub.status, 200, "공개 주소로 사진이 열림");
+  const au = await fetch(`${URL_}/storage/v1/object/authenticated/${PHOTO_PATH}`,
+    { headers: { apikey: ANON, Authorization: "Bearer " + people.super.token } });
+  assert.notEqual(au.status, 200, "로그인 사용자로 사진이 열림");
+  const sign = await fetch(`${URL_}/storage/v1/object/sign/${PHOTO_PATH}`, { method: "POST",
+    headers: { apikey: ANON, Authorization: "Bearer " + people.super.token, "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn: 60 }) });
+  assert.notEqual(sign.status, 200, "로그인 사용자가 서명 주소를 만듦");
 });

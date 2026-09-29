@@ -12,6 +12,7 @@ import { canCall, identityCandidates, kakaoAvatar, kakaoNickname, norm, parseIde
 import { statusPatch } from "./ministry.ts";
 import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINISTRY_FREQ_COLS, MINISTRY_FREQ_KEYS } from "./catalog.ts";
 import { appIdentityKey, legacyNorm, ministryPaperKeys, ministryPaperOne, paperName, PAPER_MAX_ROWS } from "./paper.ts";
+import { parseSearch, searchDetail, statsOf, PAGE_SIZE, PHOTO_TTL, type Search } from "./people-query.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -255,6 +256,8 @@ async function auditList(b: any) {
   let q = db.from("admin_audit").select("id,at,member_id,action,target,detail").order("id", { ascending: false }).limit(limit);
   const beforeId = Number(b.before);
   if (Number.isSafeInteger(beforeId) && beforeId > 0) q = q.lt("id", beforeId);
+  // 교인명부 열람(people.*)은 따로 본다 — 찾기·보기가 많아 바꾼 일을 덮지 않게
+  q = b.kind === "people" ? q.like("action", "people.%") : q.not("action", "like", "people.%");
   const { data, error } = await q;
   if (error) throw error;
   const rows = (data ?? []) as any[];
@@ -807,6 +810,108 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
            badCount: rows.length - good.length };
 }
 
+// ---------- 교인명부 (2026-09-29) ----------
+// 설계: v2 docs/superpowers/specs/2026-09-29-church-people-directory-design.md
+// ⚠️ 읽기만 — 원본은 dimode, 고치는 길은 tools/people/load_people.py 하나.
+// ⚠️ 찾기·보기·내려받기는 admin_audit 에 남긴다(people.*). 현황은 숫자만이라 남기지 않는다.
+// ⚠️ 사진은 비공개 칸 — 10분짜리 서명 주소만 준다. 목록은 그 쪽 사람 것만 만든다.
+const PEOPLE_BUCKET = "church-people-photos";
+const PEOPLE_LIST_COLS = "person_id,name,position,gender,age,mok1,mok3,school_dept,kind2,phone1,has_photo,household_id,household_rel";
+const PEOPLE_ALL_COLS = "person_id,name,position,position_detail,gender,birth,lunar,age,spouse,spouse_position," +
+  "household_head,household_rel,household_id,kind1,kind2,kind3,registered,reg_type,phone1,phone2,guide,email," +
+  "mok_path,mok1,mok2,mok3,mok_leader,school_path,school_dept,teacher,youth_path,mission,address,address_jibun,has_photo";
+// 가족(같은 신앙세대주) — 자세히 보기 아래에 이름·관계만. 연락처는 그분을 눌러 열어야 보인다(열람 기록이 남게).
+const FAMILY_COLS = "person_id,name,household_rel,gender,age,position";
+
+// 명부 기준일 — 마지막으로 올린 기록. 한 번도 안 올렸으면 null(화면은 「아직 명부가 없어요」)
+async function peopleSource(): Promise<{ source_date: string; total: number } | null> {
+  const { data, error } = await db.from("church_people_imports").select("source_date,total")
+    .order("id", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw error;
+  return data ? { source_date: data.source_date, total: data.total } : null;
+}
+
+function peopleFilter(q: any, s: Search) {
+  if (s.name) q = q.ilike("name_key", `%${s.name}%`);
+  if (s.tail) q = q.ilike("phone_digits", `%${s.tail}%`);
+  if (s.mok1) q = q.eq("mok1", s.mok1);
+  if (s.kind2) q = q.eq("kind2", s.kind2);
+  if (s.kind3) q = q.eq("kind3", s.kind3);
+  if (s.position) q = q.eq("position", s.position);
+  if (s.noPhoto) q = q.eq("has_photo", false);
+  if (s.household) q = q.eq("household_id", s.household);
+  return q;
+}
+
+// 사진 서명 주소 — 실패하면 사진만 빠진다(목록 전체를 실패로 만들지 않는다)
+async function photoUrls(ids: number[]): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (!ids.length) return out;
+  const { data, error } = await db.storage.from(PEOPLE_BUCKET).createSignedUrls(ids.map((id) => `${id}.jpg`), PHOTO_TTL);
+  if (error) { console.error("photoUrls", error); return out; }
+  for (const x of (data ?? []) as any[]) {
+    const id = Number(String(x.path ?? "").replace(/\.jpg$/, ""));
+    if (x.signedUrl && !x.error) out.set(id, x.signedUrl);
+  }
+  return out;
+}
+
+async function peopleSearch(ctx: Ctx, b: any) {
+  const p = parseSearch(b);
+  if (!p.ok) return { ok: false, error: p.error };
+  const s = p.s;
+  const source = await peopleSource();
+  if (!source) return { ok: true, source: null, total: 0, page: 0, pageSize: PAGE_SIZE, rows: [] };
+  const from = s.page * PAGE_SIZE;
+  const { data, error, count } = await peopleFilter(db.from("church_people").select(PEOPLE_LIST_COLS, { count: "exact" }), s)
+    .order("name_key", { ascending: true }).order("person_id", { ascending: true })
+    .range(from, from + PAGE_SIZE - 1);
+  if (error && (error as any).code !== "PGRST103") throw error;   // PGRST103 = 끝을 넘은 쪽 → 빈 쪽
+  const rows = (error ? [] : data ?? []) as any[];
+  const urls = await photoUrls(rows.filter((r) => r.has_photo).map((r) => r.person_id));
+  await audit(ctx, "people.search", "", { q: norm(b.q).slice(0, 40), filters: searchDetail(s), total: count ?? 0, page: s.page });
+  return { ok: true, source, total: count ?? 0, page: s.page, pageSize: PAGE_SIZE,
+    rows: rows.map((r) => ({ ...r, photo: urls.get(r.person_id) ?? "" })) };
+}
+
+async function peoplePerson(ctx: Ctx, b: any) {
+  const id = Number(b.id) || 0;
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "not-found" };
+  const { data, error } = await db.from("church_people").select(PEOPLE_ALL_COLS).eq("person_id", id).maybeSingle();
+  if (error) throw error;
+  if (!data) return { ok: false, error: "not-found" };
+  const urls = data.has_photo ? await photoUrls([id]) : new Map<number, string>();
+  let family: any[] = [];
+  if (data.household_id) {
+    const { data: fam, error: e2 } = await db.from("church_people").select(FAMILY_COLS)
+      .eq("household_id", data.household_id).neq("person_id", id).order("person_id", { ascending: true }).limit(50);
+    if (e2) throw e2;
+    family = fam ?? [];
+  }
+  await audit(ctx, "people.view", String(id), { name: data.name });
+  return { ok: true, person: { ...data, photo: urls.get(id) ?? "" }, family };
+}
+
+async function peopleStats() {
+  const source = await peopleSource();
+  if (!source) return { ok: true, source: null, stats: null };
+  const rows = await allRows(() => db.from("church_people")
+    .select("mok1,mok3,kind2,kind3,position,school_dept,gender,age,has_photo,household_id").order("person_id", { ascending: true }));
+  return { ok: true, source, stats: statsOf(rows) };
+}
+
+// 기록은 응답을 돌려주기 직전에 — 실패한 내려받기는 기록하지 않는다
+async function peopleExport(ctx: Ctx, b: any) {
+  const p = parseSearch({ ...b, page: 0 });
+  if (!p.ok) return { ok: false, error: p.error };
+  const source = await peopleSource();
+  if (!source) return { ok: true, source: null, rows: [] };
+  const rows = await allRows(() => peopleFilter(db.from("church_people").select(PEOPLE_ALL_COLS), p.s)
+    .order("name_key", { ascending: true }).order("person_id", { ascending: true }));
+  await audit(ctx, "people.export", "", { q: norm(b.q).slice(0, 40), filters: searchDetail(p.s), count: rows.length });
+  return { ok: true, source, rows };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -842,6 +947,10 @@ Deno.serve(async (req) => {
       case "ministryCatalogOrder": return json(await ministryCatalogOrder(ctx, b));
       case "ministryPaperCheck": return json(await ministryPaper(ctx, b, false));
       case "ministryPaperSave":  return json(await ministryPaper(ctx, b, true));
+      case "peopleSearch": return json(await peopleSearch(ctx, b));
+      case "peoplePerson": return json(await peoplePerson(ctx, b));
+      case "peopleStats":  return json(await peopleStats());
+      case "peopleExport": return json(await peopleExport(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);

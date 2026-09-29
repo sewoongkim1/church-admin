@@ -52,7 +52,21 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
     "ministrySetStatus"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
-  assert.deepEqual(knownRoles(), ["ministry", "super"]);
+  assert.deepEqual(knownRoles(), ["directory", "ministry", "super"]);
+});
+
+test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄만 통과, 사역 담당은 막힘", () => {
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["directory"] }, "pending"],
+    [{ status: "disabled", roles: ["directory"] }, "disabled"],
+    [{ status: "active", roles: ["ministry"] }, "forbidden"],
+    [{ status: "active", roles: ["directory"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "directory");
+  assert.deepEqual(acts.sort(), ["peopleExport", "peoplePerson", "peopleSearch", "peopleStats"]);
+  for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 
 test("norm — 공백·자모분리(NFD)", () => {

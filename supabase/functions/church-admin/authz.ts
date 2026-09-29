@@ -29,6 +29,11 @@ export const ACTION_ROLES: Record<string, string | null> = {
   // 안 바꾸고, 넣기(save)만 계정·신청을 만든다 — 둘 다 담당자만.
   ministryPaperCheck: "ministry",
   ministryPaperSave: "ministry",
+  // 교인명부(2026-09-29) — 찾기·한 분 보기·현황·내려받기. 읽기만(원본은 dimode). 찾기·보기·내려받기는 열람 기록에 남는다.
+  peopleSearch: "directory",
+  peoplePerson: "directory",
+  peopleStats: "directory",
+  peopleExport: "directory",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";
