@@ -3,3 +3,18 @@
 supabase/.temp/
 supabase/.branches/
 node_modules/
+
+# 교인명부(2026-09-29) — 명단·사진·작업 폴더는 저장소 밖(C:\Projects\교인명부_작업\)에 둔다. 혹시 안으로 들어와도 커밋되지 않게.
+교인*
+*.xls
+# ↑ .xlsx·.csv 는 여기서 막지 않는다(빈 양식 files/사역명단_올리기_양식.xlsx 가 있다) — tools/leak-scan.mjs 가 양식 말고는 모두 잡는다
+people*.json
+photos.json
+photo_urls.json
+교인명부_작업/
+# 사진 — fetch_photos 는 <작업폴더>/photos/<교인ID>.jpg 로 받는다(저장소의 그림은 png 셋뿐이라 막아도 부작용이 없다)
+photos/
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG

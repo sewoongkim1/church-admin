@@ -1,0 +1,5 @@
+#!/bin/sh
+# 명단이 커밋되지 않게 — 커밋하는 순간 tools/leak-scan.mjs 를 돌린다(2026-09-29 교인명부 · 친구 결정).
+# 켜기(이 PC 에서 한 번): git config core.hooksPath .githooks
+# 걸리면 커밋이 멈춘다. 빈 양식처럼 정말 괜찮은 표 파일이면 tools/leak-scan.mjs 의 SHEET_OK 에 더한다 — --no-verify 로 넘기지 않는다.
+exec node tools/leak-scan.mjs

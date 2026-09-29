@@ -5,7 +5,7 @@
 --    그래서 「권한이 있나」가 아니라 「로그인한 쪽만 더 할 수 있나」(정책·권한 차이)로 가른다.
 -- 실행(CLI 는 마지막 SELECT 하나만 보여 주므로 한 문장으로 묶었다 · -f 는 **절대 경로**):
 --   supabase --workdir <작업 폴더> db query --linked -f C:/Projects/church-admin/supabase/sql/check-authenticated-exposure.sql
--- 보는 것 여섯 가지:
+-- 보는 것 일곱 가지:
 --   ① authenticated 에게만 열린 정책 — 명령 종류 무관, storage 포함
 --   ② 정책 조건 안에서 auth.role()·auth.uid()·auth.jwt()·auth.email()·request.jwt() 로 로그인 여부를 가르는 것
 --   ③ authenticated 만 가진 표 권한(GRANT) — RLS 켜짐·꺼짐·뷰 가리지 않고 전부 본다
@@ -13,6 +13,7 @@
 --   ④ authenticated 만 실행할 수 있는 함수(RPC) — SECURITY DEFINER 면 표 권한을 건너뛴다
 --   ⑤ auth.users 에 걸린 가입 트리거
 --   ⑥ anon·authenticated 둘 다 실행할 수 있지만 함수 몸통 안에서 auth.*()·request.jwt() 로 갈리는 함수
+--   ⑦ 교인명부 사진 칸(church-people-photos)이 공개(public=true)인가 — 정책이 없어도 공개 칸은 누구나 연다. 다른 앱이 일부러 공개로 둔 칸은 보지 않는다.
 -- 빼고 보는 것(2026-09-28): 다른 앱 표 다섯을 「그 앱 허가 명단」에 묶은 정책(조건에 legacy_app_users 가 든 것)과
 --   그 명단 표 자체(자기 줄만 읽는 정책 · authenticated SELECT) — 002_gate_legacy_app_tables.sql 이 일부러 둔 것이다.
 --   ⚠️ 정책 조건에 legacy_app_users 만 넣고 다른 길을 열면 여기서 안 보인다 — 그 표들의 정책을 고칠 때는 이 점검을 믿지 말고 눈으로 볼 것.
@@ -74,5 +75,10 @@ select * from (
     and has_function_privilege('anon', p.oid, 'EXECUTE')
     and has_function_privilege('authenticated', p.oid, 'EXECUTE')
     and pg_get_functiondef(p.oid) ~ 'auth\.(role|uid|jwt|email)|request\.jwt'
+  union all
+  -- ⑦ 교인명부 사진 칸이 공개인가(2026-09-29) — 칸 이름을 박는다(같은 프로젝트의 다른 앱 공개 칸은 대상이 아니다)
+  select '7 공개 사진 칸', 'storage', b.id, 'public = true'
+  from storage.buckets b
+  where b.id = 'church-people-photos' and b.public
 ) x
 order by 1, 2, 3;
