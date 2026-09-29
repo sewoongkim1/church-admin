@@ -12,3 +12,9 @@ people*.json
 photos.json
 photo_urls.json
 교인명부_작업/
+# 사진 — fetch_photos 는 <작업폴더>/photos/<교인ID>.jpg 로 받는다(저장소의 그림은 png 셋뿐이라 막아도 부작용이 없다)
+photos/
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG

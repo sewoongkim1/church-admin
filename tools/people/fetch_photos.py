@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 sys.stdout.reconfigure(encoding="utf-8")
 WORK_ROOT = r"C:\Projects\교인명부_작업"
 SEED_SUB = "_사진없음(기본그림)"
-# dimode 기본 그림(회색 바탕 흰 사람 모양) — 2026-09-29 확인. 같은 그림이 100장 넘게 나와도 기본 그림으로 본다.
+# dimode 기본 그림(회색 바탕 흰 사람 모양) — 2026-09-29 확인. 같은 그림이 100장 이상 나와도 기본 그림으로 본다.
 KNOWN_PLACEHOLDERS = {"cb677f32be4ed3a756afaec1c16b5edd"}
 PLACEHOLDER_MIN = 100
 

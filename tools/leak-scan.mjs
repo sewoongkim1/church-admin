@@ -5,15 +5,21 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-export const PHONE_RE = /01[016-9]-?\d{3,4}-?\d{4}/g;
+// 구분자는 - · . · 빈칸 하나까지(띄어 쓰거나 점을 찍은 번호도 센다). 더 긴 숫자 줄의 한가운데는 번호로 보지 않는다.
+export const PHONE_RE = /(?<!\d)01[016-9][-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g;
 export const PHONE_LIMIT = 20;                          // 서로 다른 휴대폰 번호가 이만큼이면 명단으로 본다
 export const SHEET_OK = new Set(["files/사역명단_올리기_양식.xlsx"]);   // 빈 양식(이름·번호 없음)
 const SHEET_EXT = /\.(xls|xlsx|csv)$/i;
+// 교인 사진은 fetch_photos 가 <작업폴더>/photos/<교인ID>.jpg 로 받는다 — jpg 와 photos 폴더는 이름만으로 막는다
+// (저장소의 그림은 png 셋뿐이다. 정말 jpg 를 넣어야 하면 여기 PHOTO_OK 에 한 줄 더한다)
+export const PHOTO_OK = new Set();
+const PHOTO_RE = /(\.jpe?g$)|(^|\/)photos\//i;
 
 export function findLeaks(files) {
   const out = [];
   for (const { path: p, text } of files) {
     if (SHEET_EXT.test(p) && !SHEET_OK.has(p)) { out.push(`${p} — 표 파일(명단일 수 있다)`); continue; }
+    if (PHOTO_RE.test(p) && !PHOTO_OK.has(p)) { out.push(`${p} — 사진 파일(교인 사진일 수 있다)`); continue; }
     if (text == null) continue;
     const nums = new Set((text.match(PHONE_RE) || []).map((m) => m.replace(/\D/g, "")));
     if (nums.size >= PHONE_LIMIT) out.push(`${p} — 서로 다른 휴대폰 번호 ${nums.size}개`);
