@@ -44,6 +44,15 @@ export function applicantFromPaper(r: any): Applicant {
   return { type: "교구", gu: txt(r?.gu), mok: mokNumber(r?.mok), bu: "", name: String(r?.name ?? ""), phone: String(r?.phone ?? "") };
 }
 
+// 성경필사(암송) 명단 줄(event_signups · 2026-09-29) — 교구는 group_name·sub_name(목장 숫자 글자 · 「남성」), 교회학교는 부서.
+// 전화는 넣지 않는다(이 기능은 phone 칸을 쓰지 않는다) — 그래서 「소속 다름」 대신 「같은 이름 N명」으로 간다.
+// 「남성」·빈 목장·99 는 mok 이 null·99 라 mokUnknown 이 「목장 확인」으로 돌린다(새 규칙을 만들지 않는다).
+export function applicantFromSignup(r: { who_type: string; group_name: string; sub_name: string; name: string }): Applicant {
+  const name = String(r?.name ?? "");
+  if (txt(r?.who_type) === "교회학교") return { type: "교회학교", gu: "", mok: null, bu: txt(r?.group_name), name, phone: "" };
+  return { type: "교구", gu: txt(r?.group_name), mok: mokNumber(r?.sub_name), bu: "", name, phone: "" };
+}
+
 // 앱 로그인은 목장으로 숫자나 「남성」만 받고, 목장이 없으면 99 를 쓴다(성경암송 app.js MOK_RE).
 // 「남성」은 mokNumber 가 null, 99 는 명부 목장 번호가 아니다 — 목장을 모르는 신청이다(새가족 제외).
 // ⚠️ 교구만 맞다고 「맞음」으로 치지 않는다(같은 교구 다른 목장의 동명이인일 수 있다). matchChurch 가 「목장 확인」으로 돌린다.

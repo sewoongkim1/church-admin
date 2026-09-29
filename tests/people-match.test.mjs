@@ -124,3 +124,38 @@ test("목장 「남성」·「99」(목장 없음) 신청 — 「맞음」으로
   assert.deepEqual(matchChurch([C({ mok1: "기쁨", mok3: "기쁨-13목장", phone_digits: "01011112222" })],
     applicantFromWho("김철수", "기쁨 12목장", "010-1111-2222")), { state: "확인 필요", reason: "소속 다름" });
 });
+
+// ── 성경필사(암송) 명단 줄(2026-09-29) ─────────────────────────────
+// 맨 위 import 블록은 그대로 두고 새 이름만 새 문으로 들여온다(import 는 모듈 맨 위로 끌어올려진다).
+import { applicantFromSignup } from "../supabase/functions/church-admin/people-match.ts";
+
+test("applicantFromSignup — 성경필사(암송) 명단 줄 → Applicant(전화 없음)", () => {
+  assert.deepEqual(applicantFromSignup({ who_type: "교구", group_name: "화평", sub_name: "20", name: "홍길동" }),
+    { type: "교구", gu: "화평", mok: 20, bu: "", name: "홍길동", phone: "" });
+  assert.deepEqual(applicantFromSignup({ who_type: "교회학교", group_name: "청년부", sub_name: "", name: "홍길동" }),
+    { type: "교회학교", gu: "", mok: null, bu: "청년부", name: "홍길동", phone: "" });
+  assert.equal(applicantFromSignup({ who_type: "교구", group_name: "화평", sub_name: "07", name: "x" }).mok, 7);
+  assert.equal(applicantFromSignup({ who_type: "교구", group_name: "소망", sub_name: "남성", name: "x" }).mok, null);
+  assert.equal(applicantFromSignup({ who_type: "교구", group_name: "소망", sub_name: "", name: "x" }).mok, null);
+  assert.equal(applicantFromSignup({ who_type: "교구", group_name: "화평".normalize("NFD"), sub_name: "20", name: "x" }).gu, "화평");
+  assert.equal(applicantFromSignup({ who_type: "교회학교", group_name: " 중등부 ", sub_name: "1", name: "x" }).bu, "중등부");
+  assert.deepEqual(Object.keys(applicantFromSignup({ who_type: "교구", group_name: "화평", sub_name: "20", name: "x" })).sort(),
+    ["bu", "gu", "mok", "name", "phone", "type"]);
+});
+
+test("applicantFromSignup + churchFor — 명단 줄의 교적 표시", () => {
+  const idx = new Map([
+    ["홍길동", [C({ mok1: "화평", mok3: "화평-20목장" })]],
+    ["김철수", [C({ mok1: "청년부", mok3: "청년-03" })]],
+    ["도하늘", [C({ mok1: "소망", mok3: "소망-남성1" }), C({ mok1: "소망", mok3: "소망-3목장" })]],
+  ]);
+  const S = (o) => applicantFromSignup({ who_type: "교구", group_name: "화평", sub_name: "20", name: "홍길동", ...o });
+  assert.deepEqual(churchFor(idx, S({})), { state: "맞음", reason: "" });
+  assert.deepEqual(churchFor(idx, S({ sub_name: "21" })), { state: "확인 필요", reason: "같은 이름 1명" });  // 전화가 없어 「소속 다름」이 아니다
+  assert.deepEqual(churchFor(idx, S({ who_type: "교회학교", group_name: "청년부", sub_name: "", name: "김철수" })),
+    { state: "맞음", reason: "" });                                   // 청년부는 명부의 목장 첫 칸
+  assert.deepEqual(churchFor(idx, S({ group_name: "소망", sub_name: "남성", name: "도하늘" })),
+    { state: "확인 필요", reason: "목장 확인(같은 교구 2명)" });
+  assert.deepEqual(churchFor(idx, S({ name: "박하나" })), { state: "없음", reason: "" });
+  assert.equal(churchFor(null, S({})), null);
+});
