@@ -3,3 +3,11 @@
 supabase/.temp/
 supabase/.branches/
 node_modules/
+
+# 교인명부(2026-09-29) — 명단·사진·작업 폴더는 저장소 밖(C:\Projects\교인명부_작업\)에 둔다. 혹시 안으로 들어와도 커밋되지 않게.
+교인*
+*.xls
+people*.json
+photos.json
+photo_urls.json
+교인명부_작업/
