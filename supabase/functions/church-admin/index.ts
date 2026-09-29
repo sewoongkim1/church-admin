@@ -19,6 +19,8 @@ import { applicantFromSignup, nameKey, type Church } from "./people-match.ts";
 import { BE_BAD_CHARS, BE_FIELD_MAX, EVT_ID_RE, evtListable, isEligEvent, kstToday } from "./events-rules.ts";
 // ⚠️ people-query.ts 의 statsOf(교인명부 현황)와 이름이 같다 — 이벤트 통계는 eventStatsOf 로만 부른다
 import { affLabel, personGroups, statsOf as eventStatsOf, type StatIn } from "./events-stats.ts";
+// 성경필사(암송) 회차 만들기·설정(Task 6)이 더 쓰는 이름 — ⚠️ 위의 import 에 이미 있는 이름(EVT_ID_RE·evtListable·kstToday 등)은 적지 않는다.
+import { BE_NEEDS_DEFAULT, checkEvent, eligibilityStart, EV_CREATE_KEYS, EV_EDIT_KEYS, eventDiff, eventFields, mergeEventPatch, pickEventPatch, type EvEvent } from "./events-rules.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1100,6 +1102,77 @@ async function evStats(b: any) {
   return { ok: true, ...eventStatsOf(rows as StatIn[], evs) };
 }
 
+// ---------- 성경필사(암송) — 회차 만들기·설정 (Task 6) ----------
+// 설계 §2 evEventCreate·evEventSave · 옛 동작: 성경암송 api eventSave(docs/port/event-roster-legacy.md).
+//   옛것은 만들기·고치기를 upsert 하나로 했다 — 여기서는 둘로 나눈다(만들기는 insert 만 · 고치기는 있는 회차만).
+// ⚠️ needs·copy·kind·sort_order 는 받지 않는다(EV_EDIT_KEYS 밖) — 가을 말씀 동행의 자격 규칙·문구가
+//    저장 한 번에 지워지지 않게. 보내도 버린다. sort_order 는 새 회차도 DB 기본값 0(이번에 설정 화면에 없다).
+// ⚠️ 공개 확인은 **쓰기 전에** — 지금 성도님께 안 보이는 회차가 이 저장으로 보이게 되면(evtListable 전후)
+//    confirmListed:true 없이는 아무것도 쓰지 않고 needs-confirm. 화면이 확인 창을 띄운 뒤 다시 보낸다.
+//    저장한 뒤에 물으면 확인을 누르기 전부터 명단(이름·소속·직분)이 로그인 없이 보인다.
+//    상태를 open·closed 로 바꿀 때만이 아니라 지난 공개 종료일을 비우거나 늦출 때도 같다.
+// ⚠️ 자격 회차의 기준일은 eligibilityStart(needs) 하나로만 꺼낸다(Task 2 · evOut 의 hasEligibility 는 isEligEvent).
+async function evEventCreate(ctx: Ctx, b: any) {
+  const src = b.event && typeof b.event === "object" && !Array.isArray(b.event) ? b.event : {};
+  const id = typeof src.id === "string" ? src.id.trim() : "";
+  if (!EVT_ID_RE.test(id)) return { ok: false, error: "bad-event-id" };   // 만든 뒤엔 못 바꾼다(주소 ?ev= 에 쓰인다)
+  const blank: EvEvent = { id, title: "", short_title: "", subtitle: "", season: "",
+    opens_on: "", closes_on: "", status: "draft", list_until: null };
+  // 새 회차는 draft 로만 — status 는 EV_CREATE_KEYS 에 없어 보내도 버려진다. 공개는 만든 뒤 설정에서(공개 확인을 거쳐).
+  const ev: EvEvent = { ...mergeEventPatch(blank, pickEventPatch(src, EV_CREATE_KEYS)), id, status: "draft" };
+  const bad = checkEvent(ev, null);   // 같은 검사 함수 — DB CHECK(기간)에 걸려 500 이 나지 않게. 새 회차엔 자격 규칙이 없다.
+  if (bad) return { ok: false, error: bad };
+  const { error } = await db.from("events").insert({
+    id, title: ev.title, short_title: ev.short_title, subtitle: ev.subtitle, season: ev.season,
+    opens_on: ev.opens_on, closes_on: ev.closes_on, list_until: ev.list_until, status: "draft",
+    kind: "signup", needs: structuredClone(BE_NEEDS_DEFAULT),   // 앱 등록 폼에 직분 칸이 생기게(설계 §2) — 사본을 넣는다
+    // copy·sort_order·created_at·updated_at 은 DB 기본값({} · 0 · now())
+  });
+  if (error) {
+    if ((error as any).code === "23505") return { ok: false, error: "exists" };   // 있는 회차는 덮지 않는다
+    throw error;
+  }
+  const saved = await evRead(id);
+  if (!saved) return { ok: false, error: "not-found" };
+  const f = eventFields(saved);
+  const after: Record<string, string | null> = {};
+  for (const k of EV_EDIT_KEYS) after[k] = (f as unknown as Record<string, string | null>)[k];
+  await audit(ctx, "event.create", id, { title: f.title, before: {}, after });
+  return { ok: true, event: evOut(saved, 0) };
+}
+
+async function evEventSave(ctx: Ctx, b: any) {
+  const cur = await evRead(b.event_id);   // 모양이 틀린 id·빈 id 는 묻지 않고 null(Task 5)
+  if (!cur) return { ok: false, error: "not-found" };
+  const id: string = cur.id;
+  // 화면이 본 판과 지금 판이 다르면 — 그사이 누가 고쳤다(expect = 그 회차의 updated_at 글자 그대로)
+  if (typeof b.expect !== "string" || b.expect !== cur.updated_at) return { ok: false, error: "conflict" };
+  const before = eventFields(cur);
+  const next: EvEvent = { ...mergeEventPatch(before, pickEventPatch(b.patch, EV_EDIT_KEYS)), id };
+  // 합친 회차 전체를 검사한다 — 마감일만 늦춰 공개 종료일보다 뒤로 가는 것도 여기서 잡힌다
+  const bad = checkEvent(next, eligibilityStart(cur.needs));
+  if (bad) return { ok: false, error: bad };
+  const today = kstToday();
+  const listedBefore = evtListable(before, today);
+  const listedNow = evtListable(next, today);
+  if (!listedBefore && listedNow && b.confirmListed !== true) return { ok: false, error: "needs-confirm" };
+  const diff = eventDiff(before, next);
+  let saved = cur;
+  if (Object.keys(diff.after).length) {
+    // 조건부 update — 읽은 뒤 쓰기 전 사이에 다른 담당자가 저장했으면 0행 → conflict(남의 저장을 덮지 않는다)
+    const { data: upd, error } = await db.from("events")
+      .update({ ...diff.after, updated_at: new Date().toISOString() })
+      .eq("id", id).eq("updated_at", cur.updated_at).select("id");
+    if (error) throw error;
+    if (!upd?.length) return { ok: false, error: "conflict" };
+    saved = await evRead(id);
+    if (!saved) return { ok: false, error: "not-found" };
+    await audit(ctx, "event.settings", id, { title: saved.title, before: diff.before, after: diff.after });
+  }
+  const count = (await evCountMap([id])).get(id) ?? 0;
+  return { ok: true, event: evOut(saved, count), listedBefore, listedNow };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -1143,6 +1216,8 @@ Deno.serve(async (req) => {
       case "evRoster":  return json(await evRoster(b));
       case "evHistory": return json(await evHistory(b));
       case "evStats":   return json(await evStats(b));
+      case "evEventCreate": return json(await evEventCreate(ctx, b));
+      case "evEventSave":   return json(await evEventSave(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);

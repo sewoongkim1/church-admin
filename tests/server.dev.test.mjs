@@ -106,6 +106,9 @@ const PROBE = {
   evRoster: { event_id: "ca-test-probe-none" },
   evHistory: { name: "ca-test-probe-없음" },
   evStats: { event_ids: ["ca-test-probe-none"] },
+  // 성경필사(암송) — 회차 만들기·설정(Task 6). 만들기는 **틀린 id** 로 검사(bad-event-id)에서 떨어져 아무것도 만들지 않는다.
+  evEventCreate: { event: { id: "Bad ID!" } },
+  evEventSave: { event_id: "ca-test-probe-none", expect: "", patch: {} },   // 없는 회차 → not-found
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
@@ -980,4 +983,234 @@ test("성경필사(암송) 누출: 응답 어디에도 UUID 꼴 값·user_id·�
     const bad = keysOf(r.body).filter((k) => FORBIDDEN.includes(k) || CHURCH_COLS.includes(k));
     assert.deepEqual(bad, [], label + " 응답에 감출 칸이 있다: " + bad.join(","));
   }
+});
+
+// ---------- 성경필사(암송) — 회차 만들기·설정(Task 6) ----------
+// 시험 회차 — EVT_ID_RE 에 맞는 꼴. 지우기는 Task 5 의 before()·after() 가 events?id=like.ca-test-* 로 한다(줄은 CASCADE).
+const EVC_NEW = `ca-test-${STAMP}-new`;
+// 회차 응답에 새면 안 되는 것 — UUID 꼴 값(user_id 등)과 줄·설정 쪽 칸 이름
+function evcNoLeak(body, label) {
+  const text = JSON.stringify(body);
+  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text), label + ": UUID 꼴 값이 실렸다");
+  for (const k of ["user_id", "auth_user_id", "ident_key", "answers", "phone", "memo", "person_id", "needs", "copy", "sort_order"]) {
+    assert.ok(!text.includes(`"${k}"`), label + ": " + k + " 칸이 실렸다");
+  }
+}
+
+test("evEventCreate — 회차 만들기: 검사 코드마다 아무것도 안 만든다 · draft 고정 · needs 기본값 · kind signup · sort_order 0 · exists · 기록", async () => {
+  const t = people.bibleevent.token;
+  const base = { id: EVC_NEW, title: "ca-test 회차", short_title: "시험", subtitle: "", season: "2026-4Q",
+    opens_on: "2026-10-20", closes_on: "2026-11-30", list_until: "" };
+  const bad = [
+    [{ ...base, id: "Bad ID!" }, "bad-event-id"],
+    [{ ...base, id: "a" }, "bad-event-id"],                    // 두 글자 이상
+    [{ ...base, id: undefined }, "bad-event-id"],              // id 없음(JSON 에서 빠진다)
+    [{ ...base, id: 12345 }, "bad-event-id"],                  // 글자가 아닌 id
+    [{ ...base, title: "   " }, "no-title"],
+    [{ ...base, title: { a: 1 } }, "no-title"],                // 객체는 "" 로 — 「[object Object]」 제목이 생기지 않는다
+    [{ ...base, opens_on: "2026/10/20" }, "bad-period"],
+    [{ ...base, closes_on: "2026-10-01" }, "period-reversed"],
+    [{ ...base, list_until: "언젠가" }, "bad-list-until"],
+    [{ ...base, list_until: "2026-11-01" }, "list-until-before-close"],
+  ];
+  for (const [event, code] of bad) {
+    const r = await call(t, "evEventCreate", { event });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body, { ok: false, error: code }, JSON.stringify(event));
+  }
+  assert.deepEqual(await rest(`events?select=id&id=eq.${EVC_NEW}`, "GET"), [], "검사에 걸린 만들기가 회차를 남겼다");
+  assert.deepEqual(await rest(`events?select=id&id=eq.12345`, "GET"), [], "글자가 아닌 id 로 회차가 생겼다");
+
+  // 만들기 — 상태·종류·needs·copy·sort_order 를 보내도 서버가 정한다(draft · signup · 직분만 받는 기본 needs · 빈 copy · 0)
+  const c = await call(t, "evEventCreate", { event: { ...base, status: "open", kind: "quiz", sort_order: 7,
+    needs: { eligibility: { start: "2026-01-01" } }, copy: { intro: "x" } } });
+  assert.equal(c.body.ok, true, JSON.stringify(c.body));
+  assert.deepEqual(Object.keys(c.body).sort(), ["event", "ok"]);
+  assert.deepEqual(Object.keys(c.body.event).sort(), EV_OUT_KEYS);
+  evcNoLeak(c.body, "evEventCreate");
+  assert.equal(c.body.event.id, EVC_NEW);
+  assert.equal(c.body.event.title, "ca-test 회차");
+  assert.equal(c.body.event.status, "draft");
+  assert.equal(c.body.event.kind, "signup");
+  assert.equal(c.body.event.list_until, null);
+  assert.equal(c.body.event.count, 0);
+  assert.equal(c.body.event.listedNow, false);
+  assert.equal(c.body.event.hasEligibility, false);
+  const [row] = await rest(`events?select=status,kind,needs,copy,list_until,sort_order,updated_at&id=eq.${EVC_NEW}`, "GET");
+  const { updated_at: dbUpdatedAt, ...stored } = row;
+  assert.deepEqual(stored, { status: "draft", kind: "signup", needs: { position: true, phone: false, memo: false, extra: [] },
+    copy: {}, list_until: null, sort_order: 0 });
+  assert.equal(c.body.event.updated_at, dbUpdatedAt, "화면이 expect 로 쓸 updated_at 이 DB 와 같아야 한다");
+
+  // 같은 id 다시 → exists · 덮어쓰지 않는다
+  const again = await call(t, "evEventCreate", { event: { ...base, title: "덮어쓰기 시도" } });
+  assert.deepEqual(again.body, { ok: false, error: "exists" });
+  assert.equal((await rest(`events?select=title&id=eq.${EVC_NEW}`, "GET"))[0].title, "ca-test 회차");
+
+  // 기록 — event.create 한 줄(바꾼 기록 기본 보기) · 검사에 걸린 것·exists 는 기록을 남기지 않는다
+  const logs = (await call(people.super.token, "auditList", { limit: 50 })).body.rows
+    .filter((r) => r.action === "event.create" && r.target === EVC_NEW);
+  assert.equal(logs.length, 1, JSON.stringify(logs));
+  assert.equal(logs[0].detail.title, "ca-test 회차");
+  assert.deepEqual(logs[0].detail.before, {});
+  assert.deepEqual(logs[0].detail.after, { title: "ca-test 회차", short_title: "시험", subtitle: "", season: "2026-4Q",
+    opens_on: "2026-10-20", closes_on: "2026-11-30", status: "draft", list_until: null });
+});
+
+test("evEventSave — 회차 설정: 없는 회차 · expect(conflict) · 검사 코드 · 보낸 칸만 · 공개 확인은 쓰기 전에(needs-confirm 이면 그대로) · 지난 공개 종료일 · 자격 시작일 · 기록", async () => {
+  const t = people.bibleevent.token;
+  const COLS = "id,title,short_title,subtitle,season,kind,status,opens_on,closes_on,list_until,needs,copy,sort_order,updated_at";
+  const read = async () => (await rest(`events?select=${COLS}&id=eq.${EVC_NEW}`, "GET"))[0];
+  const save = (expect, patch, extra = {}) => call(t, "evEventSave", { event_id: EVC_NEW, expect, patch, ...extra });
+  const settingsLogs = async () => (await call(people.super.token, "auditList", { limit: 200 })).body.rows
+    .filter((r) => r.action === "event.settings" && r.target === EVC_NEW);
+  const okShape = (r, label) => {
+    assert.equal(r.body.ok, true, label + " " + JSON.stringify(r.body));
+    assert.deepEqual(Object.keys(r.body).sort(), ["event", "listedBefore", "listedNow", "ok"], label);
+    assert.deepEqual(Object.keys(r.body.event).sort(), EV_OUT_KEYS, label);
+    evcNoLeak(r.body, label);
+  };
+  let cur = await read();
+  assert.ok(cur, "앞 시험(evEventCreate)이 만든 회차가 있어야 한다");
+
+  // 없는 회차 · 모양이 틀린 id · 빈 id → not-found(아무것도 안 만든다)
+  for (const event_id of [`ca-test-${STAMP}-none`, "Bad ID!", ""]) {
+    const r = await call(t, "evEventSave", { event_id, expect: cur.updated_at, patch: { title: "x" } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body, { ok: false, error: "not-found" }, event_id);
+  }
+  assert.deepEqual(await rest(`events?select=id&id=eq.ca-test-${STAMP}-none`, "GET"), []);
+
+  // expect 가 없거나 다르면 conflict
+  assert.deepEqual((await call(t, "evEventSave", { event_id: EVC_NEW, patch: { title: "x" } })).body, { ok: false, error: "conflict" });
+  assert.deepEqual((await save("2000-01-01T00:00:00+00:00", { title: "x" })).body, { ok: false, error: "conflict" });
+  assert.deepEqual(await read(), cur, "conflict 인데 줄이 바뀌었다");
+
+  // 검사 코드 — 하나씩, 줄은 그대로
+  const bad = [
+    [{ title: "  " }, "no-title"],
+    [{ opens_on: "2026/10/20" }, "bad-period"],
+    [{ closes_on: "" }, "bad-period"],
+    [{ closes_on: "2026-10-01" }, "period-reversed"],
+    [{ status: "published" }, "bad-status"],
+    [{ list_until: "언젠가" }, "bad-list-until"],
+    [{ list_until: "2026-11-01" }, "list-until-before-close"],
+    [{ closes_on: "2026-12-31", list_until: "2026-12-01" }, "list-until-before-close"],
+  ];
+  for (const [patch, code] of bad) {
+    assert.deepEqual((await save(cur.updated_at, patch)).body, { ok: false, error: code }, JSON.stringify(patch));
+  }
+  assert.deepEqual(await read(), cur, "검사에 걸린 저장이 줄을 바꿨다");
+
+  // 보낸 칸만 — needs·kind·copy·id·sort_order 는 보내도 버린다
+  const s1 = await save(cur.updated_at, { subtitle: "  시험 부제  ", needs: {}, kind: "quiz", copy: { intro: "x" },
+    id: `ca-test-${STAMP}-hijack`, sort_order: 99 });
+  okShape(s1, "보낸 칸만");
+  assert.equal(s1.body.listedBefore, false);
+  assert.equal(s1.body.listedNow, false);
+  assert.equal(s1.body.event.subtitle, "시험 부제");
+  const r1 = await read();
+  assert.equal(r1.subtitle, "시험 부제");
+  assert.notEqual(r1.updated_at, cur.updated_at);
+  assert.equal(s1.body.event.updated_at, r1.updated_at);
+  assert.deepEqual({ ...r1, subtitle: cur.subtitle, updated_at: cur.updated_at }, cur, "부제·updated_at 밖의 칸이 바뀌었다");
+  assert.deepEqual(await rest(`events?select=id&id=eq.ca-test-${STAMP}-hijack`, "GET"), [], "id 가 바뀌거나 새 회차가 생겼다");
+
+  // 옛 expect 로 또 → conflict(그사이 누가 고친 것과 같다) · 줄은 그대로
+  assert.deepEqual((await save(cur.updated_at, { title: "늦은 저장" })).body, { ok: false, error: "conflict" });
+  assert.deepEqual(await read(), r1);
+  cur = r1;
+
+  // 바뀐 것이 없으면 쓰지 않는다(updated_at 그대로)
+  const same = await save(cur.updated_at, { subtitle: "시험 부제" });
+  okShape(same, "바뀐 것 없음");
+  assert.equal(same.body.event.updated_at, cur.updated_at);
+  assert.deepEqual(await read(), cur);
+
+  // 공개 확인 — 안 보이던 회차가 보이게 되는 저장은 confirmListed:true 가 없으면 **아무것도 쓰지 않는다**
+  const n0 = (await settingsLogs()).length;
+  for (const extra of [{}, { confirmListed: "true" }, { confirmListed: 1 }, { confirmListed: false }]) {
+    for (const status of ["open", "closed"]) {
+      const r = await save(cur.updated_at, { status, title: "보이게 하며 고친 이름" }, extra);
+      assert.deepEqual(r.body, { ok: false, error: "needs-confirm" }, status + " " + JSON.stringify(extra));
+    }
+  }
+  assert.deepEqual(await read(), cur, "needs-confirm 인데 줄이 바뀌었다");
+  assert.equal((await settingsLogs()).length, n0, "needs-confirm 인데 기록이 남았다");
+
+  // 확인을 받으면 쓴다                                                                   (기록 1)
+  const open = await save(cur.updated_at, { status: "open" }, { confirmListed: true });
+  okShape(open, "공개");
+  assert.equal(open.body.listedBefore, false);
+  assert.equal(open.body.listedNow, true);
+  assert.equal(open.body.event.status, "open");
+  assert.equal(open.body.event.listedNow, true);
+  cur = await read();
+  // 이미 보이는 회차의 다른 칸은 확인 없이                                                 (기록 2)
+  const ren = await save(cur.updated_at, { title: "ca-test 회차 고침" });
+  okShape(ren, "보이는 회차 이름 고치기");
+  assert.equal(ren.body.listedBefore, true);
+  assert.equal(ren.body.listedNow, true);
+  cur = await read();
+  // 다시 draft — 안 보이게 하는 것은 확인 없이(개발 첫 화면에 오래 두지 않는다)               (기록 3)
+  const hide = await save(cur.updated_at, { status: "draft" });
+  okShape(hide, "다시 draft");
+  assert.equal(hide.body.listedBefore, true);
+  assert.equal(hide.body.listedNow, false);
+  cur = await read();
+  assert.equal(cur.status, "draft");
+
+  // 공개 종료일 — 날짜로 넣었다가 비우면 null                                              (기록 4·5)
+  const lu = await save(cur.updated_at, { list_until: "2026-12-31" });
+  okShape(lu, "공개 종료일");
+  assert.equal(lu.body.event.list_until, "2026-12-31");
+  cur = await read();
+  const lu2 = await save(cur.updated_at, { list_until: "" });
+  okShape(lu2, "공개 종료일 비우기");
+  assert.equal(lu2.body.event.list_until, null);
+  cur = await read();
+  assert.equal(cur.list_until, null);
+
+  // 공개 종료일이 지나 안 보이던 회차 — 종료일을 비우거나 늦추면 다시 보이게 된다 → 역시 확인이 먼저
+  // (서비스 키로 옛 회차 모양을 만든다 — 2000년 날짜라 오늘이 언제든 「지났다」)
+  await rest(`events?id=eq.${EVC_NEW}`, "PATCH",
+    { status: "closed", opens_on: "2000-01-01", closes_on: "2000-01-31", list_until: "2000-02-01" });
+  cur = await read();
+  for (const list_until of ["", "2099-12-31"]) {
+    assert.deepEqual((await save(cur.updated_at, { list_until })).body, { ok: false, error: "needs-confirm" }, "list_until " + list_until);
+  }
+  assert.deepEqual(await read(), cur, "needs-confirm 인데 줄이 바뀌었다(공개 종료일)");
+  // 지난 날짜끼리 바꾸는 것은 여전히 안 보이므로 확인 없이                                  (기록 6)
+  const past = await save(cur.updated_at, { list_until: "2000-03-01" });
+  okShape(past, "지난 공개 종료일");
+  assert.deepEqual([past.body.listedBefore, past.body.listedNow], [false, false]);
+  // 되돌린다(서비스 키 — 기록 없음)
+  await rest(`events?id=eq.${EVC_NEW}`, "PATCH",
+    { status: "draft", opens_on: "2026-10-20", closes_on: "2026-11-30", list_until: null });
+  cur = await read();
+
+  // 자격 회차 — opens_on 은 needs.eligibility.start 보다 앞설 수 없다 · 저장해도 needs 는 그대로   (기록 7)
+  const needs = { position: true, phone: false, memo: false, extra: [],
+    eligibility: { start: "2026-10-11", weeks: 6, perWeek: 3, need: 3, minNeed: 2 } };
+  await rest(`events?id=eq.${EVC_NEW}`, "PATCH", { needs });   // 서비스 키로 — 이 메뉴는 needs 를 못 바꾼다
+  cur = await read();
+  assert.deepEqual((await save(cur.updated_at, { opens_on: "2026-10-01" })).body, { ok: false, error: "before-eligibility" });
+  assert.deepEqual(await read(), cur);
+  const el = await save(cur.updated_at, { opens_on: "2026-10-11" });          // 같은 날은 된다
+  okShape(el, "자격 시작일과 같은 날");
+  assert.equal(el.body.event.hasEligibility, true);
+  assert.deepEqual((await read()).needs, needs, "저장 한 번에 자격 규칙이 바뀌었다");
+
+  // 기록 — 바뀐 저장만, 바뀐 칸만 전·후로
+  const logs = await settingsLogs();
+  assert.equal(logs.length, n0 + 7, "공개·이름·draft·종료일 둘·지난 종료일·시작일 = 일곱 건");
+  const opened = logs.find((r) => r.detail?.after?.status === "open");
+  assert.ok(opened, "공개로 바꾼 기록이 없다");
+  assert.deepEqual(opened.detail.before, { status: "draft" });
+  assert.deepEqual(opened.detail.after, { status: "open" });
+  assert.equal(opened.detail.title, "ca-test 회차");
+  const sub = logs.find((r) => r.detail?.after?.subtitle === "시험 부제");
+  assert.ok(sub, "부제 기록이 없다");
+  assert.deepEqual(sub.detail.before, { subtitle: "" });
+  assert.deepEqual(sub.detail.after, { subtitle: "시험 부제" });            // needs·kind·copy 는 기록에도 없다
 });

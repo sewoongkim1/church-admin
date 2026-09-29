@@ -41,6 +41,10 @@ export const ACTION_ROLES: Record<string, string | null> = {
   evRoster: "bibleevent",
   evHistory: "bibleevent",
   evStats: "bibleevent",
+  // 성경필사(암송) — 회차 만들기·설정(Task 6). 만들기는 draft 로만, 성도님께 보이게 되는 저장은
+  // confirmListed 를 받아야 쓴다(needs-confirm). 둘 다 바꾼 기록(event.create·event.settings)에 남는다.
+  evEventCreate: "bibleevent",
+  evEventSave: "bibleevent",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";
