@@ -14,6 +14,11 @@ import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINIS
 import { appIdentityKey, legacyNorm, ministryPaperKeys, ministryPaperOne, paperName, PAPER_MAX_ROWS } from "./paper.ts";
 import { applicantFromPaper, applicantFromWho, churchFor, lookupKeys, toCand, type Cand } from "./people-match.ts";
 import { parseSearch, searchDetail, sortOrder, statsOf, PAGE_SIZE, PHOTO_TTL, FILTER_KEYS, type Search } from "./people-query.ts";
+// 성경필사(암송)(Task 5) — 기존 import 줄은 고치지 않고 새 줄로 더한다. Task 6~8 은 여기 든 이름을 다시 들이지 않는다(두 번 선언 = 배포 실패).
+import { applicantFromSignup, nameKey, type Church } from "./people-match.ts";
+import { BE_BAD_CHARS, BE_FIELD_MAX, EVT_ID_RE, evtListable, isEligEvent, kstToday } from "./events-rules.ts";
+// ⚠️ people-query.ts 의 statsOf(교인명부 현황)와 이름이 같다 — 이벤트 통계는 eventStatsOf 로만 부른다
+import { personGroups, statsOf as eventStatsOf, type StatIn } from "./events-stats.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -946,6 +951,158 @@ async function peopleExport(ctx: Ctx, b: any) {
   return { ok: true, source, rows };
 }
 
+// ---------- 성경필사(암송) — 이벤트 명단 (2026-09-29) ----------
+// 설계: v2 docs/superpowers/specs/2026-09-29-church-admin-bible-events-design.md · 옛 동작 원문 docs/port/event-roster-legacy.md
+// 표 events·event_signups 는 **성경암송 앱의 것**이다 — 칸·제약·RLS 를 바꾸지 않는다(여기서는 읽고 쓰기만).
+// ⚠️ 응답은 아래 칸 지도(evOut·rowOut·evHistory 줄)로만 만든다. user_id 는 판정(hasUser·사람 묶음)에 쓰려고
+//    읽기만 하고 내보내지 않는다 — 성경암송 api 는 user_id 하나로 그 사람 행세가 된다. 성도님 memo·answers·phone 은
+//    이 절의 어느 칸 목록에도 없다(성도님 메모 memo 와 담당자 메모 note 는 다른 칸).
+// ⚠️ 줄은 allRows 로 읽는다(1,000행에서 오류 없이 잘린다 — 2026-09-29 성경암송 576acfc), 인원은 head 개수.
+// ⚠️ 자격 회차 판정은 events-rules.ts 의 isEligEvent(needs) 하나 — 여기서 따로 만들지 않는다(대조 뒤 결정).
+const EV_COLS = "id,title,short_title,subtitle,season,kind,status,opens_on,closes_on,list_until,updated_at,needs";
+// 줄 칸 목록은 이것 하나 — 명단(evRoster)·한 분 더하기·고치기(Task 7)·올리기(Task 8)가 모두 이것을 쓴다(두 벌 두지 않는다)
+const EV_ROW_COLS = "id,event_id,user_id,who_type,group_name,sub_name,name,position,note,source,created_at,updated_at";
+
+// 회차 한 줄 — 화면(📋 회차·명단)이 기대하는 칸 그대로. needs·copy·sort_order 는 싣지 않는다.
+function evOut(ev: any, count: number) {
+  return {
+    id: ev.id, title: ev.title ?? "", short_title: ev.short_title ?? "", subtitle: ev.subtitle ?? "",
+    season: ev.season ?? "", kind: ev.kind ?? "signup", status: ev.status,
+    opens_on: ev.opens_on, closes_on: ev.closes_on, list_until: ev.list_until ?? null,
+    updated_at: ev.updated_at ?? "",                         // 회차 설정 저장의 expect
+    count,                                                   // head 개수(evCountMap)
+    listedNow: evtListable(ev, kstToday()),                  // 지금 성도님께 보이는가(KST · 성경암송 evtListable 규칙)
+    hasEligibility: isEligEvent(ev.needs),                   // 자격 회차(더하기·올리기를 막는 쪽 · Task 7·8 도 같은 함수)
+  };
+}
+
+// 명단 한 줄 — 명시적 칸 지도. church 는 { state, reason } | null(교적 값은 싣지 않는다).
+function rowOut(r: any, church: Church | null) {
+  return {
+    id: r.id, who_type: r.who_type ?? "", group: r.group_name ?? "", sub: r.sub_name ?? "",
+    name: r.name ?? "", position: r.position ?? "", note: r.note ?? "",
+    source: r.source === "app" ? "app" : "import",
+    hasUser: !!r.user_id,                                    // 앱 계정과 이어졌는가(user_id 자체는 싣지 않는다)
+    at: r.created_at ? kstDay(r.created_at) : "",            // 낸 날(KST 「YYYY-MM-DD」)
+    updated_at: r.updated_at ?? "",                           // 줄 고치기·빼기의 expect(DB 문자열 그대로)
+    church,
+  };
+}
+
+// 회차 하나(EV_COLS — needs·updated_at 포함) · 모양이 틀린 id 는 묻지 않고 null
+async function evRead(id: unknown): Promise<any | null> {
+  const s = legacyNorm(id);
+  if (!EVT_ID_RE.test(s)) return null;
+  const { data, error } = await db.from("events").select(EV_COLS).eq("id", s).maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+// 회차마다 인원 — 행을 받지 않고 head 개수만(행을 받아 세면 1,000에서 잘린다)
+async function evCountMap(ids: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  await Promise.all([...new Set(ids)].map(async (id) => {
+    const { count, error } = await db.from("event_signups").select("id", { count: "exact", head: true }).eq("event_id", id);
+    if (error) throw error;
+    out.set(id, count ?? 0);
+  }));
+  return out;
+}
+
+// 줄의 소속 한 줄 — 「화평 20목장」·「소망 남성」·「청년부」·「중등부 3학년」. 교구 줄의 **숫자 목장에만** 「목장」.
+// ⚠️ 통계(events-stats.ts statsOf)의 repeaters[].label 과 같은 꼴이어야 한다(CONTRACT 5절 — 개발 시험이 맞대 본다).
+function evWho(r: any): string {
+  const g = legacyNorm(r.group_name), s = legacyNorm(r.sub_name);
+  if (!g) return "(소속 없음)";
+  if (legacyNorm(r.who_type) === "교구" && /^\d+$/.test(s)) return g + " " + s + "목장";
+  return s ? g + " " + s : g;
+}
+
+// 📋 회차 목록 — 최근(마감일 늦은) 회차 먼저
+async function evEvents() {
+  const evs = await allRows(() => db.from("events").select(EV_COLS)
+    .order("closes_on", { ascending: false }).order("id", { ascending: true }));
+  const counts = await evCountMap(evs.map((e) => e.id));
+  return { ok: true, today: kstToday(), events: evs.map((e) => evOut(e, counts.get(e.id) ?? 0)) };
+}
+
+// 📋 한 회차의 명단 전부 + 줄마다 교적 표시
+async function evRoster(b: any) {
+  const ev = await evRead(b.event_id);
+  if (!ev) return { ok: false, error: "not-found" };
+  const [counts, rows, src] = await Promise.all([
+    evCountMap([ev.id]),
+    allRows(() => db.from("event_signups").select(EV_ROW_COLS).eq("event_id", ev.id).order("id", { ascending: true })),
+    peopleSource(),
+  ]);
+  // 교적 표시 — 명부가 한 번도 안 올라왔으면 null(화면이 표시를 그리지 않는다). 이름으로만 묻는다(200개씩).
+  const idx = await churchLookup(rows.map((r) => r.name));
+  return {
+    ok: true,
+    event: evOut(ev, counts.get(ev.id) ?? 0),
+    source: src ? { date: src.source_date, total: src.total } : null,
+    rows: rows.map((r) => rowOut(r, churchFor(idx, applicantFromSignup(r)))),
+  };
+}
+
+// 👤 이름으로 모든 회차의 줄 — 사람 묶음(합집합)마다. 이름은 NFC·띄어쓰기 없음(nameKey)으로 맞댄다.
+// ⚠️ DB 에 name=eq 로 묻지 않는다 — 맥에서 온 자모분리(NFD)·띄어쓰기가 다른 줄을 놓친다. 줄 전체를 쪽을
+//    나눠 읽고(2026-09-29 기준 2,834행 = 세 쪽) 여기서 거른다. 교적 값이 아니라 기록은 남기지 않는다.
+async function evHistory(b: any) {
+  const raw = legacyNorm(b.name);
+  if (!raw) return { ok: false, error: "no-name" };
+  if (BE_BAD_CHARS.test(raw)) return { ok: false, error: "bad-char" };
+  if (raw.length > BE_FIELD_MAX) return { ok: false, error: "too-long" };
+  const key = nameKey(raw);
+  const [evs, all] = await Promise.all([
+    allRows(() => db.from("events").select("id,title,closes_on").order("id", { ascending: true })),
+    allRows(() => db.from("event_signups").select("id,event_id,user_id,who_type,group_name,sub_name,name,position,source")
+      .order("id", { ascending: true })),
+  ]);
+  const evBy = new Map(evs.map((e) => [e.id, e]));
+  // 최근 회차 먼저 — 마감일 늦은 것 → 같은 마감일이면 회차 id 큰 것 → 같은 회차면 줄 id 큰 것.
+  // ⚠️ 이 차례는 events-stats.ts statsOf 가 「가장 최근 줄」을 고르는 차례(마감일·회차 id 오름차순의 마지막, 같은 회차면 뒤 줄)와
+  //    **같아야** 한다 — 그래야 이력 이름표와 통계 「여러 번 참여한 분」 이름표가 같은 글자가 된다. 묶음 순번도 이 차례로 매겨진다.
+  const rows = all.filter((r) => nameKey(r.name) === key).sort((x, y) =>
+    String(evBy.get(y.event_id)?.closes_on ?? "").localeCompare(String(evBy.get(x.event_id)?.closes_on ?? ""))
+    || String(y.event_id).localeCompare(String(x.event_id)) || Number(y.id) - Number(x.id));
+  const gi = personGroups(rows as StatIn[]);
+  const groups: { n: number; label: string; rows: any[] }[] = [];
+  rows.forEach((r, i) => {
+    const g = gi[i];
+    // 묶음 이름표 = 「이름 · 소속」(가장 최근 줄 · CONTRACT 5절 — 통계 repeaters 의 name·label 과 같은 글자).
+    // 순번(n)은 user_id 대신 쓰는 이름표다 — user_id 로 이름표를 만들지 않는다.
+    if (!groups[g]) groups[g] = { n: g + 1, label: `${legacyNorm(r.name)} · ${evWho(r)}`, rows: [] };
+    const e = evBy.get(r.event_id);
+    groups[g].rows.push({
+      event_id: r.event_id, title: e?.title ?? "", closes_on: e?.closes_on ?? "",
+      who_type: r.who_type ?? "", group: r.group_name ?? "", sub: r.sub_name ?? "",
+      position: r.position ?? "", source: r.source === "app" ? "app" : "import", hasUser: !!r.user_id,
+    });
+  });
+  return { ok: true, groups: groups.filter(Boolean) };
+}
+
+// 👤 통계 — 고른 회차(빈 배열 = 전부)로 회차별 인원 · 교구(부서)×회차 · 여러 번 참여한 분
+async function evStats(b: any) {
+  if (!Array.isArray(b.event_ids)) return { ok: false, error: "bad-event-id" };
+  const ids = [...new Set(b.event_ids.map((x: unknown) => legacyNorm(x)))] as string[];
+  if (ids.length > 100 || ids.some((id) => !EVT_ID_RE.test(id))) return { ok: false, error: "bad-event-id" };
+  const evsAll = await allRows(() => db.from("events").select("id,title,closes_on")
+    .order("closes_on", { ascending: false }).order("id", { ascending: true }));
+  const evs = ids.length ? evsAll.filter((e) => ids.includes(e.id)) : evsAll;   // 없는 id 는 조용히 빠진다
+  if (!evs.length) return { ok: true, ...eventStatsOf([], []) };
+  const pick = evs.map((e) => e.id);
+  // 고른 것이 있으면 .in() 으로 좁힌다(회차 id 는 EVT_ID_RE 로 좁힌 영문 슬러그 · 최대 100개라 주소가 깨지지 않는다).
+  // 빈 배열(= 전부)이면 거르지 않고 다 읽는다 — 회차가 늘어도 주소가 길어지지 않게.
+  const rows = await allRows(() => {
+    let q = db.from("event_signups").select("id,event_id,user_id,who_type,group_name,sub_name,name,position");
+    if (ids.length) q = q.in("event_id", pick);
+    return q.order("id", { ascending: true });
+  });
+  return { ok: true, ...eventStatsOf(rows as StatIn[], evs) };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -985,6 +1142,10 @@ Deno.serve(async (req) => {
       case "peoplePerson": return json(await peoplePerson(ctx, b));
       case "peopleStats":  return json(await peopleStats());
       case "peopleExport": return json(await peopleExport(ctx, b));
+      case "evEvents":  return json(await evEvents());
+      case "evRoster":  return json(await evRoster(b));
+      case "evHistory": return json(await evHistory(b));
+      case "evStats":   return json(await evStats(b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);
