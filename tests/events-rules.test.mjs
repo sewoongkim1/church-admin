@@ -391,3 +391,59 @@ test("candidateKeys — 자모분리(NFD)로 적힌 이름은 완성형 키도 �
   assert.equal(keys[0], "교구|화평|20|||" + nfd);
   assert.ok(keys.includes("교구|화평|20|||홍길동"));
 });
+
+// ---------- 회차 만들기·설정 도움 함수(Task 6) ----------
+// import 는 끌어올려진다 — 파일 끝에 두어도 맨 위의 import 와 함께 먼저 읽힌다. Task 2 가 들여온 이름과 겹치지 않게.
+import { EV_EDIT_KEYS, EV_CREATE_KEYS, pickEventPatch, eventFields, eventDiff, mergeEventPatch as mergeForKeyCheck }
+  from "../supabase/functions/church-admin/events-rules.ts";
+
+test("EV_EDIT_KEYS·EV_CREATE_KEYS — needs·copy·kind·id·sort_order 는 없다 · 만들기엔 status 도 없다", () => {
+  assert.deepEqual(EV_EDIT_KEYS, ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until"]);
+  for (const k of ["needs", "copy", "kind", "id", "sort_order", "updated_at"]) assert.ok(!EV_EDIT_KEYS.includes(k), k);
+  assert.deepEqual(EV_CREATE_KEYS, ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "list_until"]);
+});
+
+test("EV_EDIT_KEYS 는 mergeEventPatch 가 받는 여덟 칸과 같다 — 어긋나면 고친 칸이 조용히 버려진다", () => {
+  const cur = eventFields({ id: "x-1", title: "가", short_title: "나", subtitle: "다", season: "라",
+    opens_on: "2026-10-01", closes_on: "2026-10-31", status: "draft", list_until: "2026-12-31" });
+  const patch = { title: "t2", short_title: "s2", subtitle: "u2", season: "q2", opens_on: "2027-01-01",
+    closes_on: "2027-01-31", status: "open", list_until: "2027-12-31" };
+  assert.deepEqual(Object.keys(patch).sort(), [...EV_EDIT_KEYS].sort());
+  const out = mergeForKeyCheck(cur, patch);
+  for (const k of EV_EDIT_KEYS) assert.equal(out[k], patch[k], k);
+  assert.equal(out.id, "x-1");
+});
+
+test("pickEventPatch — 고칠 수 있는 칸만 · 보낸 칸만 · 값은 글자로", () => {
+  const p = pickEventPatch({ title: " 새 이름 ", needs: { eligibility: {} }, copy: { intro: "x" }, kind: "quiz",
+    id: "other-id", sort_order: 3, list_until: null }, EV_EDIT_KEYS);
+  assert.deepEqual(p, { title: " 새 이름 ", list_until: "" });            // 다듬기(trim)는 mergeEventPatch 가 한다
+  assert.deepEqual(pickEventPatch({ status: "open", title: "가" }, EV_CREATE_KEYS), { title: "가" });
+  assert.deepEqual(pickEventPatch({ title: 12, subtitle: true, season: { a: 1 }, opens_on: Number.NaN, closes_on: undefined }, EV_EDIT_KEYS),
+    { title: "12", subtitle: "", season: "", opens_on: "", closes_on: "" });
+  assert.deepEqual(pickEventPatch(null, EV_EDIT_KEYS), {});
+  assert.deepEqual(pickEventPatch(["title"], EV_EDIT_KEYS), {});
+  assert.deepEqual(pickEventPatch("title", EV_EDIT_KEYS), {});
+  assert.deepEqual(pickEventPatch(Object.create({ title: "물려받은 칸" }), EV_EDIT_KEYS), {});   // hasOwnProperty
+});
+
+test("eventFields — 표의 한 줄 → 아홉 칸 · 나머지 칸은 버린다 · list_until 빈 것은 null", () => {
+  assert.deepEqual(eventFields({ id: "lent-2026", title: "사순절", short_title: "", subtitle: null, season: "2026-1Q",
+    opens_on: "2026-02-18", closes_on: "2026-04-04", status: "closed", list_until: null,
+    needs: { position: true }, copy: {}, kind: "signup", sort_order: 0, updated_at: "2026-09-29T00:00:00+00:00" }),
+    { id: "lent-2026", title: "사순절", short_title: "", subtitle: "", season: "2026-1Q",
+      opens_on: "2026-02-18", closes_on: "2026-04-04", status: "closed", list_until: null });
+  assert.deepEqual(eventFields({ list_until: "" }),
+    { id: "", title: "", short_title: "", subtitle: "", season: "", opens_on: "", closes_on: "", status: "", list_until: null });
+  assert.equal(eventFields({ list_until: "2026-12-31" }).list_until, "2026-12-31");
+});
+
+test("eventDiff — 바뀐 칸만 전·후 · 같으면 빈 것 · id 는 보지 않는다", () => {
+  const a = eventFields({ id: "x-1", title: "가", opens_on: "2026-10-01", closes_on: "2026-10-31", status: "draft", list_until: null });
+  assert.deepEqual(eventDiff(a, { ...a }), { before: {}, after: {} });
+  assert.deepEqual(eventDiff(a, { ...a, status: "open", list_until: "2026-12-31" }),
+    { before: { status: "draft", list_until: null }, after: { status: "open", list_until: "2026-12-31" } });
+  assert.deepEqual(eventDiff({ ...a, list_until: "2026-12-31" }, a),
+    { before: { list_until: "2026-12-31" }, after: { list_until: null } });
+  assert.deepEqual(eventDiff(a, { ...a, id: "y-2" }), { before: {}, after: {} });
+});

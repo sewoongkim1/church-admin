@@ -269,3 +269,51 @@ export function candidateKeys(row: EvRow): string[] {
   for (const sb of subs) for (const n of names) out.add(identKey({ ...row, sub_name: sb, name: n }));
   return [...out];
 }
+
+// ---------- 회차 만들기·설정(Task 6) — 서버 evEventCreate·evEventSave 가 쓴다 ----------
+// 담당자가 회차 설정에서 바꿀 수 있는 칸. needs·copy·kind·sort_order·id 는 **없다** —
+// 가을 말씀 동행의 자격 규칙(needs.eligibility)·문구(copy)가 저장 한 번에 조용히 지워지지 않게(설계 §2).
+// ⚠️ mergeEventPatch 안의 EVT_EDITABLE 과 **같은 여덟 칸**이어야 한다(시험이 맞대 본다).
+export const EV_EDIT_KEYS = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until"];
+// 새 회차에 받는 칸 — status 도 없다(새 회차는 draft 로만 · 공개는 만든 뒤 설정에서 공개 확인을 거쳐).
+export const EV_CREATE_KEYS = EV_EDIT_KEYS.filter((k) => k !== "status");
+
+// 화면이 보낸 것에서 keys 에 든 칸만, **보낸 칸만**(hasOwnProperty — 물려받은 이름은 안 본다) 꺼낸다.
+// 값은 글자로: 글자는 그대로(다듬기는 mergeEventPatch 가) · 유한한 숫자는 글자로 · 나머지(null·undefined·참거짓·객체)는 "".
+// (mergeEventPatch 에 객체가 그대로 가면 「[object Object]」 라는 제목이 검사를 통과한다.)
+export function pickEventPatch(src: unknown, keys: string[]): Record<string, string> {
+  const o = src && typeof src === "object" && !Array.isArray(src) ? (src as Record<string, unknown>) : {};
+  const out: Record<string, string> = {};
+  for (const k of keys) {
+    if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+    const v = o[k];
+    out[k] = typeof v === "string" ? v : typeof v === "number" && Number.isFinite(v) ? String(v) : "";
+  }
+  return out;
+}
+
+// events 표의 한 줄 → 규칙이 보는 아홉 칸(EvEvent). 날짜는 PostgREST 가 "YYYY-MM-DD" 글자로 준다.
+// needs·copy·kind·sort_order·updated_at 같은 나머지 칸은 버린다.
+export function eventFields(r: Record<string, unknown>): EvEvent {
+  const s = (v: unknown) => (v === null || v === undefined ? "" : String(v));
+  const lu = r.list_until;
+  return {
+    id: s(r.id), title: s(r.title), short_title: s(r.short_title), subtitle: s(r.subtitle), season: s(r.season),
+    opens_on: s(r.opens_on), closes_on: s(r.closes_on), status: s(r.status),
+    list_until: lu === null || lu === undefined || lu === "" ? null : String(lu),
+  };
+}
+
+// 바뀐 칸만 전·후로 — 서버가 update 할 칸이자 event.settings 기록의 detail. 같으면 둘 다 빈 것. id 는 보지 않는다.
+export function eventDiff(before: EvEvent, after: EvEvent):
+  { before: Record<string, string | null>; after: Record<string, string | null> } {
+  const b: Record<string, string | null> = {};
+  const a: Record<string, string | null> = {};
+  const x = before as unknown as Record<string, string | null>;
+  const y = after as unknown as Record<string, string | null>;
+  for (const k of EV_EDIT_KEYS) {
+    const p = x[k] ?? null, q = y[k] ?? null;
+    if (p !== q) { b[k] = p; a[k] = q; }
+  }
+  return { before: b, after: a };
+}
