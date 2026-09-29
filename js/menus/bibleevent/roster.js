@@ -15,6 +15,9 @@ import { TITLE, ELIG_LINE, CHURCH_LABEL, chipsHtml, headHtml, settingsHtml, sour
   from "./roster-ui.js";
 import { openEventForm } from "./event-form.js";
 import { openRowForm, openRowDelete } from "./row-form.js";
+// 이름을 누르면 교적 창(Task 16)
+import { openChurchPerson } from "./person-popup.js";
+import { personPayload } from "./person-logic.js";
 
 let f = blankFilter();   // 거르기 — 같은 회차면 메뉴를 옮겨 다녀도 남는다
 let fFor = "";           // f 가 어느 회차의 거르기인가
@@ -208,6 +211,7 @@ export async function render(el, ctx) {
     else if (act === "set") editEvent();
     else if (act === "add") addRow();
     else if (act === "row") rowMenu(b);
+    else if (act === "person") openChurchPerson({ call, ...personPayload(b.dataset), anchor: b });   // 이름 → 교적 창(Task 16)
     else if (act === "csv") exportCsv();
     else if (act === "reload") reload();
     else if (act === "clear") { f = blankFilter(); q.value = ""; draw(); }

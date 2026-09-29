@@ -4,6 +4,8 @@
 import { esc } from "../../core/ui.js";
 import { churchBadgeHtml } from "../people/church-badge.js";
 import { STATUS_KO, SRC_LABEL, subText, filterActive } from "./roster-logic.js";
+// 이름을 누르면 교적 창(Task 16) — 이름 단추 모양
+import { nameButtonHtml } from "./person-logic.js";
 
 export const TITLE = `<h2 class="page-title">📋 회차·명단</h2>`;
 // 설계 §3 문장 그대로(가운데) — Task 14 점검표가 이 글을 찾는다
@@ -88,7 +90,7 @@ const moreHtml = (r) => `<button type="button" class="be-more" data-act="row" da
 export function cardHtml(r, dup) {
   const sub = subText(r);
   return `<div class="be-row${dup ? " dup" : ""}"><div class="be-row-h"><div class="be-row-nm">` +
-    `<b>${esc(r.name)}</b>${posHtml(r)}${sub ? `<span class="be-row-sub">${esc(sub)}</span>` : ""}` +
+    `${nameButtonHtml(r)}${posHtml(r)}${sub ? `<span class="be-row-sub">${esc(sub)}</span>` : ""}` +
     `<span class="be-badges">${srcHtml(r)}${userHtml(r)}${churchBadgeHtml(r.church)}${dupHtml(dup)}</span></div>${moreHtml(r)}</div>` +
     (r.note ? `<div class="be-memo">📝 ${esc(r.note)} <i>(담당자만 봄)</i></div>` : "") + `</div>`;
 }
@@ -97,7 +99,7 @@ export function cardHtml(r, dup) {
 export function tableHtml(groups, dups) {
   const head = `<tr><th>이름</th><th>소속</th><th>직분</th><th>출처</th><th>교적</th><th>담당자 메모</th><th><span class="be-sr">고치기·빼기</span></th></tr>`;
   const body = groups.map((g) => `<tbody><tr class="be-tgrp"><th colspan="7" scope="colgroup">${esc(g.label)} <em>${num(g.rows.length)}명</em></th></tr>` +
-    g.rows.map((r) => `<tr${dups.has(r.id) ? ` class="dup"` : ""}><td><b>${esc(r.name)}</b> ${dupHtml(dups.has(r.id))}</td>` +
+    g.rows.map((r) => `<tr${dups.has(r.id) ? ` class="dup"` : ""}><td>${nameButtonHtml(r)} ${dupHtml(dups.has(r.id))}</td>` +
       `<td>${esc(subText(r))}</td><td>${esc(r.position || "")}</td><td>${srcHtml(r)} ${userHtml(r)}</td>` +
       `<td>${churchBadgeHtml(r.church)}</td><td class="be-tnote">${esc(r.note || "")}</td><td>${moreHtml(r)}</td></tr>`).join("") +
     `</tbody>`).join("");

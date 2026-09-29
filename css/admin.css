@@ -1053,3 +1053,29 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
 .be-hi-reps em{font-style:normal;font-size:13px;font-weight:800;color:var(--navy)}
 .be-hi-evs{display:flex;flex-wrap:wrap;gap:4px;flex-basis:100%}
 .be-hi-evs span{font-size:13px;color:#41506b;background:var(--light);border-radius:7px;padding:1px 7px}
+
+/* ── 성경필사(암송) 이름을 누르면 교적 창(be-name · be-pp- · Task 16 · 2026-09-30) ─────────────────────
+   이름은 이름처럼 보이는 단추 — 마우스를 올리거나 키보드 초점이면 밑줄. 폰에서 누르는 자리는 44px(--tap):
+   위아래 여백을 늘리고 같은 만큼 음수 margin 으로 되돌려 줄 높이는 그대로 둔다.
+   작은 창(ui.js dialog · cls "be-pp-dlg")은 읽기만 — 본문은 person-logic.js basicHtml(줄바꿈 글자 없음). */
+.be-name{display:inline-block;min-height:var(--tap);margin:-10px -4px;padding:10px 4px;border:0;border-radius:8px;background:none;
+  color:inherit;font:inherit;line-height:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.be-name:hover b,.be-name:focus-visible b{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.be-name:focus-visible{outline:2px solid var(--navy);outline-offset:-2px}
+.be-name:disabled{cursor:default}
+/* PC 표 — 좁은 칸에서 이름이 한 글자씩 꺾이지 않게 */
+.be-table .be-name{white-space:nowrap}
+/* 👤 여러 번 참여한 분 — 이름(교적 창) · 소속 · 횟수 · 「📜 이력」(줄 오른쪽 끝) · 참여 회차(다음 줄) */
+.be-hi-reps .be-hi-who-btn{order:1;margin-left:auto}
+.be-hi-reps .be-hi-evs{order:2}
+/* 작은 창 본문 */
+.be-pp-many{margin-bottom:10px;font-size:14px;line-height:1.6;color:var(--navy-dark)}
+.be-pp-many b{color:var(--navy)}
+.be-pp-list{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.be-pp-p{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 0;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
+  background:var(--cream)}
+.be-pp-nm{font-size:16px;font-weight:800;color:var(--navy)}
+.be-pp-aff{flex-basis:100%;font-size:14px;color:var(--navy-dark)}
+.be-pp-cb{margin-bottom:12px;font-size:13px;color:var(--gray)}
+.be-pp .cb,.be-pp .cb small{font-size:13px}
+.be-pp-note{padding:8px 10px;border-radius:8px;background:var(--ghost-bg);color:var(--navy);font-size:13px;line-height:1.5}

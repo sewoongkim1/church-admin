@@ -13,6 +13,9 @@ import {
   APPROX, MIN_REPEAT, quickChips, quickIds, chipOn, labelMap, barRows, crossTable, repeatChoices, repeatersAt, statsCsv,
   csvName, histSummary, histRowText,
 } from "./history-logic.js";
+// 이름을 누르면 교적 창(Task 16)
+import { openChurchPerson } from "./person-popup.js";
+import { nameButtonHtml, personPayload, rowFromLabel } from "./person-logic.js";
 
 const TITLE = `<h2 class="page-title">👤 사람별 이력·통계</h2>`;
 const TABS = [["person", "👤 사람별 이력"], ["stats", "📊 통계"]];
@@ -83,7 +86,7 @@ export async function render(el, { call }) {
 
   // ── 사람별 이력 ──
   const groupHtml = (g) => `<div class="card be-hi-grp">
-      <div class="be-hi-gh"><span class="be-hi-n">${esc(g.n)}</span><b>${esc(g.label)}</b><em>${g.rows.length}회</em>
+      <div class="be-hi-gh"><span class="be-hi-n">${esc(g.n)}</span>${nameButtonHtml({ ...(g.rows[0] || {}), name: hist.name }, g.label)}<em>${g.rows.length}회</em>
         ${g.rows.some((x) => x.hasUser) ? `<span class="badge ok">🔗 앱 계정</span>` : ""}</div>
       <ol class="be-hi-rows">${g.rows.map((x) => `<li>
         <a href="${rosterHref(x.event_id)}"><b>${esc(x.title || x.event_id)}</b></a>
@@ -151,7 +154,7 @@ export async function render(el, { call }) {
         `<button type="button" data-min="${c.min}" class="${c.min === minRepeat ? "on" : ""}" aria-pressed="${c.min === minRepeat}">` +
         `${c.min}회 이상 <em>${c.n}</em></button>`).join("")}</div>` : ""}
       ${reps.length ? `<ol class="be-hi-reps">${reps.map((p) => `<li>
-        <button type="button" class="be-hi-who-btn" data-name="${esc(p.name)}" title="이 분의 이력 보기"><b>${esc(p.name)}</b><span class="be-hi-aff"> · ${esc(p.label)}</span></button>
+        ${nameButtonHtml({ name: p.name, ...rowFromLabel(p.label) })}<span class="be-hi-aff">${esc(p.label)}</span><button type="button" class="be-hi-who-btn" data-name="${esc(p.name)}" aria-label="${esc(p.name)} · ${esc(p.label)} — 이력 보기">📜 이력</button>
         <em>${p.times}회</em>
         <span class="be-hi-evs">${(p.events || []).map((id) => `<span>${esc(labels.get(id) || id)}</span>`).join("")}</span></li>`).join("")}</ol>`
         : `<p class="empty">고른 회차에서 ${minRepeat}회 이상 참여한 분이 없어요</p>`}`;
@@ -198,7 +201,7 @@ export async function render(el, { call }) {
     const m = e.target.closest("[data-min]");
     if (m) { minRepeat = Number(m.dataset.min); drawStats(); return; }
     const who = e.target.closest(".be-hi-who-btn");
-    if (who) {   // 여러 번 참여한 분을 누르면 그분 이력으로
+    if (who) {   // 여러 번 참여한 분의 「📜 이력」 → 그분 이력으로(이름을 누르면 교적 창 — 아래 data-act="person")
       tab = "person";
       input.value = who.dataset.name;
       drawTabs();
@@ -206,6 +209,7 @@ export async function render(el, { call }) {
       return;
     }
     const b = e.target.closest("button[data-act]");
+    if (b && b.dataset.act === "person") { openChurchPerson({ call, ...personPayload(b.dataset), anchor: b }); return; }   // Task 16
     if (b && b.dataset.act === "csv") {
       if (!stats || !stats.perEvent.length) { toast("내려받을 통계가 없어요"); return; }
       download(statsCsv(stats, labels, minRepeat), csvName());
