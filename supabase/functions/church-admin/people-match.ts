@@ -44,11 +44,19 @@ export function applicantFromPaper(r: any): Applicant {
   return { type: "교구", gu: txt(r?.gu), mok: mokNumber(r?.mok), bu: "", name: String(r?.name ?? ""), phone: String(r?.phone ?? "") };
 }
 
+// 앱 로그인은 목장으로 숫자나 「남성」만 받고, 목장이 없으면 99 를 쓴다(성경암송 app.js MOK_RE).
+// 「남성」은 mokNumber 가 null, 99 는 명부 목장 번호가 아니다 — 목장을 모르는 신청이다(새가족 제외).
+// ⚠️ 교구만 맞다고 「맞음」으로 치지 않는다(같은 교구 다른 목장의 동명이인일 수 있다). matchChurch 가 「목장 확인」으로 돌린다.
+export const NO_MOK = 99;
+export const mokUnknown = (a: Applicant): boolean =>
+  a.type === "교구" && a.gu !== "새가족" && (a.mok === null || a.mok === NO_MOK);
+
 export function sameAffiliation(c: Cand, a: Applicant): boolean {
   if (a.type === "교구") {
     if (!a.gu || c.mok1 !== a.gu) return false;
     if (a.gu === "새가족") return true;              // 새가족의 명부 목장 칸은 연도·월이다 — 교구만 본다
-    return a.mok !== null && mokNumber(c.mok3) === a.mok;
+    if (mokUnknown(a)) return false;
+    return mokNumber(c.mok3) === a.mok;
   }
   return !!a.bu && (c.school_dept === a.bu || c.mok1 === a.bu);   // 청년부는 명부의 목장 첫 칸에 있다
 }
@@ -59,6 +67,11 @@ export function matchChurch(cands: Cand[] | undefined, a: Applicant): Church {
   const same = list.filter((c) => sameAffiliation(c, a));
   if (same.length === 1) return { state: "맞음", reason: "" };
   if (same.length > 1) return { state: "확인 필요", reason: `같은 소속에 같은 이름 ${same.length}명` };
+  // 목장을 모르는 신청(「남성」·99) — 전화가 같다고 「소속 다름」이라 하면 사실이 아니다. 같은 교구 후보를 먼저 센다.
+  if (mokUnknown(a) && a.gu) {
+    const gu = list.filter((c) => c.mok1 === a.gu).length;
+    if (gu > 0) return { state: "확인 필요", reason: `목장 확인(같은 교구 ${gu}명)` };
+  }
   const ph = phoneDigits(a.phone);
   if (ph && list.some((c) => c.phones.includes(ph))) return { state: "확인 필요", reason: "소속 다름" };
   return { state: "확인 필요", reason: `같은 이름 ${list.length}명` };

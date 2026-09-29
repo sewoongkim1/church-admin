@@ -97,3 +97,30 @@ test("교구·목장·부서도 완성형(NFC)·앞뒤 빈칸을 맞춰 비교�
   assert.equal(applicantFromPaper({ gu: " " + giNFD + " ", mok: "12", name: "김철수", phone: "" }).gu, "기쁨");
   assert.equal(toCand({ mok1: giNFD }).mok1, "기쁨");
 });
+
+test("목장 「남성」·「99」(목장 없음) 신청 — 「맞음」으로 억지로 맞추지 않고, 「소속 다름」이라는 틀린 말도 내지 않는다", () => {
+  const nam = applicantFromWho("김철수", "기쁨 남성목장", "010-1111-2222");
+  const n99 = applicantFromWho("김철수", "기쁨 99목장", "010-1111-2222");
+  assert.equal(nam.type, "교구"); assert.equal(nam.mok, null);
+  assert.equal(n99.mok, 99);
+  const one = [C({ mok1: "기쁨", mok3: "기쁨-12목장", phone_digits: "01011112222" })];
+  // 같은 교구 후보 1명, 전화도 같다 → 목장을 확인하라고(소속 다름 아님)
+  assert.deepEqual(matchChurch(one, nam), { state: "확인 필요", reason: "목장 확인(같은 교구 1명)" });
+  assert.deepEqual(matchChurch(one, n99), { state: "확인 필요", reason: "목장 확인(같은 교구 1명)" });
+  assert.equal(sameAffiliation(one[0], nam), false);
+  assert.equal(sameAffiliation(one[0], n99), false);
+  // 명부에 99목장이 정말 있어도 맞음으로 치지 않는다(99 는 「목장 없음」 표시)
+  assert.equal(sameAffiliation(C({ mok1: "기쁨", mok3: "기쁨-99목장" }), n99), false);
+  // 같은 교구 둘 + 다른 교구 하나 → 같은 교구 수만
+  const three = [...one, C({ mok1: "기쁨", mok3: "기쁨-3목장" }), C({ mok1: "소망", mok3: "소망-3목장" })];
+  assert.deepEqual(matchChurch(three, nam), { state: "확인 필요", reason: "목장 확인(같은 교구 2명)" });
+  // 같은 교구 후보가 없으면 예전 규칙(전화 → 소속 다름 · 아니면 같은 이름 N명)
+  assert.deepEqual(matchChurch([C({ mok1: "소망", mok3: "소망-3목장", phone_digits: "01011112222" })], nam),
+    { state: "확인 필요", reason: "소속 다름" });
+  // 새가족은 그대로 교구만 본다
+  assert.deepEqual(matchChurch([C({ mok1: "새가족", mok3: "3월" })], applicantFromWho("김철수", "새가족", "")),
+    { state: "맞음", reason: "" });
+  // 목장이 제대로 있는데 같은 교구 다른 목장이면 이 규칙을 타지 않는다
+  assert.deepEqual(matchChurch([C({ mok1: "기쁨", mok3: "기쁨-13목장", phone_digits: "01011112222" })],
+    applicantFromWho("김철수", "기쁨 12목장", "010-1111-2222")), { state: "확인 필요", reason: "소속 다름" });
+});

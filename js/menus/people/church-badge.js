@@ -13,4 +13,4 @@ export function churchBadgeHtml(c) {
 export const hasChurch = (rows) => (rows || []).some((r) => r && r.church);
 
 export const CHURCH_LEGEND = `<p class="muted cb-legend">교적 표시 — <em class="cb cb-ok">교적 ✓</em> 이름·소속이 맞는 분이 한 분 ·
-  <em class="cb cb-check">교적 확인</em> 소속이 다르거나 같은 이름이 여럿 · <em class="cb cb-none">교적 없음</em> 교적에 같은 이름이 없음</p>`;
+  <em class="cb cb-check">교적 확인</em> 소속이 다르거나 목장을 알 수 없거나 같은 이름이 여럿 · <em class="cb cb-none">교적 없음</em> 교적에 같은 이름이 없음</p>`;
