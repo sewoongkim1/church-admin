@@ -14,14 +14,24 @@
 //      안 보이는 팀과도 자리가 바뀔 수 있었다(원문 문서 체크리스트 17·18, "발견 사항"). 조건을 좁혀
 //      아예 그 상황을 만들지 않는다.
 //   ④ 저장 뒤 폼을 다시 그린다(원문은 그 칸만 DOM 패치) — 다른 화면(신청 현황)과 같은 결로 단순화.
+//   ⑤ 주일 시각은 시스템 시각 칸 대신 시각 단추(picker.js · 2026-09-29). 단추를 누르거나 Space 면 고르개가 열리고,
+//      단추에 초점이 있을 때 Enter 는 옛 시각 칸처럼 **저장**이다(다른 칸의 「엔터로도 저장」과 같게 · 2바퀴 지적).
+//      고르개가 열려 있는 동안의 Enter 는 고르개 몫이다 — 고르개는 body 에 붙어 이 화면(el)의 keydown 에 안 온다.
+//      고른 뒤 말없이 저장하지 않는다.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
-import { MC_DAYS, MC_FREQS, MC_WHEN_KEYS, mcHasWhen, mcEmpty, mcHit, mcBrs, tabsHtml, cardHtml } from "./catalog-ui.js";
+import { MC_DAYS, MC_FREQS, MC_WHEN_KEYS, mcHasWhen, mcEmpty, mcHit, mcBrs, tabsHtml, cardHtml, mcTimeText, mcTimeAria } from "./catalog-ui.js";
+import { pickTime, shiftTime } from "../../core/picker.js";
 
 const TITLE = `<h2 class="page-title">🗂️ 사역팀 정보</h2>`;
 
 // 서버 error 는 두 결이다 — 알려진 코드(not-found 등, ui.js MESSAGES 에 있다)와
 // 이 화면 전용 액션(ministryCatalogSave/Order)이 그 자리에서 지어내는 한국어 문장
 // ("순서를 바꿀 팀이 없습니다" 등, MESSAGES 에는 없다). 코드 꼴(영문 소문자+하이픈)이 아니면 그대로 보여준다.
+// 찾기 칸 안내 — 좁은 폰(≤374px)에서는 긴 문구가 칸 끝에서 잘린다(320 폭 · 2026-09-29 비평) → 짧은 문구로.
+// 화면을 그릴 때 한 번 고르고, 폭이 바뀌면 render 의 리스너가 갈아 끼운다.
+const MC_HINT_NARROW = matchMedia("(max-width:374px)");
+const mcHint = () => (MC_HINT_NARROW.matches ? "🔍 팀 · 부서 · 담당자" : "🔍 팀 · 부서 · 담당자 · 하는 일");
+
 const errMsg = (d) => esc(d?.error && !/^[a-z-]+$/.test(d.error) ? d.error : errorText(d));
 
 // 서버 목록 한 줄 → 화면이 다루는 모양. ⚠️ members 는 membersNote(관리자가 직접 넣은 원본)다 —
@@ -55,9 +65,9 @@ export async function render(el, { call }) {
     <div class="acts mc-acts"><button type="button" class="btn" id="mc-reload">↻ 새로 불러오기</button></div>
     <div class="card mc-panel">
       <div class="mc-head">
-        <input type="search" id="mc-q" class="search" placeholder="🔍 팀 · 부서 · 담당자 · 하는 일" autocomplete="off" aria-label="찾기">
+        <input type="search" id="mc-q" class="search" placeholder="${esc(mcHint())}" autocomplete="off" aria-label="찾기">
         <button type="button" class="mc-pick" id="mc-pick-t" aria-expanded="false" aria-controls="mc-tabs">
-          <span class="mc-pick-l">부서</span><b id="mc-pick-n">전체</b><span class="mc-pick-x" aria-hidden="true">▾</span>
+          <span class="mc-pick-l">부서</span><b id="mc-pick-n">전체</b><span class="mc-pick-x pk-field-x" aria-hidden="true"></span>
         </button>
       </div>
       <div class="mc-head-b">
@@ -87,6 +97,13 @@ export async function render(el, { call }) {
       <div id="mc-list"></div>
     </div>`;
   el.querySelector("#mc-q").value = mcQ;
+  // 폭이 바뀌면 안내 문구도 — 이 화면이 사라지면 스스로 뗀다(search.js 의 폭 리스너와 같은 방식)
+  const onHintMq = () => {
+    const q = el.querySelector("#mc-q");
+    if (!el.isConnected || !q) return MC_HINT_NARROW.removeEventListener("change", onHintMq);
+    q.placeholder = mcHint();
+  };
+  MC_HINT_NARROW.addEventListener("change", onHintMq);
   el.querySelector("#mc-empty").checked = mcOnlyEmpty;
 
   const tabsEl = el.querySelector("#mc-tabs");
@@ -226,7 +243,28 @@ export async function render(el, { call }) {
     }
   }
 
+  // 주일 시각 — 단추를 누르면 pickTime. 값은 옆 hidden 칸(data-f)에 넣는다 — 저장(save)·syncInputs 가
+  // 옛 시각 칸과 똑같이 [data-f].value 로 읽는다. 다시 그리지 않는다(치던 글 유실 방지 — 주일 끄기와 같은 규칙)
+  const setTime = (btn, v) => {
+    const hid = btn.parentElement.querySelector(`input[data-f="${btn.dataset.time}"]`);
+    if (hid) hid.value = v;
+    btn.querySelector(".pk-field-v").textContent = mcTimeText(btn.dataset.time, v);
+    btn.setAttribute("aria-label", mcTimeAria(btn.dataset.time, v));
+    btn.classList.toggle("empty", !v);
+  };
+
   el.addEventListener("click", async (e) => {
+    const tBtn = e.target.closest("[data-time]");
+    if (tBtn) {
+      const k = tBtn.dataset.time;
+      const hid = tBtn.parentElement.querySelector(`input[data-f="${k}"]`);
+      // 빈 끝 시각은 시작+1시간 언저리를, 빈 시작 시각은 끝-1시간 언저리를 먼저 보여 준다(고르지는 않는다)
+      const other = tBtn.closest(".mc-w-time")?.querySelector(`input[data-f="${k === "from" ? "to" : "from"}"]`)?.value || "";
+      const v = await pickTime({ anchor: tBtn, title: k === "from" ? "주일 시작 시각" : "주일 끝 시각",
+        value: hid ? hid.value : "", step: 5, near: shiftTime(other, k === "from" ? -60 : 60) });
+      if (v !== null && tBtn.isConnected && !tBtn.disabled) setTime(tBtn, v);
+      return;
+    }
     if (e.target.closest("#mc-reload")) {
       syncInputs();
       if (hasDirty() && !(await dialog({ title: "↻ 저장하지 않은 것이 있어요",
@@ -288,18 +326,21 @@ export async function render(el, { call }) {
     if (e.target.matches('[data-f="sun"]')) {
       const card = e.target.closest(".mc-card");
       if (!card) return;
-      card.querySelectorAll('input[type="time"]').forEach((t) => {
-        t.disabled = !e.target.checked;
-        if (!e.target.checked) t.value = "";
+      card.querySelectorAll("[data-time]").forEach((b) => {
+        b.disabled = !e.target.checked;
+        if (!e.target.checked) setTime(b, "");
       });
       const off = card.querySelector("[data-off]");
       if (off) off.hidden = e.target.checked;
     }
   });
 
-  // 엔터로도 저장 — 여러 줄을 쓰는 「하는 일」·「지금 섬기는 분」은 빼고(줄바꿈이 막힌다)
+  // 엔터로도 저장 — 여러 줄을 쓰는 「하는 일」·「지금 섬기는 분」은 빼고(줄바꿈이 막힌다).
+  // 시각 단추(data-time)도 Enter 는 저장 — preventDefault 로 단추의 click(고르개 열기)을 막는다(머리 ⑤)
   el.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
+    const tb = e.target.closest("[data-time][data-id]");
+    if (tb) { e.preventDefault(); save(Number(tb.dataset.id)); return; }
     const f = e.target.closest("[data-f][data-id]");
     if (!f || f.tagName === "TEXTAREA") return;
     e.preventDefault();

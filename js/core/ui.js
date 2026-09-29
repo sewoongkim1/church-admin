@@ -37,14 +37,18 @@ export function toast(msg) {
 
 // 확인 창 → Promise<boolean>. cancel:null 이면 알림 창(단추 하나).
 // text 는 글자로 들어간다. html 을 쓰면 부르는 쪽이 이름·오류 글을 esc 로 감싼다.
-export function dialog({ title = "", text = "", html = "", ok = "확인", cancel = "취소", danger = false } = {}) {
+// cls — .dlg 에 더할 클래스(창마다 모양을 따로: 예 "pd" = 교인 자세히). title 이 빈 글자면 제목 줄을 숨긴다.
+export function dialog({ title = "", text = "", html = "", ok = "확인", cancel = "취소", danger = false, cls = "" } = {}) {
   return new Promise((resolve) => {
     const dim = document.createElement("div");
     dim.className = "dlg-dim";
     dim.innerHTML = `<div class="dlg" role="dialog" aria-modal="true"><h3></h3><div class="body"></div>
       <div class="acts">${cancel ? `<button type="button" class="btn" data-v="0"></button>` : ""}
       <button type="button" class="btn ${danger ? "danger" : "primary"}" data-v="1"></button></div></div>`;
-    dim.querySelector("h3").textContent = title;
+    if (cls) dim.querySelector(".dlg").classList.add(...String(cls).split(/\s+/).filter(Boolean));
+    const h3 = dim.querySelector("h3");
+    h3.textContent = title;
+    h3.hidden = !title;
     const body = dim.querySelector(".body");
     if (html) body.innerHTML = html; else body.textContent = text;
     dim.querySelector('[data-v="1"]').textContent = ok;

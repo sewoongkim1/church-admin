@@ -14,8 +14,10 @@ const LABEL = {
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };
 const KINDS = [["", "바꾼 기록"], ["people", "교인명부 기록"]];
 
+// 거르기 — 여러 개(배열)는 「기쁨·소망」으로 잇는다. 문자열 하나(2026-09-29 전 옛 기록)도 그대로 받는다.
 const filtersText = (f) => Object.entries(f || {})
-  .map(([k, v]) => (k === "noPhoto" ? "사진 없음" : k === "household" ? `가족(세대주 ${v})` : v)).join(" · ");
+  .map(([k, v]) => (k === "noPhoto" ? "사진 없음" : k === "household" ? `가족(세대주 ${v})`
+    : Array.isArray(v) ? v.join("·") : v)).join(" · ");
 
 function detailText(r) {
   const d = r.detail || {};
