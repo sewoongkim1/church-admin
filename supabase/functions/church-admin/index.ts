@@ -624,6 +624,9 @@ async function paperKeysToUsers(list: string[]): Promise<Map<string, string>> {
   return out;
 }
 
+// ⚠️ 줄 판정에 쓰는 user_id 는 밖으로 내보내지 않는다 — 성경암송 api 는 user_id 하나로 그 사람 행세가 된다(2026-09-29 검토).
+const paperPublicRows = (list: any[]) => list.map(({ user_id: _u, ...rest }) => rest);
+
 // 원문 1.12 본체. ⚠️ ministry_catalog·ministry_orders 읽기는 원문의 평범한 select(.limit(5000))가
 // 아니라 이 저장소의 allRows(PostgREST max_rows 로 조용히 잘리지 않게, 위 ministryList 등과 같은 규칙)로
 // 옮겼다 — 유일한 의도적 변형.
@@ -736,7 +739,7 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
 
   const good = rows.filter((r: any) => r.ok);
   if (!save) {
-    return { ok: true, year, rows, okCount: good.length, badCount: rows.length - good.length };
+    return { ok: true, year, rows: paperPublicRows(rows), okCount: good.length, badCount: rows.length - good.length };
   }
 
   // ── 넣기 ──────────────────────────────────────────────────────
@@ -797,7 +800,7 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
     errors: rows.filter((r: any) => !r.saved).length,
     byStatus,
   });
-  return { ok: true, year, rows, added,
+  return { ok: true, year, rows: paperPublicRows(rows), added,
            changed: good.filter((r: any) => r.changed).length,
            same: good.filter((r: any) => r.same).length,
            failed: good.filter((r: any) => !r.saved).length,
