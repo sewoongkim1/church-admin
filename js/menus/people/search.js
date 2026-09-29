@@ -12,7 +12,7 @@
 //   가족 보기 중에는 가족 차례(familyOrder)라 정렬을 감춘다(끝나면 원래 정렬로 — 가족 보기가 정렬을 지우지 않는다).
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { sourceLine, affText, csvText, detailRows, searchPayload, initialOf, exportName, pageInfo, familyOrder,
-  FILTER_KEYS, pickSummary, filterChoices, sameSet, nextSort, SORTS } from "./people-logic.js";
+  FILTER_KEYS, pickSummary, filterChoices, sameSet, nextSort, sortMark, SORTS } from "./people-logic.js";
 
 const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
 // 찾기 조건은 메뉴를 옮겨 다녀도 남는다(임명현황과 같게) — 정렬(sort·dir)도. household = 가족 보기(세대주 교인ID)
@@ -46,15 +46,18 @@ const cardsHtml = (rows) => rows.map((p) => `<div class="pp-card" data-id="${esc
       <div class="pp-aff">${esc(affText(p))}</div><div>${telHtml(p.phone1)}</div></div>
   </div>`).join("");
 
-// 정렬 표시 — 지금 정렬이면 ▲(오름)/▼(내림)
-const arrowOf = (key) => (state.sort === key ? (state.dir === "asc" ? "▲" : "▼") : "");
+// 정렬 표시 — 지금 정렬이면 ▲(오름)/▼(내림), 아니면 옅은 ⇅. 자리는 늘 같은 폭(1em)이라 옮겨 가도 열 폭이 안 흔들린다.
+const markHtml = (key) => {
+  const m = sortMark(state, key);
+  return `<span class="pp-sort-a${m.on ? "" : " off"}" aria-hidden="true">${m.text}</span>`;
+};
 // 표 머리 — 정렬되는 칸은 <th> 안의 단추(가족 보기 중에는 글자만). 지금 정렬 머리에 aria-sort.
 const thHtml = (label, key) => {
   if (!key || state.household) return `<th>${label}</th>`;
   const on = state.sort === key;
   const aria = on ? ` aria-sort="${state.dir === "asc" ? "ascending" : "descending"}"` : "";
   return `<th class="pp-th-sort"${aria}><button type="button" class="pp-sort-h${on ? " on" : ""}" data-act="sort" data-sort="${key}">` +
-    `${label}<span class="pp-sort-a" aria-hidden="true">${arrowOf(key)}</span></button></th>`;
+    `${label}${markHtml(key)}</button></th>`;
 };
 const tableHtml = (rows) => `<table class="pp-table"><thead><tr>${thHtml("사진")}${thHtml("이름(직분)", "name")}` +
   `${thHtml("성별·나이", "age")}${thHtml("소속", "aff")}${thHtml("구분", "kind2")}${thHtml("연락처")}</tr></thead><tbody>` +
@@ -67,7 +70,7 @@ const sortBarHtml = () => `<span class="pp-sortbar-l" id="pp-sortbar-l">정렬</
   SORTS.map(([k, l]) => {
     const on = state.sort === k, how = on ? (state.dir === "asc" ? " 오름차순" : " 내림차순") : "";
     return `<button type="button" class="pp-sort-c${on ? " on" : ""}" data-act="sort" data-sort="${k}" aria-pressed="${on}"` +
-      ` aria-label="${l}${how}">${l}<span class="pp-sort-a" aria-hidden="true">${arrowOf(k)}</span></button>`;
+      ` aria-label="${l}${how}">${l}${on ? markHtml(k) : ""}</button>`;
   }).join("");
 
 // 「여러 개 고르기」 — 단추(라벨 · 고른 요약 · ▾) + 그 아래 판(체크박스 목록 · 인원 수 · 모두 해제)

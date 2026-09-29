@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sourceLine, affText, initialOf, csvText, EXPORT_COLS, detailRows, searchPayload, pageInfo, exportName, familyOrder,
-  pickSummary, filterChoices, sameSet, nextSort, SORTS }
+  pickSummary, filterChoices, sameSet, nextSort, sortMark, SORTS }
   from "../js/menus/people/people-logic.js";
 import { churchBadgeHtml, hasChurch } from "../js/menus/people/church-badge.js";
 
@@ -50,6 +50,14 @@ test("nextSort — 같은 머리는 방향만 바꾸고, 다른 머리는 그 �
   assert.deepEqual(nextSort({}, "name"), { sort: "name", dir: "desc" });      // 없으면 기본(이름·오름)으로 본다
   assert.deepEqual(nextSort({}, "aff"), { sort: "aff", dir: "asc" });
   assert.deepEqual(SORTS.map(([k]) => k), ["name", "age", "aff", "kind2"]);   // 서버 people-query.ts SORT_KEYS 와 같게
+});
+
+test("sortMark — 지금 정렬은 ▲(오름)/▼(내림) · 아닌 머리는 중립 ⇅(눌러서 정렬할 수 있다는 표시)", () => {
+  assert.deepEqual(sortMark({ sort: "age", dir: "asc" }, "age"), { on: true, text: "▲" });
+  assert.deepEqual(sortMark({ sort: "age", dir: "desc" }, "age"), { on: true, text: "▼" });
+  assert.deepEqual(sortMark({ sort: "age", dir: "desc" }, "name"), { on: false, text: "⇅" });
+  assert.deepEqual(sortMark({}, "name"), { on: true, text: "▲" });            // 없으면 기본(이름·오름)
+  assert.deepEqual(sortMark({}, "aff"), { on: false, text: "⇅" });
 });
 
 test("pickSummary — 없음 「전체」 · 1~2개는 잇고 · 3개 이상은 「첫째 외 N」", () => {

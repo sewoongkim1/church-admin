@@ -592,9 +592,12 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-sort-h{display:flex;align-items:center;gap:4px;width:100%;min-height:var(--tap);padding:0 10px;border:0;background:transparent;
   font-family:inherit;font-size:13px;font-weight:700;color:var(--gray);text-align:left;cursor:pointer}
 .pp-sort-h:hover{background:var(--ghost-bg);color:var(--navy)}
-.pp-sort-h.on{color:var(--navy);font-weight:800}
+.pp-sort-h.on{color:var(--navy)}   /* 굵기는 그대로 — 굵기가 바뀌면 글자 폭이 달라져 열이 흔들린다 */
 .pp-sort-h:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:-3px}
-.pp-sort-a{font-size:11px;line-height:1}
+/* ▲▼⇅ — 머리 글자(13px)와 같은 크기 · 늘 1em 자리를 차지해 표시가 옮겨 가도 열 폭이 그대로다 */
+.pp-sort-a{display:inline-block;width:1em;flex:none;font-size:1em;line-height:1;text-align:center}
+.pp-sort-a.off{opacity:.4}
+.pp-sort-h:hover .pp-sort-a.off{opacity:.8}
 .pp-sortbar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--gap-s);margin:0 0 10px}
 .pp-sortbar-l{font-size:13px;font-weight:700;color:var(--gray);margin-right:2px}
 .pp-sort-c{display:inline-flex;align-items:center;gap:4px;min-height:var(--chip);padding:0 14px;border:1px solid var(--border);

@@ -40,6 +40,12 @@ export function nextSort(state, key) {
   const cur = state?.sort || "name", dir = state?.dir || "asc";
   return cur === key ? { sort: key, dir: dir === "asc" ? "desc" : "asc" } : { sort: key, dir: "asc" };
 }
+// 머리·칩의 표시 — 지금 정렬이면 ▲(오름)/▼(내림), 아니면 중립 ⇅(눌러서 정렬할 수 있다는 표시 · 화면에서 옅게).
+// ⇅ 는 이모지 모양이 없는 글자라 기기마다 컬러 그림으로 바뀌지 않는다.
+export function sortMark(state, key) {
+  const on = (state?.sort || "name") === key;
+  return { on, text: on ? ((state?.dir || "asc") === "asc" ? "▲" : "▼") : "⇅" };
+}
 
 // 「여러 개 고르기」 단추 아래 줄 — 없으면 「전체」, 1~2개는 잇고, 3개 이상은 「첫째 외 N」
 export function pickSummary(values) {

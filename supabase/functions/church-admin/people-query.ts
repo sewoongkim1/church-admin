@@ -77,6 +77,9 @@ export function parseSearch(b: any): { ok: true; s: Search } | { ok: false; erro
 // 정렬 차례 — [칸, 옵션] 목록(supabase-js .order 에 그대로). 쪽 넘기기·내려받기가 같은 것을 쓴다.
 // 마지막은 늘 person_id — 같은 값끼리 쪽마다 차례가 흔들려 한 분이 두 쪽에 나오거나 빠지지 않게.
 // 나이 모르는 분은 오름·내림 모두 맨 뒤(nullsFirst:false — Postgres 는 내림에서 null 을 맨 앞에 둔다).
+// ⚠️ 소속·구분은 그렇게 못 한다 — mok1·mok3·school_dept·kind2·kind3 칸은 null 이 아니라 빈 글자('' · not null default '')라
+//   nullsFirst 가 듣지 않는다. 그래서 빈 분(교회학교만 있는 분 · 구분 없는 분)은 오름에서 맨 앞, 내림에서 맨 뒤다(오름의 정확한 역순).
+//   「빈 분은 늘 맨 뒤」로 맞추려면 칸을 하나 더 만들어야 한다(예: 생성 칸 mok1 = '' 을 먼저 정렬) — 표를 바꾸는 일이라 따로 정한다.
 type Order = [string, { ascending: boolean; nullsFirst?: boolean }];
 export function sortOrder(s: Search): Order[] {
   const d = { ascending: s.dir === "asc" }, A = { ascending: true };

@@ -619,7 +619,15 @@ test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 �
     return r.body.rows.map((x) => x.person_id).filter((id) => PEOPLE_IDS.includes(id));
   };
   assert.deepEqual(await order({ ...T, sort: "age", dir: "desc" }), [990000001, 990000003, 990000002], "나이 내림 — 모름은 맨 뒤");
+  // ⚠️ 「나이 오름」 [003,001,002] 은 기본(이름 오름) 차례와 같아 이것만으로는 나이 정렬을 증명하지 못한다 —
+  //   나이 정렬과 「모름은 맨 뒤(nullsFirst:false)」를 못 박는 것은 위의 「나이 내림」이다. 이 줄은 오름에서도 모름이 뒤인지만 본다.
   assert.deepEqual(await order({ ...T, sort: "age", dir: "asc" }), [990000003, 990000001, 990000002], "나이 오름 — 모름은 그래도 맨 뒤");
+  // 소속 — 교구(시험 < 시험B) > 목장(시험-0 < 시험-5). 내림은 정확히 거꾸로
+  assert.deepEqual(await order({ ...T, sort: "aff" }), [990000001, 990000002, 990000003], "소속 오름");
+  assert.deepEqual(await order({ ...T, sort: "aff", dir: "desc" }), [990000003, 990000002, 990000001], "소속 내림");
+  // 구분 — 002 는 구분이 빈 칸('' · 칸이 not null default '' 라 null 이 아니다) → 오름 맨 앞 · 내림 맨 뒤(people-query.ts sortOrder 주석)
+  assert.deepEqual(await order({ ...T, sort: "kind2" }), [990000002, 990000001, 990000003], "구분 오름 — 빈 칸이 맨 앞");
+  assert.deepEqual(await order({ ...T, sort: "kind2", dir: "desc" }), [990000003, 990000001, 990000002], "구분 내림 — 빈 칸이 맨 뒤");
   assert.deepEqual(await order({ ...T, sort: "name", dir: "desc" }), [990000002, 990000001, 990000003], "이름 내림");
   assert.deepEqual(await order({ ...T }), [990000003, 990000001, 990000002], "기본 — 이름 오름");
   assert.deepEqual(await order({ ...T, sort: "age", dir: "desc" }, "peopleExport"), [990000001, 990000003, 990000002], "내려받기도 같은 차례");
