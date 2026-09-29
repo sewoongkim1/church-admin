@@ -18,7 +18,7 @@ import { parseSearch, searchDetail, sortOrder, statsOf, PAGE_SIZE, PHOTO_TTL, FI
 import { applicantFromSignup, nameKey, type Church } from "./people-match.ts";
 import { BE_BAD_CHARS, BE_FIELD_MAX, EVT_ID_RE, evtListable, isEligEvent, kstToday } from "./events-rules.ts";
 // ⚠️ people-query.ts 의 statsOf(교인명부 현황)와 이름이 같다 — 이벤트 통계는 eventStatsOf 로만 부른다
-import { personGroups, statsOf as eventStatsOf, type StatIn } from "./events-stats.ts";
+import { affLabel, personGroups, statsOf as eventStatsOf, type StatIn } from "./events-stats.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1009,13 +1009,10 @@ async function evCountMap(ids: string[]): Promise<Map<string, number>> {
   return out;
 }
 
-// 줄의 소속 한 줄 — 「화평 20목장」·「소망 남성」·「청년부」·「중등부 3학년」. 교구 줄의 **숫자 목장에만** 「목장」.
-// ⚠️ 통계(events-stats.ts statsOf)의 repeaters[].label 과 같은 꼴이어야 한다(CONTRACT 5절 — 개발 시험이 맞대 본다).
+// 줄의 소속 한 줄 — events-stats.ts 의 affLabel 을 그대로 부른다(사본을 두지 않는다 — CONTRACT 5절:
+// 이력(evHistory groups[].label)과 통계(repeaters[].label)가 같은 글자를 쓰게).
 function evWho(r: any): string {
-  const g = legacyNorm(r.group_name), s = legacyNorm(r.sub_name);
-  if (!g) return "(소속 없음)";
-  if (legacyNorm(r.who_type) === "교구" && /^\d+$/.test(s)) return g + " " + s + "목장";
-  return s ? g + " " + s : g;
+  return affLabel(r);
 }
 
 // 📋 회차 목록 — 최근(마감일 늦은) 회차 먼저
