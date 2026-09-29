@@ -45,6 +45,11 @@ export const ACTION_ROLES: Record<string, string | null> = {
   // confirmListed 를 받아야 쓴다(needs-confirm). 둘 다 바꾼 기록(event.create·event.settings)에 남는다.
   evEventCreate: "bibleevent",
   evEventSave: "bibleevent",
+  // 성경필사(암송) — 한 분 더하기·줄 고치기·빼기(계획 Task 7). 앱 계정은 조회만 해서 잇는다(만들지 않는다).
+  // 앱에서 낸 줄·자격 회차의 줄은 메모만, 자격 회차에는 더하기·빼기 없음. 바꾼 기록 event.add / event.edit / event.delete.
+  evRowAdd: "bibleevent",
+  evRowSave: "bibleevent",
+  evRowDelete: "bibleevent",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

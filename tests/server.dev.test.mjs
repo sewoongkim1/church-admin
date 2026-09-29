@@ -29,6 +29,14 @@ const CHURCH_COLS = ["person_id", "position_detail", "gender", "birth", "birth_d
   "phone1", "phone2", "guide", "email", "mok_path", "mok1", "mok2", "mok3", "mok_leader", "school_path", "school_dept", "teacher",
   "youth_path", "mission", "address", "address_jibun", "has_photo", "photo_hash", "name_key", "phone_digits"];
 const PHOTO_PATH = "church-people-photos/990000001.jpg";
+// 성경필사 줄 시험(계획 Task 7) — 시험 회차 둘(draft · 2000-04·05) + 앱 계정 여섯. 이름에 모두 STAMP.
+//   회차는 Task 5 after() 의 「성경필사 시험 회차」 단계가 ca-test-* 로 지운다(줄은 CASCADE).
+//   계정(이름이 ca-test-rx 로 시작)은 아래 after() 줄이 지운다 — 그 계정의 줄·별칭(user_identity_aliases)은 CASCADE.
+const RX = { ev: "ca-test-row-" + STAMP, evEl: "ca-test-rowel-" + STAMP, users: [], rowIds: [] };
+const rxName = (tag) => `ca-test-rx${tag}-${STAMP}`;
+const RX_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const RX_SECRET = ["user_id", "auth_user_id", "ident_key", "answers", "phone", "memo", "person_id"];
+let rxReady = null;
 // 성경필사(암송)(2026-09-29) 시험 자료 — 초안(draft) 회차 둘(보통·자격) + 줄 여섯. draft 라 성도님 화면에는 안 보인다.
 //   회차 id 는 모두 ca-test- 로 시작하고 STAMP 를 담는다(Task 6~8 도) — after() 가 이번 실행의 회차를 한꺼번에 지운다(줄은 CASCADE).
 //   앱 줄 하나는 시험 users 에 잇는다(누출 시험용).
@@ -109,6 +117,9 @@ const PROBE = {
   // 성경필사(암송) — 회차 만들기·설정(Task 6). 만들기는 **틀린 id** 로 검사(bad-event-id)에서 떨어져 아무것도 만들지 않는다.
   evEventCreate: { event: { id: "Bad ID!" } },
   evEventSave: { event_id: "ca-test-probe-none", expect: "", patch: {} },   // 없는 회차 → not-found
+  evRowAdd: { event_id: "ca-test-probe-none", row: {} },
+  evRowSave: { id: 0, expect: "", patch: {} },
+  evRowDelete: { id: 0, expect: "" },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
@@ -282,6 +293,12 @@ after(async () => {
     if (paperUsers.length) await rest(`users?name=eq.${encodeURIComponent(PAPER_NAME)}`, "DELETE");
     const paperRemain = await rest(`users?select=id&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
     assert.equal(paperRemain.length, 0, "종이 명단 시험 계정이 지워지지 않았다: " + PAPER_NAME);
+  });
+  // 성경필사 줄 시험(Task 7) — 시험 계정. 그 계정의 줄·별칭은 CASCADE. 시험 회차는 Task 5 단계가 ca-test-* 로 지운다.
+  for (const id of RX.users) await step("줄 시험 계정 " + id, () => rest(`users?id=eq.${id}`, "DELETE"));
+  await step("줄 시험 계정 남음", async () => {
+    const left = await rest(`users?select=id&name=like.ca-test-rx*-${STAMP}`, "GET");   // 이번 실행 것만(다른 세션 실행은 건드리지 않는다)
+    assert.equal(left.length, 0, "줄 시험 계정이 남았다: " + left.length + "명");
   });
   if (errs.length) throw new Error("정리 실패 " + errs.length + "건: " + errs.join(" / "));
 });
@@ -1213,4 +1230,273 @@ test("evEventSave — 회차 설정: 없는 회차 · expect(conflict) · 검사
   assert.ok(sub, "부제 기록이 없다");
   assert.deepEqual(sub.detail.before, { subtitle: "" });
   assert.deepEqual(sub.detail.after, { subtitle: "시험 부제" });            // needs·kind·copy 는 기록에도 없다
+});
+
+// ---------- 성경필사(암송) — 한 분 더하기 · 줄 고치기 · 빼기 (계획 Task 7) ----------
+// 시험 자료는 첫 시험이 한 번 만든다(뒤 시험은 같은 약속을 기다린다).
+function rowFixtures() {
+  rxReady ??= (async () => {
+    // 지난번이 도중에 멈춰 남긴 시험 계정 — 그 계정의 줄·별칭은 CASCADE. **한 시간 넘은 것만**
+    //   (다른 세션이 개발에서 같은 시험을 돌리는 중이면 그쪽 계정을 지우지 않게 — Task 5 before()·Task 8 과 같은 규칙).
+    const rxStale = new Date(Date.now() - 3600 * 1000).toISOString();
+    await rest(`users?name=like.ca-test-rx*&created_at=lt.${rxStale}`, "DELETE");
+    const needs = { position: true, phone: false, memo: false, extra: [] };
+    await rest("events", "POST", { id: RX.ev, title: "ca-test 줄 시험 " + STAMP, opens_on: "2000-04-01", closes_on: "2000-04-30",
+      status: "draft", kind: "signup", needs });
+    await rest("events", "POST", { id: RX.evEl, title: "ca-test 자격 줄 시험 " + STAMP, opens_on: "2000-05-01", closes_on: "2000-05-31",
+      status: "draft", kind: "signup", needs: { ...needs, eligibility: { start: "2000-05-01", weeks: 4, perWeek: 3, need: 3 } } });
+    const user = async (tag, gu, mok) => {
+      const [u] = await rest("users", "POST",
+        { type: "교구", gu, mok, name: rxName(tag), identity_key: `교구|${gu}|${mok}|||${rxName(tag)}` });
+      RX.users.push(u.id);
+      return u.id;
+    };
+    RX.u7 = await user("seven", "사랑", "07");      // 앱에서 목장 「07」로 로그인한 분
+    RX.uLink = await user("link", "믿음", "3");     // 계정 하나 → 잇는다
+    RX.uAlias = await user("alias", "소망", "5");   // 지금 소속 소망 5 · 옛 소속(별칭) 소망 4
+    await rest("user_identity_aliases", "POST", { identity_key: `교구|소망|4|||${rxName("alias")}`, user_id: RX.uAlias });
+    RX.uTwoA = await user("twoacc", "은혜", "2");   // 같은 분 계정이 둘(「2」·「2목장」) → 잇지 않는다
+    RX.uTwoB = await user("twoacc", "은혜", "2목장");
+    RX.uRace = await user("race", "기쁨", "9");     // 동시에 셋이 더하기
+    const put = async (x) => (await rest("event_signups", "POST", x))[0];
+    // 앱에서 낸 줄 — 목장 「07」 그대로(앱 로그인 값)
+    RX.app = await put({ event_id: RX.ev, user_id: RX.u7, ident_key: `교구|사랑|07|||${rxName("seven")}`, who_type: "교구",
+      group_name: "사랑", sub_name: "07", name: rxName("seven"), position: "집사", source: "app" });
+    // 이관 줄 — 옛 값이 지금 규칙에 어긋난다(이름에 괄호 · 교구 칸 「화평교구」). 다른 칸만 고칠 때 막히면 안 된다.
+    RX.old = await put({ event_id: RX.ev, ident_key: `교구|화평교구|1|||${rxName("old")}(구)`, who_type: "교구",
+      group_name: "화평교구", sub_name: "1", name: rxName("old") + "(구)", position: "집사", note: "원래: 화평 30 · 집사", source: "import" });
+    // 이관 줄 — 고치기 시험용
+    RX.edit = await put({ event_id: RX.ev, ident_key: `교구|섬김|1|||${rxName("edit")}`, who_type: "교구",
+      group_name: "섬김", sub_name: "1", name: rxName("edit"), position: "집사", note: "원래: 화평 30 · 집사", source: "import" });
+    // 자격 회차의 이관 줄 — 메모만 고치고, 빼지 못한다
+    RX.el = await put({ event_id: RX.evEl, ident_key: `교구|화평|1|||${rxName("elig")}`, who_type: "교구",
+      group_name: "화평", sub_name: "1", name: rxName("elig"), source: "import" });
+  })();
+  return rxReady;
+}
+
+// 응답 어디에도 UUID 꼴 값(user_id)이 없고, 줄에 숨길 칸이 없다
+function rxClean(r) {
+  const s = JSON.stringify(r.body);
+  assert.ok(!RX_UUID.test(s), "응답에 UUID 꼴 값: " + s);
+  if (r.body.row) for (const k of RX_SECRET) assert.equal(k in r.body.row, false, "줄에 " + k);
+}
+const rxDb = async (id) => (await rest(
+  `event_signups?select=id,user_id,ident_key,name,group_name,sub_name,position,note,source,updated_at&id=eq.${id}`, "GET"))[0];
+
+test("성경필사 한 분 더하기: 넣음(import·메모 머리·다듬기) · 계정 잇기(별칭 포함) · 계정 둘 · 이미 있음(07/7·계정·키) · 자격 회차 · 메모 길이(머리 포함) · 모양 틀림 · 계정을 만들지 않음", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const add = (row, ev = RX.ev) => call(t, "evRowAdd", { event_id: ev, row: { who_type: "교구", position: "", note: "", ...row } });
+
+  // 1) 앱 계정이 없는 분 — 넣음 · 잇지 않음 · 「화평교구」→화평 · 「07」→7 · 「집사님」→집사 · 메모 머리
+  const a1 = await add({ group: "화평교구", sub: "07", name: rxName("new"), position: "집사님", note: "시험 메모" });
+  assert.equal(a1.body.ok, true, JSON.stringify(a1.body));
+  rxClean(a1);
+  assert.deepEqual(Object.keys(a1.body.row).sort(), ROW_OUT_KEYS);
+  assert.equal(a1.body.linked, false);
+  assert.deepEqual(a1.body.warnings, []);
+  const r1 = a1.body.row;
+  assert.deepEqual([r1.who_type, r1.group, r1.sub, r1.name, r1.position, r1.source, r1.hasUser],
+    ["교구", "화평", "7", rxName("new"), "집사", "import", false]);
+  assert.equal(r1.note, "담당자가 더함 / 시험 메모");
+  RX.rowIds.push(r1.id);
+  RX.added = r1;
+  const d1 = await rxDb(r1.id);
+  assert.equal(d1.ident_key, `교구|화평|7|||${rxName("new")}`);
+  assert.equal(d1.user_id, null);
+  assert.equal(d1.source, "import");
+  assert.equal((await rest(`users?select=id&name=eq.${rxName("new")}`, "GET")).length, 0, "계정을 만들면 안 된다");
+
+  // 2) 같은 분을 다른 표기로 다시 — 「7목장」·「07」 둘 다 already
+  assert.equal((await add({ group: "화평", sub: "7목장", name: rxName("new") })).body.error, "already");
+  assert.equal((await add({ group: "화평", sub: "07", name: rxName("new") })).body.error, "already");
+
+  // 3) 07/7 — 앱에서 목장 「07」로 낸 분을 담당자가 「7」로 더하면 already(설계 §1-1)
+  assert.equal((await add({ group: "사랑", sub: "7", name: rxName("seven") })).body.error, "already");
+
+  // 4) 앱 계정 하나 → 잇는다 · 목록 밖 직분은 경고만
+  const a4 = await add({ group: "믿음", sub: "3", name: rxName("link"), position: "명예권사" });
+  assert.equal(a4.body.ok, true, JSON.stringify(a4.body));
+  rxClean(a4);
+  assert.equal(a4.body.linked, true);
+  assert.equal(a4.body.row.hasUser, true);
+  assert.equal(a4.body.row.position, "명예권사");
+  assert.equal(a4.body.warnings.length, 1, JSON.stringify(a4.body.warnings));
+  assert.match(a4.body.warnings[0], /명예권사/);
+  assert.equal((await rxDb(a4.body.row.id)).user_id, RX.uLink);
+  RX.rowIds.push(a4.body.row.id);
+  RX.linked = a4.body.row;
+  assert.equal((await add({ group: "믿음", sub: "03", name: rxName("link") })).body.error, "already");
+
+  // 5) 옛 소속(별칭 「소망 4」)으로 적어도 그 계정에 잇는다
+  const a5 = await add({ group: "소망", sub: "4", name: rxName("alias") });
+  assert.equal(a5.body.ok, true, JSON.stringify(a5.body));
+  rxClean(a5);
+  assert.equal(a5.body.linked, true);
+  assert.equal((await rxDb(a5.body.row.id)).user_id, RX.uAlias);
+  RX.rowIds.push(a5.body.row.id);
+  RX.aliasRow = a5.body.row;
+  // 지금 소속 「소망 5」로 적으면 키는 다르지만 그 계정이 이미 회차에 있다 → already
+  assert.equal((await add({ group: "소망", sub: "5", name: rxName("alias") })).body.error, "already");
+
+  // 6) 계정이 둘 → 잇지 않고 알린다
+  const a6 = await add({ group: "은혜", sub: "2", name: rxName("twoacc") });
+  assert.equal(a6.body.ok, true, JSON.stringify(a6.body));
+  rxClean(a6);
+  assert.equal(a6.body.linked, false);
+  assert.equal(a6.body.row.hasUser, false);
+  assert.ok(a6.body.warnings.some((w) => /계정이 2개/.test(w)), JSON.stringify(a6.body.warnings));
+  RX.rowIds.push(a6.body.row.id);
+
+  // 7) 자격 회차 → eligibility-event · 아무것도 안 들어간다
+  assert.equal((await add({ group: "화평", sub: "1", name: rxName("elnew") }, RX.evEl)).body.error, "eligibility-event");
+  assert.equal((await rest(`event_signups?select=id&event_id=eq.${RX.evEl}&name=eq.${rxName("elnew")}`, "GET")).length, 0);
+
+  // 8) 메모 길이는 머리 표기를 붙인 **뒤**로 센다 — 「담당자가 더함 / 」(10자) + 490 = 500 은 넣고, 491 은 note-too-long
+  const n1 = await add({ group: "화평", sub: "2", name: rxName("note"), note: "가".repeat(490) });
+  assert.equal(n1.body.ok, true, JSON.stringify(n1.body).slice(0, 300));
+  assert.equal(n1.body.row.note.length, 500);
+  RX.rowIds.push(n1.body.row.id);
+
+  // 9) 모양 틀림(설계 §1 판정표) · 없는 회차 — 아무것도 안 들어간다
+  const bad = async (row, want) => assert.equal((await add(row)).body.error, want, JSON.stringify(row).slice(0, 200));
+  await bad({ group: "화평", sub: "1", name: "" }, "no-name");
+  await bad({ group: "화평", sub: "1", name: "홍,길동" }, "bad-char");
+  await bad({ group: "화평", sub: "1", name: "가".repeat(41) }, "too-long");
+  await bad({ who_type: "성가대", group: "화평", sub: "1", name: rxName("bad") }, "bad-type");
+  await bad({ group: "없는교구", sub: "1", name: rxName("bad") }, "bad-group");
+  await bad({ who_type: "교회학교", group: "", sub: "", name: rxName("bad") }, "no-group");
+  await bad({ group: "화평", sub: "셋", name: rxName("bad") }, "bad-sub");
+  await bad({ group: "화평", sub: "1", name: rxName("bad"), position: "가".repeat(41) }, "too-long");
+  await bad({ group: "화평", sub: "1", name: rxName("bad"), note: "가".repeat(491) }, "note-too-long");
+  for (const event_id of ["ca-test-none-" + STAMP, "BAD ID"]) {
+    const none = await call(t, "evRowAdd", { event_id, row: { who_type: "교구", group: "화평", sub: "1", name: rxName("bad") } });
+    assert.equal(none.body.error, "not-found", event_id);
+  }
+  assert.equal((await rest(`event_signups?select=id&name=eq.${rxName("bad")}`, "GET")).length, 0);
+});
+
+test("성경필사 한 분 더하기: 같은 분을 동시에 셋 — 하나만 들어가고 둘은 already(23505 → already · 500 없음)", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const rs = await Promise.all([1, 2, 3].map(() => call(t, "evRowAdd",
+    { event_id: RX.ev, row: { who_type: "교구", group: "기쁨", sub: "9", name: rxName("race"), position: "", note: "" } })));
+  const bodies = JSON.stringify(rs.map((r) => r.body));
+  for (const r of rs) assert.notEqual(r.status, 500, bodies);
+  assert.equal(rs.filter((r) => r.body.ok).length, 1, bodies);
+  assert.equal(rs.filter((r) => r.body.error === "already").length, 2, bodies);
+  const inDb = await rest(`event_signups?select=id,user_id&event_id=eq.${RX.ev}&name=eq.${rxName("race")}`, "GET");
+  assert.equal(inDb.length, 1);
+  assert.equal(inDb[0].user_id, RX.uRace);
+  RX.rowIds.push(inDb[0].id);
+});
+
+test("성경필사 줄 고치기: 메모 · 동시 수정 · 바뀐 칸만 검사 · 신원 키 다시(계정 그대로) · 자기 줄 빼고 already · 앱 줄·자격 회차는 메모만", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const save = (row, patch, expect = row.updated_at) => call(t, "evRowSave", { id: row.id, expect, patch });
+
+  // 1) 메모만 — 옛 표기 뒤에 더한 것 그대로
+  const s1 = await save(RX.edit, { note: "원래: 화평 30 · 집사 / 확인함" });
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  assert.deepEqual(Object.keys(s1.body.row).sort(), ROW_OUT_KEYS);
+  assert.equal(s1.body.row.note, "원래: 화평 30 · 집사 / 확인함");
+  assert.notEqual(s1.body.row.updated_at, RX.edit.updated_at);
+  // 2) 같은 expect 로 한 번 더 → conflict · 저장 안 됨
+  assert.equal((await save(RX.edit, { note: "덮어쓰기" })).body.error, "conflict");
+  assert.equal((await rxDb(RX.edit.id)).note, "원래: 화평 30 · 집사 / 확인함");
+  RX.edit = s1.body.row;
+
+  // 3) 바뀐 칸만 검사 — 옛 이름에 괄호·교구 칸 「화평교구」가 있어도 직분만 고치면 저장된다(옛 칸은 그대로)
+  const s3 = await save(RX.old, { position: "권사님" });
+  assert.equal(s3.body.ok, true, JSON.stringify(s3.body));
+  assert.equal(s3.body.row.position, "권사");
+  const d3 = await rxDb(RX.old.id);
+  assert.equal(d3.name, rxName("old") + "(구)");
+  assert.equal(d3.group_name, "화평교구");
+  // …하지만 바꾼 칸이 틀리면 막는다
+  assert.equal((await save(s3.body.row, { name: "홍,길동" })).body.error, "bad-char");
+  assert.equal((await save(s3.body.row, { group: "없는" })).body.error, "bad-group");
+  assert.equal((await save(s3.body.row, { note: "가".repeat(501) })).body.error, "note-too-long");
+
+  // 4) 신원을 바꾸면 ident_key 를 다시 만들고, 이어진 계정(user_id)은 그대로
+  const s4 = await save(RX.linked, { sub: "4" });
+  assert.equal(s4.body.ok, true, JSON.stringify(s4.body));
+  assert.equal(s4.body.row.sub, "4");
+  assert.equal(s4.body.row.hasUser, true);
+  const d4 = await rxDb(RX.linked.id);
+  assert.equal(d4.ident_key, `교구|믿음|4|||${rxName("link")}`);
+  assert.equal(d4.user_id, RX.uLink);
+
+  // 5) 자기 줄은 빼고 본다 — 별칭으로 이은 줄(소망 4)을 지금 소속(소망 5)으로: 그 계정의 줄은 이 줄 자신뿐 → 저장
+  const s5 = await save(RX.aliasRow, { sub: "5" });
+  assert.equal(s5.body.ok, true, JSON.stringify(s5.body));
+  assert.equal((await rxDb(RX.aliasRow.id)).user_id, RX.uAlias);
+
+  // 6) 다른 줄과 겹치게 고치면 already · 그대로 남는다(07/7 포함)
+  assert.equal((await save(RX.edit, { group: "화평", sub: "7", name: rxName("new") })).body.error, "already");
+  assert.equal((await save(RX.edit, { group: "사랑", sub: "7", name: rxName("seven") })).body.error, "already");
+  assert.equal((await rxDb(RX.edit.id)).name, rxName("edit"));
+
+  // 7) 앱에서 낸 줄 — 메모 밖 칸이 오기만 해도 거절(값이 같아도) · 메모는 저장
+  assert.equal((await save(RX.app, { name: rxName("seven") })).body.error, "app-row-note-only");
+  assert.equal((await save(RX.app, { note: "x", position: "집사" })).body.error, "app-row-note-only");
+  const s7 = await save(RX.app, { note: "앱 줄 메모" });
+  assert.equal(s7.body.ok, true, JSON.stringify(s7.body));
+  assert.equal(s7.body.row.note, "앱 줄 메모");
+  assert.equal(s7.body.row.source, "app");
+  RX.app = s7.body.row;
+
+  // 8) 자격 회차의 줄(이관이어도) — 메모만
+  assert.equal((await save(RX.el, { position: "권사" })).body.error, "app-row-note-only");
+  const s8 = await save(RX.el, { note: "자격 줄 메모" });
+  assert.equal(s8.body.ok, true, JSON.stringify(s8.body));
+  RX.el = s8.body.row;
+
+  // 9) 없는 줄 · 바뀐 것 없음(쓰지 않고 그대로 돌려준다)
+  assert.equal((await call(t, "evRowSave", { id: 0, expect: "", patch: { note: "x" } })).body.error, "not-found");
+  const same = await save(RX.el, { note: "자격 줄 메모" });
+  assert.equal(same.body.ok, true, JSON.stringify(same.body));
+  assert.equal(same.body.row.updated_at, RX.el.updated_at, "바뀐 것이 없으면 쓰지 않는다");
+
+  for (const r of [s1, s3, s4, s5, s7, s8]) rxClean(r);
+});
+
+test("성경필사 줄 빼기: 앱 줄은 app-row · 자격 회차 줄은 eligibility-event · 동시 수정 · 뺀 뒤 not-found · 바꾼 기록 event.add/edit/delete(UUID 없음)", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const del = (row, expect = row.updated_at) => call(t, "evRowDelete", { id: row.id, expect });
+
+  assert.equal((await del(RX.app)).body.error, "app-row");
+  assert.equal((await del(RX.el)).body.error, "eligibility-event");      // 계약 §5 — 자격 회차의 줄 빼기도 서버가 막는다
+  assert.equal((await rest(`event_signups?select=id&id=in.(${RX.app.id},${RX.el.id})`, "GET")).length, 2, "앱 줄·자격 줄은 남는다");
+  assert.equal((await del(RX.added, "1999-01-01T00:00:00+00:00")).body.error, "conflict");
+  const d = await del(RX.added);
+  assert.equal(d.body.ok, true, JSON.stringify(d.body));
+  assert.deepEqual(d.body.deleted, { id: RX.added.id, name: rxName("new") });
+  rxClean(d);
+  assert.equal((await rest(`event_signups?select=id&id=eq.${RX.added.id}`, "GET")).length, 0);
+  assert.equal((await del(RX.added)).body.error, "not-found");
+  assert.equal((await call(t, "evRowDelete", { id: 0, expect: "" })).body.error, "not-found");
+
+  // 바꾼 기록 — Task 13 audit.js 가 읽는 모양
+  const ours = new Set([...RX.rowIds, RX.edit.id, RX.old.id, RX.app.id, RX.el.id].map(String));
+  const logs = (await call(people.super.token, "auditList", { limit: 200 })).body.rows
+    .filter((r) => r.action.startsWith("event.") && ours.has(r.target));
+  const acts = new Set(logs.map((r) => r.action));
+  for (const a of ["event.add", "event.edit", "event.delete"]) assert.ok(acts.has(a), a + " " + JSON.stringify([...acts]));
+  assert.ok(!RX_UUID.test(JSON.stringify(logs.map((r) => r.detail))), "기록에 UUID 꼴 값(user_id)이 실렸다");
+  const addLog = logs.find((r) => r.action === "event.add" && r.target === String(RX.linked.id));
+  assert.deepEqual(addLog.detail, { event_id: RX.ev, name: rxName("link"),
+    row: { who_type: "교구", group: "믿음", sub: "3", position: "명예권사" }, linked: true });
+  const editLog = logs.find((r) => r.action === "event.edit" && r.target === String(RX.linked.id));
+  assert.deepEqual([editLog.detail.event_id, editLog.detail.name], [RX.ev, rxName("link")]);
+  assert.deepEqual([editLog.detail.before, editLog.detail.after], [{ sub: "3" }, { sub: "4" }]);   // 바뀐 칸만
+  const noteLog = logs.find((r) => r.action === "event.edit" && r.target === String(RX.edit.id));
+  assert.deepEqual([noteLog.detail.before, noteLog.detail.after],
+    [{ note: "원래: 화평 30 · 집사" }, { note: "원래: 화평 30 · 집사 / 확인함" }]);             // 메모는 note
+  const delLog = logs.find((r) => r.action === "event.delete" && r.target === String(RX.added.id));
+  assert.deepEqual(delLog.detail, { event_id: RX.ev, name: rxName("new"),
+    row: { who_type: "교구", group: "화평", sub: "7", position: "집사", note: "담당자가 더함 / 시험 메모", source: "import", hasUser: false } });
 });

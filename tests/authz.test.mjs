@@ -84,7 +84,8 @@ test("bibleevent(성경필사(암송)) 액션 × 사람 — 이 역할·총괄�
   ];
   const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "bibleevent");
   // ⚠️ Task 6~8 이 bibleevent 액션을 더할 때마다 이 목록에도 더한다 — 빠진 액션이 다른 역할로 새지 않게
-  assert.deepEqual(acts.sort(), ["evEventCreate", "evEventSave", "evEvents", "evHistory", "evRoster", "evStats"]);
+  assert.deepEqual(acts.sort(), ["evEventCreate", "evEventSave", "evEvents", "evHistory", "evRoster",
+    "evRowAdd", "evRowDelete", "evRowSave", "evStats"]);
   for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 
