@@ -158,7 +158,8 @@ a.card{display:block;color:inherit;text-decoration:none}
 .mn-range button.on{color:#fff;background:var(--navy);border-color:var(--navy)}
 .mn-custom{display:flex;align-items:center;gap:6px;margin:0 0 4px}
 .mn-custom .pk-field{flex:1 1 0;min-width:0}
-.mn-custom span{color:var(--gray);font-weight:700}
+/* 가운데 「~」만 회색 — 날짜 단추 안 값(.pk-field-v)까지 회색이 되지 않게(빈 칸 안내만 .pk-field.empty 가 회색) */
+.mn-custom > span{color:var(--gray);font-weight:700}
 /* 보기: 건별 · 사람별 · 사역별 — 숫자는 지금 걸러진 것 */
 .mn-view{display:flex;margin:0 0 8px;padding:3px;gap:3px;background:#eef1f6;border-radius:11px}
 .mn-view button{flex:1;min-width:0;min-height:var(--chip);padding:0 6px;font-size:13px;font-weight:800;color:#5a6273;
@@ -207,7 +208,8 @@ a.card{display:block;color:inherit;text-decoration:none}
 .mn-p4{font-size:13px;font-weight:700;color:#41506b;background:#eef1f8;border-radius:7px;padding:3px 8px}
 .mn-p4 b{letter-spacing:.08em;color:var(--navy)}
 .mn-p4.none{color:var(--gray);background:#f5f6f8;font-weight:600}
-a.mn-tel{text-decoration:none;cursor:pointer}
+/* 링크일 때 누름 자리 44px — 글자 크기는 그대로 · 높이로 */
+a.mn-tel{display:inline-flex;align-items:center;gap:4px;min-height:var(--tap);text-decoration:none;cursor:pointer}
 a.mn-tel:active{background:#dfe6f3}
 a.mn-tel.sm{padding:2px 8px}
 .mn-dup{font-size:13px;font-weight:800;border-radius:999px;padding:3px 9px;background:#fff4d6;color:#8a5a00;border:1px solid #f0d58a;white-space:normal}
@@ -548,7 +550,9 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-pick-b:disabled{cursor:default}
 .pp-pick-b:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:2px}
 .pp-pick-b.on,.pp-pick-b[aria-expanded="true"]{border-color:var(--navy)}
-.pp-pick-b.on{box-shadow:inset 0 0 0 1px var(--navy)}
+/* 값을 고른 단추(전체가 아님) — navy 테두리 + 옅은 바탕 + 요약 navy 굵게(정렬 칩의 켜진 모양과 같은 말투) */
+.pp-pick-b.on{background:var(--ghost-bg);box-shadow:inset 0 0 0 1px var(--navy)}
+.pp-pick-b.on .pp-pick-l{color:var(--navy)}
 .pp-pick-l{grid-column:1;font-size:12px;line-height:1.2;color:var(--gray)}
 .pp-pick-v{grid-column:1;font-size:15px;font-weight:600;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pp-pick-b.on .pp-pick-v{color:var(--navy);font-weight:800}
@@ -571,7 +575,8 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .pp-main b{font-size:16px}
 .pp-aff{font-size:14px;color:#333}
-.pp-tel{display:inline-flex;align-items:center;min-height:var(--chip);font-weight:700;text-decoration:none}
+/* 전화 — 누름 자리 44px(글자 크기는 그대로 · 높이와 좌우 여백으로) */
+.pp-tel{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 6px;margin-left:-6px;font-weight:700;text-decoration:none}
 .pp-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border)}
 .pp-table th,.pp-table td{padding:8px 10px;border-bottom:1px solid var(--light);text-align:left;font-size:14px;vertical-align:middle}
 .pp-table thead th{background:var(--light);font-size:13px;color:var(--gray)}
@@ -741,11 +746,12 @@ a.mn-tel.sm{padding:2px 8px}
 @keyframes pk-up{from{transform:translateY(100%)}to{transform:none}}
 @media (prefers-reduced-motion:reduce){.pk-dim.sheet .pk{animation:none}}
 .pk-grip{flex:none;width:40px;height:5px;margin:8px auto 0;border-radius:999px;background:#d5d9e0}
-.pk-h{flex:none;display:flex;align-items:center;gap:8px;padding:4px 6px 4px 16px;border-bottom:1px solid var(--light)}
+.pk-h{flex:none;display:flex;align-items:center;gap:8px;padding:4px 16px;border-bottom:1px solid var(--light)}
 .pk-h h3{flex:1;min-width:0;font-size:17px;font-weight:700;color:var(--navy-dark)}
-/* 「닫기」 — 옅은 글자만으로는 누를 곳으로 안 보인다(50~70대 담당자) → 옅은 바탕의 알약 단추 */
-.pk-x{flex:none;min-height:var(--tap);margin:2px 0;padding:0 16px;border:1px solid var(--ghost-bd);border-radius:999px;
-  background:var(--ghost-bg);color:var(--navy);font-size:16px;font-weight:600;cursor:pointer}
+/* 「닫기」 — 옅은 글자만으로는 누를 곳으로 안 보인다(50~70대 담당자) → 옅은 바탕 단추.
+   모양은 아래 줄 행동 단추(.btn)와 같은 둥근 사각형 · 오른쪽 여백은 제목 쪽(16px)과 같게 */
+.pk-x{flex:none;min-height:var(--tap);margin:2px 0;padding:0 16px;border:1px solid var(--ghost-bd);border-radius:10px;
+  background:var(--ghost-bg);color:var(--navy);font-family:inherit;font-size:.95rem;font-weight:600;cursor:pointer}
 .pk-x:hover{background:#e2ebf8}
 .pk-b{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:6px 8px}
 .pk-f{flex:none;display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--light)}
@@ -770,7 +776,12 @@ a.mn-tel.sm{padding:2px 8px}
 .pk-dim.pop .pk-date{width:340px}
 .pk-cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
 .pk-cal-nav b{font-size:1rem;color:var(--navy-dark)}
-.pk-nav{width:var(--tap);height:var(--tap);border:0;border-radius:10px;background:none;color:var(--navy);font-size:1.5rem;cursor:pointer}
+.pk-nav{display:inline-flex;align-items:center;justify-content:center;width:var(--tap);height:var(--tap);border:0;border-radius:10px;
+  background:none;cursor:pointer}
+/* 달 넘김 — 고르개 단추와 같은 쉐브론(.pk-field-x)을 좌우로 돌린다(아래 ▾ → 90° = ‹ · -90° = ›) */
+.pk-nav .pk-field-x{transition:none}
+.pk-nav[data-nav="-1"] .pk-field-x{transform:rotate(90deg)}
+.pk-nav[data-nav="1"] .pk-field-x{transform:rotate(-90deg)}
 .pk-nav:hover{background:var(--light)}
 .pk-wd,.pk-wk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
 .pk-wk{margin-bottom:2px}

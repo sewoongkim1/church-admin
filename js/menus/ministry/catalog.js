@@ -27,6 +27,11 @@ const TITLE = `<h2 class="page-title">🗂️ 사역팀 정보</h2>`;
 // 서버 error 는 두 결이다 — 알려진 코드(not-found 등, ui.js MESSAGES 에 있다)와
 // 이 화면 전용 액션(ministryCatalogSave/Order)이 그 자리에서 지어내는 한국어 문장
 // ("순서를 바꿀 팀이 없습니다" 등, MESSAGES 에는 없다). 코드 꼴(영문 소문자+하이픈)이 아니면 그대로 보여준다.
+// 찾기 칸 안내 — 좁은 폰(≤374px)에서는 긴 문구가 칸 끝에서 잘린다(320 폭 · 2026-09-29 비평) → 짧은 문구로.
+// 화면을 그릴 때 한 번 고르고, 폭이 바뀌면 render 의 리스너가 갈아 끼운다.
+const MC_HINT_NARROW = matchMedia("(max-width:374px)");
+const mcHint = () => (MC_HINT_NARROW.matches ? "🔍 팀 · 부서 · 담당자" : "🔍 팀 · 부서 · 담당자 · 하는 일");
+
 const errMsg = (d) => esc(d?.error && !/^[a-z-]+$/.test(d.error) ? d.error : errorText(d));
 
 // 서버 목록 한 줄 → 화면이 다루는 모양. ⚠️ members 는 membersNote(관리자가 직접 넣은 원본)다 —
@@ -60,7 +65,7 @@ export async function render(el, { call }) {
     <div class="acts mc-acts"><button type="button" class="btn" id="mc-reload">↻ 새로 불러오기</button></div>
     <div class="card mc-panel">
       <div class="mc-head">
-        <input type="search" id="mc-q" class="search" placeholder="🔍 팀 · 부서 · 담당자 · 하는 일" autocomplete="off" aria-label="찾기">
+        <input type="search" id="mc-q" class="search" placeholder="${esc(mcHint())}" autocomplete="off" aria-label="찾기">
         <button type="button" class="mc-pick" id="mc-pick-t" aria-expanded="false" aria-controls="mc-tabs">
           <span class="mc-pick-l">부서</span><b id="mc-pick-n">전체</b><span class="mc-pick-x pk-field-x" aria-hidden="true"></span>
         </button>
@@ -92,6 +97,13 @@ export async function render(el, { call }) {
       <div id="mc-list"></div>
     </div>`;
   el.querySelector("#mc-q").value = mcQ;
+  // 폭이 바뀌면 안내 문구도 — 이 화면이 사라지면 스스로 뗀다(search.js 의 폭 리스너와 같은 방식)
+  const onHintMq = () => {
+    const q = el.querySelector("#mc-q");
+    if (!el.isConnected || !q) return MC_HINT_NARROW.removeEventListener("change", onHintMq);
+    q.placeholder = mcHint();
+  };
+  MC_HINT_NARROW.addEventListener("change", onHintMq);
   el.querySelector("#mc-empty").checked = mcOnlyEmpty;
 
   const tabsEl = el.querySelector("#mc-tabs");

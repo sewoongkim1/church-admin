@@ -292,9 +292,9 @@ export function pickDate({ anchor, title, value = "", min = "", max = "", mode }
     const draw = () => {
       const weeks = monthGrid(y, m);
       body.innerHTML = `<div class="pk-cal-nav">
-          <button type="button" class="pk-nav" data-nav="-1" aria-label="이전 달">‹</button>
+          <button type="button" class="pk-nav" data-nav="-1" aria-label="이전 달"><span class="pk-field-x" aria-hidden="true"></span></button>
           <b aria-live="polite">${y}년 ${m}월</b>
-          <button type="button" class="pk-nav" data-nav="1" aria-label="다음 달">›</button></div>
+          <button type="button" class="pk-nav" data-nav="1" aria-label="다음 달"><span class="pk-field-x" aria-hidden="true"></span></button></div>
         <div class="pk-cal"><div class="pk-wd" aria-hidden="true">${WD.map((w, i) => `<span${i === 0 ? ` class="sun"` : ""}>${w}</span>`).join("")}</div>
         ${weeks.map((w) => `<div class="pk-wk">${w.map((d, i) => {
           if (!d) return `<span class="pk-day none"></span>`;

@@ -197,7 +197,10 @@ export async function render(el, { call, query }) {
     if (got === null || !el.isConnected || sameSet(before, got)) return;
     state[key] = [...got];     // 늘 새 배열(blank() 머리 주석)
     syncPick(key);
-    search();
+    // 고르개가 닫히며 초점을 이 단추로 돌려주지만, 다시 찾는 동안 busy 가 단추를 잠가 초점이 body 로 빠진다 —
+    // 다 찾은 뒤 이 단추로 되돌린다(정렬 머리와 같은 방식)
+    await search();
+    if (b.isConnected && !b.disabled) b.focus({ preventScroll: true });
   }
 
   // 가족 보기 — 다른 조건은 모두 비우고 세대주 교인ID 하나로 찾는다. 정렬은 남겨 둔다(가족 보기가 끝나면 원래 정렬로).
