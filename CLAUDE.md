@@ -1,4 +1,4 @@
-# 고척교회 관리 (church-admin · admin.onlybible.kr)
+# 고척교회 사역관리 (church-admin · admin.onlybible.kr)
 
 교회 담당자만 카카오 로그인으로 들어오는 관리 웹. 1차 메뉴는 사역신청(성경암송 앱의 관리 화면에서 옮겨 오는 중).
 설계·계획: 형제 저장소 `bible-memorize-church-app-v2` 의
