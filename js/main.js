@@ -4,7 +4,8 @@ import { call, setAuthLostHandler } from "./core/api.js";
 import { parseHash, go } from "./core/router.js";
 import { menusFor } from "./menus/registry.js";
 import { esc, toast, errorText, affiliation } from "./core/ui.js";
-import { renderLogin, renderRegister, renderPending, renderDisabled, renderError } from "./screens/gate.js";
+import { renderLogin, renderRegister, renderPending, renderDisabled, renderError, renderOpenExternal } from "./screens/gate.js";
+import { shouldLeaveKakao, externalUrl, closeUrl } from "./core/inapp.js";
 
 const app = document.getElementById("app");
 let me = null;
@@ -136,4 +137,20 @@ setAuthLostHandler((code) => {
   boot();
 });
 window.addEventListener("hashchange", () => { route(); });
-boot();
+
+// 카카오톡으로 받은 주소를 누르면 카카오톡 안 브라우저에서 열린다 — 기본 브라우저로 넘긴다(js/core/inapp.js)
+const STAY_KEY = "ca-stay-in-kakao";
+function start() {
+  let stay = false;
+  try { stay = sessionStorage.getItem(STAY_KEY) === "1"; } catch {}
+  const ua = navigator.userAgent;
+  if (!shouldLeaveKakao({ ua, href: location.href, stay })) return boot();
+  const open = () => { location.href = externalUrl(location.href); };
+  renderOpenExternal(app, {
+    onOpen: open,
+    onClose: () => { location.href = closeUrl(ua); },
+    onStay: () => { try { sessionStorage.setItem(STAY_KEY, "1"); } catch {} boot(); },
+  });
+  open();
+}
+start();

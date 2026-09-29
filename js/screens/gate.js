@@ -22,6 +22,23 @@ export function renderLogin(el, { onKakao, onSwitch, notice = "" }) {
   el.querySelector(".other").onclick = onSwitch;
 }
 
+// 카카오톡 안 브라우저에서 열렸을 때 — 기본 브라우저로 넘기는 동안 · 안 넘어갔을 때 이 화면이 남는다
+export function renderOpenExternal(el, { onOpen, onClose, onStay }) {
+  el.innerHTML = `<div class="gate"><div class="card">
+    <h2>기본 브라우저로 열고 있어요</h2>
+    <p>이 관리 화면은 카카오톡 안이 아니라<br>크롬·사파리 같은 기본 브라우저에서 열어요.</p>
+    <div class="stack">
+      <button type="button" class="btn primary wide o">기본 브라우저로 열기</button>
+      <button type="button" class="btn wide c">카카오톡으로 돌아가기</button>
+    </div>
+    <p class="muted" style="margin-top:14px">안 열리면 화면의 ⋮ 또는 공유 단추에서 「다른 브라우저로 열기」를 눌러 주세요.</p>
+    <p class="muted"><a href="#" class="s">카카오톡 안에서 그냥 볼게요</a></p>
+  </div></div>`;
+  el.querySelector(".o").onclick = onOpen;
+  el.querySelector(".c").onclick = onClose;
+  el.querySelector(".s").onclick = (e) => { e.preventDefault(); onStay(); };
+}
+
 export function renderRegister(el, { nickname = "", member = null, onSubmit, onSignOut, onSwitch }) {
   const v = member || { type: "교구", gu: "", mok: "", bu: "", grade: "", name: "" };
   el.innerHTML = `<div class="gate"><div class="card">

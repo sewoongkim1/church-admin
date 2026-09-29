@@ -41,6 +41,7 @@
 - 주소 `#` 뒤 쿼리에 `code`·`error`·`error_description`·`access_token`·`refresh_token`·`type` 이름을 쓰지 않는다 — supabase-js 가 로그인 값으로 읽는다.
 - 카카오 별명·사진은 `identities[kakao].identity_data` 에서 읽는다(`user_metadata` 는 본인이 고칠 수 있다). 사진은 `kakaocdn.net` 만.
 - 로그아웃은 `scope:"local"` — 기본값 global 은 다른 기기까지 끊는다.
+- 카카오톡 안 브라우저로 열리면 `kakaotalk://web/openExternal` 로 기본 브라우저에 넘긴다(`js/core/inapp.js` · `main.js` `start()`). 로그인하고 돌아온 주소(`?code=`·`?error=`)는 넘기지 않는다 — PKCE 열쇠가 그 브라우저에만 있다.
 - 이름·소속에 `" \ , ( ) |` 금지(postgrest `.in()` 이 이스케이프하지 않는다).
 - 개인정보 안내는 `privacy.html` — 모으는 것을 바꾸면 이 파일도 함께. 배포 목록(deploy.yml cp)에 들어 있어야 한다.
 
