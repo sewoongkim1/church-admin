@@ -474,3 +474,49 @@ a.mn-tel.sm{padding:2px 8px}
   .mc-in label.wide{align-items:flex-start}
   .mc-in .mc-when label{flex-direction:row;align-items:center}
 }
+
+/* ── 📋 종이 명단 올리기(성경암송 admin-stats.html 의 .mp-* 를 옮김 · 2026-09-29) ──────────────────
+   원문: docs/port/ministry-paper-legacy.md 2.9·2.10. 크기는 토큰으로, 11~12px 글씨는 13px 이상으로 올렸다.
+   ⚠️ 원문은 .adm-acts 를 두 벌(마진 10px 짜리·나중에 이기는 12px 짜리, 체크리스트 #32) 갖고 있었다 —
+      여기서는 그 이긴 값(12px · tap-lg · 줄임표)으로 한 번만 정의한다. 다른 사역신청 화면도 같은
+      "주 동작 둘을 나란히" 줄이 필요하면 이 이름을 그대로 쓸 수 있다. */
+.adm-acts{display:flex;gap:8px;margin:0 0 12px}
+.adm-acts>.btn{flex:1 1 0;min-width:0;min-height:var(--tap-lg);font-size:1rem;padding:0 12px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-acts>.btn[hidden]{display:none}
+
+.mp-how{font-size:13px;line-height:1.7;color:#41506b;background:#f3f6fb;border-radius:12px;padding:11px 13px;margin-bottom:10px}
+.mp-files{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.mp-dl{display:inline-flex;align-items:center;min-height:var(--tap);font-size:.95rem;font-weight:800;color:var(--navy);
+  background:#fff;border:1px solid var(--ghost-bd);border-radius:999px;padding:0 16px;text-decoration:none;cursor:pointer}
+.mp-dl.pick{background:var(--ghost-bg)}
+.mp-dl:active{background:#dfe6f3}
+.mp-fname{font-size:13px;color:#41506b}
+.mp-cols{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.mp-cols span{font-size:13px;font-weight:800;color:#41506b;background:#fff;border-radius:7px;padding:2px 7px}
+.mp-cols span.dim{color:var(--gray);font-weight:700}
+.mp-how-ul{margin:10px 2px 2px;padding-left:18px;font-size:13px;line-height:1.7;color:#41506b}
+.mp-how-ul li{margin:2px 0}
+.mp-text{width:100%;box-sizing:border-box;font:inherit;font-size:1rem;line-height:1.6;padding:10px;
+  border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--navy);margin-bottom:10px}
+.mp-sum{font-size:13px;color:#41506b;background:#eef1f8;border-radius:8px;padding:8px 12px;margin-bottom:10px}
+.mp-sum:empty{display:none}
+.mp-sum b{color:var(--navy)}
+.mp-item{border:1px solid #e3e8f1;border-left:4px solid var(--ghost-bd);border-radius:10px;padding:8px 10px;
+  margin-top:var(--gap);background:#fff}
+.mp-item.bad{border-left-color:#e0a3a3;background:#fdf5f5}
+.mp-item.done{border-left-color:#7fc39b;background:#f4faf6}
+.mp-item.same{border-left-color:#cdd8ea;background:#f7f9fc}
+.mp-item.same .mp-i-top b{color:#6b7a90}
+.mp-i-top{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 7px}
+.mp-i-ic{font-size:13px}
+.mp-i-top b{font-size:14px;font-weight:800;color:var(--navy)}
+.mp-i-top small{font-size:13px;color:#8a95a8}
+.mp-i-st{font-size:13px;font-weight:800;color:var(--navy);background:var(--ghost-bg);border:1px solid #cdd8ea;
+  border-radius:999px;padding:1px 8px}
+.mp-i-st.off{color:#8a95a8;background:#f4f6fa;border-color:var(--border)}
+.mp-i-team{font-size:13px;font-weight:700;color:#41506b;margin-left:auto}
+.mp-i-team i{font-style:normal;font-size:13px;color:#8a95a8}
+.mp-i-msg{font-size:13px;line-height:1.6;margin-top:4px}
+.mp-i-msg.bad{color:var(--error)}
+.mp-i-msg.warn{color:#7a5f16}

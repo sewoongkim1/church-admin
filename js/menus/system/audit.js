@@ -7,6 +7,7 @@ const LABEL = {
   "members.approve": "승인", "members.roles": "역할 바꿈", "members.status": "상태 바꿈",
   "ministry.status": "사역 상태 바꿈", "ministry.delete": "사역 신청 삭제",
   "ministry.catalog": "사역팀 정보 고침", "ministry.order": "사역팀 차례 바꿈",
+  "ministry.paper": "종이 명단 넣음",
 };
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };
 
@@ -20,6 +21,7 @@ function detailText(r) {
   if (r.action === "ministry.delete") return `${d.name || ""} · ${d.who || ""} · ${d.committee || ""} ${d.team || ""} (${d.status || ""})`;
   if (r.action === "ministry.catalog") return `${d.team || ""} · ${(d.fields || []).join(", ")}`;
   if (r.action === "ministry.order") return `${(d.ids || []).length}팀`;
+  if (r.action === "ministry.paper") return `저장 ${d.saved} · 새 계정 ${d.created} · 그대로 ${d.same} · 오류 ${d.errors}`;
   return "";
 }
 
