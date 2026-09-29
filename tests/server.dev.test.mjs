@@ -155,7 +155,7 @@ before(async () => {
     { person_id: 990000001, name: "ca-test-min", name_key: "ca-test-min", mok1: "시험", mok2: "시험", mok3: "시험-0목장",
       mok_path: "시험 > 시험 > 시험-0목장", kind1: "교인", kind2: "장년", kind3: "출석교인", position: "집사",
       phone1: "010-0000-0000", phone2: CHURCH_ONLY_PHONE, phone_digits: "01000000000 " + CHURCH_ONLY_PHONE.replace(/\D/g, ""),
-      address: "시험시 비밀주소 " + STAMP, has_photo: true, photo_hash: "t",
+      address: "시험시 비밀주소 " + STAMP, has_photo: true, photo_hash: "t", age: 45,
       household_id: 990000001, household_head: "ca-test-min", household_rel: "본인" });
   await rest("church_people", "POST",
     { person_id: 990000002, name: PAPER_NAME, name_key: PAPER_NAME, mok1: "시험", mok2: "시험", mok3: "시험-5목장",
@@ -165,7 +165,7 @@ before(async () => {
   await rest("church_people", "POST",
     { person_id: 990000003, name: DIR_NAME, name_key: DIR_NAME, mok1: "시험B", mok2: "시험B", mok3: "시험B-1목장",
       kind1: "교인", kind2: "청년", kind3: "새신자", position: "권사",
-      phone1: "010-5555-0000", phone_digits: "01055550000", has_photo: true, photo_hash: "t" });
+      phone1: "010-5555-0000", phone_digits: "01055550000", has_photo: true, photo_hash: "t", age: 30 });   // 002 는 나이 모름(정렬 시험)
   await rest("church_people_imports", "POST",
     { source_date: PEOPLE_SOURCE_DATE, total: 3, added: 3, changed: 0, removed: 0, photos: 2 });
   const up = await fetch(`${URL_}/storage/v1/object/${PHOTO_PATH}`, { method: "POST",
@@ -595,12 +595,52 @@ test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 �
   };
   assert.deepEqual(await ids({ q: "ca-test" }), [990000001, 990000002, 990000003], "세 분 모두 이름에 걸려야 한다");
   // 전화 줄이 빠지면 002(시험 · 0000 없음), 교구 줄이 빠지면 003(시험B · 0000 있음)이 나온다
-  assert.deepEqual(await ids({ q: "0000", mok1: "시험" }), [990000001], "전화 뒷자리 + 교구");
-  assert.deepEqual(await ids({ q: "ca-test", mok1: "시험B" }), [990000003], "교구");
-  assert.deepEqual(await ids({ q: "ca-test", kind2: "청년" }), [990000003], "구분(kind2)");
-  assert.deepEqual(await ids({ q: "ca-test", kind3: "새신자" }), [990000003], "출석(kind3)");
-  assert.deepEqual(await ids({ q: "ca-test", position: "권사" }), [990000003], "직분");
+  // 거르기 넷은 배열(여러 개 · 2026-09-29 체크박스). 문자열 하나(옛 화면)도 받는다.
+  assert.deepEqual(await ids({ q: "0000", mok1: ["시험"] }), [990000001], "전화 뒷자리 + 교구");
+  assert.deepEqual(await ids({ q: "ca-test", mok1: ["시험B"] }), [990000003], "교구");
+  assert.deepEqual(await ids({ q: "ca-test", kind2: ["청년"] }), [990000003], "구분(kind2)");
+  assert.deepEqual(await ids({ q: "ca-test", kind3: ["새신자"] }), [990000003], "출석(kind3)");
+  assert.deepEqual(await ids({ q: "ca-test", position: ["권사"] }), [990000003], "직분");
   assert.deepEqual(await ids({ q: "ca-test", noPhoto: true }), [990000002], "사진 없는 분만");
+  // 여러 값 — 한 거르기 안은 「또는」, 거르기끼리는 「그리고」
+  assert.deepEqual(await ids({ q: "ca-test", mok1: ["시험", "시험B"] }), [990000001, 990000002, 990000003], "교구 둘");
+  assert.deepEqual(await ids({ q: "ca-test", position: ["집사", "권사"] }), [990000001, 990000003], "직분 둘");
+  assert.deepEqual(await ids({ q: "ca-test", mok1: ["시험", "시험B"], kind2: ["청년"] }), [990000003], "교구 둘 + 구분");
+  assert.deepEqual(await ids({ q: "ca-test", mok1: [], kind2: [] }), [990000001, 990000002, 990000003], "빈 배열은 거르지 않는다");
+  assert.deepEqual(await ids({ q: "ca-test", mok1: "시험B" }), [990000003], "문자열 하나(옛 화면)");
+  assert.equal((await call(d, "peopleSearch", { mok1: ['시"험'] })).body.error, "invalid", "따옴표 든 값");
+  assert.equal((await call(d, "peopleSearch", { mok1: Array.from({ length: 51 }, (_, i) => "v" + i) })).body.error, "invalid", "51개");
+  // 정렬(2026-09-29 머리 누르기) — 세 분: 001(ca-test-min · 45세) · 002(ca-test-paper-… · 나이 모름) · 003(ca-test-dir-… · 30세)
+  //   차례를 그대로 본다(sort 하지 않는다). 나이 모르는 분은 오름·내림 모두 맨 뒤.
+  const T = { q: "ca-test", mok1: ["시험", "시험B"] };
+  const order = async (payload, act = "peopleSearch") => {
+    const r = await call(d, act, payload);
+    assert.equal(r.body.ok, true, JSON.stringify(r.body));
+    return r.body.rows.map((x) => x.person_id).filter((id) => PEOPLE_IDS.includes(id));
+  };
+  assert.deepEqual(await order({ ...T, sort: "age", dir: "desc" }), [990000001, 990000003, 990000002], "나이 내림 — 모름은 맨 뒤");
+  // ⚠️ 「나이 오름」 [003,001,002] 은 기본(이름 오름) 차례와 같아 이것만으로는 나이 정렬을 증명하지 못한다 —
+  //   나이 정렬과 「모름은 맨 뒤(nullsFirst:false)」를 못 박는 것은 위의 「나이 내림」이다. 이 줄은 오름에서도 모름이 뒤인지만 본다.
+  assert.deepEqual(await order({ ...T, sort: "age", dir: "asc" }), [990000003, 990000001, 990000002], "나이 오름 — 모름은 그래도 맨 뒤");
+  // 소속 — 교구(시험 < 시험B) > 목장(시험-0 < 시험-5). 내림은 정확히 거꾸로
+  assert.deepEqual(await order({ ...T, sort: "aff" }), [990000001, 990000002, 990000003], "소속 오름");
+  assert.deepEqual(await order({ ...T, sort: "aff", dir: "desc" }), [990000003, 990000002, 990000001], "소속 내림");
+  // 구분 — 002 는 구분이 빈 칸('' · 칸이 not null default '' 라 null 이 아니다) → 오름 맨 앞 · 내림 맨 뒤(people-query.ts sortOrder 주석)
+  assert.deepEqual(await order({ ...T, sort: "kind2" }), [990000002, 990000001, 990000003], "구분 오름 — 빈 칸이 맨 앞");
+  assert.deepEqual(await order({ ...T, sort: "kind2", dir: "desc" }), [990000003, 990000001, 990000002], "구분 내림 — 빈 칸이 맨 뒤");
+  assert.deepEqual(await order({ ...T, sort: "name", dir: "desc" }), [990000002, 990000001, 990000003], "이름 내림");
+  assert.deepEqual(await order({ ...T }), [990000003, 990000001, 990000002], "기본 — 이름 오름");
+  assert.deepEqual(await order({ ...T, sort: "age", dir: "desc" }, "peopleExport"), [990000001, 990000003, 990000002], "내려받기도 같은 차례");
+  assert.deepEqual(await order({ ...T, sort: "name", dir: "desc" }, "peopleExport"), [990000002, 990000001, 990000003], "내려받기 이름 내림");
+  assert.equal((await call(d, "peopleSearch", { ...T, sort: "phone1" })).body.error, "invalid", "모르는 정렬");
+  assert.equal((await call(d, "peopleExport", { ...T, dir: "up" })).body.error, "invalid", "모르는 방향(내려받기)");
+  const sortLog = (await call(people.super.token, "auditList", { limit: 20, kind: "people" })).body.rows
+    .find((r) => r.action === "people.search" && r.detail?.filters?.sort === "age");
+  assert.deepEqual(sortLog?.detail?.filters, { mok1: ["시험", "시험B"], sort: "age", dir: "asc" }, JSON.stringify(sortLog));
+  // 열람 기록 — 배열이 그대로 남는다
+  const logged = (await call(people.super.token, "auditList", { limit: 20, kind: "people" })).body.rows
+    .find((r) => r.action === "people.search" && r.detail?.q === "ca-test" && r.detail?.filters?.kind2);
+  assert.deepEqual(logged?.detail?.filters, { mok1: ["시험", "시험B"], kind2: ["청년"] }, JSON.stringify(logged));
   assert.equal((await call(d, "peopleSearch", { page: -1 })).body.error, "invalid");
   // 끝을 넘은 쪽 — 빈 쪽이지만 전체 수는 진짜 수(0 이 아니다)
   const over = await call(d, "peopleSearch", { q: "ca-test-min", page: 5 });
@@ -631,6 +671,12 @@ test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 �
 
   const ex = await call(d, "peopleExport", { q: "ca-test-min" });
   assert.deepEqual(ex.body.rows.map((x) => x.person_id), [990000001]);
+  // 내려받기도 배열 거르기 — 받은 명단과 기록에 여러 값이 그대로
+  const ex2 = await call(d, "peopleExport", { q: "ca-test", position: ["집사", "권사"] });
+  assert.deepEqual(ex2.body.rows.map((x) => x.person_id).filter((id) => PEOPLE_IDS.includes(id)).sort(), [990000001, 990000003]);
+  const exLog = (await call(people.super.token, "auditList", { limit: 10, kind: "people" })).body.rows
+    .find((r) => r.action === "people.export" && r.detail?.q === "ca-test");
+  assert.deepEqual(exLog?.detail?.filters, { position: ["집사", "권사"] }, JSON.stringify(exLog));
 
   const logs = (await call(people.super.token, "auditList", { limit: 40, kind: "people" })).body.rows.map((r) => r.action);
   for (const a of ["people.search", "people.view", "people.export"]) assert.ok(logs.includes(a), a + " " + JSON.stringify(logs));

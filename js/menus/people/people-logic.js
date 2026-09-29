@@ -21,10 +21,50 @@ export function affText(p) {
 
 export const initialOf = (name) => String(name || "").trim().charAt(0) || "?";
 
+// 거르기 넷(교구·구분·출석·직분)은 여러 개 — 서버 people-query.ts FILTER_KEYS 와 같은 차례
+export const FILTER_KEYS = ["mok1", "kind2", "kind3", "position"];
+// 배열 사본(빈 값 빼기) — 문자열 하나(옛 조건)는 한 칸짜리로
+const pickList = (v) => (Array.isArray(v) ? v : v ? [v] : []).filter((x) => x !== undefined && x !== null && x !== "");
+
 export const searchPayload = (s) => ({
-  q: s.q || "", mok1: s.mok1 || "", kind2: s.kind2 || "", kind3: s.kind3 || "", position: s.position || "",
+  q: s.q || "", mok1: pickList(s.mok1), kind2: pickList(s.kind2), kind3: pickList(s.kind3), position: pickList(s.position),
   noPhoto: !!s.noPhoto, household: s.household || null, page: s.page || 0,
+  sort: s.sort || "name", dir: s.dir || "asc",
 });
+
+// 정렬 — [키, 이름]. 서버 people-query.ts SORT_KEYS 와 같은 차례(2026-09-29 표 머리 누르기).
+// 이름 = name_key · 나이 = 모르는 분은 늘 맨 뒤 · 소속 = 교구 > 목장 > 교회학교 · 구분 = 구분 > 출석
+export const SORTS = [["name", "이름"], ["age", "나이"], ["aff", "소속"], ["kind2", "구분"]];
+// 같은 머리를 다시 누르면 방향만 바꾸고, 다른 머리를 누르면 그 머리의 오름차순
+export function nextSort(state, key) {
+  const cur = state?.sort || "name", dir = state?.dir || "asc";
+  return cur === key ? { sort: key, dir: dir === "asc" ? "desc" : "asc" } : { sort: key, dir: "asc" };
+}
+// 머리·칩의 표시 — 지금 정렬이면 ▲(오름)/▼(내림), 아니면 중립 ⇅(눌러서 정렬할 수 있다는 표시 · 화면에서 옅게).
+// ⇅ 는 이모지 모양이 없는 글자라 기기마다 컬러 그림으로 바뀌지 않는다.
+export function sortMark(state, key) {
+  const on = (state?.sort || "name") === key;
+  return { on, text: on ? ((state?.dir || "asc") === "asc" ? "▲" : "▼") : "⇅" };
+}
+
+// 「여러 개 고르기」 단추 아래 줄 — 없으면 「전체」, 1~2개는 잇고, 3개 이상은 「첫째 외 N」
+export function pickSummary(values) {
+  const v = pickList(values);
+  if (!v.length) return "전체";
+  return v.length <= 2 ? v.join(" · ") : `${v[0]} 외 ${v.length - 1}`;
+}
+
+// 고를 목록 — 교인 현황(peopleStats 의 stats)에서 [값, 인원]. 「(목장 없음)」「(없음)」은 고를 수 없다(서버 options 와 같게)
+export function filterChoices(stats) {
+  const pairs = (xs) => (xs || []).filter(([k]) => k && k !== "(없음)");
+  return {
+    mok1: (stats.gu || []).filter((g) => g.gu && g.gu !== "(목장 없음)").map((g) => [g.gu, g.n]),
+    kind2: pairs(stats.kind2), kind3: pairs(stats.kind3), position: pairs(stats.position),
+  };
+}
+
+// 판이 닫힐 때 — 고른 것이 바뀌었나(차례는 보지 않는다). 안 바뀌었으면 다시 찾지 않는다(열람 기록이 쌓이지 않게)
+export const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
 
 // 가족 차례 — 세대주(교인ID = 세대주 교인ID)가 맨 앞, 그다음 나이 많은 차례, 같으면 가나다
 export function familyOrder(list, headId) {

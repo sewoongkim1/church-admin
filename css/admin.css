@@ -527,11 +527,52 @@ a.mn-tel.sm{padding:2px 8px}
 /* 교인명부(2026-09-29) — 교인 찾기 · 교인 현황 */
 .pp-src{margin:-4px 0 12px}
 .pp-src.stale{color:var(--error);font-weight:700}
-.pp-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-.pp-sel{display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--gray);flex:1 1 140px;min-width:0}
-.pp-sel select{min-height:var(--tap);padding:0 8px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:15px;color:#222}
-.pp-chk{display:flex;align-items:center;gap:6px;min-height:var(--tap);font-size:14px;flex:1 1 140px}
-.pp-chk input{width:20px;height:20px}
+/* 거르기 — 「여러 개 고르기」 단추 넷(교구·구분·출석·직분). 폰 2×2, 넓으면 한 줄.
+   판(.pp-pan) — 좁을 때: .pp-pick 을 display:contents 로 풀어 판을 격자의 한 줄(전체 폭)로 끼운다. 그 단추가 있는
+   줄 바로 아래에 열리고 아래 줄을 밀어낸다(dense 가 옆 단추를 제자리에 채운다). 덮어 뜨게 하면 윗줄 판이
+   아랫줄 단추를 가려 못 누른다(2026-09-29 시험에서 확인).
+   넓을 때: 단추 아래에 덮어 뜬다 — 그 단추 폭 이상(최소 260px). */
+.pp-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense;gap:8px;margin-bottom:10px}
+.pp-pick{display:contents}
+.pp-pick-b{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:6px;width:100%;
+  min-height:var(--tap-lg);padding:4px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;
+  color:#222;font-family:inherit;text-align:left;cursor:pointer}
+.pp-pick-b:disabled{cursor:default}
+.pp-pick-b:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:2px}
+.pp-pick-b.on{border-color:var(--navy);box-shadow:inset 0 0 0 1px var(--navy)}
+.pp-pick-l{grid-column:1;font-size:12px;line-height:1.2;color:var(--gray)}
+.pp-pick-v{grid-column:1;font-size:15px;font-weight:600;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp-pick-b.on .pp-pick-v{color:var(--navy);font-weight:800}
+/* ▾ 대신 CSS 로 그린 쉐브론 — 글자 ▾ 는 너무 작고 흐렸다(2026-09-29 비평) */
+.pp-pick-a{grid-column:2;grid-row:1 / span 2;width:10px;height:10px;margin:0 4px 5px;
+  border-right:2.5px solid var(--navy);border-bottom:2.5px solid var(--navy);transform:rotate(45deg);transition:transform .12s}
+.pp-pick.open .pp-pick-a{transform:translateY(4px) rotate(-135deg)}
+.pp-pan{grid-column:1 / -1;padding:6px;background:#fff;
+  border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 26px rgba(26,42,72,.16)}
+.pp-pan-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 4px 6px;
+  border-bottom:1px solid var(--light);font-size:13px}
+.pp-pan-clear{min-height:var(--chip);padding:0 12px;border:1px solid var(--ghost-bd);border-radius:999px;background:var(--ghost-bg);
+  color:var(--navy);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.pp-pan-clear:disabled{opacity:.45;cursor:default}   /* 고른 것이 없을 때 */
+/* 일곱 줄 반 — 여덟째 줄이 반만 보여 「아래에 더 있다」가 드러난다(4px = 위 여백) */
+.pp-pan-list{max-height:calc(var(--tap) * 7.5 + 4px);overflow-y:auto;overscroll-behavior:contain;padding-top:4px}
+.pp-pan-none{padding:8px}
+.pp-opt{display:flex;align-items:center;gap:10px;min-height:var(--tap);padding:0 8px;border-radius:8px;font-size:15px;cursor:pointer}
+.pp-opt:hover{background:var(--ghost-bg)}
+.pp-opt input{flex:none;width:20px;height:20px;accent-color:var(--navy)}
+.pp-opt-t{flex:1;min-width:0;overflow-wrap:anywhere}
+.pp-opt-n{flex:none;font-size:13px;color:var(--gray);font-variant-numeric:tabular-nums}
+.pp-nophoto{grid-column:1 / -1;justify-self:start;display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);
+  padding:0 14px;border:1px solid var(--ghost-bd);border-radius:999px;background:var(--ghost-bg);color:var(--navy);
+  font-family:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.pp-np-i{font-size:1.15em;line-height:1}
+.pp-np-x{font-size:1.1em;line-height:1;font-weight:800}
+@media (min-width:640px){
+  .pp-filters{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .pp-pick{display:block;position:relative;min-width:0}
+  .pp-pan{position:absolute;left:0;top:100%;z-index:30;margin-top:6px;min-width:max(100%,260px)}
+  .pp-pick:nth-child(4) .pp-pan{left:auto;right:0}   /* 맨 오른쪽 단추의 판은 오른쪽에 맞춰 화면 밖으로 안 나가게 */
+}
 .pp-form .acts{margin-bottom:12px}
 .pp-sum{margin-bottom:8px}
 .pp-card{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:var(--gap);cursor:pointer}
@@ -546,6 +587,23 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border)}
 .pp-table th,.pp-table td{padding:8px 10px;border-bottom:1px solid var(--light);text-align:left;font-size:14px;vertical-align:middle}
 .pp-table thead th{background:var(--light);font-size:13px;color:var(--gray)}
+/* 정렬 — 표 머리는 <th> 안 단추(머리 모양 그대로 · 칸 전체를 누른다), 폰은 목록 위 칩 줄 */
+.pp-table thead th.pp-th-sort{padding:0}
+.pp-sort-h{display:flex;align-items:center;gap:4px;width:100%;min-height:var(--tap);padding:0 10px;border:0;background:transparent;
+  font-family:inherit;font-size:13px;font-weight:700;color:var(--gray);text-align:left;cursor:pointer}
+.pp-sort-h:hover{background:var(--ghost-bg);color:var(--navy)}
+.pp-sort-h.on{color:var(--navy)}   /* 굵기는 그대로 — 굵기가 바뀌면 글자 폭이 달라져 열이 흔들린다 */
+.pp-sort-h:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:-3px}
+/* ▲▼⇅ — 머리 글자(13px)와 같은 크기 · 늘 1em 자리를 차지해 표시가 옮겨 가도 열 폭이 그대로다 */
+.pp-sort-a{display:inline-block;width:1em;flex:none;font-size:1em;line-height:1;text-align:center}
+.pp-sort-a.off{opacity:.4}
+.pp-sort-h:hover .pp-sort-a.off{opacity:.8}
+.pp-sortbar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--gap-s);margin:0 0 10px}
+.pp-sortbar-l{font-size:13px;font-weight:700;color:var(--gray);margin-right:2px}
+.pp-sort-c{display:inline-flex;align-items:center;gap:4px;min-height:var(--chip);padding:0 14px;border:1px solid var(--border);
+  border-radius:999px;background:#fff;color:#41506b;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.pp-sort-c.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.pp-sort-c:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:2px}
 .pp-row{cursor:pointer}
 .pp-row:hover{background:var(--ghost-bg)}
 .pp-pager{margin-top:8px}
