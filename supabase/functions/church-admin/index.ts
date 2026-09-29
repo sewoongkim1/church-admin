@@ -29,6 +29,9 @@ import { applyFill, fillNames, filledNames, judgeUpload, lookupName, lookupOut, 
 
 // 성경필사(암송) 이름을 누르면 교적 창(Task 16) — 이 과제의 이름은 events-person.ts 에서만 가져온다(CONTRACT 5)
 import { personAsk, personOut, type PersonCand } from "./events-person.ts";
+// 목장이 비었거나 99 인 교구 줄의 같은 분 판정(최종 검토 I1) — 위 import 에 없는 이름만
+import { looseKey, looseSame } from "./events-rows.ts";
+import { looseIndex } from "./events-upload.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1230,6 +1233,22 @@ async function sameInEvent(eventId: string, row: EvRow, excludeId?: number): Pro
     if (error) throw error;
     if ((data ?? []).length) return "already";
   }
+  // ③ 교구 줄 — 한쪽 목장이 비었거나 99 면 같은 교구·같은 이름은 같은 분(최종 검토 I1 · events-rows.ts looseSame).
+  //   🔎 교인명부로 목장(20)을 채워 더했는데 회차에는 앱의 99 줄·목장 빈 줄이 있으면 신원 키가 달라 위에서 못 찾는다.
+  //   같은 교구·같은 이름의 줄만 읽어(몇 줄 안 된다) 판정은 순수 함수로 한다 — sub_name 의 빈 글자를 .in() 으로 묻지 않게.
+  if (looseKey(row)) {
+    const variants = (v: string) => [...new Set([v, v.normalize("NFC"), v.normalize("NFD")])];
+    const names = askableKeys(variants(legacyNorm(row.name)));
+    const groups = askableKeys(variants(legacyNorm(row.group_name)));
+    if (names.length && groups.length) {
+      let q = db.from("event_signups").select("id,who_type,group_name,sub_name,name")
+        .eq("event_id", eventId).eq("who_type", "교구").in("group_name", groups).in("name", names);
+      if (excludeId) q = q.neq("id", excludeId);
+      const { data, error } = await q.order("id", { ascending: true }).limit(200);
+      if (error) throw error;
+      if (((data ?? []) as any[]).some((r) => looseSame(row, r as EvRow))) return "already";
+    }
+  }
   return null;
 }
 
@@ -1422,12 +1441,14 @@ async function evUpload(ctx: Ctx, b: any, save: boolean) {
     if (need.length) applyFill(items, (await peopleSource()) ? await evChurchCands(need) : null);
   }
   // ③ 이 회차 명단(전부 · 1,000행 넘어도)과 앱 계정(통째로 한 번 — 넣을 줄이 있을 때만)에 맞댄다
-  const signups = await allRows(() => db.from("event_signups").select("id,ident_key,user_id")
+  //   교구·목장·이름도 읽는다 — 한쪽 목장이 비었거나 99 인 같은 교구·같은 이름 줄을 같은 분으로 보려고(looseIndex · I1)
+  const signups = await allRows(() => db.from("event_signups").select("id,ident_key,user_id,who_type,group_name,sub_name,name")
     .eq("event_id", eventId).order("id", { ascending: true }));
   judgeUpload(items, {
     eventKeys: new Set(signups.map((r) => r.ident_key)),
     eventUids: new Set(signups.map((r) => r.user_id).filter(Boolean)),
     users: uploadKeys(items).length ? await evAccountIndex() : new Map<string, string[]>(),
+    loose: looseIndex(signups),
   });
   const counts = uploadCounts(items);
 

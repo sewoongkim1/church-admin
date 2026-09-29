@@ -205,3 +205,72 @@ test("lookupOut — 교인명부 한 분 → 다섯 칸(이름·구분·소속·
   assert.deepEqual(kid, { name: "홍길동", who_type: "교회학교", group: "중등부", sub: "", position: "" });
   assert.ok(!JSON.stringify(kid).includes("화평"));
 });
+
+// ---------- 목장이 비었거나 99 인 줄 — 채우기를 켜고 다시 올려도, 앱의 99 줄이 있어도 두 번 넣지 않는다(최종 검토 I1) ----------
+import { looseIndex } from "../supabase/functions/church-admin/events-upload.ts";
+
+// 넣은 줄 → 회차 명단(서버가 event_signups 에서 읽는 모양) — 판정에 쓰는 칸만
+const asSignups = (items) => uploadRecords(items, "ev-1", "2026-09-30T00:00:00.000Z").map((x) => x.rec);
+const idxOf = (signups) => ({
+  eventKeys: new Set(signups.map((r) => r.ident_key)),
+  eventUids: new Set(signups.map((r) => r.user_id).filter(Boolean)),
+  users: new Map(),
+  loose: looseIndex(signups),
+});
+
+test("judgeUpload — 채우기 끄고 올린 뒤(목장 빈 채) 채우기 켜고 다시 올리면 채운 줄도 이미 있음(채우기 전 줄의 키로도 본다)", () => {
+  const raws = [R("홍길동", "화평", "", "집사")];
+  // ① 채우기 끔 — 목장이 빈 채로 넣는다
+  const first = judgeUpload(tidyUpload(raws), NO_IDX);
+  assert.deepEqual(first.map((x) => x.mark), ["add"]);
+  const signups = asSignups(first);
+  assert.equal(signups[0].ident_key, "교구|화평||||홍길동");
+  // ② 같은 글을 채우기 켜고 — 교인명부(화평 20)로 목장을 채워도 같은 분
+  const again = applyFill(tidyUpload(raws), new Map([["홍길동", [P({ name_key: "홍길동", mok1: "화평", mok3: "화평-20목장", position: "집사" })]]]));
+  assert.equal(again[0].mark, "fill");
+  assert.equal(again[0].row.sub_name, "20");
+  judgeUpload(again, idxOf(signups));
+  assert.deepEqual(again.map((x) => x.mark), ["same"], JSON.stringify(again[0].notes));
+  assert.ok(again[0].notes.some((n) => n.includes("이미 있어요")));
+  assert.deepEqual(uploadRecords(again, "ev-1", "t"), [], "두 번째 올리기는 아무것도 넣지 않는다");
+  // 느슨한 색인이 없어도(옛 서버 모양) 채우기 전 줄의 정본 키만으로 막힌다 — 필수 고침 ①
+  const again2 = applyFill(tidyUpload(raws), new Map([["홍길동", [P({ name_key: "홍길동", mok1: "화평", mok3: "화평-20목장" })]]]));
+  judgeUpload(again2, { eventKeys: new Set(signups.map((r) => r.ident_key)), eventUids: new Set(), users: new Map() });
+  assert.deepEqual(again2.map((x) => x.mark), ["same"]);
+});
+
+test("judgeUpload — 채운 줄이 파일 안 앞줄(채우기 전 목장이 빈 줄)과 같은 분이면 접는다", () => {
+  const it = applyFill(tidyUpload([R("홍길동", "화평", "", "집사"), R("홍길동", "화평", "", "")]),
+    new Map([["홍길동", [P({ name_key: "홍길동", mok1: "화평", mok3: "화평-20목장", position: "집사" })]]]));
+  judgeUpload(it, NO_IDX);
+  assert.deepEqual(it.map((x) => x.mark), ["fill", "same"]);
+  assert.ok(it[1].notes.some((n) => n.includes("위 1번 줄")));
+});
+
+test("judgeUpload — 교구 줄은 한쪽 목장이 비었거나 99 면 구분|교구|이름으로 같은 분(99↔20 · 빈칸↔20) · 번호끼리 다르면 다른 분 · 교회학교는 안 느슨하다", () => {
+  const signups = [
+    { ident_key: "교구|화평|99|||홍길동", user_id: null, who_type: "교구", group_name: "화평", sub_name: "99", name: "홍길동" },   // 앱 로그인 「목장 없음」
+    { ident_key: "교구|소망|20|||성춘향", user_id: null, who_type: "교구", group_name: "소망", sub_name: "20", name: "성춘향" },
+    { ident_key: "교구|믿음|3|||이몽룡", user_id: null, who_type: "교구", group_name: "믿음", sub_name: "3", name: "이몽룡" },
+    { ident_key: "교회학교|||중등부||임꺽정", user_id: null, who_type: "교회학교", group_name: "중등부", sub_name: "", name: "임꺽정" },
+  ];
+  const it = tidyUpload([
+    R("홍길동", "화평", "20"),      // 0 이미 — 회차의 앱 줄이 99
+    R("성춘향", "소망", ""),        // 1 이미 — 올리는 줄의 목장이 비었다(회차는 20)
+    R("성춘향", "소망", "99"),      // 2 이미 — 99 도 같다
+    R("이몽룡", "믿음", "4"),       // 3 넣음 — 번호끼리(3·4)는 다른 분
+    R("임꺽정", "교회학교", "중등부"), // 4 이미 — 정본 키가 같다(교회학교)
+    R("홍길동", "사랑", ""),        // 5 넣음 — 다른 교구
+    R("장보고", "은혜", ""),        // 6 넣음
+    R("장보고", "은혜", "12"),      // 7 이미 — 파일 안 앞줄(목장 빈칸)과 같은 분
+    R("장길산", "기쁨", "5"),       // 8 넣음
+    R("장길산", "기쁨", "99"),      // 9 이미 — 파일 안 앞줄(5)과 99
+    R("장길산", "기쁨", "6"),       // 10 넣음 — 앞줄 5 와는 번호끼리 다르다(99 줄은 접혀 없다)
+  ]);
+  judgeUpload(it, idxOf(signups));
+  assert.deepEqual(it.map((x) => x.mark),
+    ["same", "same", "same", "add", "same", "add", "add", "same", "add", "same", "add"], JSON.stringify(it.map((x) => x.notes)));
+  assert.ok(it[7].notes.some((n) => n.includes("위 7번 줄")));
+  assert.ok(it[9].notes.some((n) => n.includes("위 9번 줄")));
+  assert.ok(it[0].notes.some((n) => n.includes("이미 있어요")));
+});

@@ -19,6 +19,7 @@ import { fillDecision, lookupView, type ChurchPerson } from "./events-people.ts"
 import { oddPosition, sameKeys, tagNote } from "./events-rows.ts";
 import { legacyNorm } from "./paper.ts";
 import { nameKey } from "./people-match.ts";
+import { looseKey, openMok } from "./events-rows.ts";
 
 export type UploadMark = "add" | "same" | "blank" | "bad" | "fill" | "same-name";
 // 판정 중인 줄 — 소속이 빈 줄은 who_type 이 "" 라 EvRow 보다 느슨하다
@@ -31,6 +32,7 @@ export type UploadItem = {
   notes: string[];        // 한국어 한 줄들 — 화면이 그대로 보인다(교인명부의 원래 칸 값은 싣지 않는다)
   filled: boolean;        // 교인명부 값이 들어갔나(people.fill 기록 대상)
   uid: string | null;     // 이을 앱 계정 — 찾은 계정이 하나일 때만
+  orig?: UpRow;           // 채우기 **전** 줄 — 채우기 없이도 넣을 수 있던 줄(add)을 채웠을 때만(applyFill · 최종 검토 I1)
 };
 export type UploadCounts = { add: number; same: number; blank: number; bad: number; fill: number; sameName: number; oddPosition: number };
 export type UploadOut = {
@@ -38,7 +40,9 @@ export type UploadOut = {
   row: { who_type: string; group: string; sub: string; name: string; position: string } | null;
   error: string | null; notes: string[];
 };
-export type JudgeIdx = { eventKeys: Set<string>; eventUids: Set<string>; users: Map<string, string[]> };
+// loose — 이 회차 교구 줄의 느슨한 키(구분|교구|이름): all = 모든 줄 · open = 목장이 비었거나 99 인 줄(looseIndex · I1)
+export type LooseIdx = { all: Set<string>; open: Set<string> };
+export type JudgeIdx = { eventKeys: Set<string>; eventUids: Set<string>; users: Map<string, string[]>; loose?: LooseIdx };
 
 // 메모(note) 머리 표기 — 설계 §1 「메모에 남기는 표기」 그대로. 겹치면 tagNote 가 " / " 로 잇는다.
 // 올리기의 메모는 이 표기뿐이라 500자(BE_NOTE_MAX)에 닿지 않는다.
@@ -52,6 +56,7 @@ const NO_DIRECTORY_NOTE = "교인명부가 아직 올라오지 않아 빈칸을 
 const FILLED_NOTE = "빈칸을 교인명부로 채웠어요";
 const BAD_FILL_NOTE = "교인명부 값이 명단 모양에 맞지 않아 채우지 않았어요";
 const ALREADY_NOTE = "이 회차 명단에 이미 있어요";
+const LOOSE_NOTE = "이 회차 명단에 이미 있어요(같은 교구·같은 이름 — 한쪽 목장이 비었거나 99)";
 const LINK_NOTE = "앱 계정과 이어요";
 // fillDecision 의 까닭 → 화면 알림. nothing-blank(채울 것이 없다)는 알리지 않는다.
 const FILL_NOTE: Record<string, string> = {
@@ -156,6 +161,9 @@ export function applyFill(items: UploadItem[], cands: Map<string, ChurchPerson[]
     // 이름은 무엇이 와도 바꾸지 않는다(patch 에 name 이 있어도 보지 않는다)
     if (FILL_KEYS.every((k) => next[k] === row[k])) continue;
     if (checkRow(next as EvRow)) { it.notes.push(BAD_FILL_NOTE); continue; }
+    // 채우기 전 줄을 남긴다 — 채우기 없이도 넣을 수 있던 줄(add)만. 채우기를 끄고 먼저 올렸으면 그 줄은
+    // 목장이 빈 채로 들어가 있어 채운 목장의 키로는 못 찾는다 → judgeUpload 가 이 줄의 키로도 본다(I1).
+    if (it.mark === "add") it.orig = { ...row };
     it.row = next;
     it.mark = "fill";
     it.filled = true;
@@ -173,29 +181,59 @@ export function uploadKeys(items: UploadItem[]): string[] {
 
 // ③ 같은 분 판정 2~4 — 이 회차에 이미(키·계정) · 이 파일 안(먼저 나온 줄이 남는다) · 계정은 하나일 때만 잇는다
 //   idx.users 는 신원 키 → 계정 id 들(users.identity_key + user_identity_aliases). 후보 키로만 찾아본다.
+//   ⚠️ 목장이 비었거나 99 인 교구 줄(최종 검토 I1): ① 채운 줄은 채우기 전 줄(it.orig)의 정본 키로도 맞댄다
+//      ② 한쪽 목장이 비었거나 99 면 구분|교구|이름으로 같은 분(idx.loose · 파일 안도 같게). 계정 잇기는 채운 줄의 키로만.
+export function looseIndex(rows: readonly { who_type?: unknown; group_name?: unknown; sub_name?: unknown; name?: unknown }[]): LooseIdx {
+  const all = new Set<string>(), open = new Set<string>();
+  for (const r of rows) {
+    const k = looseKey({ who_type: legacyNorm(r.who_type), group_name: legacyNorm(r.group_name), name: legacyNorm(r.name) });
+    if (!k) continue;
+    all.add(k);
+    if (openMok(r.sub_name)) open.add(k);
+  }
+  return { all, open };
+}
+
 export function judgeUpload(items: UploadItem[], idx: JudgeIdx): UploadItem[] {
   const seenKey = new Map<string, number>();
   const seenUid = new Map<string, number>();
+  const seenLoose = new Map<string, number>();       // 느슨한 키 → 먼저 나온 줄(목장이 무엇이든)
+  const seenLooseOpen = new Map<string, number>();   // 느슨한 키 → 먼저 나온 줄 가운데 목장이 비었거나 99 인 줄
+  const loose: LooseIdx = idx.loose ?? { all: new Set(), open: new Set() };
   for (const it of items) {
     if (!live(it)) continue;
-    const keys = sameKeys(it.row as EvRow);
+    const row = it.row as EvRow;
+    const keys = sameKeys(row);
+    const allKeys = it.orig ? [...new Set([...keys, ...sameKeys(it.orig as EvRow)])] : keys;
     const uids = [...new Set(keys.flatMap((k) => idx.users.get(k) ?? []))];
+    const lk = looseKey(row);
+    const open = lk !== null && openMok(row.sub_name);
     // 이 회차에 이미 — 신원 키가 후보에 들거나, 찾은 계정의 줄이 있으면(앱에서 낸 줄 포함).
     // ⚠️ user_id 가 없는 줄은 DB unique 가 막지 않는다(NULLS DISTINCT) — 이 판정이 유일한 막이다.
-    if (keys.some((k) => idx.eventKeys.has(k)) || uids.some((u) => idx.eventUids.has(u))) {
+    if (allKeys.some((k) => idx.eventKeys.has(k)) || uids.some((u) => idx.eventUids.has(u))) {
       it.mark = "same";
       it.notes.push(ALREADY_NOTE);
       continue;
     }
-    const hits = [...keys.map((k) => seenKey.get(k)), ...uids.map((u) => seenUid.get(u))]
+    if (lk !== null && (open ? loose.all.has(lk) : loose.open.has(lk))) {
+      it.mark = "same";
+      it.notes.push(LOOSE_NOTE);
+      continue;
+    }
+    const looseSeen = lk === null ? undefined : open ? seenLoose.get(lk) : seenLooseOpen.get(lk);
+    const hits = [...allKeys.map((k) => seenKey.get(k)), ...uids.map((u) => seenUid.get(u)), looseSeen]
       .filter((j): j is number => j !== undefined);
     if (hits.length) {
       it.mark = "same";
       it.notes.push(`위 ${Math.min(...hits) + 1}번 줄과 같은 분이에요`);
       continue;
     }
-    for (const k of keys) seenKey.set(k, it.i);
+    for (const k of allKeys) seenKey.set(k, it.i);
     for (const u of uids) seenUid.set(u, it.i);
+    if (lk !== null) {
+      if (!seenLoose.has(lk)) seenLoose.set(lk, it.i);
+      if (open && !seenLooseOpen.has(lk)) seenLooseOpen.set(lk, it.i);
+    }
     if (uids.length === 1) { it.uid = uids[0]; it.notes.push(LINK_NOTE); }
     else if (uids.length > 1) it.notes.push(`같은 이름·소속의 앱 계정이 ${uids.length}개라 잇지 않아요`);
     const p = it.row!.position;

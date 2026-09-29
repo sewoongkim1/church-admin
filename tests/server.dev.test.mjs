@@ -1416,6 +1416,46 @@ test("성경필사 한 분 더하기: 같은 분을 동시에 셋 — 하나만 
   RX.rowIds.push(inDb[0].id);
 });
 
+test("성경필사 한 분 더하기·고치기: 교구 줄은 한쪽 목장이 비었거나 99 면 같은 교구·같은 이름을 already(최종 검토 I1) · 번호끼리 다르면 다른 분", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const add = (row) => call(t, "evRowAdd", { event_id: RX.ev, row: { who_type: "교구", position: "", note: "", ...row } });
+  // 1) 목장 없이 더한 분 — 교인명부로 목장(20)을 채워 다시 더하면 already · 99 · 「20목장」도 already
+  const a1 = await add({ group: "섬김", sub: "", name: rxName("open") });
+  assert.equal(a1.body.ok, true, JSON.stringify(a1.body));
+  RX.rowIds.push(a1.body.row.id);
+  for (const sub of ["20", "99", "20목장"]) {
+    assert.equal((await add({ group: "섬김", sub, name: rxName("open") })).body.error, "already", "섬김 " + sub);
+  }
+  // 다른 교구는 다른 분 · 번호끼리(은혜 20 ↔ 은혜 21)는 다르면 다른 분
+  const a2 = await add({ group: "은혜", sub: "20", name: rxName("open") });
+  assert.equal(a2.body.ok, true, JSON.stringify(a2.body));
+  RX.rowIds.push(a2.body.row.id);
+  const a3 = await add({ group: "은혜", sub: "21", name: rxName("open") });
+  assert.equal(a3.body.ok, true, JSON.stringify(a3.body));
+  RX.rowIds.push(a3.body.row.id);
+  // 2) 앱에서 목장 「99」(목장 없음)로 로그인해 낸 줄 — 목장(20)을 적어 더해도, 빈 목장으로 더해도 already
+  //    (앱 줄은 계정이 있어야 한다 — event_signups_app_only_chk · 계정은 after() 가 RX.users 로 지운다)
+  const [u99] = await rest("users", "POST",
+    { type: "교구", gu: "기쁨", mok: "99", name: rxName("n99"), identity_key: `교구|기쁨|99|||${rxName("n99")}` });
+  RX.users.push(u99.id);
+  await rest("event_signups", "POST", { event_id: RX.ev, user_id: u99.id, ident_key: `교구|기쁨|99|||${rxName("n99")}`,
+    who_type: "교구", group_name: "기쁨", sub_name: "99", name: rxName("n99"), position: "", source: "app" });
+  for (const sub of ["20", ""]) {
+    assert.equal((await add({ group: "기쁨", sub, name: rxName("n99") })).body.error, "already", "기쁨 " + JSON.stringify(sub));
+  }
+  // 3) 고치기 — 은혜 20 을 섬김으로(섬김에 목장 빈 줄) already · 은혜 99 로(은혜 21 과) already · 자기 줄은 빼고 본다
+  const save = (row, patch) => call(t, "evRowSave", { id: row.id, expect: row.updated_at, patch });
+  assert.equal((await save(a2.body.row, { group: "섬김" })).body.error, "already");
+  assert.equal((await save(a2.body.row, { sub: "99" })).body.error, "already");
+  const s1 = await save(a1.body.row, { sub: "5" });   // 섬김 빈 줄 → 섬김 5(같은 이름의 다른 섬김 줄이 없다)
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  rxClean(s1);
+  // 막힌 것은 아무것도 들어가지 않았다
+  assert.equal((await rest(`event_signups?select=id&event_id=eq.${RX.ev}&name=eq.${rxName("open")}`, "GET")).length, 3);
+  assert.equal((await rest(`event_signups?select=id&event_id=eq.${RX.ev}&name=eq.${rxName("n99")}`, "GET")).length, 1);
+});
+
 test("성경필사 줄 고치기: 메모 · 동시 수정 · 바뀐 칸만 검사 · 신원 키 다시(계정 그대로) · 자기 줄 빼고 already · 앱 줄·자격 회차는 메모만", async () => {
   await rowFixtures();
   const t = people.bibleevent.token;
@@ -1662,6 +1702,31 @@ test("성경필사 명단 올리기 넣기: 넣을 줄만 · 계정은 찾기만
   const fills = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
     .filter((r) => r.action === "people.fill" && r.target === UP.ev);
   assert.equal(fills.length, 1, "people.fill 은 살펴보기에서만 남는다");
+});
+
+test("성경필사 명단 올리기: 채우기 끄고 올린 뒤 채우기 켜고 다시 올려도 0건 · 앱의 99 줄이 있으면 목장을 적어 올려도 이미 있음(최종 검토 I1)", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const ev = "ca-test-up2-" + STAMP;                   // after() 가 ca-test-*<STAMP>* 로 지운다(줄은 CASCADE)
+  await rest("events", "POST", { id: ev, title: "ca-test 명단 올리기 2 " + STAMP, opens_on: "2000-07-01", closes_on: "2000-07-31",
+    status: "draft", kind: "signup", needs: { position: true, phone: false, memo: false, extra: [] } });
+  // 앱에서 목장 「99」(목장 없음)로 로그인해 낸 줄(앱 줄은 계정이 있어야 한다 — 계정은 after() 가 ca-test-up-<STAMP>-* 로 지운다)
+  const [u99] = await rest("users", "POST",
+    { type: "교구", gu: "은혜", mok: "99", name: upName("구"), identity_key: `교구|은혜|99|||${upName("구")}` });
+  await rest("event_signups", "POST", { event_id: ev, user_id: u99.id, ident_key: `교구|은혜|99|||${upName("구")}`,
+    who_type: "교구", group_name: "은혜", sub_name: "99", name: upName("구"), position: "", source: "app" });
+  const rows = [{ name: upName("무"), gu: "화평", mok: "", pos: "집사" }];   // 교인명부: 무 = 화평 5(한 분)
+  const s1 = await call(t, "evUploadSave", { event_id: ev, rows, fill: false });
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  assert.equal(s1.body.saved, 1, "채우기를 끄면 목장이 빈 채로 넣는다 " + JSON.stringify(s1.body));
+  const s2 = await call(t, "evUploadSave", { event_id: ev, rows, fill: true });
+  assert.equal(s2.body.ok, true, JSON.stringify(s2.body));
+  assert.equal(s2.body.saved, 0, "채우기를 켜고 다시 올려도 두 번 넣지 않는다 " + JSON.stringify(s2.body));
+  assert.equal(s2.body.counts.same, 1, JSON.stringify(s2.body.counts));
+  const chk = await call(t, "evUploadCheck", { event_id: ev, rows: [{ name: upName("구"), gu: "은혜", mok: "20", pos: "" }], fill: false });
+  assert.equal(chk.body.ok, true, JSON.stringify(chk.body));
+  assert.deepEqual(chk.body.rows.map((r) => r.mark), ["same"], JSON.stringify(chk.body.rows));
+  assert.equal((await rest(`event_signups?select=id&event_id=eq.${ev}`, "GET")).length, 2);
 });
 
 test("성경필사 명단 올리기 막기: 자격 회차 eligibility-event · 600줄 넘음 too-many · 없는 회차 not-found — 아무것도 안 들어간다", async () => {

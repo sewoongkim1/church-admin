@@ -72,6 +72,28 @@ export function sameKeys(row: EvRow): string[] {
   return candidateKeys(row);
 }
 
+// 목장이 비었거나 「99」인 교구 줄 — 같은 분 판정을 목장 빼고 느슨하게 본다(최종 검토 I1 · 2026-09-30).
+//   앱 로그인은 목장이 없으면 「99」로 받고, 담당자 줄은 목장을 비워 둘 수 있다(checkRow 가 받는다). 그런 줄과
+//   목장이 적힌 줄(교인명부로 채운 「20」 등)은 신원 키가 달라 같은 분으로 안 보여 두 번 들어갔다.
+//   규칙: 교구 줄끼리 같은 교구·같은 이름(완성형)이고 **한쪽이라도** 목장이 비었거나 99 면 같은 분. 둘 다 번호면 정본 키(sameKeys)가 본다.
+//   교회학교(학년)는 느슨하게 보지 않는다. 화면의 「중복일 수 있음」(roster-logic.js dupFlags)도 같은 규칙이다.
+export function openMok(sub: unknown): boolean {
+  const t = legacyNorm(sub).replace(/\s+/g, "");
+  const m = /^(\d+)(목장)?$/.exec(t);
+  const n = m ? m[1].replace(/^0+(?=\d)/, "") : t;
+  return n === "" || n === "99";
+}
+// 느슨한 키 — 구분|교구|이름(완성형). 교구 줄이 아니거나 교구·이름이 비면 null(맞대지 않는다).
+export function looseKey(row: { who_type: string; group_name: string; name: string }): string | null {
+  if (row.who_type !== "교구") return null;
+  const g = legacyNorm(row.group_name).normalize("NFC"), n = legacyNorm(row.name).normalize("NFC");
+  return g && n ? `교구|${g}|${n}` : null;
+}
+export function looseSame(a: EvRow, b: EvRow): boolean {
+  const k = looseKey(a);
+  return k !== null && k === looseKey(b) && (openMok(a.sub_name) || openMok(b.sub_name));
+}
+
 // supabase-js .in() 은 " \ 를 이스케이프하지 않고 , ( ) 는 감싸기만 한다 — 그런 키는 묻지 않는다
 // (index.ts keysToUserIds·people-match LOOKUP_BAD 와 같은 거르기). 「|」는 신원 키의 구분자라 거르지 않는다.
 // 새로 적는 칸은 checkRow 가 이미 막으니, 여기 걸리는 것은 「안 바꾼 옛 이름」(예: 「홍길동(구)」)뿐이다.

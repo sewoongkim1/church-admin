@@ -107,18 +107,32 @@ export function filterRows(rows, f) {
 
 // 「중복일 수 있음」 — 같은 이름·같은 소속 줄이 둘 이상(설계 §1 ⚠️ 동시에 두 분이 같은 분을 더한 경우).
 // ⚠️ 명단 **전체**로 센다 — 거르기로 한쪽이 가려져도 표시는 남는다.
+// ⚠️ 교구 줄은 한쪽 목장이 비었거나 99(앱 로그인의 「목장 없음」)면 같은 교구·같은 이름을 같은 분으로 본다 —
+//    서버의 같은 분 판정(events-rows.ts looseSame · 최종 검토 I1)과 같은 규칙. 둘 다 번호면 번호가 같아야 한다.
 const nameKey = (v) => nfc(v).replace(/\s+/g, "");
+const openSub = (v) => { const t = tidyMok(v); return t === "" || t === "99"; };
 export function dupFlags(rows) {
-  const by = new Map();
+  const by = new Map();   // 구분|소속|이름 → 줄들
   for (const r of rows || []) {
     const n = nameKey(r.name);
     if (!n) continue;
-    const k = [norm(r.who_type), nfc(norm(r.group)), tidyMok(r.sub), n].join("|");
+    const k = [norm(r.who_type), nfc(norm(r.group)), n].join("|");
     if (!by.has(k)) by.set(k, []);
-    by.get(k).push(r.id);
+    by.get(k).push(r);
   }
   const out = new Set();
-  for (const ids of by.values()) if (ids.length > 1) ids.forEach((id) => out.add(id));
+  for (const list of by.values()) {
+    if (list.length < 2) continue;
+    // 목장이 비었거나 99 인 교구 줄이 하나라도 있으면 그 줄과 나머지가 모두 짝이 된다 — 모두 표시
+    if (norm(list[0].who_type) === "교구" && list.some((r) => openSub(r.sub))) { list.forEach((r) => out.add(r.id)); continue; }
+    const bySub = new Map();
+    for (const r of list) {
+      const s = tidyMok(r.sub);
+      if (!bySub.has(s)) bySub.set(s, []);
+      bySub.get(s).push(r.id);
+    }
+    for (const ids of bySub.values()) if (ids.length > 1) ids.forEach((id) => out.add(id));
+  }
   return out;
 }
 

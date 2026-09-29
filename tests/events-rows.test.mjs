@@ -131,3 +131,34 @@ test("oddPosition — 앱 직분 목록(9개) 밖이면 true · 빈칸은 false"
   assert.equal(oddPosition("명예권사"), true);
   assert.equal(oddPosition("은퇴장로"), true);
 });
+
+// ---------- 목장이 비었거나 99 인 줄 — 같은 분 판정을 목장 빼고(최종 검토 I1 · 2026-09-30) ----------
+// 앱 로그인은 목장이 없으면 「99」로 받고, 담당자 줄은 목장을 비워 둘 수 있다(checkRow 가 받는다).
+// 그 줄과 목장이 적힌 줄(교인명부로 채운 「20」 등)은 신원 키가 달라 같은 분으로 안 보였다.
+import { openMok, looseKey, looseSame } from "../supabase/functions/church-admin/events-rows.ts";
+
+test("openMok — 빈 목장·「99」(「099」·「99목장」·띄어쓰기) 만 true · 다른 번호·남성은 false", () => {
+  for (const s of ["", "  ", "99", "099", "99목장", " 99 목장 ", null, undefined]) assert.equal(openMok(s), true, String(s));
+  for (const s of ["20", "9", "0", "199", "남성", "20목장"]) assert.equal(openMok(s), false, s);
+});
+
+test("looseKey — 교구 줄만 구분|교구|이름(완성형 · 앞뒤 빈칸 뗌) · 교회학교·이름 없음·교구 없음은 null", () => {
+  assert.equal(looseKey(row()), "교구|화평|홍길동");
+  assert.equal(looseKey(row({ name: " 홍길동 ".normalize("NFD"), sub_name: "" })), "교구|화평|홍길동");
+  assert.equal(looseKey(row({ who_type: "교회학교", group_name: "중등부", sub_name: "" })), null);
+  assert.equal(looseKey(row({ name: "" })), null);
+  assert.equal(looseKey(row({ group_name: "" })), null);
+});
+
+test("looseSame — 같은 교구·같은 이름이고 한쪽 목장이 비었거나 99 면 같은 분 · 둘 다 번호면 번호가 같아도 여기서는 false(정본 키가 본다)", () => {
+  assert.equal(looseSame(row({ sub_name: "" }), row({ sub_name: "20" })), true);
+  assert.equal(looseSame(row({ sub_name: "20" }), row({ sub_name: "99" })), true);
+  assert.equal(looseSame(row({ sub_name: "99" }), row({ sub_name: "" })), true);
+  assert.equal(looseSame(row({ sub_name: "" }), row({ sub_name: "", name: "홍길동".normalize("NFD") })), true);
+  assert.equal(looseSame(row({ sub_name: "20" }), row({ sub_name: "30" })), false);
+  assert.equal(looseSame(row({ sub_name: "20" }), row({ sub_name: "20" })), false);
+  assert.equal(looseSame(row({ sub_name: "" }), row({ sub_name: "20", group_name: "소망" })), false);
+  assert.equal(looseSame(row({ sub_name: "" }), row({ sub_name: "20", name: "홍길순" })), false);
+  assert.equal(looseSame(row({ who_type: "교회학교", group_name: "중등부", sub_name: "" }),
+    row({ who_type: "교회학교", group_name: "중등부", sub_name: "2" })), false, "교회학교(학년)는 느슨하게 보지 않는다");
+});

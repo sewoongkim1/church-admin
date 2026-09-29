@@ -92,6 +92,18 @@ test("dupFlags — 같은 이름·같은 소속만(07 = 7 = 7목장 · NFC · �
   assert.equal(dupFlags([]).size, 0);
 });
 
+test("dupFlags — 교구 줄은 한쪽 목장이 비었거나 99 면 같은 교구·같은 이름을 중복으로(서버 판정과 같다 · 최종 검토 I1) · 번호끼리 다르면 아니다 · 교회학교는 그대로", () => {
+  const rows = [
+    R({ id: 1, sub: "" }), R({ id: 2, sub: "20" }),                                          // 빈칸 ↔ 20
+    R({ id: 3, group: "소망", sub: "99" }), R({ id: 4, group: "소망", sub: "7" }),             // 99 ↔ 7
+    R({ id: 5, group: "믿음", sub: "3" }), R({ id: 6, group: "믿음", sub: "4" }),              // 번호끼리 다르면 아니다
+    R({ id: 7, group: "사랑", sub: "099" }), R({ id: 8, group: "사랑", sub: "5", name: "홍길순" }), // 이름이 다르면 아니다
+    R({ id: 9, who_type: "교회학교", group: "중등부", sub: "" }), R({ id: 10, who_type: "교회학교", group: "중등부", sub: "2" }),
+    R({ id: 11, group: "은혜", sub: "1" }), R({ id: 12, group: "은혜", sub: "2" }), R({ id: 13, group: "은혜", sub: "99목장" }),   // 99 가 있으면 셋 모두
+  ];
+  assert.deepEqual([...dupFlags(rows)].sort((a, b) => a - b), [1, 2, 3, 4, 11, 12, 13]);
+});
+
 test("positionCounts — 많은 차례 · 같으면 가나다 · 빈 직분은 뒤 · 앞뒤 빈칸은 같은 직분", () => {
   const rows = [R({ position: "집사" }), R({ position: "권사" }), R({ position: "집사" }), R({ position: "" }),
     R({ position: " 권사 " }), R({ position: "성도" })];
