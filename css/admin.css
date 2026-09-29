@@ -1008,3 +1008,48 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
 .be-up-table tr.m-blank td,.be-up-table tr.m-same-name td{background:#fffaf0}
 .be-up-table td:nth-child(2){white-space:nowrap}
 .be-up-table .be-up-msg{margin-top:0}
+
+/* ── 👤 사람별 이력·통계(be-hi-) — 성경필사(암송) be- 블록의 이어짐(Task 12 · 2026-09-29) ──────────── */
+.be-hi-tabs{margin-bottom:12px}
+.be-hi-find{display:flex;gap:8px;align-items:stretch;margin-bottom:6px}
+.be-hi-find .search{flex:1;min-width:0;margin-bottom:0}
+.be-hi-find .btn{flex:none;min-width:88px}
+.be-hi-note{margin:0 0 10px}
+.be-hi-sum{font-size:14px;margin:4px 0 10px}
+.be-hi-sum b{color:var(--navy)}
+.be-hi-gh{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-bottom:6px}
+.be-hi-gh b{font-size:15px;color:var(--navy)}
+.be-hi-gh em{font-style:normal;font-size:13px;font-weight:800;color:var(--gray)}
+.be-hi-n{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 6px;border-radius:999px;
+  background:var(--navy);color:#fff;font-size:13px;font-weight:800}
+.be-hi-rows{list-style:none;display:flex;flex-direction:column}
+.be-hi-rows li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:8px 0;border-top:1px solid var(--light);font-size:14px}
+.be-hi-rows li a{display:inline-flex;align-items:center;min-height:var(--chip);text-decoration:none}
+.be-hi-who{color:#333}
+.be-hi-src{font-size:13px;color:var(--gray)}
+.be-hi-selsum{margin:0 0 10px;line-height:1.6}
+.be-hi-acts{margin-bottom:6px}
+.be-hi-bars{display:flex;flex-direction:column;gap:6px}
+.be-hi-bar{display:grid;grid-template-columns:minmax(0,9em) 1fr auto;align-items:center;gap:8px;min-height:var(--chip);font-size:14px}
+.be-hi-bl{display:inline-flex;align-items:center;min-height:var(--chip);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-decoration:none;font-weight:700}
+.be-hi-bt{height:14px;border-radius:7px;background:var(--light);overflow:hidden}
+.be-hi-bt i{display:block;height:100%;border-radius:7px;background:var(--navy)}
+.be-hi-bar b{font-size:14px;color:var(--navy);white-space:nowrap}
+.be-hi-wrap{overflow-x:auto;margin-bottom:8px;-webkit-overflow-scrolling:touch}
+.be-hi-x{border-collapse:collapse;background:#fff;border:1px solid var(--border);min-width:100%}
+.be-hi-x th,.be-hi-x td{padding:6px 10px;border-bottom:1px solid var(--light);font-size:14px;text-align:right;white-space:nowrap}
+.be-hi-x th:first-child{position:sticky;left:0;z-index:1;background:#fff;text-align:left}
+.be-hi-x thead th{background:var(--light);color:var(--gray);font-size:13px}
+.be-hi-x thead th:first-child{background:var(--light)}
+.be-hi-x tr.be-hi-xh th{background:var(--ghost-bg);color:var(--navy);font-size:13px;text-align:left}
+.be-hi-x tfoot th,.be-hi-x tfoot td,.be-hi-x tfoot th:first-child{font-weight:800;background:#faf8f3}
+.be-hi-min{margin-bottom:6px}
+.be-hi-reps{list-style:none;display:flex;flex-direction:column}
+.be-hi-reps li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:6px 0;border-top:1px solid var(--light)}
+.be-hi-who-btn{min-height:var(--chip);padding:0 12px;border:1px solid var(--ghost-bd);border-radius:999px;background:var(--ghost-bg);
+  color:var(--navy);font-size:14px;cursor:pointer;text-align:left}
+.be-hi-aff{font-size:13px;font-weight:400;color:#41506b}
+.be-hi-reps em{font-style:normal;font-size:13px;font-weight:800;color:var(--navy)}
+.be-hi-evs{display:flex;flex-wrap:wrap;gap:4px;flex-basis:100%}
+.be-hi-evs span{font-size:13px;color:#41506b;background:var(--light);border-radius:7px;padding:1px 7px}
