@@ -86,3 +86,14 @@ test("churchFor — 명부 없음은 null · 이름에 .in() 을 깨는 글자�
 test("lookupKeys — 겹침·빈 것·깨는 글자를 뺀다", () => {
   assert.deepEqual(lookupKeys(["김 철수", "김철수", "", null, "이(영희)"]), ["김철수"]);
 });
+
+test("교구·목장·부서도 완성형(NFC)·앞뒤 빈칸을 맞춰 비교한다", () => {
+  const giNFD = "기쁨";          // 「기쁨」 자모분리
+  assert.equal(sameAffiliation(C({ mok1: giNFD, mok3: " 기쁨-12목장 " }), A({ gu: "기쁨", mok: 12 })), true);
+  assert.equal(sameAffiliation(C({ school_dept: " 고등부 " }), A({ type: "교회학교", bu: "고등부" })), true);
+  const w = applicantFromWho("김철수", giNFD + " 12목장", "");
+  assert.equal(w.type, "교구");
+  assert.equal(w.gu, "기쁨");
+  assert.equal(applicantFromPaper({ gu: " " + giNFD + " ", mok: "12", name: "김철수", phone: "" }).gu, "기쁨");
+  assert.equal(toCand({ mok1: giNFD }).mok1, "기쁨");
+});

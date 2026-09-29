@@ -9,6 +9,9 @@ export const MATCH_GU = ["믿음", "소망", "사랑", "섬김", "은혜", "화�
 export const nameKey = (s: unknown): string => String(s ?? "").normalize("NFC").replace(/\s+/g, "");
 export const phoneDigits = (s: unknown): string => String(s ?? "").replace(/\D/g, "");
 
+// 소속 칸(교구·목장·부서) — 완성형으로, 앞뒤 빈칸 없이. 이름(nameKey)과 같은 까닭(맥에서 온 자모분리 · 2026-09-20 찬양대 NFC 사고)
+const txt = (s: unknown): string => String(s ?? "").normalize("NFC").trim();
+
 // 「기쁨-12목장」·「12」·「12목장」·「청년-03」 → 12·12·12·3 (끝에 붙은 수). 없으면 null.
 export function mokNumber(s: unknown): number | null {
   const m = /(\d+)\s*(?:목장)?\s*$/.exec(String(s ?? "").trim());
@@ -21,14 +24,14 @@ export type Church = { state: "맞음" | "확인 필요" | "없음"; reason: str
 
 export function toCand(r: any): Cand {
   return {
-    mok1: String(r?.mok1 ?? ""), mok3: String(r?.mok3 ?? ""), school_dept: String(r?.school_dept ?? ""),
+    mok1: txt(r?.mok1), mok3: txt(r?.mok3), school_dept: txt(r?.school_dept),
     phones: String(r?.phone_digits ?? "").split(/\s+/).filter(Boolean),
   };
 }
 
 // 신청 현황의 who — 「기쁨 12목장」(교구) · 「고등부 1학년」(교회학교). 목록 밖 교구라도 둘째 말이 「N목장」이면 교구로 본다.
 export function applicantFromWho(name: unknown, who: unknown, phone: unknown): Applicant {
-  const parts = String(who ?? "").trim().split(/\s+/).filter(Boolean);
+  const parts = txt(who).split(/\s+/).filter(Boolean);
   const head = parts[0] ?? "";
   const n = String(name ?? ""), p = String(phone ?? "");
   if (MATCH_GU.includes(head) || /목장$/.test(parts[1] ?? "")) {
@@ -38,7 +41,7 @@ export function applicantFromWho(name: unknown, who: unknown, phone: unknown): A
 }
 
 export function applicantFromPaper(r: any): Applicant {
-  return { type: "교구", gu: String(r?.gu ?? ""), mok: mokNumber(r?.mok), bu: "", name: String(r?.name ?? ""), phone: String(r?.phone ?? "") };
+  return { type: "교구", gu: txt(r?.gu), mok: mokNumber(r?.mok), bu: "", name: String(r?.name ?? ""), phone: String(r?.phone ?? "") };
 }
 
 export function sameAffiliation(c: Cand, a: Applicant): boolean {
