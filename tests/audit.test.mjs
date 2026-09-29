@@ -1,0 +1,98 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { LABEL, detailText } from "../js/menus/system/audit.js";
+
+// 기록 한 줄 — 서버 auditList 가 주는 모양({action, target, detail})
+const R = (action, detail, target = "") => ({ action, target, detail });
+const NEW = ["event.create", "event.settings", "event.add", "event.edit", "event.delete", "event.upload", "people.lookup", "people.fill"];
+
+test("성경필사(암송) 기록 여덟 가지 — 모두 한국말 이름이 있다(없으면 화면에 영문 코드가 뜬다)", () => {
+  for (const a of NEW) {
+    assert.equal(typeof LABEL[a], "string", a);
+    assert.match(LABEL[a], /[가-힣]/, a);
+  }
+});
+
+test("event.create — 이름 · 기간 · 상태 · 명단 공개 종료", () => {
+  const after = { title: "2026 가을 말씀 동행", short_title: "가을 말씀 동행", subtitle: "", season: "2026-4Q",
+    opens_on: "2026-10-27", closes_on: "2026-11-28", status: "draft", list_until: "2026-12-13" };
+  assert.equal(detailText(R("event.create", { title: after.title, before: {}, after }, "autumn-2026")),
+    "‘2026 가을 말씀 동행’ · 2026-10-27 ~ 2026-11-28 · 준비 중 · 명단 공개 종료 2026-12-13");
+  assert.equal(detailText(R("event.create", { title: after.title, before: {}, after: { ...after, list_until: null } })),
+    "‘2026 가을 말씀 동행’ · 2026-10-27 ~ 2026-11-28 · 준비 중 · 명단 공개 종료 기한 없음");
+});
+
+test("event.settings — 바꾼 칸만 「전 → 후」 · 상태는 한국말 · 빈 공개 종료일은 「기한 없음」", () => {
+  assert.equal(detailText(R("event.settings", { title: "2026 사순절 필사",
+    before: { status: "draft", list_until: null }, after: { status: "open", list_until: "2026-12-13" } }, "lent-2026")),
+    "‘2026 사순절 필사’ · 상태 준비 중 → 열림 · 공개 종료일 기한 없음 → 2026-12-13");
+  assert.equal(detailText(R("event.settings", { title: "2026 사순절 필사",
+    before: { opens_on: "2026-02-18", subtitle: "" }, after: { opens_on: "2026-02-19", subtitle: "한 줄" } })),
+    "‘2026 사순절 필사’ · 시작일 2026-02-18 → 2026-02-19 · 부제 (없음) → 한 줄");
+});
+
+test("event.add — 이름 · 소속(교구 줄의 숫자 목장에만 「목장」) · 직분 · 회차 · 앱 계정 이음", () => {
+  assert.equal(detailText(R("event.add", { event_id: "lent-2026", name: "홍길동",
+    row: { who_type: "교구", group: "화평", sub: "20", position: "집사" }, linked: true }, "101")),
+    "홍길동 · 화평 20목장 · 집사 · 회차 lent-2026 · 앱 계정 이음");
+  assert.equal(detailText(R("event.add", { event_id: "lent-2026", name: "홍길동",
+    row: { who_type: "교구", group: "소망", sub: "남성", position: "" }, linked: false })),
+    "홍길동 · 소망 남성 · 회차 lent-2026");
+  assert.equal(detailText(R("event.add", { event_id: "lent-2026", name: "홍길동",
+    row: { who_type: "교회학교", group: "청년부", sub: "", position: "청년" }, linked: false })),
+    "홍길동 · 청년부 · 청년 · 회차 lent-2026");
+  assert.equal(detailText(R("event.add", { event_id: "lent-2026", name: "홍길동",
+    row: { who_type: "교회학교", group: "중등부", sub: "2", position: "학생" }, linked: false })),
+    "홍길동 · 중등부 2 · 학생 · 회차 lent-2026");
+});
+
+test("event.edit — 바꾼 칸만 · 메모는 글 없이 「메모 고침」", () => {
+  const t = detailText(R("event.edit", { event_id: "lent-2026", name: "홍길동",
+    before: { sub: "20", position: "집사", note: "원래: 화평 30 · 집사" },
+    after: { sub: "21", position: "안수집사", note: "원래: 화평 30 · 집사 / 담당자가 더함" } }, "101"));
+  assert.equal(t, "홍길동 · 회차 lent-2026 · 세부 20 → 21 · 직분 집사 → 안수집사 · 메모 고침");
+  assert.ok(!t.includes("원래"), "메모 글은 기록 줄에 싣지 않는다");
+  assert.equal(detailText(R("event.edit", { event_id: "lent-2026", name: "홍길동",
+    before: { position: "" }, after: { position: "권사" } })), "홍길동 · 회차 lent-2026 · 직분 (없음) → 권사");
+  assert.equal(detailText(R("event.edit", { event_id: "lent-2026", name: "홍길동",
+    before: { note: "" }, after: { note: "담당자가 더함" } })), "홍길동 · 회차 lent-2026 · 메모 고침");
+});
+
+test("event.delete — 뺀 줄의 모양 · 출처 · 계정", () => {
+  const row = { who_type: "교구", group: "믿음", sub: "3", position: "성도", note: "담당자가 더함", source: "import", hasUser: false };
+  assert.equal(detailText(R("event.delete", { event_id: "summer-2026", name: "홍길동", row }, "102")),
+    "홍길동 · 믿음 3목장 · 성도 · 회차 summer-2026 · 📋 이관");
+  assert.equal(detailText(R("event.delete", { event_id: "summer-2026", name: "홍길동", row: { ...row, hasUser: true } })),
+    "홍길동 · 믿음 3목장 · 성도 · 회차 summer-2026 · 📋 이관 · 계정 이어짐");
+});
+
+test("event.upload — 건수만(이름 없음) · 서버가 남긴 납작한 칸 · 0 인 동명이인·목록 밖 직분·실패는 뺀다 · 채우기를 껐으면 「교인명부로 채움」도 뺀다", () => {
+  assert.equal(detailText(R("event.upload", { rows: 20, fillOn: true, add: 8, same: 3, blank: 1, bad: 2, fill: 4,
+    sameName: 0, oddPosition: 0, saved: 12, failed: 0 }, "lent-2026")),
+    "올린 줄 20 · 넣음 12 · 이미 있음 3 · 빈칸 1 · 틀림 2 · 교인명부로 채움 4");
+  assert.equal(detailText(R("event.upload", { rows: 13, fillOn: true, add: 12, same: 0, blank: 0, bad: 0, fill: 0,
+    sameName: 1, oddPosition: 5, saved: 10, failed: 2 }, "lent-2026")),
+    "올린 줄 13 · 넣음 10 · 이미 있음 0 · 빈칸 0 · 틀림 0 · 교인명부로 채움 0 · 동명이인 1 · 목록 밖 직분 5 · 실패 2");
+  assert.equal(detailText(R("event.upload", { rows: 5, fillOn: false, add: 5, same: 0, blank: 0, bad: 0, fill: 0,
+    sameName: 0, oddPosition: 0, saved: 5, failed: 0 }, "lent-2026")),
+    "올린 줄 5 · 넣음 5 · 이미 있음 0 · 빈칸 0 · 틀림 0");
+  // counts 로 싼 모양은 읽지 않는다 — 서버(Task 8)는 납작하게 남긴다(CONTRACT 5 「기록 모양」)
+  assert.equal(detailText(R("event.upload", { saved: 1, failed: 0, counts: { same: 9 } })),
+    "올린 줄 0 · 넣음 1 · 이미 있음 0 · 빈칸 0 · 틀림 0");
+});
+
+test("people.lookup · people.fill — 찾은 이름 · 결과 수 · 채운 분 이름(스무 분까지 적고 나머지는 수로)", () => {
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 2 })), "‘홍길동’ · 2명");
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 0 })), "‘홍길동’ · 0명");
+  assert.equal(detailText(R("people.fill", { rows: 3, names: ["홍길동", "홍길순", "홍길남"] }, "lent-2026")),
+    "채운 줄 3 · 홍길동, 홍길순, 홍길남");
+  const many = Array.from({ length: 25 }, (_, i) => "홍길동" + i);
+  const t = detailText(R("people.fill", { rows: 25, names: many }, "lent-2026"));
+  assert.ok(t.endsWith("홍길동19 외 5명"), t);
+  assert.ok(!t.includes("홍길동20"), t);
+});
+
+test("옛 기록은 그대로 — people.search · 모르는 기록은 빈 줄", () => {
+  assert.equal(detailText(R("people.search", { q: "홍", filters: {}, total: 3 })), "‘홍’ · 3명");
+  assert.equal(detailText(R("something.else", { a: 1 })), "");
+});
