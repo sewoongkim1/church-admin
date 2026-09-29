@@ -1838,7 +1838,8 @@ test("성경필사 이름을 누르면(evPerson) — 성경필사 역할만: 다
   for (const b of [one.body, two.body, lone.body, min.body]) for (const p of b.people) assert.deepEqual(Object.keys(p).sort(), UP_ROW_KEYS);
   // ⑧ 틀린 이름은 명부에 묻지 않는다
   assert.equal((await ask("", "교구", "화평", "1")).body.error, "no-name");
-  assert.equal((await ask("홍,길동", "교구", "화평", "1")).body.error, "bad-char");
+  // 읽기만 하는 길은 readName — 큰따옴표·역슬래시·세로줄만 막는다(쉼표·괄호가 든 옛 이름은 누를 수 있다 · SEC-7)
+  assert.equal((await ask('홍"길동', "교구", "화평", "1")).body.error, "bad-char");
   assert.equal((await ask("가".repeat(41), "교구", "화평", "1")).body.error, "too-long");
   // ⑨ 기록 — 부를 때마다 people.lookup {q, count}(「교인명부 기록」 · evPeopleLookup 과 같은 모양) · 명부에 없는 이름도
   const logs = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
