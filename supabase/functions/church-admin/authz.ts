@@ -20,6 +20,11 @@ export const ACTION_ROLES: Record<string, string | null> = {
   ministryList: "ministry",
   ministrySetStatus: "ministry",
   ministryDelete: "ministry",
+  // 사역신청(4·5단계 · 2026-09-29) — 사역팀 정보(하는 일·시간·필요 인원). 목록은 게이트만
+  // 더한 것(원문은 성도 화면과 공유해 게이트가 없었다), 저장·차례는 관리자만.
+  ministryCatalogAdmin: "ministry",
+  ministryCatalogSave: "ministry",
+  ministryCatalogOrder: "ministry",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

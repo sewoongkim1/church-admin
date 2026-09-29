@@ -62,12 +62,23 @@ const PROBE = {
   ministryList: {},
   ministrySetStatus: { id: 0, status: "접수완료" },
   ministryDelete: { id: 0 },
+  ministryCatalogAdmin: {},
+  ministryCatalogSave: { id: 0 },
+  ministryCatalogOrder: { ids: [] },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
 // 신청 현황(3단계) 시험 자료 — users 한 줄 + ministry_orders 두 줄(서로 다른 사역팀)
 let minTestUserId = null;
 const minTestOrderIds = [];
+
+// 사역팀 정보(4·5단계 · Task 2) 시험 자료 — 개발 ministry_catalog 의 실제 줄을 빌려 쓴다.
+// ⚠️ 시험이 끝나면 개발 DB 가 시험 전과 같아야 한다 — 여기서 원래 값을 읽어 두고 after() 에서 되돌린다
+// (되돌리기는 결과와 상관없이 늘 돈다 — assert 가 도중에 던져도 after 는 실행된다).
+let catalogRow = null;                 // desc_note/day_sun/time 시험에 쓸 한 줄(원래 값 스냅샷)
+let catalogCommittee = null;           // 차례 시험에 쓸 위원회
+let catalogCommitteeIds = [];          // 그 위원회의 id 들 — sort_order 오름차순
+let catalogCommitteeSlots = [];        // 그 id 들이 원래 갖고 있던 sort_order 값(같은 순서)
 
 before(async () => {
   for (const k of ["none", "pending", "disabled", "ministry", "super"]) people[k] = await makeUser(k);
@@ -94,6 +105,21 @@ before(async () => {
     });
     minTestOrderIds.push(row.id);
   }
+
+  // 사역팀 정보(Task 2) — 팀이 둘 이상인 위원회를 하나 찾아 원래 sort_order 순서를 기록해 둔다.
+  const allCat = await rest(`ministry_catalog?select=id,committee,sort_order&year=eq.${year}&order=committee,sort_order`, "GET");
+  const byCommittee = new Map();
+  for (const r of allCat) {
+    if (!byCommittee.has(r.committee)) byCommittee.set(r.committee, []);
+    byCommittee.get(r.committee).push(r);
+  }
+  const found = [...byCommittee.values()].find((list) => list.length >= 2);
+  assert.ok(found, "팀이 둘 이상인 위원회가 있어야 한다(사역팀 정보 시험)");
+  catalogCommittee = found[0].committee;
+  catalogCommitteeIds = found.map((r) => r.id);
+  catalogCommitteeSlots = found.map((r) => r.sort_order);
+  const [row0] = await rest(`ministry_catalog?select=id,desc_note,day_sun,time_from,time_to&id=eq.${found[0].id}`, "GET");
+  catalogRow = row0;
 });
 
 after(async () => {
@@ -103,6 +129,14 @@ after(async () => {
   // ministry_orders 먼저, 그다음 users — 이미 지워진(id) 것이 있어도 오류로 보지 않는다
   for (const id of minTestOrderIds) await rest("ministry_orders?id=eq." + id, "DELETE");
   if (minTestUserId) await rest("users?id=eq." + minTestUserId, "DELETE");
+  // ⚠️ 사역팀 정보 — 시험 중 무엇을 어디까지 바꿨든(assert 가 도중에 던졌어도) 원래 값으로 되돌린다.
+  //   차례 시험은 항상 원래 순서(같은 차례) 아니면 검증 단계에서 막혀 sort_order 를 안 건드리므로 여긴 desc_note/day_sun/time 만.
+  if (catalogRow) {
+    await rest(`ministry_catalog?id=eq.${catalogRow.id}`, "PATCH", {
+      desc_note: catalogRow.desc_note, day_sun: catalogRow.day_sun,
+      time_from: catalogRow.time_from, time_to: catalogRow.time_to,
+    });
+  }
 });
 
 test("역할이 필요한 액션마다 시험 입력(PROBE)이 있다", () => {
@@ -263,4 +297,62 @@ test("신청 현황: 목록 모양 · 동시 수정 · 취소 사유 · 임명 �
   assert.equal((await call(m, "ministryDelete", { id: bRow.id })).body.error, "not-found");
   const acts = (await call(people.super.token, "auditList", { limit: 20 })).body.rows.map((r) => r.action);
   assert.ok(acts.includes("ministry.status") && acts.includes("ministry.delete"), JSON.stringify(acts));
+});
+
+test("사역팀 정보: 목록 모양 · 설명 고치기(원래대로 되돌림) · 주일 끄면 시각 비움 · <script> 안 먹힘 · 차례(전체 ok·일부 오류) · 바뀐 기록", async () => {
+  const m = people.ministry.token;
+
+  // 목록 모양 — user_id 없음, 우리가 빌린 줄을 찾을 수 있다
+  const list = await call(m, "ministryCatalogAdmin");
+  assert.equal(list.body.ok, true, JSON.stringify(list.body));
+  assert.ok(Number.isInteger(list.body.year));
+  assert.equal(typeof list.body.period?.isOpen, "boolean");
+  assert.ok(list.body.list.some((x) => x.id === catalogRow.id), "시험 줄을 목록에서 찾아야 한다");
+  for (const x of list.body.list) assert.equal("user_id" in x, false);
+
+  // 설명 고치기 → 원래 값으로(after() 의 안전망과 별개로, 되돌리기 자체도 이 액션으로 되는지 확인)
+  const origDesc = catalogRow.desc_note ?? "";
+  const s1 = await call(m, "ministryCatalogSave", { id: catalogRow.id, desc_note: "시험 설명 " + STAMP });
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  assert.equal(s1.body.desc, "시험 설명 " + STAMP);
+
+  // <script> 는 저장되지 않는다(ministryHtml 이 허용 밖 태그를 지운다)
+  const xss = await call(m, "ministryCatalogSave", { id: catalogRow.id, desc_note: "<script>alert(1)</script>안내" });
+  assert.equal(xss.body.ok, true, JSON.stringify(xss.body));
+  assert.ok(!xss.body.desc.toLowerCase().includes("<script"), xss.body.desc);
+  assert.ok(!xss.body.desc.toLowerCase().includes("</script"), xss.body.desc);
+
+  const restore = await call(m, "ministryCatalogSave", { id: catalogRow.id, desc_note: origDesc });
+  assert.equal(restore.body.ok, true, JSON.stringify(restore.body));
+  assert.equal(restore.body.desc, origDesc);
+
+  // 없는 id → not-found
+  assert.equal((await call(m, "ministryCatalogSave", { id: 0 })).body.error, "not-found");
+
+  // 주일을 끈 채 시각을 보내면 시각이 비어 돌아온다
+  const t = await call(m, "ministryCatalogSave", { id: catalogRow.id, day_sun: false, time_from: "09:00", time_to: "10:00" });
+  assert.equal(t.body.ok, true, JSON.stringify(t.body));
+  assert.equal(t.body.day.sun, false);
+  assert.equal(t.body.from, "");
+  assert.equal(t.body.to, "");
+
+  // 차례 — 같은 위원회 전체를 원래 순서 그대로 보내면 ok, 자리 값이 바뀌지 않는다
+  const ord = await call(m, "ministryCatalogOrder", { ids: catalogCommitteeIds });
+  assert.equal(ord.body.ok, true, JSON.stringify(ord.body));
+  assert.equal(ord.body.n, catalogCommitteeIds.length);
+  const afterRows = await rest(`ministry_catalog?select=id,sort_order&year=eq.${list.body.year}&committee=eq.${encodeURIComponent(catalogCommittee)}&order=id`, "GET");
+  const bySlot = new Map(afterRows.map((r) => [r.id, r.sort_order]));
+  for (let i = 0; i < catalogCommitteeIds.length; i++) {
+    assert.equal(bySlot.get(catalogCommitteeIds[i]), catalogCommitteeSlots[i],
+      "자리 값이 바뀌면 안 된다(id=" + catalogCommitteeIds[i] + ")");
+  }
+
+  // 일부만 보내면 오류(자리를 빼앗기지 않게) — 아무것도 바뀌지 않는다
+  const partial = await call(m, "ministryCatalogOrder", { ids: catalogCommitteeIds.slice(0, -1) });
+  assert.equal(partial.body.ok, false);
+  assert.match(partial.body.error, /개인데.*개만 왔습니다/);
+
+  const acts = (await call(people.super.token, "auditList", { limit: 30 })).body.rows.map((r) => r.action);
+  assert.ok(acts.includes("ministry.catalog"), JSON.stringify(acts));
+  assert.ok(acts.includes("ministry.order"), JSON.stringify(acts));
 });

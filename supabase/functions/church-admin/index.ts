@@ -10,6 +10,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 import { canCall, identityCandidates, kakaoAvatar, kakaoNickname, norm, parseIdentity, parseRoles } from "./authz.ts";
 import { statusPatch } from "./ministry.ts";
+import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINISTRY_FREQ_COLS, MINISTRY_FREQ_KEYS } from "./catalog.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -438,6 +439,160 @@ async function ministryDelete(ctx: Ctx, b: any) {
   return { ok: true, deleted };
 }
 
+// ---------- 사역신청 — 사역팀 정보(4·5단계 · 2026-09-29) ----------
+// 원문: docs/port/ministry-catalog-legacy.md 1.2·1.4·1.7·1.8. 원문 ministryCatalog 는 성도 화면과
+// 공유해 게이트가 없었지만, 여기서는 관리자 전용(canCall)이라 ministryAdminError 를 두지 않는다.
+// ⚠️ 연도는 요청이 아니라 3단계와 같은 ministryYear() — 관리자가 다른 연도를 몰래 넣을 수 없게.
+const MINISTRY_ROSTER = ["접수완료", "임명확정"];   // 「지금 섬기는 분」에 넣을 신청 상태(원문 1.1)
+
+// 신청 기간만 옮긴다(원문 ministryCfg 의 open/close/isOpen 계산) — 연도는 ministryYear() 가 이미 준다.
+async function ministryPeriod(): Promise<{ open: string; close: string; isOpen: boolean }> {
+  const { data, error } = await db.from("app_config").select("value").eq("key", "ministry").maybeSingle();
+  if (error) throw error;
+  const v = (data?.value ?? {}) as any;
+  const open = norm(v.open), close = norm(v.close);
+  const today = kstDay(new Date().toISOString());
+  const isOpen = !!(open && close && today >= open && today <= close);
+  return { open, close, isOpen };
+}
+
+async function ministryCatalogAdmin() {
+  const year = await ministryYear();
+  const period = await ministryPeriod();
+  const rows = await allRows(() => db.from("ministry_catalog")
+    .select("id,committee,group_name,team,kind,schedule_note,desc_note,capacity_note,"
+      + "option_note,members_note,leader_note,sort_order,"
+      + "day_sun,day_fri,day_sat,day_week,time_from,time_to," + MINISTRY_FREQ_COLS)
+    .eq("year", year)
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true }));   // ⚠️ 겹칠 때 차례가 흔들리지 않게 둘째 열쇠
+
+  // 팀마다 「지금 섬기는 분」 — 관리자가 손으로 넣은 members_note 가 먼저, 그 뒤에 접수완료 이상인 신청자
+  const roster = new Map<number, string[]>();
+  const served = await allRows(() => db.from("ministry_orders")
+    .select("team_id,name,position,who,status,created_at")
+    .eq("year", year).in("status", MINISTRY_ROSTER)
+    .order("created_at", { ascending: true }));
+  for (const r of served) {
+    const line = ministryMemberLine(r);
+    if (!line) continue;
+    const k = Number(r.team_id);
+    if (!roster.has(k)) roster.set(k, []);
+    roster.get(k)!.push(line);
+  }
+
+  return {
+    ok: true,
+    year,
+    period,
+    list: rows.map((r: any) => ({
+      id: r.id, committee: r.committee, group: r.group_name, team: r.team,
+      appoint: r.kind === "appoint",
+      sched: ministryHtml(r.schedule_note, 160),
+      desc: ministryHtml(r.desc_note, 400),
+      capacity: ministryHtml(r.capacity_note, 80),
+      leader: ministryHtml(r.leader_note, 200),
+      members: [ministryHtml(r.members_note, 1200), (roster.get(Number(r.id)) ?? []).join("<br>")]
+        .filter(Boolean).join("<br>"),
+      // ⚠️ 관리자 편집기는 이것만 고친다 — 위 members 를 되돌려 저장하면 자동 명단이 굳어 중복된다
+      membersNote: ministryHtml(r.members_note, 1200),
+      opt: r.option_note,
+      day: { sun: !!r.day_sun, fri: !!r.day_fri, sat: !!r.day_sat, week: !!r.day_week },
+      freq: ministryFreqOf(r),
+      from: r.time_from || "", to: r.time_to || "",
+    })),
+  };
+}
+
+// 설명 네 칸 + 담당 한 줄 + 「② 언제」 — 관리자만. **보내온 칸만** 고친다(원문 1.7 그대로).
+async function ministryCatalogSave(ctx: Ctx, b: any) {
+  const id = Number(b.id) || 0;
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "not-found" };
+  const { data: cur, error: e0 } = await db.from("ministry_catalog")
+    .select("day_sun").eq("id", id).maybeSingle();
+  if (e0) throw e0;
+  if (!cur) return { ok: false, error: "not-found" };
+
+  const patch: Record<string, unknown> = {};
+  for (const [key, max] of [["schedule_note", 160], ["desc_note", 400],
+                            ["capacity_note", 80], ["members_note", 1200],
+                            ["leader_note", 200]] as [string, number][]) {
+    if (key in b) patch[key] = ministryHtml((b as any)[key], max);
+  }
+  for (const c of ["day_sun", "day_fri", "day_sat", "day_week",
+                   ...MINISTRY_FREQ_KEYS.map((k) => "freq_" + k)]) {
+    if (c in b) patch[c] = !!b[c];
+  }
+  for (const [key, label] of [["time_from", "시작 시각"], ["time_to", "끝 시각"]]) {
+    if (!(key in b)) continue;
+    const r = ministryTimeIn(b[key], label);
+    if (r.err) return { ok: false, error: r.err };
+    patch[key] = r.v;
+  }
+  // ⚠️ 시각은 주일에만 남긴다(DB 제약 ministry_catalog_time_sun_chk). day_sun 이 이번 요청에
+  //    없으면 위에서 미리 읽어 둔 DB 값을 본다 — 시각만 고치는 저장이 매번 지워지지 않게.
+  const sunOn = "day_sun" in b ? !!b.day_sun : !!cur.day_sun;
+  if (!sunOn) { patch.time_from = null; patch.time_to = null; }
+
+  // 잘린 칸을 돌려준다 — ⚠️ 이번에 보낸 칸만 견준다(안 보낸 칸을 재려다 undefined.length 500 사고, 원문 참고)
+  const cut: string[] = [];
+  for (const [key, label] of [["schedule_note", "시간"], ["desc_note", "하는 일"],
+                              ["capacity_note", "필요 인원"], ["members_note", "지금 섬기는 분"],
+                              ["leader_note", "담당(문의)"]] as [string, string][]) {
+    if (!(key in patch)) continue;
+    if (ministryHtml((b as any)[key], 99999).length > String(patch[key] ?? "").length) cut.push(label);
+  }
+
+  const { data, error } = await db.from("ministry_catalog")
+    .update(patch).eq("id", id)
+    .select("id,committee,team,schedule_note,desc_note,capacity_note,members_note,leader_note,"
+      + "day_sun,day_fri,day_sat,day_week,time_from,time_to," + MINISTRY_FREQ_COLS).single();
+  if (error) throw error;
+  await audit(ctx, "ministry.catalog", String(id), { team: data.team, fields: Object.keys(patch) });
+  // 걸러진 뒤의 값을 돌려준다 — 화면이 「내가 친 것」이 아니라 「실제로 저장된 것」을 보게
+  return { ok: true, id: data.id, team: data.team,
+           sched: data.schedule_note, desc: data.desc_note, capacity: data.capacity_note,
+           membersNote: data.members_note, leader: data.leader_note ?? "", truncated: cut,
+           day: { sun: !!data.day_sun, fri: !!data.day_fri,
+                  sat: !!data.day_sat, week: !!data.day_week },
+           freq: ministryFreqOf(data),
+           from: data.time_from || "", to: data.time_to || "" };
+}
+
+// 한 위원회 안에서 보이는 차례를 바꾼다(원문 1.8 그대로) — 팀 추가·삭제·이름은 여기서 하지 않는다.
+async function ministryCatalogOrder(ctx: Ctx, b: any) {
+  const ids: number[] = Array.isArray(b.ids) ? b.ids.map(Number).filter((n: number) => n > 0) : [];
+  if (!ids.length) return { ok: false, error: "순서를 바꿀 팀이 없습니다" };
+  if (new Set(ids).size !== ids.length) return { ok: false, error: "같은 팀이 두 번 들어 있습니다" };
+
+  const { data, error } = await db.from("ministry_catalog")
+    .select("id,year,committee,sort_order").in("id", ids);
+  if (error) throw error;
+  const rows = (data ?? []) as any[];
+  if (rows.length !== ids.length) return { ok: false, error: "없는 팀이 섞여 있습니다" };
+  if (new Set(rows.map((r) => r.committee + "|" + r.year)).size !== 1) {
+    return { ok: false, error: "한 위원회 안에서만 차례를 바꿀 수 있습니다" };
+  }
+  // ⚠️ 위원회 전체가 와야 한다 — 일부만 보내면 보내지 않은 줄의 자리를 빼앗는다
+  const { count } = await db.from("ministry_catalog")
+    .select("id", { count: "exact", head: true })
+    .eq("year", rows[0].year).eq("committee", rows[0].committee);
+  if ((count ?? 0) !== ids.length) {
+    return { ok: false, error: "그 위원회의 팀이 " + count + "개인데 " + ids.length + "개만 왔습니다" };
+  }
+
+  // ⚠️ 그 줄들이 이미 갖고 있던 sort_order 값을 모아 다시 나눠 준다 — 0,1,2… 로 새로 매기면
+  //    그 위원회가 목록 맨 앞으로 통째로 올라간다. 자리는 그대로 두고 앉는 사람만 바꾼다.
+  const slots = rows.map((r) => Number(r.sort_order)).sort((a, b2) => a - b2);
+  for (let i = 0; i < ids.length; i++) {
+    const { error: e2 } = await db.from("ministry_catalog")
+      .update({ sort_order: slots[i] }).eq("id", ids[i]);
+    if (e2) throw e2;
+  }
+  await audit(ctx, "ministry.order", rows[0].committee, { ids });
+  return { ok: true, n: ids.length };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -468,6 +623,9 @@ Deno.serve(async (req) => {
       case "ministryList":      return json(await ministryList());
       case "ministrySetStatus": return json(await ministrySetStatus(ctx, b));
       case "ministryDelete":    return json(await ministryDelete(ctx, b));
+      case "ministryCatalogAdmin": return json(await ministryCatalogAdmin());
+      case "ministryCatalogSave":  return json(await ministryCatalogSave(ctx, b));
+      case "ministryCatalogOrder": return json(await ministryCatalogOrder(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);
