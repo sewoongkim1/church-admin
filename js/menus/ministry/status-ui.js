@@ -99,15 +99,19 @@ export function tableHtml(rows, dupM) {
 // 묶음 머리의 줄 목록 — 접어 둔 채로도 사람별은 신청한 사역을, 사역별은 신청한 사람을 상태와 함께 본다.
 // 줄은 상태 순서(신청→접수→임명→취소), 같으면 가나다. mainOf·subOf 는 글자 그대로 받아 여기서 esc 한다.
 // extraOf 는 HTML(전화번호·같은 번호 배지)을 돌려준다.
-export function rowsHtml(list, mainOf, subOf, extraOf) {
+// churchOf — 교적 표시는 **따로 한 줄**(이름 줄과 전화 줄 사이). 전화 줄에 붙이면 폰 폭에서 「같은 번호」 배지가
+// 18px 로 눌려 글자가 하나도 안 보이고 전화 링크가 잘렸다(2026-09-29 최종 검토 · 400px 틀로 재서 확인).
+export function rowsHtml(list, mainOf, subOf, extraOf, churchOf) {
   const order = (st) => { const i = STATES.indexOf(st); return i < 0 ? 99 : i; };
   const sorted = [...list].sort((a, b) => order(a.status) - order(b.status) ||
     String(mainOf(a)).localeCompare(String(mainOf(b)), "ko"));
   return `<span class="mn-grp-rows">${sorted.map((r) => {
     const cls = CLS[r.status] || "";
     const ex = extraOf ? extraOf(r) : "";
+    const cb = churchOf ? churchOf(r) : "";
     return `<span class="mn-rowi ${cls}"><span class="mn-rowi-top"><span class="mn-rowi-t"><b>${esc(mainOf(r))}</b><small>${esc(subOf(r))}</small></span>` +
       `<span class="mn-rowi-st ${cls}">${esc(short(r.status))}</span></span>` +
+      (cb ? `<span class="mn-rowi-cb">${cb}</span>` : "") +
       (ex ? `<span class="mn-rowi-ex mn-phone-line">${ex}</span>` : "") + `</span>`;
   }).join("")}</span>`;
 }
@@ -142,8 +146,8 @@ export function groupsHtml(rows, view, openSet, dupM) {
         `<span class="mn-grp-n">${list.length}건 · ${people}명</span>` +
         rowsHtml(list, (r) => r.name, (r) => r.who, (r) => {
           const dup = dupOthers(dupM, r);
-          return churchBadgeHtml(r.church) + ((r.phone || dup.length) ? phoneHtml(r.phone, true) + dupBadgeHtml(dup) : "");
-        });
+          return (r.phone || dup.length) ? phoneHtml(r.phone, true) + dupBadgeHtml(dup) : "";
+        }, (r) => churchBadgeHtml(r.church));
     }
     const cards = list.map((r) => cardHtml(r, view, dupBadgeHtml(dupOthers(dupM, r)))).join("");
     return `<details class="mn-grp" data-gk="${esc(gk)}"${openSet.has(gk) ? " open" : ""}>` +

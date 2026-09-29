@@ -276,6 +276,9 @@ a.mn-tel.sm{padding:2px 8px}
 .mn-rowi-top{display:flex;align-items:center;gap:8px}
 .mn-rowi-ex{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;min-width:0}
 .mn-rowi-ex .mn-dup{padding:2px 8px}
+/* 사역별 접힌 줄의 교적 표시 — 전화 줄과 다른 줄(같은 번호 배지를 밀어내지 않게) */
+.mn-rowi-cb{display:flex;min-width:0}
+.mn-rowi-cb .cb{margin-left:0;max-width:100%;min-width:0;overflow:hidden}
 .mn-rowi-t{flex:1;min-width:0;display:flex;align-items:baseline;gap:6px;white-space:nowrap;overflow:hidden}
 .mn-rowi-t b{font-size:14px;font-weight:800;color:var(--navy);overflow:hidden;text-overflow:ellipsis}
 .mn-rowi-t small{font-size:13px;color:var(--gray);flex:none}

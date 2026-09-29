@@ -12,6 +12,9 @@ const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
 const BLANK = { q: "", mok1: "", kind2: "", kind3: "", position: "", noPhoto: false, page: 0, household: null, householdName: "" };
 let state = { ...BLANK };
 let options = null;   // 거르기 목록 — 교인 현황(peopleStats)에서 한 번 받는다
+// 자세히 창을 여는 중이거나 떠 있는 동안 true — Enter 두 번·더블클릭에 창이 겹쳐 뜨고 「교인 보기」 기록이
+// 부풀려지던 것(서버는 peoplePerson 을 부를 때마다 people.view 를 남긴다 · 2026-09-29 최종 검토)
+let opening = false;
 
 const iniHtml = (name, cls) => `<span class="${cls} pp-ini" aria-hidden="true">${esc(initialOf(name))}</span>`;
 const photoHtml = (p, cls) => p.photo
@@ -56,9 +59,13 @@ function download(text, name) {
 
 // 한 분 자세히 + 가족(같은 신앙세대주). 가족 이름을 누르면 이 창을 닫고 그분을 연다(열람 기록이 그분 몫으로 남는다).
 // 「가족 모두 목록으로」는 onFamily(세대주 교인ID, 세대주 이름) — 목록을 그 가족으로 바꾼다.
-async function openPerson(call, id, onFamily) {
-  const r = await call("peoplePerson", { id: Number(id) });
-  if (!r.ok) { toast(errorText(r)); return; }
+// back — 창을 닫으면 초점을 돌려줄 줄(창이 뜨면 초점은 「닫기」 단추로 간다).
+async function openPerson(call, id, onFamily, back) {
+  if (opening) return;
+  opening = true;
+  let r;
+  try { r = await call("peoplePerson", { id: Number(id) }); } catch (e) { opening = false; throw e; }
+  if (!r.ok) { opening = false; toast(errorText(r)); return; }
   const p = r.person;
   const rows = detailRows(p).map(([k, v, kind]) => `<dt>${esc(k)}</dt><dd>${kind === "tel" ? telHtml(v) : esc(v)}</dd>`).join("");
   const photo = p.photo
@@ -74,18 +81,27 @@ async function openPerson(call, id, onFamily) {
   const closed = dialog({ title: p.name + (p.position ? " " + p.position : ""),
     html: `<div class="pp-detail">${photo}<dl>${rows}</dl>${famHtml}</div>`, ok: "닫기", cancel: null });
   const dlg = [...document.querySelectorAll(".dlg-dim")].pop();   // dialog 는 창을 곧바로(동기로) 붙인다
+  const okBtn = dlg.querySelector('[data-v="1"]');
+  okBtn.focus();                        // 초점이 줄에 남으면 Enter 한 번에 같은 분 창이 또 뜬다
+  let handedOff = false;
   dlg.addEventListener("click", (e) => {
     const f = e.target.closest("[data-fam]"), all = e.target.closest("[data-fam-all]");
     if (!f && !all) return;
-    dlg.querySelector('[data-v="1"]').click();                    // 이 창을 닫고
-    if (f) openPerson(call, f.dataset.fam, onFamily);
+    handedOff = true;
+    okBtn.click();                                                // 이 창을 닫고
+    opening = false;                                              // 다음 창(가족)은 새로 연다
+    if (f) openPerson(call, f.dataset.fam, onFamily, back);
     else onFamily(Number(all.dataset.famAll), p.household_head || "");
   });
   await closed;
+  if (handedOff) return;               // 가족으로 넘어갔으면 그쪽이 opening·초점을 맡는다
+  opening = false;
+  if (back && back.isConnected) back.focus();
 }
 
 export async function render(el, { call, query }) {
-  if (query && query.nophoto === "1") state = { ...state, noPhoto: true, page: 0 };
+  // 현황의 「사진 없는 분 N명」 — 옛 찾기 조건(검색어·교구·가족 보기)을 버리고 사진 없음 하나로(현황의 수와 같게)
+  if (query && query.nophoto === "1") state = { ...BLANK, noPhoto: true };
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
   if (!options) {
     const st = await call("peopleStats");
@@ -196,10 +212,14 @@ export async function render(el, { call, query }) {
       return;
     }
     const row = e.target.closest("[data-id]");
-    if (row) openPerson(call, row.dataset.id, showFamily);
+    if (row) openPerson(call, row.dataset.id, showFamily, row);
   });
+  // role=button 이라 Enter 와 Space 둘 다 받는다(Space 는 화면이 내려가지 않게 막는다)
   el.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.matches("[data-id]")) openPerson(call, e.target.dataset.id, showFamily);
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-id]")) {
+      e.preventDefault();
+      openPerson(call, e.target.dataset.id, showFamily, e.target);
+    }
   });
   // 폭이 바뀌면 카드↔표 — 이 화면을 떠나면 스스로 뗀다(status.js 와 같은 방식)
   const onMq = () => { if (el.isConnected) draw(); else mqWide.removeEventListener("change", onMq); };
