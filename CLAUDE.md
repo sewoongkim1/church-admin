@@ -91,6 +91,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 팝업 없음(친구 결정 2026-09-29): `alert`·`confirm`·`prompt`·`beforeunload`·`<select>`·`<input type=date|time>`·`datalist` 금지 →
   `ui.js` `dialog`/`toast` · 입력 창 `js/core/modal.js` `openForm` · 고르기·날짜 `js/core/picker.js` `pickOne`/`pickMany`/`pickDate`. 예외는 엑셀 **파일 고르기** 하나(붙여넣기·끌어다 놓기를 함께 둔다).
 - 개인정보 안내는 `privacy.html` 7번(+6번 쓰는 곳·보는 사람·기록). 성경암송 `privacy/` 는 손대지 않았다(친구 결정 — 앱이 새로 모으는 것이 없다).
+- 개발 화면 확인용 가짜 회차: `node --experimental-strip-types tests/seed-bible-events-dev.mjs`(`--clean` 으로 지움 · 회차 id `ca-demo-` · 명단 이름은 음절 표로 지어내고 찾기 이름은 개발 가짜 명부에서 고른다).
 
 ## 비상 절차
 ① **유일한 총괄 관리자가 카카오 계정을 잃었을 때** — 새 카카오로 로그인·등록 → 작업 폴더에서
