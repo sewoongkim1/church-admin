@@ -532,6 +532,11 @@ test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 �
   const np = await call(d, "peopleSearch", { q: PAPER_NAME, noPhoto: true });
   assert.deepEqual(np.body.rows.map((x) => x.person_id), [990000002]);
   assert.equal((await call(d, "peopleSearch", { page: -1 })).body.error, "invalid");
+  // 끝을 넘은 쪽 — 빈 쪽이지만 전체 수는 진짜 수(0 이 아니다)
+  const over = await call(d, "peopleSearch", { q: "ca-test-min", page: 5 });
+  assert.equal(over.body.ok, true, JSON.stringify(over.body));
+  assert.deepEqual(over.body.rows, []);
+  assert.equal(over.body.total, 1);
   // 가족 보기 — 세대주 교인ID 로 한 가족만
   const fam = await call(d, "peopleSearch", { household: 990000001 });
   assert.deepEqual(fam.body.rows.map((x) => x.person_id).sort(), [990000001, 990000002]);

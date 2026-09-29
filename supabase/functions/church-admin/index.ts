@@ -867,10 +867,16 @@ async function peopleSearch(ctx: Ctx, b: any) {
     .order("name_key", { ascending: true }).order("person_id", { ascending: true })
     .range(from, from + PAGE_SIZE - 1);
   if (error && (error as any).code !== "PGRST103") throw error;   // PGRST103 = 끝을 넘은 쪽 → 빈 쪽
+  let total = count ?? 0;
+  if (error) {   // PGRST103 = 끝을 넘은 쪽 — 빈 쪽이지만 전체 수는 따로 세어 돌려준다(0 이라 하면 「없음」으로 보인다)
+    const c = await peopleFilter(db.from("church_people").select("person_id", { count: "exact", head: true }), s);
+    if (c.error) throw c.error;
+    total = c.count ?? 0;
+  }
   const rows = (error ? [] : data ?? []) as any[];
   const urls = await photoUrls(rows.filter((r) => r.has_photo).map((r) => r.person_id));
-  await audit(ctx, "people.search", "", { q: norm(b.q).slice(0, 40), filters: searchDetail(s), total: count ?? 0, page: s.page });
-  return { ok: true, source, total: count ?? 0, page: s.page, pageSize: PAGE_SIZE,
+  await audit(ctx, "people.search", "", { q: norm(b.q).slice(0, 40), filters: searchDetail(s), total, page: s.page });
+  return { ok: true, source, total, page: s.page, pageSize: PAGE_SIZE,
     rows: rows.map((r) => ({ ...r, photo: urls.get(r.person_id) ?? "" })) };
 }
 
