@@ -11,6 +11,8 @@ export const MENUS = [
     role: "ministry", load: () => import("./ministry/appointed.js") },
   { id: "be-roster", group: "성경필사(암송)", icon: "📋", label: "회차·명단", desc: "완서자 명단 보기 · 고치기 · 회차 설정",
     role: "bibleevent", load: () => import("./bibleevent/roster.js") },
+  { id: "be-upload", group: "성경필사(암송)", icon: "📤", label: "명단 올리기", desc: "엑셀·붙여넣기로 한꺼번에 더하기",
+    role: "bibleevent", load: () => import("./bibleevent/upload.js") },
   { id: "people", group: "교인명부", icon: "🔎", label: "교인 찾기", desc: "이름·전화 뒷자리로 찾기 · 사진 · 내려받기",
     role: "directory", load: () => import("./people/search.js") },
   { id: "people-stats", group: "교인명부", icon: "📊", label: "교인 현황", desc: "교구·부서·직분·연령대별 인원 · 사진 없는 분",

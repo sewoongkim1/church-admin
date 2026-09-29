@@ -939,3 +939,72 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
 .be-ro b{color:var(--navy)}
 .be-2col{display:grid;gap:0 8px}
 @media (min-width:560px){.be-2col{grid-template-columns:1fr 1fr}}
+
+/* ── 📤 명단 올리기(be-up-) — 성경필사(암송) be- 블록의 이어짐(Task 11 · 2026-09-29) ──────────────
+   틀은 사역신청 종이 명단(.mp-*)과 같게, 이름만 be-up- 로 따로 둔다(한 메뉴의 모양이 다른 메뉴를 흔들지 않게).
+   크기는 표준 v1 토큰으로 — 주 단추 48 · 둘째 44 · 칩 36 · 글씨 13 이상. */
+.be-up-ev{display:flex;align-items:center;gap:8px;width:100%;min-height:var(--tap-lg);padding:8px 14px;margin:0 0 10px;
+  border:1px solid var(--ghost-bd);border-radius:12px;background:#fff;text-align:left;cursor:pointer}
+.be-up-ev-t{flex:1;min-width:0;display:flex;flex-direction:column}
+.be-up-ev-t b{font-size:15px;color:var(--navy)}
+.be-up-ev-t small{font-size:13px;color:var(--gray)}
+.be-up-arrow{flex:none;color:var(--gray)}
+.be-up-note{font-size:13px;line-height:1.6;border-radius:10px;padding:8px 12px;margin:0 0 12px;background:#fff8e6;color:#7a5f16}
+.be-up-note.info{background:var(--ghost-bg);color:var(--navy)}
+.be-up-how{display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.7;color:#41506b;background:#f3f6fb;
+  border-radius:12px;padding:11px 13px;margin-bottom:10px}
+.be-up-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.be-up-row>b{font-size:13px;font-weight:800;color:var(--navy)}
+.be-up-pill{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 14px;border:1px solid var(--ghost-bd);
+  border-radius:999px;background:#fff;color:var(--navy);font-size:14px;font-weight:700;cursor:pointer}
+.be-up-cols{display:flex;flex-wrap:wrap;gap:4px}
+.be-up-cols span{font-size:13px;font-weight:800;color:#41506b;background:#fff;border-radius:7px;padding:2px 7px}
+.be-up-cols span.dim{color:var(--gray);font-weight:700}
+.be-up-fname{font-size:13px;color:#41506b}
+.be-up-guide{margin:0 0 10px;border:1px solid #e3e8f1;border-radius:10px;background:#f8fafd}
+.be-up-guide>summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:var(--tap);padding:0 12px;
+  font-size:14px;font-weight:800;color:var(--navy)}
+.be-up-guide>summary::-webkit-details-marker{display:none}
+.be-up-guide[open]>summary{border-bottom:1px solid #e3e8f1}
+.be-up-ul{margin:10px 12px 8px;padding-left:18px;font-size:13px;line-height:1.7;color:#41506b}
+.be-up-ul li{margin:2px 0}
+.be-up-drop{border:2px dashed transparent;border-radius:12px;margin-bottom:10px}
+.be-up-drop.over{border-color:var(--navy);background:var(--ghost-bg)}
+.be-up-text{display:block;width:100%;font:inherit;font-size:1rem;line-height:1.6;padding:10px;border:1px solid var(--border);
+  border-radius:10px;background:#fff;color:var(--navy);resize:vertical}
+.be-up-droptip{font-size:13px;color:var(--gray);margin:4px 2px 0}
+.be-up-fill{display:flex;align-items:flex-start;gap:10px;min-height:var(--tap);padding:10px 12px;margin-bottom:10px;
+  border:1px solid var(--border);border-radius:12px;background:#fff;cursor:pointer}
+.be-up-fill input{flex:none;width:22px;height:22px;margin-top:1px;accent-color:var(--navy)}
+.be-up-fill b{display:block;font-size:14px;color:var(--navy)}
+.be-up-fill small{display:block;font-size:13px;color:var(--gray);line-height:1.5}
+.be-up-fill:has(input:checked){border-color:var(--navy);background:var(--ghost-bg)}
+.be-up-sum{font-size:13px;line-height:1.7;color:#41506b;background:#eef1f8;border-radius:8px;padding:8px 12px;margin-bottom:10px}
+.be-up-sum:empty{display:none}
+.be-up-sum b{color:var(--navy)}
+.be-up-sum a{display:inline-flex;align-items:center;min-height:var(--chip);font-weight:800}
+.be-up-sum .warn{display:block;margin-top:4px;color:var(--error);font-weight:700}
+.be-up-marks{margin-top:4px}
+.be-up-item{border:1px solid #e3e8f1;border-left:4px solid var(--ghost-bd);border-radius:10px;padding:8px 10px;
+  margin-top:var(--gap);background:#fff}
+.be-up-item.m-fill{border-left-color:#7fc39b}
+.be-up-item.m-same{border-left-color:#cdd8ea;background:#f7f9fc}
+.be-up-item.m-blank,.be-up-item.m-same-name{border-left-color:#e2c27a;background:#fffaf0}
+.be-up-item.m-bad{border-left-color:#e0a3a3;background:#fdf5f5}
+.be-up-top{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 7px}
+.be-up-top b{font-size:14px;font-weight:800;color:var(--navy)}
+.be-up-top small{font-size:13px;color:#6b778c}
+.be-up-pos{font-size:13px;font-weight:700;color:#41506b}
+.be-up-no{margin-left:auto;font-size:13px;color:var(--gray)}
+.be-up-msg{font-size:13px;line-height:1.6;margin-top:3px;color:#41506b}
+.be-up-msg.bad{color:var(--error)}
+.be-up-msg.note{color:#7a5f16}
+.be-up-wrap{overflow-x:auto;margin-top:var(--gap)}
+.be-up-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border)}
+.be-up-table th,.be-up-table td{padding:7px 10px;border-bottom:1px solid var(--light);text-align:left;font-size:14px;vertical-align:top}
+.be-up-table thead th{background:var(--light);font-size:13px;color:var(--gray);white-space:nowrap}
+.be-up-table tr.m-same td{color:#6b778c}
+.be-up-table tr.m-bad td{background:#fdf5f5}
+.be-up-table tr.m-blank td,.be-up-table tr.m-same-name td{background:#fffaf0}
+.be-up-table td:nth-child(2){white-space:nowrap}
+.be-up-table .be-up-msg{margin-top:0}
