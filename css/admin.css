@@ -458,11 +458,14 @@ a.mn-tel.sm{padding:2px 8px}
   font-weight:600;color:#41506b;border:1px solid var(--border);border-radius:10px;cursor:pointer}
 .mc-when label i{font-style:normal;font-weight:500;font-size:13px;color:#9aa4b4;margin-left:2px}
 .mc-when input[type=checkbox]{width:20px;height:20px;flex:none;margin:0}
-.mc-when .pk-field{flex:1 1 0;width:auto;min-width:120px}
-.mc-w-off{flex-basis:100%;font-style:normal;font-size:13px;color:#a3701e}
-.mc-w-tw{flex:none;font-size:13px;color:var(--gray)}
-.mc-w-time{flex-wrap:wrap}
-.mc-w-time>b{flex-basis:100%;margin-bottom:2px}
+/* 주일 시각 — 「시작 ~ 끝」이 한 쌍으로 읽히게 한 줄 격자(같은 폭 두 칸 + 가운데 ~). 폰(카드 안쪽 약 270px)에서도
+   줄이 안 갈린다 — 단추 글자는 「오전 10:30」이 가장 길다 */
+.mc-w-r.mc-w-time{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:6px}
+.mc-w-time>b,.mc-w-time .mc-w-off{grid-column:1/-1}
+.mc-w-time>b{margin-bottom:2px}
+.mc-when .pk-field{min-width:0;padding:0 10px}
+.mc-w-off{font-style:normal;font-size:13px;color:#a3701e}
+.mc-w-tw{font-size:13px;color:var(--gray)}
 .mc-in-acts{display:flex;gap:8px;align-items:stretch;margin-top:2px}
 .mc-in-acts .mc-save{flex:1}
 .mc-save{font:inherit;font-size:1rem;font-weight:700;min-height:var(--tap-lg);padding:0 16px;
@@ -580,11 +583,18 @@ a.mn-tel.sm{padding:2px 8px}
   padding:0 12px;border:1px solid var(--border);border-radius:10px;background:#fff;color:#222;font-size:1rem;
   text-align:left;cursor:pointer}
 .pk-field-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pk-field-x{flex:none;font-size:13px;color:var(--gray)}
+/* ▾ 자리 — 글자 대신 굵은 꺾쇠 그림(14px · 마스크라 색은 background 로). 열리면 뒤집힌다 */
+.pk-field-x{flex:none;width:14px;height:14px;font-size:0;color:transparent;background:var(--navy);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2.5 5l4.5 4.5L11.5 5' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2.5 5l4.5 4.5L11.5 5' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat;
+  transition:transform .15s}
+.pk-field[aria-expanded="true"] .pk-field-x{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.pk-field-x{transition:none}}
 .pk-field.empty .pk-field-v{color:var(--gray)}
 .pk-field[aria-expanded="true"]{border-color:var(--navy)}
 .pk-field:disabled{background:#eef0f4;color:#aab2c0;cursor:default}
-.pk-field:disabled .pk-field-v,.pk-field:disabled .pk-field-x{color:#aab2c0}
+.pk-field:disabled .pk-field-v{color:#aab2c0}
+.pk-field:disabled .pk-field-x{background:#aab2c0}
 .pk-field:focus-visible,.pk button:focus-visible,.pk-chk:focus-within{outline:3px solid var(--ghost-bd);outline-offset:1px}
 .pk-dim{position:fixed;inset:0;z-index:55}
 .pk-dim.sheet{background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center}
@@ -598,9 +608,11 @@ a.mn-tel.sm{padding:2px 8px}
 @media (prefers-reduced-motion:reduce){.pk-dim.sheet .pk{animation:none}}
 .pk-grip{flex:none;width:40px;height:5px;margin:8px auto 0;border-radius:999px;background:#d5d9e0}
 .pk-h{flex:none;display:flex;align-items:center;gap:8px;padding:4px 6px 4px 16px;border-bottom:1px solid var(--light)}
-.pk-h h3{flex:1;min-width:0;font-size:15px;font-weight:800;color:var(--navy)}
-.pk-x{flex:none;min-height:var(--tap);padding:0 12px;border:0;border-radius:10px;background:none;color:var(--gray);
-  font-size:14px;font-weight:700;cursor:pointer}
+.pk-h h3{flex:1;min-width:0;font-size:17px;font-weight:700;color:var(--navy-dark)}
+/* 「닫기」 — 옅은 글자만으로는 누를 곳으로 안 보인다(50~70대 담당자) → 옅은 바탕의 알약 단추 */
+.pk-x{flex:none;min-height:var(--tap);margin:2px 0;padding:0 16px;border:1px solid var(--ghost-bd);border-radius:999px;
+  background:var(--ghost-bg);color:var(--navy);font-size:16px;font-weight:600;cursor:pointer}
+.pk-x:hover{background:#e2ebf8}
 .pk-b{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:6px 8px}
 .pk-f{flex:none;display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--light)}
 .pk-f .btn{flex:1 1 0;min-width:0}
@@ -615,7 +627,7 @@ a.mn-tel.sm{padding:2px 8px}
 .pk-ck{flex:none;width:20px;text-align:center;color:var(--navy);font-weight:800}
 .pk-chk{display:flex;align-items:center;gap:10px;min-height:var(--tap);padding:0 12px;border-radius:10px;cursor:pointer}
 .pk-chk:hover{background:var(--light)}
-.pk-chk input{flex:none;width:20px;height:20px;margin:0}
+.pk-chk input{flex:none;width:22px;height:22px;margin:0;accent-color:var(--navy)}
 /* 날짜 — 달력 */
 .pk-dim.pop .pk-date{width:340px}
 .pk-cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
@@ -631,6 +643,11 @@ a.mn-tel.sm{padding:2px 8px}
 .pk-day.today{box-shadow:inset 0 0 0 2px var(--gold);font-weight:800}
 .pk-day.on{background:var(--navy);color:#fff;font-weight:800}
 .pk-day.none{cursor:default}
+/* 기간의 반대쪽 끝(시작일·끝날)은 옅은 테두리, 넘어선 날은 흐리게 막는다 */
+.pk-day.edge{box-shadow:inset 0 0 0 2px var(--ghost-bd)}
+.pk-day.today.edge{box-shadow:inset 0 0 0 2px var(--gold)}
+.pk-day.out,.pk-day:disabled{color:#c3c9d4;cursor:default;background:none}
+.pk-day.out.sun{color:#e8b4ae}
 /* 시각 — 시 · 분 두 열 */
 .pk-dim.pop .pk-time{width:300px}
 .pk-now{padding:4px 0 8px;text-align:center;font-size:1.1rem;font-weight:800;color:var(--navy)}

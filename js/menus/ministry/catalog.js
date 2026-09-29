@@ -14,8 +14,11 @@
 //      안 보이는 팀과도 자리가 바뀔 수 있었다(원문 문서 체크리스트 17·18, "발견 사항"). 조건을 좁혀
 //      아예 그 상황을 만들지 않는다.
 //   ④ 저장 뒤 폼을 다시 그린다(원문은 그 칸만 DOM 패치) — 다른 화면(신청 현황)과 같은 결로 단순화.
+//   ⑤ 주일 시각은 시스템 시각 칸 대신 시각 단추(picker.js · 2026-09-29)라, 시각 단추에서 Enter 는
+//      저장이 아니라 고르개 열기다(옛 칸은 시각을 치고 Enter 로 바로 저장됐다). 고른 뒤 말없이 저장하지 않는다 —
+//      다른 칸의 「엔터로도 저장」은 그대로다.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
-import { MC_DAYS, MC_FREQS, MC_WHEN_KEYS, mcHasWhen, mcEmpty, mcHit, mcBrs, tabsHtml, cardHtml, mcTimeText } from "./catalog-ui.js";
+import { MC_DAYS, MC_FREQS, MC_WHEN_KEYS, mcHasWhen, mcEmpty, mcHit, mcBrs, tabsHtml, cardHtml, mcTimeText, mcTimeAria } from "./catalog-ui.js";
 import { pickTime } from "../../core/picker.js";
 
 const TITLE = `<h2 class="page-title">🗂️ 사역팀 정보</h2>`;
@@ -233,6 +236,7 @@ export async function render(el, { call }) {
     const hid = btn.parentElement.querySelector(`input[data-f="${btn.dataset.time}"]`);
     if (hid) hid.value = v;
     btn.querySelector(".pk-field-v").textContent = mcTimeText(btn.dataset.time, v);
+    btn.setAttribute("aria-label", mcTimeAria(btn.dataset.time, v));
     btn.classList.toggle("empty", !v);
   };
 
@@ -315,7 +319,8 @@ export async function render(el, { call }) {
     }
   });
 
-  // 엔터로도 저장 — 여러 줄을 쓰는 「하는 일」·「지금 섬기는 분」은 빼고(줄바꿈이 막힌다)
+  // 엔터로도 저장 — 여러 줄을 쓰는 「하는 일」·「지금 섬기는 분」은 빼고(줄바꿈이 막힌다).
+  // 시각 단추는 data-f 가 없어 여기 안 걸린다 — Enter 가 고르개를 연다(머리 ⑤)
   el.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const f = e.target.closest("[data-f][data-id]");

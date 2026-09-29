@@ -2,7 +2,7 @@
 // DOM 을 쓰는 부분(pickOne·pickMany·pickDate·pickTime)은 여기서 시험하지 않는다(브라우저에서 본다).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { monthGrid, timeSlots, fmtDateLabel, fmtTimeLabel, hourLabel, kstToday, addMonth, placePopover }
+import { monthGrid, timeSlots, fmtDateLabel, fmtTimeLabel, hourLabel, kstToday, addMonth, placePopover, dayAllowed }
   from "../js/core/picker.js";
 
 test("monthGrid — 일요일 시작 · 앞뒤 빈칸 · 한 주 7칸", () => {
@@ -56,6 +56,10 @@ test("fmtDateLabel — 「9월 29일 (화)」", () => {
   assert.equal(fmtDateLabel("2026-10-04"), "10월 4일 (일)");
   assert.equal(fmtDateLabel(""), "");
   assert.equal(fmtDateLabel("nope"), "");
+  // 없는 날은 빈 글자 — 2월 30일 · 윤년이 아닌 해의 2월 29일
+  assert.equal(fmtDateLabel("2026-02-30"), "");
+  assert.equal(fmtDateLabel("2027-02-29"), "");
+  assert.equal(fmtDateLabel("2028-02-29"), "2월 29일 (화)");
 });
 
 test("fmtTimeLabel — 「오전 9:05」 · 자정·정오", () => {
@@ -78,6 +82,19 @@ test("hourLabel — 「오전 9시」", () => {
 test("kstToday — 한국 시각 기준 오늘", () => {
   assert.equal(kstToday(new Date("2026-09-28T15:30:00Z")), "2026-09-29");   // 한국은 이미 29일 0시 30분
   assert.equal(kstToday(new Date("2026-09-28T14:59:00Z")), "2026-09-28");
+  // 해·달 넘김
+  assert.equal(kstToday(new Date("2026-12-31T15:00:00Z")), "2027-01-01");
+  assert.equal(kstToday(new Date("2026-09-30T15:00:00Z")), "2026-10-01");
+});
+
+test("dayAllowed — 기간 고르기: 시작일보다 앞선 끝날 · 끝날보다 뒤의 시작일은 막는다", () => {
+  assert.equal(dayAllowed("2026-09-15", "", ""), true);
+  assert.equal(dayAllowed("2026-09-01", "2026-09-01", ""), true);    // 같은 날은 된다
+  assert.equal(dayAllowed("2026-08-31", "2026-09-01", ""), false);
+  assert.equal(dayAllowed("2026-09-30", "", "2026-09-29"), false);
+  assert.equal(dayAllowed("2026-09-29", "", "2026-09-29"), true);
+  assert.equal(dayAllowed("2026-09-10", "2026-09-01", "2026-09-29"), true);
+  assert.equal(dayAllowed("2026-09-10", "nope", ""), true);           // 이상한 한계는 없는 것으로
 });
 
 test("placePopover — 단추 아래 · 밑이 모자라면 위로 · 오른쪽이 넘치면 안쪽으로", () => {

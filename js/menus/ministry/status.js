@@ -100,9 +100,12 @@ export async function render(el, { call }) {
     el.querySelectorAll('[data-act="range"]').forEach((b) => b.classList.toggle("on", b.dataset.range === range));
     el.querySelector(".mn-custom").hidden = range !== "custom";
     // 직접 고른 날 — 시스템 날짜 칸 대신 단추(picker.js). 값은 from·to 변수 하나뿐
-    for (const [k, v, none] of [["from", from, "시작일 고르기"], ["to", to, "끝날 고르기"]]) {
+    // 이름에 고른 날도 함께 — 화면 읽기 프로그램이 「신청일 시작, 9월 1일 (화)」로 읽게
+    for (const [k, v, none, nm] of [["from", from, "시작일 고르기", "신청일 시작"], ["to", to, "끝날 고르기", "신청일 끝"]]) {
       const b = el.querySelector(".mn-" + k);
-      b.querySelector(".pk-field-v").textContent = v ? fmtDateLabel(v) : none;
+      const txt = v ? fmtDateLabel(v) : none;
+      b.querySelector(".pk-field-v").textContent = txt;
+      b.setAttribute("aria-label", `${nm}, ${txt}`);
       b.classList.toggle("empty", !v);
     }
     // 보기 — 단추 안 숫자는 지금 걸러진 것 기준(건·명·팀)
@@ -196,7 +199,9 @@ export async function render(el, { call }) {
   // 신청일 직접 — 고르면(지우기 = "") 옛 날짜 칸의 change 와 같게 값을 바꾸고 다시 그린다. 닫기(null)면 그대로
   async function pickDay(b) {
     const k = b.dataset.k;
-    const v = await pickDate({ anchor: b, title: k === "from" ? "신청일 시작" : "신청일 끝", value: k === "from" ? from : to });
+    // 기간이라 반대쪽 끝을 넘지 못하게 — 시작일 창은 끝날까지, 끝날 창은 시작일부터
+    const v = await pickDate({ anchor: b, title: k === "from" ? "신청일 시작" : "신청일 끝", value: k === "from" ? from : to,
+      min: k === "to" ? from : "", max: k === "from" ? to : "" });
     if (v === null || !el.isConnected) return;
     if (k === "from") from = v; else to = v;
     draw();

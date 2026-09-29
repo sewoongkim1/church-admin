@@ -62,6 +62,14 @@ export function fmtTimeLabel(s) {
   return `${n < 12 ? "오전" : "오후"} ${n % 12 === 0 ? 12 : n % 12}:${m[2]}`;
 }
 
+// 기간 고르기 — ds 가 [min, max] 안이면 true. 한계가 비었거나 날짜 꼴이 아니면 그쪽은 열려 있다.
+// ("YYYY-MM-DD" 는 글자 비교가 곧 날짜 비교다)
+export function dayAllowed(ds, min, max) {
+  if (DATE_RE.test(min || "") && ds < min) return false;
+  if (DATE_RE.test(max || "") && ds > max) return false;
+  return true;
+}
+
 // 한국 시각 기준 오늘 "YYYY-MM-DD"
 export function kstToday(now = new Date()) {
   const d = new Date(now.getTime() + 9 * 3600 * 1000);
@@ -114,7 +122,8 @@ function openShell({ anchor, title, mode, cls = "", onBuild }) {
       done = true;
       document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("hashchange", onHash);
       dim.remove();
       if (current === close) current = null;
       if (anchor) {
@@ -137,13 +146,25 @@ function openShell({ anchor, title, mode, cls = "", onBuild }) {
     function place() {
       if (sheet || !anchor || !anchor.isConnected) return;
       const r = anchor.getBoundingClientRect();
-      box.style.maxHeight = "";   // 제 키로 재고 나서 자리를 고른다
-      const { left, top, maxHeight } = placePopover(r, { width: box.offsetWidth, height: box.offsetHeight },
+      // 제 키(자연 높이)는 높이 제한을 풀지 않고 계산한다 — 풀었다 다시 걸면 그 사이 내용 칸이 안 넘쳐
+      // 브라우저가 스크롤 자리를 0 으로 잘라 버린다(굴리던 달력이 맨 위로 튄다)
+      const natural = box.offsetHeight - body.clientHeight + body.scrollHeight;
+      const { left, top, maxHeight } = placePopover(r, { width: box.offsetWidth, height: natural },
         { width: document.documentElement.clientWidth, height: innerHeight });
       box.style.left = left + "px";
       box.style.top = top + "px";
-      if (maxHeight) box.style.maxHeight = maxHeight + "px";
+      box.style.maxHeight = maxHeight ? maxHeight + "px" : "";
     }
+    // 판 **안의** 목록을 굴린 것은 무시한다(scroll 을 잡는 단계로 들으므로 안의 스크롤도 여기로 온다)
+    const onScroll = (e) => { if (e.target instanceof Node && box.contains(e.target)) return; place(); };
+    // 뒤로 가기로 화면이 바뀌면 창도 닫는다(안드로이드 뒤로 단추·스와이프로 시트를 닫으려는 분이 많다)
+    const onHash = () => close(null);
+    // 뜬 뒤 300ms 동안은 막·선택지 누름을 받지 않는다 — 여는 단추를 두 번 톡톡 누르면 둘째 탭이
+    // 시트의 선택지에 떨어져 모르는 새 다른 값이 골라진다(ui.js dialog 와 같은 값 · 2026-09-17 사고)
+    const openedAt = Date.now();
+    dim.addEventListener("click", (e) => {
+      if (Date.now() - openedAt <= 300) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
     // 뒤 막 — 눌렀다 뗄 때 모두 막이어야 닫는다(dialog 와 같은 규칙: 글을 끌다 밖에서 떼도 안 닫힌다)
     let downOut = false;
     dim.addEventListener("pointerdown", (e) => { downOut = e.target === dim; });
@@ -158,7 +179,8 @@ function openShell({ anchor, title, mode, cls = "", onBuild }) {
     place();
     current = close;
     document.addEventListener("keydown", onKey, true);
-    if (!sheet) { window.addEventListener("resize", place); window.addEventListener("scroll", place, true); }
+    window.addEventListener("hashchange", onHash);
+    if (!sheet) { window.addEventListener("resize", place); window.addEventListener("scroll", onScroll, true); }
     if (anchor) { anchor.setAttribute("aria-haspopup", "dialog"); anchor.setAttribute("aria-expanded", "true"); }
     (focusFirst || dim.querySelector(".pk-x")).focus({ preventScroll: true });
   });
@@ -203,10 +225,13 @@ export function pickMany({ anchor, title, options = [], values = [], mode } = {}
 }
 
 // 날짜 — 달력. 날을 누르면 곧 닫힌다. 「지우기」 → "" · 「오늘」 → 오늘(한국 시각)
-export function pickDate({ anchor, title, value = "", mode } = {}) {
+// min·max("YYYY-MM-DD" | "") — 기간을 고를 때 반대쪽 끝. 그 날은 옅은 테두리로 보이고, 넘어선 날은 흐리게 막는다.
+export function pickDate({ anchor, title, value = "", min = "", max = "", mode } = {}) {
   const today = kstToday();
   const cur = DATE_RE.test(value || "") ? value : "";
-  let [y, m] = (cur || today).split("-").map(Number);
+  const ok = (ds) => dayAllowed(ds, min, max);
+  const start = cur || (ok(today) ? today : DATE_RE.test(min || "") && today < min ? min : max);
+  let [y, m] = start.split("-").map(Number);
   return openShell({ anchor, title, mode, cls: "pk-date", onBuild: ({ body, foot, close, redraw }) => {
     const draw = () => {
       const weeks = monthGrid(y, m);
@@ -218,9 +243,12 @@ export function pickDate({ anchor, title, value = "", mode } = {}) {
         ${weeks.map((w) => `<div class="pk-wk">${w.map((d, i) => {
           if (!d) return `<span class="pk-day none"></span>`;
           const ds = `${y}-${p2(m)}-${p2(d)}`;
-          const c = ["pk-day", i === 0 ? "sun" : "", ds === today ? "today" : "", ds === cur ? "on" : ""].filter(Boolean).join(" ");
-          return `<button type="button" class="${c}" data-d="${ds}" aria-label="${esc(fmtDateLabel(ds))}${ds === today ? " 오늘" : ""}"${
-            ds === cur ? ` aria-pressed="true"` : ""}>${d}</button>`;
+          const edge = ds === min || ds === max;
+          const c = ["pk-day", i === 0 ? "sun" : "", ds === today ? "today" : "", ds === cur ? "on" : "",
+            edge ? "edge" : "", ok(ds) ? "" : "out"].filter(Boolean).join(" ");
+          const tag = ds === today ? " 오늘" : ds === min ? " 시작일" : ds === max ? " 끝날" : "";
+          return `<button type="button" class="${c}" data-d="${ds}" aria-label="${esc(fmtDateLabel(ds))}${tag}"${
+            ds === cur ? ` aria-pressed="true"` : ""}${ok(ds) ? "" : " disabled"}>${d}</button>`;
         }).join("")}</div>`).join("")}</div>`;
       redraw();
     };
@@ -234,17 +262,18 @@ export function pickDate({ anchor, title, value = "", mode } = {}) {
         return;
       }
       const d = e.target.closest("[data-d]");
-      if (d) close(d.dataset.d);
+      if (d && !d.disabled && ok(d.dataset.d)) close(d.dataset.d);
     });
     foot.hidden = false;
     foot.innerHTML = `<button type="button" class="btn" data-k="clear">지우기</button>
-      <button type="button" class="btn" data-k="today">오늘</button>`;
+      <button type="button" class="btn" data-k="today"${ok(today) ? "" : " disabled"}>오늘</button>`;
     foot.addEventListener("click", (e) => {
       const k = e.target.closest("button[data-k]")?.dataset.k;
       if (k === "clear") close("");
-      if (k === "today") close(today);
+      if (k === "today" && ok(today)) close(today);
     });
-    return body.querySelector(".pk-day.on") || body.querySelector(".pk-day.today");
+    return body.querySelector(".pk-day.on:not([disabled])") || body.querySelector(".pk-day.today:not([disabled])")
+      || body.querySelector(".pk-day:not([disabled])");
   } });
 }
 

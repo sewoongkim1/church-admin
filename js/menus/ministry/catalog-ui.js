@@ -26,9 +26,11 @@ export function mcWhenText(r) {
 // 시스템 시각 칸(<input type="time">) 대신 picker.js 의 pickTime 을 연다(2026-09-29).
 export const MC_TIME_NONE = { from: "시작 시각", to: "끝 시각" };
 export const mcTimeText = (k, v) => fmtTimeLabel(v) || MC_TIME_NONE[k];
+// 단추 이름에 고른 시각도 함께 — 화면 읽기 프로그램이 「주일 시작 시각, 오전 9:30」으로 읽게(값을 바꾸면 catalog.js setTime 이 고친다)
+export const mcTimeAria = (k, v) => `주일 ${k === "from" ? "시작" : "끝"} 시각, ${fmtTimeLabel(v) || "비어 있음"}`;
 const timeField = (r, k) => `<input type="hidden" data-f="${k}" data-id="${r.id}" value="${esc(r[k])}">` +
   `<button type="button" class="pk-field mc-time${r[k] ? "" : " empty"}" data-time="${k}" data-id="${r.id}"
-    aria-haspopup="dialog" aria-expanded="false" aria-label="주일 ${k === "from" ? "시작" : "끝"} 시각"${r.sun ? "" : " disabled"}>` +
+    aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(mcTimeAria(k, r[k]))}"${r.sun ? "" : " disabled"}>` +
   `<span class="pk-field-v">${esc(mcTimeText(k, r[k]))}</span><span class="pk-field-x" aria-hidden="true">▾</span></button>`;
 
 // 「② 언제」 여덟 체크박스 중 하나라도 켜져 있거나 시각이 있으면 "채움"
