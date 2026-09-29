@@ -844,3 +844,98 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
   .be-box{max-width:520px;max-height:86vh;border-radius:16px;box-shadow:0 12px 40px rgba(13,27,62,.25);animation:none}
   .be-grip{display:none}
 }
+
+/* ── 성경필사(암송) be- ② 📋 회차·명단(js/menus/bibleevent/roster*.js·event-form.js·row-form.js · 2026-09-29) ──
+   표준 v1: 주 단추 48 · 둘째 44 · 칩 36 · 글씨 13 이상 · 폰 카드 / PC(≥1024px) 표. 크기·색은 토큰만.
+   줄 메뉴는 고르개(pickOne)라 표를 overflow-x 로 감싸도 잘리지 않는다. */
+.be-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.be-evs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.be-ev{display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);max-width:100%;padding:0 12px;border:1px solid var(--border);
+  border-radius:999px;background:var(--paper);color:var(--navy-dark);font-size:13px;font-weight:700;cursor:pointer}
+.be-ev em{font-style:normal;font-weight:800;color:var(--navy)}
+.be-ev small{font-size:13px;font-weight:600;color:var(--gray)}
+.be-ev.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.be-ev.on em,.be-ev.on small{color:#fff}
+.be-ev.new{background:var(--ghost-bg);border:1px dashed var(--ghost-bd);color:var(--navy)}
+/* 붙는 머리 — 우리 머리줄 아래, 카드 여백까지 덮게 음수 여백(.mn-head 와 같은 꼴) */
+.be-head{position:sticky;top:var(--head-h);z-index:20;background:var(--paper);margin:calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) var(--gap);
+  padding:10px var(--card-pad) 8px;border-radius:14px 14px 0 0;border-bottom:1px solid var(--light)}
+.be-head-t b{font-size:16px;font-weight:800;color:var(--navy)}
+.be-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.be-tag{display:inline-flex;align-items:center;min-height:24px;padding:0 9px;border-radius:999px;background:var(--light);
+  color:var(--navy-dark);font-size:13px;font-weight:700}
+.be-tag.seen{background:var(--ghost-bg);color:var(--navy)}
+.be-tag.st-open{background:var(--ghost-bg);color:var(--green)}
+/* ⚙️ 회차 설정 — 접힘 */
+.be-set{margin:0 0 12px;border:1px solid var(--border);border-radius:10px;background:var(--cream)}
+.be-set>summary{list-style:none;display:flex;align-items:center;min-height:var(--tap);padding:0 12px;cursor:pointer;
+  font-size:14px;font-weight:800;color:var(--navy)}
+.be-set>summary::-webkit-details-marker{display:none}
+.be-set[open]>summary{border-bottom:1px solid var(--border)}
+.be-set-b{padding:10px 12px 12px}
+.be-kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:0 0 10px;font-size:14px}
+.be-kv dt{font-size:13px;color:var(--gray)}
+.be-kv dd{overflow-wrap:anywhere}
+.be-acts2{margin:-4px 0 12px}
+.be-srcline{margin:0 0 8px}
+/* 교적 표시(.cb · 사역 화면과 같은 부품)는 12px 로 그려진다 — 이 메뉴 안에서는 표준 v1 의 13px 로 */
+.be-panel .cb,.be-panel .cb small{font-size:13px}
+/* 거르기 칩 — 누르면 고르개 */
+.be-filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.be-fchip{display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);max-width:100%;padding:0 12px;border:1px solid var(--border);
+  border-radius:999px;background:var(--paper);color:var(--gray);font-size:13px;font-weight:700;cursor:pointer}
+.be-fchip b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--navy-dark)}
+.be-fchip.on{border-color:var(--navy);background:var(--ghost-bg)}
+.be-fchip.on b{color:var(--navy)}
+.be-fchip .pk-field-x{width:12px;height:12px}
+.be-fchip[aria-expanded="true"] .pk-field-x{transform:rotate(180deg)}
+.be-fchip.clear{border-style:dashed;color:var(--navy)}
+.be-sum{margin:0 0 10px}
+.be-sum b{color:var(--navy)}
+/* 명단 — 폰 카드 */
+.be-grp{margin:0 0 14px}
+.be-grp-h{display:flex;align-items:baseline;gap:8px;margin:0 0 8px;padding:4px 2px;border-bottom:2px solid var(--light);
+  font-size:15px;font-weight:800;color:var(--navy)}
+.be-grp-h em{margin-left:auto;font-style:normal;font-size:13px;font-weight:700;color:var(--gray)}
+.be-row{margin-bottom:8px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--paper)}
+.be-row.dup{border-color:var(--gold)}
+.be-row-h{display:flex;align-items:flex-start;gap:8px}
+.be-row-nm{flex:1;min-width:0}
+.be-row-nm b{font-size:16px;font-weight:800;color:var(--navy)}
+.be-row-sub{margin-left:6px;font-size:13px;color:var(--gray)}
+.be-badges{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin-top:4px}
+.be-badges .cb{margin-left:0}
+.be-pos{margin-left:6px;padding:1px 8px;border:1px solid var(--border);border-radius:999px;background:var(--cream);
+  color:var(--navy-dark);font-size:13px;font-style:normal;font-weight:700}
+.be-src,.be-user,.be-dup{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;
+  font-size:13px;font-style:normal;font-weight:700;white-space:nowrap}
+.be-src{background:var(--light);color:var(--navy-dark)}
+.be-src.app,.be-user{background:var(--ghost-bg);color:var(--navy)}
+.be-dup{border:1px solid var(--gold);background:var(--cream);color:var(--navy-dark)}
+.be-memo{margin-top:6px;padding:6px 9px;border-radius:8px;background:var(--cream);color:var(--navy-dark);font-size:13px;
+  line-height:1.5;overflow-wrap:anywhere}
+.be-memo i{font-style:normal;color:var(--gray)}
+.be-more{flex:none;min-width:var(--tap);min-height:var(--tap);border:1px solid var(--ghost-bd);border-radius:10px;
+  background:var(--ghost-bg);color:var(--navy);font-size:1.1rem;font-weight:800;cursor:pointer}
+/* 명단 — PC 표(묶음마다 머리 줄) */
+.be-tbl-wrap{overflow-x:auto}
+.be-table{width:100%;border-collapse:collapse;background:var(--paper);font-size:14px}
+.be-table th,.be-table td{padding:8px 10px;border-bottom:1px solid var(--light);text-align:left;vertical-align:middle;overflow-wrap:anywhere}
+.be-table thead th{background:var(--light);color:var(--gray);font-size:13px}
+.be-table .be-tgrp th{background:var(--ghost-bg);color:var(--navy);font-size:14px;font-weight:800}
+.be-table .be-tgrp em{margin-left:6px;font-style:normal;font-size:13px;color:var(--gray)}
+.be-table tr.dup td{background:var(--cream)}
+.be-table td .cb{margin-left:0}
+.be-tnote{max-width:280px;font-size:13px;color:var(--navy-dark)}
+/* 창 안 — 한 분 더하기·줄 고치기·새 회차 */
+.be-find{display:flex;gap:8px}
+.be-find input{flex:1;min-width:0}
+.be-find .btn{flex:none}
+.be-cands{margin:0 0 12px}
+.be-cand{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:100%;min-height:var(--tap);margin-top:6px;padding:8px 12px;
+  border:1px solid var(--ghost-bd);border-radius:10px;background:var(--ghost-bg);color:var(--navy-dark);font-size:14px;text-align:left;cursor:pointer}
+.be-cand b{color:var(--navy)}
+.be-ro{margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--light);font-size:15px}
+.be-ro b{color:var(--navy)}
+.be-2col{display:grid;gap:0 8px}
+@media (min-width:560px){.be-2col{grid-template-columns:1fr 1fr}}
