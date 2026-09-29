@@ -29,6 +29,42 @@ const CHURCH_COLS = ["person_id", "position_detail", "gender", "birth", "birth_d
   "phone1", "phone2", "guide", "email", "mok_path", "mok1", "mok2", "mok3", "mok_leader", "school_path", "school_dept", "teacher",
   "youth_path", "mission", "address", "address_jibun", "has_photo", "photo_hash", "name_key", "phone_digits"];
 const PHOTO_PATH = "church-people-photos/990000001.jpg";
+// 성경필사 줄 시험(계획 Task 7) — 시험 회차 둘(draft · 2000-04·05) + 앱 계정 여섯. 이름에 모두 STAMP.
+//   회차는 Task 5 after() 의 「성경필사 시험 회차」 단계가 ca-test-* 로 지운다(줄은 CASCADE).
+//   계정(이름이 ca-test-rx 로 시작)은 아래 after() 줄이 지운다 — 그 계정의 줄·별칭(user_identity_aliases)은 CASCADE.
+const RX = { ev: "ca-test-row-" + STAMP, evEl: "ca-test-rowel-" + STAMP, users: [], rowIds: [] };
+const rxName = (tag) => `ca-test-rx${tag}-${STAMP}`;
+const RX_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const RX_SECRET = ["user_id", "auth_user_id", "ident_key", "answers", "phone", "memo", "person_id"];
+let rxReady = null;
+// 성경필사 명단 올리기·교인명부 찾기 시험(계획 Task 8) — draft 회차 하나(2000-06) · 앱 계정 셋 · 그 회차의 앱 줄 하나 · 교인명부 25분.
+//   회차는 Task 5 after() 의 「성경필사 시험 회차」 단계가 ca-test-*<STAMP>* 로 지운다(줄은 CASCADE). 계정·교인명부 줄은 아래 after() 줄이.
+//   교인명부 시험 줄은 교인ID 990000011~ 고정(990000001~3 은 교인명부 시험 것). 이름은 모두 ca-test-up-<STAMP>-<한 글자> — 지어낸 글자다.
+//   ⚠️ 이름 끝이 숫자면 올리기 다듬기가 떼어 버린다 — 시험 이름은 한글 한 글자로 끝낸다(upName).
+const UP = { ev: "ca-test-up-" + STAMP, uid: {} };
+const upName = (k) => `ca-test-up-${STAMP}-${k}`;
+const UP_DIR_IDS = [990000011, 990000012, 990000013, 990000014, ...Array.from({ length: 21 }, (_, k) => 990000021 + k)];
+const UP_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const UP_OUT_KEYS = ["error", "i", "mark", "notes", "row"];
+const UP_ROW_KEYS = ["group", "name", "position", "sub", "who_type"];
+let upReady = null;
+// 성경필사(암송)(2026-09-29) 시험 자료 — 초안(draft) 회차 둘(보통·자격) + 줄 여섯. draft 라 성도님 화면에는 안 보인다.
+//   회차 id 는 모두 ca-test- 로 시작하고 STAMP 를 담는다(Task 6~8 도) — after() 가 이번 실행의 회차를 한꺼번에 지운다(줄은 CASCADE).
+//   앱 줄 하나는 시험 users 에 잇는다(누출 시험용).
+const EV_ID = "ca-test-" + STAMP;              // EVT_ID_RE(/^[a-z0-9][a-z0-9-]{1,40}$/)에 맞는다 — 21자
+const EV_EL_ID = "ca-test-el-" + STAMP;        // 자격 회차(needs.eligibility 있음)
+const EV_NAME = "ca-test-ev-" + STAMP;         // 명부에 없는 분 — 두 회차·두 소속에 나온다(사람 묶음 시험)
+const EV_APP_NAME = "ca-test-evapp-" + STAMP;  // 앱에서 낸 줄의 분(user_id 있음)
+// 앱 줄에만 있는 값 — 담당자 응답에 이 글자가 보이면 성도님 전화·메모·답(answers)이 샌 것이다
+const EV_PHONE = "010-8" + String(STAMP).slice(-3) + "-" + String(STAMP).slice(-7, -3);
+const EV_MEMO = "ca-test-memo-" + STAMP;
+const EV_ANSWER = "ca-test-answer-" + STAMP;
+// 화면이 기대하는 칸(CONTRACT 2절) — 하나라도 더해지거나 빠지면 시험이 잡는다
+const EV_OUT_KEYS = ["id", "title", "short_title", "subtitle", "season", "kind", "status", "opens_on", "closes_on",
+  "list_until", "updated_at", "count", "listedNow", "hasEligibility"].sort();
+const ROW_OUT_KEYS = ["id", "who_type", "group", "sub", "name", "position", "note", "source", "hasUser", "at",
+  "updated_at", "church"].sort();
+const HIST_ROW_KEYS = ["event_id", "title", "closes_on", "who_type", "group", "sub", "position", "source", "hasUser"].sort();
 
 async function body(res) { const t = await res.text(); try { return JSON.parse(t); } catch { return { raw: t }; } }
 
@@ -84,11 +120,29 @@ const PROBE = {
   peoplePerson: { id: 0 },
   peopleStats: {},
   peopleExport: { q: "ca-test-probe-없음" },
+  // 성경필사(암송)(Task 5) — 읽기만. 없는 회차·없는 이름을 가리킨다
+  evEvents: {},
+  evRoster: { event_id: "ca-test-probe-none" },
+  evHistory: { name: "ca-test-probe-없음" },
+  evStats: { event_ids: ["ca-test-probe-none"] },
+  // 성경필사(암송) — 회차 만들기·설정(Task 6). 만들기는 **틀린 id** 로 검사(bad-event-id)에서 떨어져 아무것도 만들지 않는다.
+  evEventCreate: { event: { id: "Bad ID!" } },
+  evEventSave: { event_id: "ca-test-probe-none", expect: "", patch: {} },   // 없는 회차 → not-found
+  evRowAdd: { event_id: "ca-test-probe-none", row: {} },
+  evRowSave: { id: 0, expect: "", patch: {} },
+  evRowDelete: { id: 0, expect: "" },
+  // 성경필사 명단 올리기·교인명부 찾기(Task 8) — 없는 회차 → not-found · 빈 이름 → no-name(둘 다 쓰지도 기록하지도 않는다)
+  evUploadCheck: { event_id: "ca-test-probe-none", rows: [], fill: false },
+  evUploadSave: { event_id: "ca-test-probe-none", rows: [], fill: false },
+  evPeopleLookup: { name: "" },
+  // 이름을 누르면 교적 창(Task 16) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
+  evPerson: { name: "" },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
 // 신청 현황(3단계) 시험 자료 — users 한 줄 + ministry_orders 두 줄(서로 다른 사역팀)
 let minTestUserId = null;
+let evTestUserId = null;               // 성경필사(암송) 앱 줄의 시험 users id — after() 에서 지운다
 const minTestOrderIds = [];
 
 // 사역팀 정보(4·5단계 · Task 2) 시험 자료 — 개발 ministry_catalog 의 실제 줄을 빌려 쓴다.
@@ -107,11 +161,17 @@ async function clearPeopleFixtures() {
 
 before(async () => {
   await clearPeopleFixtures();   // 고정 ID 라 지난번 찌꺼기가 있으면 PK 중복으로 깨진다
-  for (const k of ["none", "pending", "disabled", "ministry", "directory", "super"]) people[k] = await makeUser(k);
+  // 성경필사(암송) — 지난번이 도중에 멈춰 남긴 시험 회차(줄은 CASCADE)·앱 줄 시험 계정. **한 시간 넘은 것만** —
+  //   다른 세션이 개발에서 같은 시험을 돌리는 중이면 그쪽 회차를 지우지 않게.
+  const evStale = new Date(Date.now() - 3600 * 1000).toISOString();
+  await rest(`events?id=like.ca-test-*&created_at=lt.${evStale}`, "DELETE");
+  await rest(`users?name=like.ca-test-evapp-*&created_at=lt.${evStale}`, "DELETE");
+  for (const k of ["none", "pending", "disabled", "ministry", "directory", "bibleevent", "super"]) people[k] = await makeUser(k);
   await makeMember(people.pending, "pending", []);
   await makeMember(people.disabled, "disabled", ["super"]);
   await makeMember(people.ministry, "active", ["ministry"]);
   await makeMember(people.directory, "active", ["directory"]);
+  await makeMember(people.bibleevent, "active", ["bibleevent"]);
   await makeMember(people.super, "active", ["super"]);
 
   const [u] = await rest("users", "POST", {
@@ -171,6 +231,33 @@ before(async () => {
   const up = await fetch(`${URL_}/storage/v1/object/${PHOTO_PATH}`, { method: "POST",
     headers: { ...svc, "Content-Type": "image/jpeg", "x-upsert": "true" }, body: new TextEncoder().encode("ca-test-photo") });
   assert.ok(up.ok, "시험 사진 올리기 실패: " + await up.text());
+
+  // 성경필사(암송) — 시험 users 한 줄(앱 줄용) + draft 회차 둘 + 줄 여섯
+  // ⚠️ PostgREST 배치 insert 는 객체들의 칸이 모두 같아야 한다(PGRST102) — sig() 가 늘 같은 칸을 채운다.
+  const [eu] = await rest("users", "POST",
+    { type: "교구", gu: "시험", mok: "0", name: EV_APP_NAME, identity_key: "교구|시험|0|||" + EV_APP_NAME });
+  evTestUserId = eu.id;
+  const evBase = { short_title: "", subtitle: "시험 회차", season: "", kind: "signup", status: "draft", list_until: null,
+    needs: { position: true, phone: false, memo: false, extra: [] } };
+  await rest("events", "POST", [
+    { ...evBase, id: EV_ID, title: "ca-test 회차 " + STAMP, opens_on: "2000-01-01", closes_on: "2000-01-31" },
+    { ...evBase, id: EV_EL_ID, title: "ca-test 자격 회차 " + STAMP, opens_on: "2000-02-01", closes_on: "2000-02-28",
+      needs: { ...evBase.needs, eligibility: { start: "2000-02-01", weeks: 4, perWeek: 3, need: 3 } } },
+  ]);
+  const sig = (event_id, who_type, group_name, sub_name, name, extra = {}) => ({
+    event_id, user_id: null, source: "import", who_type, group_name, sub_name, name,
+    ident_key: who_type === "교구" ? `교구|${group_name}|${sub_name}|||${name}` : `교회학교|||${group_name}|${sub_name}|${name}`,
+    position: "", phone: "", memo: "", answers: {}, note: "", ...extra,
+  });
+  await rest("event_signups", "POST", [
+    sig(EV_ID, "교구", "시험", "0", "ca-test-min", { position: "집사", note: "담당자가 더함" }),   // 명부 990000001(시험-0목장) → 맞음
+    sig(EV_ID, "교구", "시험", "3", DIR_NAME, { position: "권사" }),                            // 명부는 시험B → 확인 필요
+    sig(EV_ID, "교구", "시험", "7", EV_NAME),                                                  // 명부에 없음
+    sig(EV_ID, "교회학교", "청년부", "", EV_NAME),                                             // 같은 이름 · 다른 소속(다른 묶음)
+    sig(EV_ID, "교구", "시험", "0", EV_APP_NAME,                                               // 앱에서 낸 줄
+      { user_id: evTestUserId, source: "app", phone: EV_PHONE, memo: EV_MEMO, answers: { q: EV_ANSWER } }),
+    sig(EV_EL_ID, "교구", "시험", "7", EV_NAME, { note: "명단 올리기" }),                     // 셋째 줄과 같은 분(한 묶음)
+  ]);
 });
 
 after(async () => {
@@ -184,6 +271,14 @@ after(async () => {
       body: JSON.stringify({ prefixes: ["990000001.jpg"] }) });
     if (!r.ok) throw new Error(r.status + " " + await r.text());
   });
+  // 성경필사(암송) — 이번 실행(STAMP)의 시험 회차 전부(Task 6~8 것 포함 · 줄은 CASCADE) · 앱 줄의 시험 users.
+  //   회차를 먼저 — users 를 먼저 지우면 앱 줄이 CASCADE 로 먼저 사라져 「줄이 남았나」를 제대로 못 본다.
+  await step("성경필사 시험 회차", async () => {
+    await rest(`events?id=like.ca-test-*${STAMP}*`, "DELETE");
+    const left = await rest(`event_signups?select=id&event_id=like.ca-test-*${STAMP}*`, "GET");
+    assert.equal(left.length, 0, "시험 회차의 줄이 남았다(CASCADE)");
+  });
+  if (evTestUserId) await step("성경필사 시험 users", () => rest("users?id=eq." + evTestUserId, "DELETE"));
   for (const p of Object.values(people)) {
     if (p.uid) await step("사용자 " + p.uid, async () => {
       const r = await fetch(URL_ + "/auth/v1/admin/users/" + p.uid, { method: "DELETE", headers: svc });
@@ -216,6 +311,19 @@ after(async () => {
     const paperRemain = await rest(`users?select=id&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
     assert.equal(paperRemain.length, 0, "종이 명단 시험 계정이 지워지지 않았다: " + PAPER_NAME);
   });
+  // 성경필사 줄 시험(Task 7) — 시험 계정. 그 계정의 줄·별칭은 CASCADE. 시험 회차는 Task 5 단계가 ca-test-* 로 지운다.
+  for (const id of RX.users) await step("줄 시험 계정 " + id, () => rest(`users?id=eq.${id}`, "DELETE"));
+  await step("줄 시험 계정 남음", async () => {
+    const left = await rest(`users?select=id&name=like.ca-test-rx*-${STAMP}`, "GET");   // 이번 실행 것만(다른 세션 실행은 건드리지 않는다)
+    assert.equal(left.length, 0, "줄 시험 계정이 남았다: " + left.length + "명");
+  });
+  // 성경필사 명단 올리기 시험(Task 8) — 교인명부 시험 줄 · 시험 계정 셋(올리기는 계정을 만들지 않는다).
+  //   시험 회차는 Task 5 단계가 ca-test-*<STAMP>* 로 지운다(줄은 CASCADE).
+  await step("올리기 시험 교인명부", () => rest(`church_people?person_id=in.(${UP_DIR_IDS.join(",")})`, "DELETE"));
+  await step("올리기 시험 계정", async () => {
+    await rest(`users?name=like.ca-test-up-${STAMP}-*`, "DELETE");
+    assert.equal((await rest(`users?select=id&name=like.ca-test-up-${STAMP}-*`, "GET")).length, 0, "올리기 시험 계정이 남았다");
+  });
   if (errs.length) throw new Error("정리 실패 " + errs.length + "건: " + errs.join(" / "));
 });
 
@@ -245,11 +353,12 @@ test("권한 표: 사람 다섯 × 역할이 필요한 액션", async () => {
     none: "not-registered", pending: "pending", disabled: "disabled",
     ministry: role === "ministry" ? null : "forbidden",
     directory: role === "directory" ? null : "forbidden",
+    bibleevent: role === "bibleevent" ? null : "forbidden",
     super: null,
   })[who];
   for (const [a, payload] of Object.entries(PROBE)) {
     const role = ACTION_ROLES[a];
-    for (const who of ["none", "pending", "disabled", "ministry", "directory", "super"]) {
+    for (const who of ["none", "pending", "disabled", "ministry", "directory", "bibleevent", "super"]) {
       const gate = want(who, role);
       const r = await call(people[who].token, a, payload);
       if (gate) {
@@ -701,4 +810,1087 @@ test("교인명부 표·사진은 공개 키·로그인 사용자 모두 못 연
     headers: { apikey: ANON, Authorization: "Bearer " + people.super.token, "Content-Type": "application/json" },
     body: JSON.stringify({ expiresIn: 60 }) });
   assert.notEqual(sign.status, 200, "로그인 사용자가 서명 주소를 만듦");
+});
+
+// ---------- 성경필사(암송) — 읽기 넷(Task 5) ----------
+// 개수를 DB 에서 직접 센다(서비스 키 · 행은 한 줄만) — 서버의 head 개수와 맞댄다
+async function dbCount(eventId) {
+  const r = await fetch(`${URL_}/rest/v1/event_signups?select=id&limit=1&event_id=eq.${encodeURIComponent(eventId)}`,
+    { headers: { ...svc, Prefer: "count=exact" } });
+  assert.ok(r.ok, "개수 세기 실패 " + r.status);
+  return Number((r.headers.get("content-range") || "").split("/")[1]);
+}
+
+test("성경필사(암송) 회차 목록: 역할 이름 · 칸 · 인원(head) · 성도님께 보임 · 자격 회차 · 최근 먼저", async () => {
+  const be = people.bibleevent.token;
+  const me = await call(be, "me");
+  assert.deepEqual(me.body.roles, ["bibleevent"]);
+  assert.equal(me.body.roles_info[0].label, "성경필사(암송)");
+
+  const r = await call(be, "evEvents");
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.match(r.body.today, /^\d{4}-\d{2}-\d{2}$/);
+  for (const e of r.body.events) assert.deepEqual(Object.keys(e).sort(), EV_OUT_KEYS, e.id);
+  const closes = r.body.events.map((e) => e.closes_on);
+  assert.deepEqual(closes, [...closes].sort().reverse(), "마감일 늦은 회차가 먼저");
+  const mine = r.body.events.find((e) => e.id === EV_ID);
+  const el = r.body.events.find((e) => e.id === EV_EL_ID);
+  assert.ok(mine && el, "시험 회차 둘이 목록에 있어야 한다");
+  assert.equal(mine.count, 5);
+  assert.equal(el.count, 1);
+  assert.equal(mine.status, "draft");
+  assert.equal(mine.listedNow, false, "draft 는 성도님께 안 보인다");
+  assert.equal(mine.hasEligibility, false);
+  assert.equal(el.hasEligibility, true, "needs.eligibility 가 객체면 자격 회차(isEligEvent)");
+  assert.equal(mine.list_until, null);
+  assert.equal(mine.kind, "signup");
+  assert.equal(mine.title, "ca-test 회차 " + STAMP);
+  assert.equal(typeof mine.updated_at, "string");
+  assert.ok(mine.updated_at.length > 0);
+  // 인원은 회차마다 DB 개수와 같다(행을 받아 세면 1,000에서 잘린다)
+  for (const e of r.body.events) assert.equal(e.count, await dbCount(e.id), "인원이 DB 와 다르다: " + e.id);
+});
+
+test("성경필사(암송) 명단: 줄 칸 · 교적 표시 세 가지 · 앱 줄 표시 · id 차례 · 없는 회차", async () => {
+  const be = people.bibleevent.token;
+  const r = await call(be, "evRoster", { event_id: EV_ID });
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.deepEqual(Object.keys(r.body).sort(), ["event", "ok", "rows", "source"]);
+  assert.deepEqual(Object.keys(r.body.event).sort(), EV_OUT_KEYS);
+  assert.equal(r.body.event.id, EV_ID);
+  assert.equal(r.body.event.count, 5);
+  assert.deepEqual(r.body.source, { date: PEOPLE_SOURCE_DATE, total: 3 });   // before() 가 올린 시험 명부 기록
+  assert.equal(r.body.rows.length, 5);
+  for (const x of r.body.rows) assert.deepEqual(Object.keys(x).sort(), ROW_OUT_KEYS);
+  const ids = r.body.rows.map((x) => x.id);
+  assert.deepEqual(ids, [...ids].sort((a, b) => a - b), "줄은 id 차례");
+  const by = (name, type = "교구") => r.body.rows.find((x) => x.name === name && x.who_type === type);
+  assert.deepEqual(by("ca-test-min").church, { state: "맞음", reason: "" });
+  assert.deepEqual(by(DIR_NAME).church, { state: "확인 필요", reason: "같은 이름 1명" });
+  assert.deepEqual(by(EV_NAME).church, { state: "없음", reason: "" });
+  assert.deepEqual(by(EV_NAME, "교회학교").church, { state: "없음", reason: "" });
+  const min = by("ca-test-min");
+  assert.deepEqual([min.group, min.sub, min.position, min.note, min.source, min.hasUser],
+    ["시험", "0", "집사", "담당자가 더함", "import", false]);
+  assert.match(min.at, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(typeof min.updated_at, "string");
+  const cy = by(EV_NAME, "교회학교");
+  assert.deepEqual([cy.group, cy.sub], ["청년부", ""]);
+  const app = by(EV_APP_NAME);
+  assert.deepEqual([app.source, app.hasUser, app.note], ["app", true, ""]);
+
+  const el = await call(be, "evRoster", { event_id: EV_EL_ID });
+  assert.equal(el.body.event.hasEligibility, true);
+  assert.deepEqual(el.body.rows.map((x) => [x.name, x.note]), [[EV_NAME, "명단 올리기"]]);
+
+  for (const bad of [{ event_id: "ca-test-none-" + STAMP }, { event_id: "BAD ID" }, {}]) {
+    assert.equal((await call(be, "evRoster", bad)).body.error, "not-found", JSON.stringify(bad));
+  }
+});
+
+test("성경필사(암송) 사람별 이력: 같은 소속은 한 묶음 · 다른 소속은 따로 · 최근 먼저 · 띄어쓰기 달라도 찾음 · 틀린 이름", async () => {
+  const be = people.bibleevent.token;
+  const h = await call(be, "evHistory", { name: EV_NAME });
+  assert.equal(h.body.ok, true, JSON.stringify(h.body));
+  assert.equal(h.body.groups.length, 2, JSON.stringify(h.body.groups));
+  const [g1, g2] = h.body.groups;
+  for (const g of h.body.groups) {
+    assert.deepEqual(Object.keys(g).sort(), ["label", "n", "rows"]);
+    for (const x of g.rows) assert.deepEqual(Object.keys(x).sort(), HIST_ROW_KEYS);
+  }
+  assert.deepEqual([g1.n, g2.n], [1, 2]);
+  assert.deepEqual(g1.rows.map((x) => x.event_id), [EV_EL_ID, EV_ID], "2월 마감 회차가 먼저 · 교구 두 줄은 한 묶음");
+  assert.deepEqual(g2.rows.map((x) => [x.event_id, x.who_type, x.group, x.sub]), [[EV_ID, "교회학교", "청년부", ""]]);
+  // 이름표 = 「이름 · 소속」(CONTRACT 5절 — 교구는 숫자 목장에만 「목장」)
+  assert.equal(g1.label, EV_NAME + " · 시험 7목장");
+  assert.equal(g2.label, EV_NAME + " · 청년부");
+  assert.deepEqual([g1.rows[0].title, g1.rows[0].closes_on, g1.rows[0].source, g1.rows[0].hasUser],
+    ["ca-test 자격 회차 " + STAMP, "2000-02-28", "import", false]);
+
+  const a = await call(be, "evHistory", { name: EV_APP_NAME });
+  assert.equal(a.body.groups.length, 1);
+  assert.deepEqual([a.body.groups[0].rows[0].source, a.body.groups[0].rows[0].hasUser], ["app", true]);
+
+  // 이름은 NFC·띄어쓰기 없음으로 맞댄다 — 가운데 빈칸·앞뒤 빈칸이 있어도 같은 분
+  assert.equal((await call(be, "evHistory", { name: "  ca-test-ev- " + STAMP + " " })).body.groups.length, 2);
+
+  assert.equal((await call(be, "evHistory", { name: "" })).body.error, "no-name");
+  assert.equal((await call(be, "evHistory", {})).body.error, "no-name");
+  assert.equal((await call(be, "evHistory", { name: 'ca"test' })).body.error, "bad-char");
+  assert.equal((await call(be, "evHistory", { name: "가".repeat(41) })).body.error, "too-long");
+  assert.deepEqual((await call(be, "evHistory", { name: "ca-test-없는분-" + STAMP })).body, { ok: true, groups: [] });
+});
+
+test("성경필사(암송) 통계: 회차별 인원 · 교구(부서)×회차 · 여러 번 참여(이름·소속 따로) · 빈 배열은 전부 · 틀린 회차 id", async () => {
+  const be = people.bibleevent.token;
+  const s = await call(be, "evStats", { event_ids: [EV_ID, EV_EL_ID] });
+  assert.equal(s.body.ok, true, JSON.stringify(s.body));
+  assert.deepEqual(Object.fromEntries(s.body.perEvent.map((x) => [x.id, x.count])), { [EV_ID]: 5, [EV_EL_ID]: 1 });
+  const gu = s.body.byGroup.find((g) => g.who_type === "교구" && g.group_name === "시험");
+  const cy = s.body.byGroup.find((g) => g.who_type === "교회학교" && g.group_name === "청년부");
+  assert.ok(gu && cy, JSON.stringify(s.body.byGroup));
+  assert.equal(gu.counts[EV_ID] ?? 0, 4);
+  assert.equal(gu.counts[EV_EL_ID] ?? 0, 1);
+  assert.equal(cy.counts[EV_ID] ?? 0, 1);
+  assert.equal(cy.counts[EV_EL_ID] ?? 0, 0);
+  for (const g of s.body.byGroup) for (const v of Object.values(g.counts)) assert.equal(typeof v, "number");
+  assert.deepEqual(s.body.repeaters, [], "두 회차뿐이라 3회 이상인 분이 없다");
+
+  // 셋째 회차를 잠깐 더해 같은 분(교구 시험 7)을 세 번으로 — 여러 번 참여 한 줄의 모양(CONTRACT 5절)
+  const REP_ID = "ca-test-rep-" + STAMP;
+  await rest("events", "POST", { id: REP_ID, title: "ca-test 셋째 회차 " + STAMP, short_title: "", subtitle: "", season: "",
+    kind: "signup", status: "draft", list_until: null, opens_on: "2000-04-01", closes_on: "2000-04-30", needs: {} });
+  try {
+    await rest("event_signups", "POST", { event_id: REP_ID, user_id: null, source: "import", who_type: "교구",
+      group_name: "시험", sub_name: "7", name: EV_NAME, ident_key: `교구|시험|7|||${EV_NAME}`, position: "", note: "" });
+    const s3 = await call(be, "evStats", { event_ids: [EV_ID, EV_EL_ID, REP_ID] });
+    assert.equal(s3.body.ok, true, JSON.stringify(s3.body));
+    assert.equal(s3.body.repeaters.length, 1, JSON.stringify(s3.body.repeaters));
+    const rep = s3.body.repeaters[0];
+    assert.deepEqual(Object.keys(rep).sort(), ["events", "label", "n", "name", "times"]);
+    assert.equal(rep.name, EV_NAME);
+    assert.equal(rep.label, "시험 7목장", "이름표는 소속만(이름은 name 칸에)");
+    assert.equal(rep.times, 3);
+    assert.deepEqual([...rep.events].sort(), [EV_ID, EV_EL_ID, REP_ID].sort());
+    assert.ok(Number.isInteger(rep.n) && rep.n >= 1);
+    // 사람별 이력의 묶음 이름표와 같은 모양 — 두 화면이 같은 분을 같은 글자로 부른다
+    const h = await call(be, "evHistory", { name: EV_NAME });
+    assert.equal(h.body.groups[0].label, rep.name + " · " + rep.label);
+  } finally {
+    await rest(`events?id=eq.${REP_ID}`, "DELETE");   // 줄은 CASCADE — 뒤 시험(누출·Task 6~8)이 이 회차를 보지 않게
+  }
+
+  const all = await call(be, "evStats", { event_ids: [] });
+  assert.equal(all.body.ok, true, JSON.stringify(all.body));
+  assert.ok(all.body.perEvent.some((x) => x.id === EV_ID && x.count === 5), "빈 배열이면 모든 회차");
+  assert.ok(all.body.perEvent.some((x) => x.id === EV_EL_ID), "빈 배열이면 모든 회차");
+
+  const none = await call(be, "evStats", { event_ids: ["ca-test-none-" + STAMP] });
+  assert.equal(none.body.ok, true, JSON.stringify(none.body));
+  assert.deepEqual(none.body.perEvent, []);
+
+  assert.equal((await call(be, "evStats", {})).body.error, "bad-event-id");
+  assert.equal((await call(be, "evStats", { event_ids: "x" })).body.error, "bad-event-id");
+  assert.equal((await call(be, "evStats", { event_ids: ["BAD ID"] })).body.error, "bad-event-id");
+});
+
+test("성경필사(암송) 1,000행 넘는 회차: 명단·인원·통계가 잘리지 않는다(쪽 나누기 · head 개수)", async () => {
+  const be = people.bibleevent.token;
+  const BIG_ID = "ca-test-big-" + STAMP, N = 1001;   // 지우기는 after() 가 한다(줄은 CASCADE)
+  await rest("events", "POST", { id: BIG_ID, title: "ca-test 큰 회차 " + STAMP, short_title: "", subtitle: "", season: "",
+    kind: "signup", status: "draft", list_until: null, opens_on: "2000-03-01", closes_on: "2000-03-31", needs: {} });
+  await rest("event_signups", "POST", Array.from({ length: N }, (_, i) => ({
+    event_id: BIG_ID, user_id: null, source: "import", who_type: "교구", group_name: "시험", sub_name: String(i % 50),
+    name: "ca-test-big-" + i, ident_key: `교구|시험|${i % 50}|||ca-test-big-${i}`, position: "", note: "" })));
+  const r = await call(be, "evRoster", { event_id: BIG_ID });
+  assert.equal(r.body.ok, true, JSON.stringify(r.body).slice(0, 300));
+  assert.equal(r.body.rows.length, N, "명단이 1,000에서 잘렸다");
+  assert.equal(new Set(r.body.rows.map((x) => x.id)).size, N, "쪽을 넘기며 같은 줄이 두 번 들어왔다");
+  assert.equal(r.body.event.count, N);
+  assert.equal((await call(be, "evEvents")).body.events.find((e) => e.id === BIG_ID).count, N);
+  const s = await call(be, "evStats", { event_ids: [BIG_ID] });
+  assert.deepEqual(s.body.perEvent.map((x) => [x.id, x.count]), [[BIG_ID, N]]);
+});
+
+test("성경필사(암송) 누출: 응답 어디에도 UUID 꼴 값·user_id·신원 키·성도님 전화·메모·답·교적 값이 없다", async () => {
+  const be = people.bibleevent.token;
+  const UUID_ANY = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const FORBIDDEN = ["user_id", "auth_user_id", "ident_key", "answers", "phone", "memo", "person_id"];
+  // 응답 전체의 칸 이름(깊이 상관없이). counts 의 열쇠는 회차 id(값은 수)라 칸 이름으로 모으지 않는다.
+  const keysOf = (v, out = []) => {
+    if (Array.isArray(v)) { for (const x of v) keysOf(x, out); }
+    else if (v && typeof v === "object") {
+      for (const [k, x] of Object.entries(v)) { out.push(k); if (k !== "counts") keysOf(x, out); }
+    }
+    return out;
+  };
+  // ① 앱 줄에만 있는 값 ② 시험 계정 id ③ 신원 키 꼴 ④ 명부에만 있는 값(목장 원문·주소·연락처2)
+  const marks = [EV_PHONE, EV_PHONE.replace(/\D/g, ""), EV_MEMO, EV_ANSWER, evTestUserId, "교구|시험|",
+    "시험-0목장", "시험B-1목장", "비밀주소", CHURCH_ONLY_PHONE, CHURCH_ONLY_PHONE.replace(/\D/g, "")];
+  const resps = [
+    ["evEvents", await call(be, "evEvents")],
+    ["evRoster", await call(be, "evRoster", { event_id: EV_ID })],
+    ["evRoster 자격", await call(be, "evRoster", { event_id: EV_EL_ID })],
+    ["evHistory 앱 줄", await call(be, "evHistory", { name: EV_APP_NAME })],
+    ["evHistory", await call(be, "evHistory", { name: EV_NAME })],
+    ["evStats", await call(be, "evStats", { event_ids: [EV_ID, EV_EL_ID] })],
+    ["evStats 전부", await call(be, "evStats", { event_ids: [] })],
+  ];
+  for (const [label, r] of resps) {
+    assert.equal(r.body.ok, true, label + " " + JSON.stringify(r.body));
+    const text = JSON.stringify(r.body);
+    assert.ok(!UUID_ANY.test(text), label + " 응답에 UUID 꼴 값이 있다: " + (text.match(UUID_ANY) || [""])[0]);
+    for (const mk of marks) assert.ok(!text.includes(mk), `${label} 응답에 감출 값이 실렸다(표지 ${marks.indexOf(mk) + 1}번)`);
+    const bad = keysOf(r.body).filter((k) => FORBIDDEN.includes(k) || CHURCH_COLS.includes(k));
+    assert.deepEqual(bad, [], label + " 응답에 감출 칸이 있다: " + bad.join(","));
+  }
+});
+
+// ---------- 성경필사(암송) — 회차 만들기·설정(Task 6) ----------
+// 시험 회차 — EVT_ID_RE 에 맞는 꼴. 지우기는 Task 5 의 before()·after() 가 events?id=like.ca-test-* 로 한다(줄은 CASCADE).
+const EVC_NEW = `ca-test-${STAMP}-new`;
+// 회차 응답에 새면 안 되는 것 — UUID 꼴 값(user_id 등)과 줄·설정 쪽 칸 이름
+function evcNoLeak(body, label) {
+  const text = JSON.stringify(body);
+  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text), label + ": UUID 꼴 값이 실렸다");
+  for (const k of ["user_id", "auth_user_id", "ident_key", "answers", "phone", "memo", "person_id", "needs", "copy", "sort_order"]) {
+    assert.ok(!text.includes(`"${k}"`), label + ": " + k + " 칸이 실렸다");
+  }
+}
+
+test("evEventCreate — 회차 만들기: 검사 코드마다 아무것도 안 만든다 · draft 고정 · needs 기본값 · kind signup · sort_order 0 · exists · 기록", async () => {
+  const t = people.bibleevent.token;
+  const base = { id: EVC_NEW, title: "ca-test 회차", short_title: "시험", subtitle: "", season: "2026-4Q",
+    opens_on: "2026-10-20", closes_on: "2026-11-30", list_until: "" };
+  const bad = [
+    [{ ...base, id: "Bad ID!" }, "bad-event-id"],
+    [{ ...base, id: "a" }, "bad-event-id"],                    // 두 글자 이상
+    [{ ...base, id: undefined }, "bad-event-id"],              // id 없음(JSON 에서 빠진다)
+    [{ ...base, id: 12345 }, "bad-event-id"],                  // 글자가 아닌 id
+    [{ ...base, title: "   " }, "no-title"],
+    [{ ...base, title: { a: 1 } }, "no-title"],                // 객체는 "" 로 — 「[object Object]」 제목이 생기지 않는다
+    [{ ...base, opens_on: "2026/10/20" }, "bad-period"],
+    [{ ...base, closes_on: "2026-10-01" }, "period-reversed"],
+    [{ ...base, list_until: "언젠가" }, "bad-list-until"],
+    [{ ...base, list_until: "2026-11-01" }, "list-until-before-close"],
+  ];
+  for (const [event, code] of bad) {
+    const r = await call(t, "evEventCreate", { event });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body, { ok: false, error: code }, JSON.stringify(event));
+  }
+  assert.deepEqual(await rest(`events?select=id&id=eq.${EVC_NEW}`, "GET"), [], "검사에 걸린 만들기가 회차를 남겼다");
+  assert.deepEqual(await rest(`events?select=id&id=eq.12345`, "GET"), [], "글자가 아닌 id 로 회차가 생겼다");
+
+  // 만들기 — 상태·종류·needs·copy·sort_order 를 보내도 서버가 정한다(draft · signup · 직분만 받는 기본 needs · 빈 copy · 0)
+  const c = await call(t, "evEventCreate", { event: { ...base, status: "open", kind: "quiz", sort_order: 7,
+    needs: { eligibility: { start: "2026-01-01" } }, copy: { intro: "x" } } });
+  assert.equal(c.body.ok, true, JSON.stringify(c.body));
+  assert.deepEqual(Object.keys(c.body).sort(), ["event", "ok"]);
+  assert.deepEqual(Object.keys(c.body.event).sort(), EV_OUT_KEYS);
+  evcNoLeak(c.body, "evEventCreate");
+  assert.equal(c.body.event.id, EVC_NEW);
+  assert.equal(c.body.event.title, "ca-test 회차");
+  assert.equal(c.body.event.status, "draft");
+  assert.equal(c.body.event.kind, "signup");
+  assert.equal(c.body.event.list_until, null);
+  assert.equal(c.body.event.count, 0);
+  assert.equal(c.body.event.listedNow, false);
+  assert.equal(c.body.event.hasEligibility, false);
+  const [row] = await rest(`events?select=status,kind,needs,copy,list_until,sort_order,updated_at&id=eq.${EVC_NEW}`, "GET");
+  const { updated_at: dbUpdatedAt, ...stored } = row;
+  assert.deepEqual(stored, { status: "draft", kind: "signup", needs: { position: true, phone: false, memo: false, extra: [] },
+    copy: {}, list_until: null, sort_order: 0 });
+  assert.equal(c.body.event.updated_at, dbUpdatedAt, "화면이 expect 로 쓸 updated_at 이 DB 와 같아야 한다");
+
+  // 같은 id 다시 → exists · 덮어쓰지 않는다
+  const again = await call(t, "evEventCreate", { event: { ...base, title: "덮어쓰기 시도" } });
+  assert.deepEqual(again.body, { ok: false, error: "exists" });
+  assert.equal((await rest(`events?select=title&id=eq.${EVC_NEW}`, "GET"))[0].title, "ca-test 회차");
+
+  // 기록 — event.create 한 줄(바꾼 기록 기본 보기) · 검사에 걸린 것·exists 는 기록을 남기지 않는다
+  const logs = (await call(people.super.token, "auditList", { limit: 50 })).body.rows
+    .filter((r) => r.action === "event.create" && r.target === EVC_NEW);
+  assert.equal(logs.length, 1, JSON.stringify(logs));
+  assert.equal(logs[0].detail.title, "ca-test 회차");
+  assert.deepEqual(logs[0].detail.before, {});
+  assert.deepEqual(logs[0].detail.after, { title: "ca-test 회차", short_title: "시험", subtitle: "", season: "2026-4Q",
+    opens_on: "2026-10-20", closes_on: "2026-11-30", status: "draft", list_until: null });
+});
+
+test("evEventSave — 회차 설정: 없는 회차 · expect(conflict) · 검사 코드 · 보낸 칸만 · 공개 확인은 쓰기 전에(needs-confirm 이면 그대로) · 지난 공개 종료일 · 자격 시작일 · 기록", async () => {
+  const t = people.bibleevent.token;
+  const COLS = "id,title,short_title,subtitle,season,kind,status,opens_on,closes_on,list_until,needs,copy,sort_order,updated_at";
+  const read = async () => (await rest(`events?select=${COLS}&id=eq.${EVC_NEW}`, "GET"))[0];
+  const save = (expect, patch, extra = {}) => call(t, "evEventSave", { event_id: EVC_NEW, expect, patch, ...extra });
+  const settingsLogs = async () => (await call(people.super.token, "auditList", { limit: 200 })).body.rows
+    .filter((r) => r.action === "event.settings" && r.target === EVC_NEW);
+  const okShape = (r, label) => {
+    assert.equal(r.body.ok, true, label + " " + JSON.stringify(r.body));
+    assert.deepEqual(Object.keys(r.body).sort(), ["event", "listedBefore", "listedNow", "ok"], label);
+    assert.deepEqual(Object.keys(r.body.event).sort(), EV_OUT_KEYS, label);
+    evcNoLeak(r.body, label);
+  };
+  let cur = await read();
+  assert.ok(cur, "앞 시험(evEventCreate)이 만든 회차가 있어야 한다");
+
+  // 없는 회차 · 모양이 틀린 id · 빈 id → not-found(아무것도 안 만든다)
+  for (const event_id of [`ca-test-${STAMP}-none`, "Bad ID!", ""]) {
+    const r = await call(t, "evEventSave", { event_id, expect: cur.updated_at, patch: { title: "x" } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body, { ok: false, error: "not-found" }, event_id);
+  }
+  assert.deepEqual(await rest(`events?select=id&id=eq.ca-test-${STAMP}-none`, "GET"), []);
+
+  // expect 가 없거나 다르면 conflict
+  assert.deepEqual((await call(t, "evEventSave", { event_id: EVC_NEW, patch: { title: "x" } })).body, { ok: false, error: "conflict" });
+  assert.deepEqual((await save("2000-01-01T00:00:00+00:00", { title: "x" })).body, { ok: false, error: "conflict" });
+  assert.deepEqual(await read(), cur, "conflict 인데 줄이 바뀌었다");
+
+  // 검사 코드 — 하나씩, 줄은 그대로
+  const bad = [
+    [{ title: "  " }, "no-title"],
+    [{ opens_on: "2026/10/20" }, "bad-period"],
+    [{ closes_on: "" }, "bad-period"],
+    [{ closes_on: "2026-10-01" }, "period-reversed"],
+    [{ status: "published" }, "bad-status"],
+    [{ list_until: "언젠가" }, "bad-list-until"],
+    [{ list_until: "2026-11-01" }, "list-until-before-close"],
+    [{ closes_on: "2026-12-31", list_until: "2026-12-01" }, "list-until-before-close"],
+  ];
+  for (const [patch, code] of bad) {
+    assert.deepEqual((await save(cur.updated_at, patch)).body, { ok: false, error: code }, JSON.stringify(patch));
+  }
+  assert.deepEqual(await read(), cur, "검사에 걸린 저장이 줄을 바꿨다");
+
+  // 보낸 칸만 — needs·kind·copy·id·sort_order 는 보내도 버린다
+  const s1 = await save(cur.updated_at, { subtitle: "  시험 부제  ", needs: {}, kind: "quiz", copy: { intro: "x" },
+    id: `ca-test-${STAMP}-hijack`, sort_order: 99 });
+  okShape(s1, "보낸 칸만");
+  assert.equal(s1.body.listedBefore, false);
+  assert.equal(s1.body.listedNow, false);
+  assert.equal(s1.body.event.subtitle, "시험 부제");
+  const r1 = await read();
+  assert.equal(r1.subtitle, "시험 부제");
+  assert.notEqual(r1.updated_at, cur.updated_at);
+  assert.equal(s1.body.event.updated_at, r1.updated_at);
+  assert.deepEqual({ ...r1, subtitle: cur.subtitle, updated_at: cur.updated_at }, cur, "부제·updated_at 밖의 칸이 바뀌었다");
+  assert.deepEqual(await rest(`events?select=id&id=eq.ca-test-${STAMP}-hijack`, "GET"), [], "id 가 바뀌거나 새 회차가 생겼다");
+
+  // 옛 expect 로 또 → conflict(그사이 누가 고친 것과 같다) · 줄은 그대로
+  assert.deepEqual((await save(cur.updated_at, { title: "늦은 저장" })).body, { ok: false, error: "conflict" });
+  assert.deepEqual(await read(), r1);
+  cur = r1;
+
+  // 바뀐 것이 없으면 쓰지 않는다(updated_at 그대로)
+  const same = await save(cur.updated_at, { subtitle: "시험 부제" });
+  okShape(same, "바뀐 것 없음");
+  assert.equal(same.body.event.updated_at, cur.updated_at);
+  assert.deepEqual(await read(), cur);
+
+  // 공개 확인 — 안 보이던 회차가 보이게 되는 저장은 confirmListed:true 가 없으면 **아무것도 쓰지 않는다**
+  const n0 = (await settingsLogs()).length;
+  for (const extra of [{}, { confirmListed: "true" }, { confirmListed: 1 }, { confirmListed: false }]) {
+    for (const status of ["open", "closed"]) {
+      const r = await save(cur.updated_at, { status, title: "보이게 하며 고친 이름" }, extra);
+      assert.deepEqual(r.body, { ok: false, error: "needs-confirm" }, status + " " + JSON.stringify(extra));
+    }
+  }
+  assert.deepEqual(await read(), cur, "needs-confirm 인데 줄이 바뀌었다");
+  assert.equal((await settingsLogs()).length, n0, "needs-confirm 인데 기록이 남았다");
+
+  // 확인을 받으면 쓴다                                                                   (기록 1)
+  const open = await save(cur.updated_at, { status: "open" }, { confirmListed: true });
+  okShape(open, "공개");
+  assert.equal(open.body.listedBefore, false);
+  assert.equal(open.body.listedNow, true);
+  assert.equal(open.body.event.status, "open");
+  assert.equal(open.body.event.listedNow, true);
+  cur = await read();
+  // 이미 보이는 회차의 다른 칸은 확인 없이                                                 (기록 2)
+  const ren = await save(cur.updated_at, { title: "ca-test 회차 고침" });
+  okShape(ren, "보이는 회차 이름 고치기");
+  assert.equal(ren.body.listedBefore, true);
+  assert.equal(ren.body.listedNow, true);
+  cur = await read();
+  // 다시 draft — 안 보이게 하는 것은 확인 없이(개발 첫 화면에 오래 두지 않는다)               (기록 3)
+  const hide = await save(cur.updated_at, { status: "draft" });
+  okShape(hide, "다시 draft");
+  assert.equal(hide.body.listedBefore, true);
+  assert.equal(hide.body.listedNow, false);
+  cur = await read();
+  assert.equal(cur.status, "draft");
+
+  // 공개 종료일 — 날짜로 넣었다가 비우면 null                                              (기록 4·5)
+  const lu = await save(cur.updated_at, { list_until: "2026-12-31" });
+  okShape(lu, "공개 종료일");
+  assert.equal(lu.body.event.list_until, "2026-12-31");
+  cur = await read();
+  const lu2 = await save(cur.updated_at, { list_until: "" });
+  okShape(lu2, "공개 종료일 비우기");
+  assert.equal(lu2.body.event.list_until, null);
+  cur = await read();
+  assert.equal(cur.list_until, null);
+
+  // 공개 종료일이 지나 안 보이던 회차 — 종료일을 비우거나 늦추면 다시 보이게 된다 → 역시 확인이 먼저
+  // (서비스 키로 옛 회차 모양을 만든다 — 2000년 날짜라 오늘이 언제든 「지났다」)
+  await rest(`events?id=eq.${EVC_NEW}`, "PATCH",
+    { status: "closed", opens_on: "2000-01-01", closes_on: "2000-01-31", list_until: "2000-02-01" });
+  cur = await read();
+  for (const list_until of ["", "2099-12-31"]) {
+    assert.deepEqual((await save(cur.updated_at, { list_until })).body, { ok: false, error: "needs-confirm" }, "list_until " + list_until);
+  }
+  assert.deepEqual(await read(), cur, "needs-confirm 인데 줄이 바뀌었다(공개 종료일)");
+  // 지난 날짜끼리 바꾸는 것은 여전히 안 보이므로 확인 없이                                  (기록 6)
+  const past = await save(cur.updated_at, { list_until: "2000-03-01" });
+  okShape(past, "지난 공개 종료일");
+  assert.deepEqual([past.body.listedBefore, past.body.listedNow], [false, false]);
+  // 되돌린다(서비스 키 — 기록 없음)
+  await rest(`events?id=eq.${EVC_NEW}`, "PATCH",
+    { status: "draft", opens_on: "2026-10-20", closes_on: "2026-11-30", list_until: null });
+  cur = await read();
+
+  // 자격 회차 — opens_on 은 needs.eligibility.start 보다 앞설 수 없다 · 저장해도 needs 는 그대로   (기록 7)
+  const needs = { position: true, phone: false, memo: false, extra: [],
+    eligibility: { start: "2026-10-11", weeks: 6, perWeek: 3, need: 3, minNeed: 2 } };
+  await rest(`events?id=eq.${EVC_NEW}`, "PATCH", { needs });   // 서비스 키로 — 이 메뉴는 needs 를 못 바꾼다
+  cur = await read();
+  assert.deepEqual((await save(cur.updated_at, { opens_on: "2026-10-01" })).body, { ok: false, error: "before-eligibility" });
+  assert.deepEqual(await read(), cur);
+  const el = await save(cur.updated_at, { opens_on: "2026-10-11" });          // 같은 날은 된다
+  okShape(el, "자격 시작일과 같은 날");
+  assert.equal(el.body.event.hasEligibility, true);
+  assert.deepEqual((await read()).needs, needs, "저장 한 번에 자격 규칙이 바뀌었다");
+
+  // 기록 — 바뀐 저장만, 바뀐 칸만 전·후로
+  const logs = await settingsLogs();
+  assert.equal(logs.length, n0 + 7, "공개·이름·draft·종료일 둘·지난 종료일·시작일 = 일곱 건");
+  const opened = logs.find((r) => r.detail?.after?.status === "open");
+  assert.ok(opened, "공개로 바꾼 기록이 없다");
+  assert.deepEqual(opened.detail.before, { status: "draft" });
+  assert.deepEqual(opened.detail.after, { status: "open" });
+  assert.equal(opened.detail.title, "ca-test 회차");
+  const sub = logs.find((r) => r.detail?.after?.subtitle === "시험 부제");
+  assert.ok(sub, "부제 기록이 없다");
+  assert.deepEqual(sub.detail.before, { subtitle: "" });
+  assert.deepEqual(sub.detail.after, { subtitle: "시험 부제" });            // needs·kind·copy 는 기록에도 없다
+});
+
+// ---------- 성경필사(암송) — 한 분 더하기 · 줄 고치기 · 빼기 (계획 Task 7) ----------
+// 시험 자료는 첫 시험이 한 번 만든다(뒤 시험은 같은 약속을 기다린다).
+function rowFixtures() {
+  rxReady ??= (async () => {
+    // 지난번이 도중에 멈춰 남긴 시험 계정 — 그 계정의 줄·별칭은 CASCADE. **한 시간 넘은 것만**
+    //   (다른 세션이 개발에서 같은 시험을 돌리는 중이면 그쪽 계정을 지우지 않게 — Task 5 before()·Task 8 과 같은 규칙).
+    const rxStale = new Date(Date.now() - 3600 * 1000).toISOString();
+    await rest(`users?name=like.ca-test-rx*&created_at=lt.${rxStale}`, "DELETE");
+    const needs = { position: true, phone: false, memo: false, extra: [] };
+    await rest("events", "POST", { id: RX.ev, title: "ca-test 줄 시험 " + STAMP, opens_on: "2000-04-01", closes_on: "2000-04-30",
+      status: "draft", kind: "signup", needs });
+    await rest("events", "POST", { id: RX.evEl, title: "ca-test 자격 줄 시험 " + STAMP, opens_on: "2000-05-01", closes_on: "2000-05-31",
+      status: "draft", kind: "signup", needs: { ...needs, eligibility: { start: "2000-05-01", weeks: 4, perWeek: 3, need: 3 } } });
+    const user = async (tag, gu, mok) => {
+      const [u] = await rest("users", "POST",
+        { type: "교구", gu, mok, name: rxName(tag), identity_key: `교구|${gu}|${mok}|||${rxName(tag)}` });
+      RX.users.push(u.id);
+      return u.id;
+    };
+    RX.u7 = await user("seven", "사랑", "07");      // 앱에서 목장 「07」로 로그인한 분
+    RX.uLink = await user("link", "믿음", "3");     // 계정 하나 → 잇는다
+    RX.uAlias = await user("alias", "소망", "5");   // 지금 소속 소망 5 · 옛 소속(별칭) 소망 4
+    await rest("user_identity_aliases", "POST", { identity_key: `교구|소망|4|||${rxName("alias")}`, user_id: RX.uAlias });
+    RX.uTwoA = await user("twoacc", "은혜", "2");   // 같은 분 계정이 둘(「2」·「2목장」) → 잇지 않는다
+    RX.uTwoB = await user("twoacc", "은혜", "2목장");
+    RX.uRace = await user("race", "기쁨", "9");     // 동시에 셋이 더하기
+    const put = async (x) => (await rest("event_signups", "POST", x))[0];
+    // 앱에서 낸 줄 — 목장 「07」 그대로(앱 로그인 값)
+    RX.app = await put({ event_id: RX.ev, user_id: RX.u7, ident_key: `교구|사랑|07|||${rxName("seven")}`, who_type: "교구",
+      group_name: "사랑", sub_name: "07", name: rxName("seven"), position: "집사", source: "app" });
+    // 이관 줄 — 옛 값이 지금 규칙에 어긋난다(이름에 괄호 · 교구 칸 「화평교구」). 다른 칸만 고칠 때 막히면 안 된다.
+    RX.old = await put({ event_id: RX.ev, ident_key: `교구|화평교구|1|||${rxName("old")}(구)`, who_type: "교구",
+      group_name: "화평교구", sub_name: "1", name: rxName("old") + "(구)", position: "집사", note: "원래: 화평 30 · 집사", source: "import" });
+    // 이관 줄 — 고치기 시험용
+    RX.edit = await put({ event_id: RX.ev, ident_key: `교구|섬김|1|||${rxName("edit")}`, who_type: "교구",
+      group_name: "섬김", sub_name: "1", name: rxName("edit"), position: "집사", note: "원래: 화평 30 · 집사", source: "import" });
+    // 자격 회차의 이관 줄 — 메모만 고치고, 빼지 못한다
+    RX.el = await put({ event_id: RX.evEl, ident_key: `교구|화평|1|||${rxName("elig")}`, who_type: "교구",
+      group_name: "화평", sub_name: "1", name: rxName("elig"), source: "import" });
+  })();
+  return rxReady;
+}
+
+// 응답 어디에도 UUID 꼴 값(user_id)이 없고, 줄에 숨길 칸이 없다
+function rxClean(r) {
+  const s = JSON.stringify(r.body);
+  assert.ok(!RX_UUID.test(s), "응답에 UUID 꼴 값: " + s);
+  if (r.body.row) for (const k of RX_SECRET) assert.equal(k in r.body.row, false, "줄에 " + k);
+}
+const rxDb = async (id) => (await rest(
+  `event_signups?select=id,user_id,ident_key,name,group_name,sub_name,position,note,source,updated_at&id=eq.${id}`, "GET"))[0];
+
+test("성경필사 한 분 더하기: 넣음(import·메모 머리·다듬기) · 계정 잇기(별칭 포함) · 계정 둘 · 이미 있음(07/7·계정·키) · 자격 회차 · 메모 길이(머리 포함) · 모양 틀림 · 계정을 만들지 않음", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const add = (row, ev = RX.ev) => call(t, "evRowAdd", { event_id: ev, row: { who_type: "교구", position: "", note: "", ...row } });
+
+  // 1) 앱 계정이 없는 분 — 넣음 · 잇지 않음 · 「화평교구」→화평 · 「07」→7 · 「집사님」→집사 · 메모 머리
+  const a1 = await add({ group: "화평교구", sub: "07", name: rxName("new"), position: "집사님", note: "시험 메모" });
+  assert.equal(a1.body.ok, true, JSON.stringify(a1.body));
+  rxClean(a1);
+  assert.deepEqual(Object.keys(a1.body.row).sort(), ROW_OUT_KEYS);
+  assert.equal(a1.body.linked, false);
+  assert.deepEqual(a1.body.warnings, []);
+  const r1 = a1.body.row;
+  assert.deepEqual([r1.who_type, r1.group, r1.sub, r1.name, r1.position, r1.source, r1.hasUser],
+    ["교구", "화평", "7", rxName("new"), "집사", "import", false]);
+  assert.equal(r1.note, "담당자가 더함 / 시험 메모");
+  RX.rowIds.push(r1.id);
+  RX.added = r1;
+  const d1 = await rxDb(r1.id);
+  assert.equal(d1.ident_key, `교구|화평|7|||${rxName("new")}`);
+  assert.equal(d1.user_id, null);
+  assert.equal(d1.source, "import");
+  assert.equal((await rest(`users?select=id&name=eq.${rxName("new")}`, "GET")).length, 0, "계정을 만들면 안 된다");
+
+  // 2) 같은 분을 다른 표기로 다시 — 「7목장」·「07」 둘 다 already
+  assert.equal((await add({ group: "화평", sub: "7목장", name: rxName("new") })).body.error, "already");
+  assert.equal((await add({ group: "화평", sub: "07", name: rxName("new") })).body.error, "already");
+
+  // 3) 07/7 — 앱에서 목장 「07」로 낸 분을 담당자가 「7」로 더하면 already(설계 §1-1)
+  assert.equal((await add({ group: "사랑", sub: "7", name: rxName("seven") })).body.error, "already");
+
+  // 4) 앱 계정 하나 → 잇는다 · 목록 밖 직분은 경고만
+  const a4 = await add({ group: "믿음", sub: "3", name: rxName("link"), position: "명예권사" });
+  assert.equal(a4.body.ok, true, JSON.stringify(a4.body));
+  rxClean(a4);
+  assert.equal(a4.body.linked, true);
+  assert.equal(a4.body.row.hasUser, true);
+  assert.equal(a4.body.row.position, "명예권사");
+  assert.equal(a4.body.warnings.length, 1, JSON.stringify(a4.body.warnings));
+  assert.match(a4.body.warnings[0], /명예권사/);
+  assert.equal((await rxDb(a4.body.row.id)).user_id, RX.uLink);
+  RX.rowIds.push(a4.body.row.id);
+  RX.linked = a4.body.row;
+  assert.equal((await add({ group: "믿음", sub: "03", name: rxName("link") })).body.error, "already");
+
+  // 5) 옛 소속(별칭 「소망 4」)으로 적어도 그 계정에 잇는다
+  const a5 = await add({ group: "소망", sub: "4", name: rxName("alias") });
+  assert.equal(a5.body.ok, true, JSON.stringify(a5.body));
+  rxClean(a5);
+  assert.equal(a5.body.linked, true);
+  assert.equal((await rxDb(a5.body.row.id)).user_id, RX.uAlias);
+  RX.rowIds.push(a5.body.row.id);
+  RX.aliasRow = a5.body.row;
+  // 지금 소속 「소망 5」로 적으면 키는 다르지만 그 계정이 이미 회차에 있다 → already
+  assert.equal((await add({ group: "소망", sub: "5", name: rxName("alias") })).body.error, "already");
+
+  // 6) 계정이 둘 → 잇지 않고 알린다
+  const a6 = await add({ group: "은혜", sub: "2", name: rxName("twoacc") });
+  assert.equal(a6.body.ok, true, JSON.stringify(a6.body));
+  rxClean(a6);
+  assert.equal(a6.body.linked, false);
+  assert.equal(a6.body.row.hasUser, false);
+  assert.ok(a6.body.warnings.some((w) => /계정이 2개/.test(w)), JSON.stringify(a6.body.warnings));
+  RX.rowIds.push(a6.body.row.id);
+
+  // 7) 자격 회차 → eligibility-event · 아무것도 안 들어간다
+  assert.equal((await add({ group: "화평", sub: "1", name: rxName("elnew") }, RX.evEl)).body.error, "eligibility-event");
+  assert.equal((await rest(`event_signups?select=id&event_id=eq.${RX.evEl}&name=eq.${rxName("elnew")}`, "GET")).length, 0);
+
+  // 8) 메모 길이는 머리 표기를 붙인 **뒤**로 센다 — 「담당자가 더함 / 」(10자) + 490 = 500 은 넣고, 491 은 note-too-long
+  const n1 = await add({ group: "화평", sub: "2", name: rxName("note"), note: "가".repeat(490) });
+  assert.equal(n1.body.ok, true, JSON.stringify(n1.body).slice(0, 300));
+  assert.equal(n1.body.row.note.length, 500);
+  RX.rowIds.push(n1.body.row.id);
+
+  // 9) 모양 틀림(설계 §1 판정표) · 없는 회차 — 아무것도 안 들어간다
+  const bad = async (row, want) => assert.equal((await add(row)).body.error, want, JSON.stringify(row).slice(0, 200));
+  await bad({ group: "화평", sub: "1", name: "" }, "no-name");
+  await bad({ group: "화평", sub: "1", name: "홍,길동" }, "bad-char");
+  await bad({ group: "화평", sub: "1", name: "가".repeat(41) }, "too-long");
+  await bad({ who_type: "성가대", group: "화평", sub: "1", name: rxName("bad") }, "bad-type");
+  await bad({ group: "없는교구", sub: "1", name: rxName("bad") }, "bad-group");
+  await bad({ who_type: "교회학교", group: "", sub: "", name: rxName("bad") }, "no-group");
+  await bad({ group: "화평", sub: "셋", name: rxName("bad") }, "bad-sub");
+  await bad({ group: "화평", sub: "1", name: rxName("bad"), position: "가".repeat(41) }, "too-long");
+  await bad({ group: "화평", sub: "1", name: rxName("bad"), note: "가".repeat(491) }, "note-too-long");
+  for (const event_id of ["ca-test-none-" + STAMP, "BAD ID"]) {
+    const none = await call(t, "evRowAdd", { event_id, row: { who_type: "교구", group: "화평", sub: "1", name: rxName("bad") } });
+    assert.equal(none.body.error, "not-found", event_id);
+  }
+  assert.equal((await rest(`event_signups?select=id&name=eq.${rxName("bad")}`, "GET")).length, 0);
+});
+
+test("성경필사 한 분 더하기: 같은 분을 동시에 셋 — 하나만 들어가고 둘은 already(23505 → already · 500 없음)", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const rs = await Promise.all([1, 2, 3].map(() => call(t, "evRowAdd",
+    { event_id: RX.ev, row: { who_type: "교구", group: "기쁨", sub: "9", name: rxName("race"), position: "", note: "" } })));
+  const bodies = JSON.stringify(rs.map((r) => r.body));
+  for (const r of rs) assert.notEqual(r.status, 500, bodies);
+  assert.equal(rs.filter((r) => r.body.ok).length, 1, bodies);
+  assert.equal(rs.filter((r) => r.body.error === "already").length, 2, bodies);
+  const inDb = await rest(`event_signups?select=id,user_id&event_id=eq.${RX.ev}&name=eq.${rxName("race")}`, "GET");
+  assert.equal(inDb.length, 1);
+  assert.equal(inDb[0].user_id, RX.uRace);
+  RX.rowIds.push(inDb[0].id);
+});
+
+test("성경필사 한 분 더하기·고치기: 교구 줄은 한쪽 목장이 비었거나 99 면 같은 교구·같은 이름을 already(최종 검토 I1) · 번호끼리 다르면 다른 분", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const add = (row) => call(t, "evRowAdd", { event_id: RX.ev, row: { who_type: "교구", position: "", note: "", ...row } });
+  // 1) 목장 없이 더한 분 — 교인명부로 목장(20)을 채워 다시 더하면 already · 99 · 「20목장」도 already
+  const a1 = await add({ group: "섬김", sub: "", name: rxName("open") });
+  assert.equal(a1.body.ok, true, JSON.stringify(a1.body));
+  RX.rowIds.push(a1.body.row.id);
+  for (const sub of ["20", "99", "20목장"]) {
+    assert.equal((await add({ group: "섬김", sub, name: rxName("open") })).body.error, "already", "섬김 " + sub);
+  }
+  // 다른 교구는 다른 분 · 번호끼리(은혜 20 ↔ 은혜 21)는 다르면 다른 분
+  const a2 = await add({ group: "은혜", sub: "20", name: rxName("open") });
+  assert.equal(a2.body.ok, true, JSON.stringify(a2.body));
+  RX.rowIds.push(a2.body.row.id);
+  const a3 = await add({ group: "은혜", sub: "21", name: rxName("open") });
+  assert.equal(a3.body.ok, true, JSON.stringify(a3.body));
+  RX.rowIds.push(a3.body.row.id);
+  // 2) 앱에서 목장 「99」(목장 없음)로 로그인해 낸 줄 — 목장(20)을 적어 더해도, 빈 목장으로 더해도 already
+  //    (앱 줄은 계정이 있어야 한다 — event_signups_app_only_chk · 계정은 after() 가 RX.users 로 지운다)
+  const [u99] = await rest("users", "POST",
+    { type: "교구", gu: "기쁨", mok: "99", name: rxName("n99"), identity_key: `교구|기쁨|99|||${rxName("n99")}` });
+  RX.users.push(u99.id);
+  await rest("event_signups", "POST", { event_id: RX.ev, user_id: u99.id, ident_key: `교구|기쁨|99|||${rxName("n99")}`,
+    who_type: "교구", group_name: "기쁨", sub_name: "99", name: rxName("n99"), position: "", source: "app" });
+  for (const sub of ["20", ""]) {
+    assert.equal((await add({ group: "기쁨", sub, name: rxName("n99") })).body.error, "already", "기쁨 " + JSON.stringify(sub));
+  }
+  // 3) 고치기 — 은혜 20 을 섬김으로(섬김에 목장 빈 줄) already · 은혜 99 로(은혜 21 과) already · 자기 줄은 빼고 본다
+  const save = (row, patch) => call(t, "evRowSave", { id: row.id, expect: row.updated_at, patch });
+  assert.equal((await save(a2.body.row, { group: "섬김" })).body.error, "already");
+  assert.equal((await save(a2.body.row, { sub: "99" })).body.error, "already");
+  const s1 = await save(a1.body.row, { sub: "5" });   // 섬김 빈 줄 → 섬김 5(같은 이름의 다른 섬김 줄이 없다)
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  rxClean(s1);
+  // 막힌 것은 아무것도 들어가지 않았다
+  assert.equal((await rest(`event_signups?select=id&event_id=eq.${RX.ev}&name=eq.${rxName("open")}`, "GET")).length, 3);
+  assert.equal((await rest(`event_signups?select=id&event_id=eq.${RX.ev}&name=eq.${rxName("n99")}`, "GET")).length, 1);
+});
+
+test("성경필사 줄 고치기: 메모 · 동시 수정 · 바뀐 칸만 검사 · 신원 키 다시(계정 그대로) · 자기 줄 빼고 already · 앱 줄·자격 회차는 메모만", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const save = (row, patch, expect = row.updated_at) => call(t, "evRowSave", { id: row.id, expect, patch });
+
+  // 1) 메모만 — 옛 표기 뒤에 더한 것 그대로
+  const s1 = await save(RX.edit, { note: "원래: 화평 30 · 집사 / 확인함" });
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  assert.deepEqual(Object.keys(s1.body.row).sort(), ROW_OUT_KEYS);
+  assert.equal(s1.body.row.note, "원래: 화평 30 · 집사 / 확인함");
+  assert.notEqual(s1.body.row.updated_at, RX.edit.updated_at);
+  // 2) 같은 expect 로 한 번 더 → conflict · 저장 안 됨
+  assert.equal((await save(RX.edit, { note: "덮어쓰기" })).body.error, "conflict");
+  assert.equal((await rxDb(RX.edit.id)).note, "원래: 화평 30 · 집사 / 확인함");
+  RX.edit = s1.body.row;
+
+  // 3) 바뀐 칸만 검사 — 옛 이름에 괄호·교구 칸 「화평교구」가 있어도 직분만 고치면 저장된다(옛 칸은 그대로)
+  const s3 = await save(RX.old, { position: "권사님" });
+  assert.equal(s3.body.ok, true, JSON.stringify(s3.body));
+  assert.equal(s3.body.row.position, "권사");
+  const d3 = await rxDb(RX.old.id);
+  assert.equal(d3.name, rxName("old") + "(구)");
+  assert.equal(d3.group_name, "화평교구");
+  // …하지만 바꾼 칸이 틀리면 막는다
+  assert.equal((await save(s3.body.row, { name: "홍,길동" })).body.error, "bad-char");
+  assert.equal((await save(s3.body.row, { group: "없는" })).body.error, "bad-group");
+  assert.equal((await save(s3.body.row, { note: "가".repeat(501) })).body.error, "note-too-long");
+
+  // 4) 신원을 바꾸면 ident_key 를 다시 만들고, 이어진 계정(user_id)은 그대로
+  const s4 = await save(RX.linked, { sub: "4" });
+  assert.equal(s4.body.ok, true, JSON.stringify(s4.body));
+  assert.equal(s4.body.row.sub, "4");
+  assert.equal(s4.body.row.hasUser, true);
+  const d4 = await rxDb(RX.linked.id);
+  assert.equal(d4.ident_key, `교구|믿음|4|||${rxName("link")}`);
+  assert.equal(d4.user_id, RX.uLink);
+
+  // 5) 자기 줄은 빼고 본다 — 별칭으로 이은 줄(소망 4)을 지금 소속(소망 5)으로: 그 계정의 줄은 이 줄 자신뿐 → 저장
+  const s5 = await save(RX.aliasRow, { sub: "5" });
+  assert.equal(s5.body.ok, true, JSON.stringify(s5.body));
+  assert.equal((await rxDb(RX.aliasRow.id)).user_id, RX.uAlias);
+
+  // 6) 다른 줄과 겹치게 고치면 already · 그대로 남는다(07/7 포함)
+  assert.equal((await save(RX.edit, { group: "화평", sub: "7", name: rxName("new") })).body.error, "already");
+  assert.equal((await save(RX.edit, { group: "사랑", sub: "7", name: rxName("seven") })).body.error, "already");
+  assert.equal((await rxDb(RX.edit.id)).name, rxName("edit"));
+
+  // 7) 앱에서 낸 줄 — 메모 밖 칸이 오기만 해도 거절(값이 같아도) · 메모는 저장
+  assert.equal((await save(RX.app, { name: rxName("seven") })).body.error, "app-row-note-only");
+  assert.equal((await save(RX.app, { note: "x", position: "집사" })).body.error, "app-row-note-only");
+  const s7 = await save(RX.app, { note: "앱 줄 메모" });
+  assert.equal(s7.body.ok, true, JSON.stringify(s7.body));
+  assert.equal(s7.body.row.note, "앱 줄 메모");
+  assert.equal(s7.body.row.source, "app");
+  RX.app = s7.body.row;
+
+  // 8) 자격 회차의 줄(이관이어도) — 메모만
+  assert.equal((await save(RX.el, { position: "권사" })).body.error, "app-row-note-only");
+  const s8 = await save(RX.el, { note: "자격 줄 메모" });
+  assert.equal(s8.body.ok, true, JSON.stringify(s8.body));
+  RX.el = s8.body.row;
+
+  // 9) 없는 줄 · 바뀐 것 없음(쓰지 않고 그대로 돌려준다)
+  assert.equal((await call(t, "evRowSave", { id: 0, expect: "", patch: { note: "x" } })).body.error, "not-found");
+  const same = await save(RX.el, { note: "자격 줄 메모" });
+  assert.equal(same.body.ok, true, JSON.stringify(same.body));
+  assert.equal(same.body.row.updated_at, RX.el.updated_at, "바뀐 것이 없으면 쓰지 않는다");
+
+  for (const r of [s1, s3, s4, s5, s7, s8]) rxClean(r);
+});
+
+test("성경필사 줄 빼기: 앱 줄은 app-row · 자격 회차 줄은 eligibility-event · 동시 수정 · 뺀 뒤 not-found · 바꾼 기록 event.add/edit/delete(UUID 없음)", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const del = (row, expect = row.updated_at) => call(t, "evRowDelete", { id: row.id, expect });
+
+  assert.equal((await del(RX.app)).body.error, "app-row");
+  assert.equal((await del(RX.el)).body.error, "eligibility-event");      // 계약 §5 — 자격 회차의 줄 빼기도 서버가 막는다
+  assert.equal((await rest(`event_signups?select=id&id=in.(${RX.app.id},${RX.el.id})`, "GET")).length, 2, "앱 줄·자격 줄은 남는다");
+  assert.equal((await del(RX.added, "1999-01-01T00:00:00+00:00")).body.error, "conflict");
+  const d = await del(RX.added);
+  assert.equal(d.body.ok, true, JSON.stringify(d.body));
+  assert.deepEqual(d.body.deleted, { id: RX.added.id, name: rxName("new") });
+  rxClean(d);
+  assert.equal((await rest(`event_signups?select=id&id=eq.${RX.added.id}`, "GET")).length, 0);
+  assert.equal((await del(RX.added)).body.error, "not-found");
+  assert.equal((await call(t, "evRowDelete", { id: 0, expect: "" })).body.error, "not-found");
+
+  // 바꾼 기록 — Task 13 audit.js 가 읽는 모양
+  const ours = new Set([...RX.rowIds, RX.edit.id, RX.old.id, RX.app.id, RX.el.id].map(String));
+  const logs = (await call(people.super.token, "auditList", { limit: 200 })).body.rows
+    .filter((r) => r.action.startsWith("event.") && ours.has(r.target));
+  const acts = new Set(logs.map((r) => r.action));
+  for (const a of ["event.add", "event.edit", "event.delete"]) assert.ok(acts.has(a), a + " " + JSON.stringify([...acts]));
+  assert.ok(!RX_UUID.test(JSON.stringify(logs.map((r) => r.detail))), "기록에 UUID 꼴 값(user_id)이 실렸다");
+  const addLog = logs.find((r) => r.action === "event.add" && r.target === String(RX.linked.id));
+  assert.deepEqual(addLog.detail, { event_id: RX.ev, name: rxName("link"),
+    row: { who_type: "교구", group: "믿음", sub: "3", position: "명예권사" }, linked: true });
+  const editLog = logs.find((r) => r.action === "event.edit" && r.target === String(RX.linked.id));
+  assert.deepEqual([editLog.detail.event_id, editLog.detail.name], [RX.ev, rxName("link")]);
+  assert.deepEqual([editLog.detail.before, editLog.detail.after], [{ sub: "3" }, { sub: "4" }]);   // 바뀐 칸만
+  const noteLog = logs.find((r) => r.action === "event.edit" && r.target === String(RX.edit.id));
+  assert.deepEqual([noteLog.detail.before, noteLog.detail.after],
+    [{ note: true }, { note: true }]);             // 메모는 고쳤다는 것만 — 글은 기록에 남기지 않는다(SEC-1)
+  const delLog = logs.find((r) => r.action === "event.delete" && r.target === String(RX.added.id));
+  assert.deepEqual(delLog.detail, { event_id: RX.ev, name: rxName("new"),
+    row: { who_type: "교구", group: "화평", sub: "7", position: "집사", hasNote: true, source: "import", hasUser: false } });
+  const logText = JSON.stringify(logs.map((r) => r.detail));
+  for (const memo of ["시험 메모", "확인함"]) assert.ok(!logText.includes(memo), "메모 글이 기록에 실렸다(SEC-1): " + memo);
+});
+
+// ---------- 성경필사(암송) — 명단 올리기 · 교인명부 찾기 (계획 Task 8) ----------
+// 시험 자료는 첫 시험이 한 번 만든다(뒤 시험은 같은 약속을 기다린다).
+function upFixtures() {
+  upReady ??= (async () => {
+    // 지난번이 도중에 멈춰 남긴 찌꺼기 — 고정 교인ID(PK 가 부딪혀 늘 지운다) · 시험 계정은 **한 시간 넘은 것만**
+    //   (다른 세션이 개발에서 같은 시험을 돌리는 중이면 그쪽 계정을 지우지 않게 — Task 5 before() 와 같은 규칙).
+    await rest(`church_people?person_id=in.(${UP_DIR_IDS.join(",")})`, "DELETE");
+    const upStale = new Date(Date.now() - 3600 * 1000).toISOString();
+    await rest(`users?name=like.ca-test-up-*&created_at=lt.${upStale}`, "DELETE");
+    await rest("events", "POST", { id: UP.ev, title: "ca-test 명단 올리기 " + STAMP, opens_on: "2000-06-01", closes_on: "2000-06-30",
+      status: "draft", kind: "signup", needs: { position: true, phone: false, memo: false, extra: [] } });
+    // 앱 계정 셋 — 갑: 목장 「7」 · 을: 앱 로그인이 받은 「07」 그대로 · 병: 지금 소망 3(이 회차엔 옛 소속 소망 9 로 낸 앱 줄)
+    for (const [k, gu, mok] of [["갑", "화평", "7"], ["을", "화평", "07"], ["병", "소망", "3"]]) {
+      const [u] = await rest("users", "POST",
+        { type: "교구", gu, mok, name: upName(k), identity_key: `교구|${gu}|${mok}|||${upName(k)}` });
+      UP.uid[k] = u.id;
+    }
+    await rest("event_signups", "POST", { event_id: UP.ev, user_id: UP.uid["병"], ident_key: `교구|소망|9|||${upName("병")}`,
+      who_type: "교구", group_name: "소망", sub_name: "9", name: upName("병"), position: "권사", source: "app" });
+    // 교인명부 — 정(한 분 · 소망 12 권사) · 무(한 분 · 화평 5 권사) · 기(두 분 · 동명이인) · 다(21분 · 찾기 상한 20)
+    // ⚠️ 배치 insert 는 객체들의 칸이 모두 같아야 한다(PGRST102) — dir() 한 모양으로만 만든다.
+    const dir = (person_id, k, mok1, mok3, position) =>
+      ({ person_id, name: upName(k), name_key: upName(k), kind2: "장년", mok1, mok3, position });
+    await rest("church_people", "POST", [
+      dir(990000011, "정", "소망", "소망-12목장", "권사"),
+      dir(990000012, "무", "화평", "화평-5목장", "권사"),
+      dir(990000013, "기", "믿음", "믿음-1목장", "집사"),
+      dir(990000014, "기", "사랑", "사랑-2목장", "집사"),
+      ...Array.from({ length: 21 }, (_, k) => dir(990000021 + k, "다", "은혜", "은혜-1목장", "")),
+    ]);
+  })();
+  return upReady;
+}
+
+// 올릴 줄 열 — 차례가 곧 i(0부터)
+const upRows = () => [
+  { name: upName("갑") + "2", gu: "화평교구", mok: "07", pos: "집사님" }, // 0 넣음 — 끝 숫자·「교구」·07·「님」 다듬기, 계정 갑과 잇는다
+  { name: upName("갑"), gu: "화평", mok: "7목장", pos: "집사" },          // 1 이미 — 파일 안(위 1번 줄)
+  { name: upName("을"), gu: "화평", mok: "07", pos: "" },                 // 2 넣음 — 「07」 계정 을과 잇는다(명부엔 없어 직분은 빈칸)
+  { name: upName("병"), gu: "소망", mok: "3", pos: "권사" },              // 3 이미 — 계정 병의 앱 줄(옛 소속 9 로 냈다)
+  { name: upName("정"), gu: "", mok: "", pos: "" },                       // 4 채움 — 소망 12 권사
+  { name: upName("무"), gu: "화평", mok: "", pos: "집사" },               // 5 채움 — 같은 교구라 목장 5 만, 직분 집사는 그대로
+  { name: upName("기"), gu: "", mok: "", pos: "" },                       // 6 교인명부 동명이인(소속을 못 정했다)
+  { name: upName("경"), gu: "", mok: "", pos: "" },                       // 7 빈칸 — 명부에 없음
+  { name: 'ca-test-"x', gu: "화평", mok: "1", pos: "" },                  // 8 모양 틀림(bad-char)
+  { name: upName("신"), gu: "화평", mok: "3", pos: "명예권사" },          // 9 넣음 — 목록 밖 직분(경고만)
+];
+
+test("성경필사 명단 올리기 살펴보기: 줄마다 판정 · 빈칸만 채운다 · 아무것도 안 넣는다 · 계정·교적 값이 새지 않는다 · people.fill", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const chk = await call(t, "evUploadCheck", { event_id: UP.ev, rows: upRows(), fill: true });
+  assert.equal(chk.body.ok, true, JSON.stringify(chk.body));
+  assert.deepEqual(Object.keys(chk.body).sort(), ["counts", "ok", "rows", "total"]);
+  assert.equal(chk.body.total, 1, "이 회차 지금 인원(앱 줄 하나)");
+  assert.deepEqual(chk.body.rows.map((r) => r.i), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(chk.body.rows.map((r) => r.mark),
+    ["add", "same", "add", "same", "fill", "fill", "same-name", "blank", "bad", "add"], JSON.stringify(chk.body.rows));
+  assert.deepEqual(chk.body.counts, { add: 3, same: 2, blank: 1, bad: 1, fill: 2, sameName: 1, oddPosition: 1 });
+  const at = (i) => chk.body.rows[i];
+  assert.deepEqual(at(0).row, { who_type: "교구", group: "화평", sub: "7", name: upName("갑"), position: "집사" });
+  assert.deepEqual(at(4).row, { who_type: "교구", group: "소망", sub: "12", name: upName("정"), position: "권사" });
+  assert.deepEqual(at(5).row, { who_type: "교구", group: "화평", sub: "5", name: upName("무"), position: "집사" },
+    "빈 칸(목장)만 채우고 적혀 있던 직분은 덮지 않는다");
+  assert.equal(at(8).error, "bad-char");
+  for (const r of chk.body.rows) {
+    assert.deepEqual(Object.keys(r).sort(), UP_OUT_KEYS);
+    if (r.row) assert.deepEqual(Object.keys(r.row).sort(), UP_ROW_KEYS);
+  }
+  const text = JSON.stringify(chk.body);
+  assert.ok(!UP_UUID.test(text), "응답에 계정 id(UUID 꼴)가 실렸다");
+  for (const k of ["user_id", "ident_key", "person_id", "소망-12목장", "화평-5목장"]) assert.ok(!text.includes(k), "새어 나감: " + k);
+  // 살펴보기는 아무것도 넣지 않는다 — 앱 줄 하나 그대로
+  assert.equal(await dbCount(UP.ev), 1);
+
+  // 채우기를 끄면 — 소속이 빈 줄은 모두 빈칸, 목장만 빈 줄(5)은 그대로 넣음
+  const off = await call(t, "evUploadCheck", { event_id: UP.ev, rows: upRows(), fill: false });
+  assert.deepEqual(off.body.rows.map((r) => r.mark), ["add", "same", "add", "same", "blank", "add", "blank", "blank", "bad", "add"]);
+  assert.equal(off.body.rows[5].row.sub, "");
+
+  // people.fill — 채운 두 분의 이름이 「교인명부 기록」에 한 줄(채우기를 끈 살펴보기는 남기지 않는다)
+  const fills = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
+    .filter((r) => r.action === "people.fill" && r.target === UP.ev);
+  assert.equal(fills.length, 1, JSON.stringify(fills));
+  assert.equal(fills[0].detail.rows, 2);
+  assert.deepEqual([...fills[0].detail.names].sort(), [upName("무"), upName("정")].sort());
+});
+
+test("성경필사 명단 올리기 넣기: 넣을 줄만 · 계정은 찾기만 해서 잇는다 · 메모 표기 · 두 번째는 0건 · event.upload 는 건수만(납작하게)", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const s1 = await call(t, "evUploadSave", { event_id: UP.ev, rows: upRows(), fill: true });
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  assert.deepEqual(Object.keys(s1.body).sort(), ["counts", "failed", "ok", "saved"]);
+  assert.equal(s1.body.saved, 5, JSON.stringify(s1.body));
+  assert.deepEqual(s1.body.failed, []);
+  assert.ok(!UP_UUID.test(JSON.stringify(s1.body)));
+  const got = await rest(`event_signups?select=name,user_id,ident_key,group_name,sub_name,position,note,source`
+    + `&event_id=eq.${UP.ev}&source=eq.import&order=id`, "GET");
+  const by = Object.fromEntries(got.map((r) => [r.name, r]));
+  assert.deepEqual(Object.keys(by).sort(), [upName("갑"), upName("을"), upName("정"), upName("무"), upName("신")].sort());
+  assert.equal(by[upName("갑")].user_id, UP.uid["갑"]);
+  assert.equal(by[upName("갑")].ident_key, `교구|화평|7|||${upName("갑")}`);
+  assert.equal(by[upName("갑")].note, "명단 올리기");
+  assert.equal(by[upName("을")].user_id, UP.uid["을"], "앱 로그인이 받은 「07」 계정도 잇는다");
+  assert.equal(by[upName("을")].sub_name, "7");
+  assert.equal(by[upName("정")].user_id, null);
+  assert.deepEqual([by[upName("정")].group_name, by[upName("정")].sub_name, by[upName("정")].position], ["소망", "12", "권사"]);
+  assert.equal(by[upName("정")].note, "명단 올리기 / 소속: 교인명부로 채움");
+  assert.deepEqual([by[upName("무")].sub_name, by[upName("무")].position], ["5", "집사"]);
+  assert.equal(by[upName("신")].position, "명예권사");
+  // 계정을 새로 만들지 않는다 · 앱 줄은 건드리지 않는다
+  assert.equal((await rest(`users?select=id&name=like.ca-test-up-${STAMP}-*`, "GET")).length, 3);
+  assert.deepEqual(await rest(`event_signups?select=sub_name,source,note&event_id=eq.${UP.ev}&source=eq.app`, "GET"),
+    [{ sub_name: "9", source: "app", note: "" }]);
+
+  // 같은 것을 다시 넣으면 모두 「이미 있음」 — 0건
+  const s2 = await call(t, "evUploadSave", { event_id: UP.ev, rows: upRows(), fill: true });
+  assert.equal(s2.body.ok, true, JSON.stringify(s2.body));
+  assert.equal(s2.body.saved, 0, JSON.stringify(s2.body));
+  assert.equal(s2.body.counts.add + s2.body.counts.fill, 0, JSON.stringify(s2.body.counts));
+  assert.equal(s2.body.counts.same, 7, JSON.stringify(s2.body.counts));
+  assert.equal(await dbCount(UP.ev), 6);
+
+  // 기록 — event.upload 두 줄(건수만 · 납작하게 · 이름 없음 · 최근 먼저) · people.fill 은 넣기로 늘지 않는다
+  const ups = (await call(people.super.token, "auditList", { limit: 100 })).body.rows
+    .filter((r) => r.action === "event.upload" && r.target === UP.ev);
+  assert.equal(ups.length, 2, JSON.stringify(ups));
+  assert.deepEqual(ups.map((u) => u.detail.saved), [0, 5]);
+  assert.deepEqual(ups[1].detail, { rows: 10, fillOn: true, add: 3, same: 2, blank: 1, bad: 1, fill: 2, sameName: 1,
+    oddPosition: 1, saved: 5, failed: 0 });
+  for (const u of ups) assert.ok(!JSON.stringify(u.detail).includes("ca-test-up-"), "event.upload 에 이름이 실렸다");
+  const fills = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
+    .filter((r) => r.action === "people.fill" && r.target === UP.ev);
+  assert.equal(fills.length, 1, "people.fill 은 살펴보기에서만 남는다");
+});
+
+test("성경필사 명단 올리기: 채우기 끄고 올린 뒤 채우기 켜고 다시 올려도 0건 · 앱의 99 줄이 있으면 목장을 적어 올려도 이미 있음(최종 검토 I1)", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const ev = "ca-test-up2-" + STAMP;                   // after() 가 ca-test-*<STAMP>* 로 지운다(줄은 CASCADE)
+  await rest("events", "POST", { id: ev, title: "ca-test 명단 올리기 2 " + STAMP, opens_on: "2000-07-01", closes_on: "2000-07-31",
+    status: "draft", kind: "signup", needs: { position: true, phone: false, memo: false, extra: [] } });
+  // 앱에서 목장 「99」(목장 없음)로 로그인해 낸 줄(앱 줄은 계정이 있어야 한다 — 계정은 after() 가 ca-test-up-<STAMP>-* 로 지운다)
+  const [u99] = await rest("users", "POST",
+    { type: "교구", gu: "은혜", mok: "99", name: upName("구"), identity_key: `교구|은혜|99|||${upName("구")}` });
+  await rest("event_signups", "POST", { event_id: ev, user_id: u99.id, ident_key: `교구|은혜|99|||${upName("구")}`,
+    who_type: "교구", group_name: "은혜", sub_name: "99", name: upName("구"), position: "", source: "app" });
+  const rows = [{ name: upName("무"), gu: "화평", mok: "", pos: "집사" }];   // 교인명부: 무 = 화평 5(한 분)
+  const s1 = await call(t, "evUploadSave", { event_id: ev, rows, fill: false });
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  assert.equal(s1.body.saved, 1, "채우기를 끄면 목장이 빈 채로 넣는다 " + JSON.stringify(s1.body));
+  const s2 = await call(t, "evUploadSave", { event_id: ev, rows, fill: true });
+  assert.equal(s2.body.ok, true, JSON.stringify(s2.body));
+  assert.equal(s2.body.saved, 0, "채우기를 켜고 다시 올려도 두 번 넣지 않는다 " + JSON.stringify(s2.body));
+  assert.equal(s2.body.counts.same, 1, JSON.stringify(s2.body.counts));
+  const chk = await call(t, "evUploadCheck", { event_id: ev, rows: [{ name: upName("구"), gu: "은혜", mok: "20", pos: "" }], fill: false });
+  assert.equal(chk.body.ok, true, JSON.stringify(chk.body));
+  assert.deepEqual(chk.body.rows.map((r) => r.mark), ["same"], JSON.stringify(chk.body.rows));
+  assert.equal((await rest(`event_signups?select=id&event_id=eq.${ev}`, "GET")).length, 2);
+});
+
+test("성경필사 명단 올리기 막기: 자격 회차 eligibility-event · 600줄 넘음 too-many · 없는 회차 not-found — 아무것도 안 들어간다", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const one = [{ name: upName("갑"), gu: "화평", mok: "7", pos: "" }];
+  const many = Array.from({ length: 601 }, () => ({ name: "홍길동", gu: "화평", mok: "1", pos: "" }));
+  const elBefore = await dbCount(EV_EL_ID);   // Task 5 의 자격 회차(needs.eligibility)
+  const upBefore = await dbCount(UP.ev);
+  for (const a of ["evUploadCheck", "evUploadSave"]) {
+    assert.equal((await call(t, a, { event_id: EV_EL_ID, rows: one, fill: true })).body.error, "eligibility-event", a);
+    assert.equal((await call(t, a, { event_id: UP.ev, rows: many, fill: false })).body.error, "too-many", a);
+    assert.equal((await call(t, a, { event_id: "ca-test-none-" + STAMP, rows: one, fill: false })).body.error, "not-found", a);
+    assert.equal((await call(t, a, { event_id: "BAD ID", rows: one, fill: false })).body.error, "not-found", a);
+  }
+  assert.equal(await dbCount(EV_EL_ID), elBefore, "자격 회차에 줄이 들어갔다");
+  assert.equal(await dbCount(UP.ev), upBefore);
+});
+
+test("성경필사 교인명부 찾기: 이름이 정확히 같은 분만 · 20명까지 · 다섯 칸만 · 기준일 · people.lookup 에 검색어·결과 수", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const one = await call(t, "evPeopleLookup", { name: upName("정") });
+  assert.equal(one.body.ok, true, JSON.stringify(one.body));
+  assert.deepEqual(Object.keys(one.body).sort(), ["ok", "people", "source"]);
+  assert.equal(one.body.source.date, "2000-01-01");      // before() 가 올린 시험 명부 기록이 가장 최근이다
+  assert.equal(typeof one.body.source.total, "number");
+  assert.deepEqual(one.body.people, [{ name: upName("정"), who_type: "교구", group: "소망", sub: "12", position: "권사" }]);
+  const two = await call(t, "evPeopleLookup", { name: upName("기") });
+  assert.equal(two.body.people.length, 2);
+  for (const p of [...one.body.people, ...two.body.people]) assert.deepEqual(Object.keys(p).sort(), UP_ROW_KEYS);
+  // 띄어쓰기가 달라도 같은 이름(이름 키) · 21분이어도 20명까지
+  assert.equal((await call(t, "evPeopleLookup", { name: " " + upName("다") + " " })).body.people.length, 20, "상한 20명");
+  assert.deepEqual((await call(t, "evPeopleLookup", { name: "ca-test-up-" + STAMP })).body.people, [],
+    "앞부분만 같은 이름은 찾지 않는다(정확히 같은 이름만)");
+  const text = JSON.stringify([one.body, two.body]);
+  for (const k of ["person_id", "name_key", "mok1", "mok3", "kind2", "소망-12목장"]) assert.ok(!text.includes(k), "새어 나감: " + k);
+  assert.equal((await call(t, "evPeopleLookup", { name: "" })).body.error, "no-name");
+  assert.equal((await call(t, "evPeopleLookup", { name: "홍,길동" })).body.error, "bad-char");
+  assert.equal((await call(t, "evPeopleLookup", { name: "가".repeat(41) })).body.error, "too-long");
+
+  const logs = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
+    .filter((r) => r.action === "people.lookup");
+  const qs = logs.map((r) => r.detail.q);
+  for (const k of ["정", "기", "다"]) assert.ok(qs.includes(upName(k)), "people.lookup 에 검색어가 없다: " + k);
+  assert.equal(logs.find((r) => r.detail.q === upName("정")).detail.count, 1);
+  assert.equal(logs.find((r) => r.detail.q === upName("다")).detail.count, 20);
+  const changes = (await call(people.super.token, "auditList", { limit: 100 })).body.rows.map((r) => r.action);
+  assert.ok(!changes.includes("people.lookup") && !changes.includes("people.fill"), "교인명부 열람이 「바꾼 기록」 기본 보기에 섞였다");
+});
+
+// ---------- 성경필사(암송) — 이름을 누르면 교적 창 evPerson (계획 Task 16) ----------
+// 교인명부는 before() 의 세 분(990000001~3)과 Task 8 upFixtures 의 스물다섯 분(ca-test-up-<STAMP>-정·무·기·기·다×21)을 쓴다.
+// 「성경필사 + 교인명부」 두 역할을 가진 분은 처음 부를 때 한 번 만든다 — people 에 먼저 넣어 두면 after() 가 지운다
+// (권한 표는 사람 이름을 따로 적어 돌므로 이분은 거기 끼지 않는다). 함수 선언이라 파일 끝에 있어도 먼저 읽힌다.
+async function bedirPerson() {
+  if (!people.bedir) {
+    people.bedir = await makeUser("bedir");
+    await makeMember(people.bedir, "active", ["bibleevent", "directory"]);
+  }
+  return people.bedir;
+}
+
+test("성경필사 이름을 누르면(evPerson) — 성경필사 역할만: 다섯 칸 + 교적 표시 · 교인ID·연락처·주소 없음 · 고르는 규칙은 명단의 교적 표시와 같다 · people.lookup", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const ask = (name, who_type, group, sub) => call(t, "evPerson", { name, who_type, group, sub });
+  const none = "ca-test-pp-" + STAMP;   // 명부에 없는 이름 — 이 두 시험만 쓴다(기록 세기)
+
+  // ① 소속까지 같은 분 한 분(명부 믿음 1) → 그분 한 분만(같은 이름의 사랑 2 분은 싣지 않는다)
+  const one = await ask(upName("기"), "교구", "믿음", "1");
+  assert.equal(one.body.ok, true, JSON.stringify(one.body));
+  assert.deepEqual(Object.keys(one.body).sort(), ["church", "mode", "ok", "people", "pick", "total"]);
+  assert.deepEqual([one.body.mode, one.body.pick, one.body.total], ["basic", 0, 2], "total 은 명부의 같은 이름 수(고른 한 분만 싣더라도)");
+  assert.deepEqual(one.body.people, [{ name: upName("기"), who_type: "교구", group: "믿음", sub: "1", position: "집사" }]);
+  assert.deepEqual(one.body.church, { state: "맞음", reason: "" });
+  // ② 같은 소속이 없고 동명이인 둘 → 고르지 않고 둘 다(교인ID 차례)
+  const two = await ask(upName("기"), "교구", "믿음", "3");
+  assert.deepEqual([two.body.pick, two.body.total], [null, 2]);
+  assert.deepEqual(two.body.people.map((p) => p.group), ["믿음", "사랑"]);
+  assert.deepEqual(two.body.church, { state: "확인 필요", reason: "같은 이름 2명" });
+  // ③ 이름이 명부에 한 분뿐 → 소속이 달라도 그분(교적 표시는 「확인 필요」 그대로 함께 간다)
+  const lone = await ask(upName("정"), "교구", "화평", "5");
+  assert.deepEqual([lone.body.pick, lone.body.total], [0, 1]);
+  assert.deepEqual(lone.body.people.map((p) => [p.group, p.sub, p.position]), [["소망", "12", "권사"]]);
+  assert.deepEqual(lone.body.church, { state: "확인 필요", reason: "같은 이름 1명" });
+  // ④ 명단(evRoster)의 교적 표시와 같다 — 같은 줄로 물으면 같은 표시(같은 함수·같은 후보)
+  const ros = await call(t, "evRoster", { event_id: EV_ID });
+  for (const row of ros.body.rows) {
+    const r = await ask(row.name, row.who_type, row.group, row.sub);
+    assert.deepEqual(r.body.church, row.church, row.name);
+  }
+  // ⑤ 명부에 없는 이름 → 빈 목록 · 「없음」
+  const miss = await ask(none, "교구", "시험", "7");
+  assert.deepEqual([miss.body.mode, miss.body.pick, miss.body.total, miss.body.people, miss.body.church],
+    ["basic", null, 0, [], { state: "없음", reason: "" }]);
+  // ⑥ 못 고르면 스무 분까지(evPeopleLookup 과 같은 상한) — total 은 자르기 전 수(화면이 「21분(앞 20분만)」으로 적는다)
+  const many = (await ask(upName("다"), "교구", "화평", "1")).body;
+  assert.deepEqual([many.pick, many.people.length, many.total], [null, 20, 21]);
+  // ⑦ 새어 나가지 않는다 — 교인ID(숫자)·UUID·명부에만 있는 전화·주소·원래 칸
+  const min = await ask("ca-test-min", "교구", "시험", "0");
+  assert.deepEqual(min.body.people, [{ name: "ca-test-min", who_type: "", group: "", sub: "", position: "집사" }],
+    "명부 교구 칸이 일곱 교구 밖(시험)이면 소속 세 칸은 비운다(옮겨 적기 규칙)");
+  const text = JSON.stringify([one.body, two.body, lone.body, min.body]);
+  assert.ok(!UP_UUID.test(text), "UUID 꼴 값이 실렸다");
+  for (const id of [990000001, 990000003, ...UP_DIR_IDS]) assert.ok(!text.includes(String(id)), "교인ID 가 실렸다: " + id);
+  for (const k of ["person_id", CHURCH_ONLY_PHONE, "010-0000-0000", "비밀주소", "photo", "name_key", "mok1", "mok3", "kind2",
+    "position_detail", "소망-12목장"]) assert.ok(!text.includes(k), "새어 나감: " + k);
+  for (const b of [one.body, two.body, lone.body, min.body]) for (const p of b.people) assert.deepEqual(Object.keys(p).sort(), UP_ROW_KEYS);
+  // ⑧ 틀린 이름은 명부에 묻지 않는다
+  assert.equal((await ask("", "교구", "화평", "1")).body.error, "no-name");
+  assert.equal((await ask("홍,길동", "교구", "화평", "1")).body.error, "bad-char");
+  assert.equal((await ask("가".repeat(41), "교구", "화평", "1")).body.error, "too-long");
+  // ⑨ 기록 — 부를 때마다 people.lookup {q, count}(「교인명부 기록」 · evPeopleLookup 과 같은 모양) · 명부에 없는 이름도
+  const logs = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
+    .filter((r) => r.action === "people.lookup");
+  const mine = logs.filter((r) => r.detail.q === none);
+  assert.equal(mine.length, 1, JSON.stringify(mine));
+  assert.deepEqual(mine[0].detail, { q: none, count: 0 });
+  assert.ok(logs.some((r) => r.detail.q === upName("기") && r.detail.count === 1), "고른 한 분만 보여 준 것도 남는다(결과 수 1)");
+});
+
+test("성경필사 이름을 누르면(evPerson) — 교인명부 역할도 있으면·총괄: 교인ID 로 「자세히」 창 · 못 고르면 후보 · 한 분을 골랐으면 기록하지 않고 못 고르면 people.lookup", async () => {
+  await upFixtures();
+  const bedir = await bedirPerson();
+  const q = { name: upName("기"), who_type: "교구", group: "믿음", sub: "1" };
+  // 교인명부 기록 가운데 mark(기록 id) 뒤에 남은 people.lookup — 최근 것이 앞(auditList 는 id 내림차순)
+  const lookupsAfter = async (mark) => (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows
+    .filter((r) => r.id > mark && r.action === "people.lookup").map((r) => r.detail);
+  const mark = (await call(people.super.token, "auditList", { limit: 1, kind: "people" })).body.rows[0]?.id ?? 0;
+  for (const who of ["bedir", "super"]) {
+    const r = await call(people[who].token, "evPerson", q);
+    assert.equal(r.body.ok, true, who + " " + JSON.stringify(r.body));
+    assert.deepEqual(Object.keys(r.body).sort(), ["candidates", "mode", "ok", "pick", "total"], who);
+    assert.deepEqual([r.body.mode, r.body.pick, r.body.total], ["full", 0, 2], who);
+    assert.deepEqual(r.body.candidates, [{ person_id: 990000013, name: upName("기"), label: "믿음 1목장", position: "집사" }], who);
+  }
+  // 한 분을 골랐으면(pick 0) 여기서는 남기지 않는다 — 화면이 곧바로 「자세히」 창을 열고 peoplePerson 이 people.view 를 남긴다
+  assert.deepEqual(await lookupsAfter(mark), [], "pick 0 인 full 이 people.lookup 을 남겼다(이름 한 번에 두 줄이 된다)");
+  // 못 고르면 후보 — 교인ID 차례 · 이때는 이름·소속·직분·교인ID 가 여러 분 나가므로 people.lookup {q, count}
+  const two = await call(bedir.token, "evPerson", { ...q, sub: "3" });
+  assert.deepEqual([two.body.pick, two.body.total], [null, 2]);
+  assert.deepEqual(two.body.candidates.map((c) => [c.person_id, c.label]), [[990000013, "믿음 1목장"], [990000014, "사랑 2목장"]]);
+  assert.deepEqual(await lookupsAfter(mark), [{ q: upName("기"), count: 2 }]);
+  // 연락처·주소·사진·원래 칸은 full 에도 없다 — 그것은 「자세히」 창(peoplePerson)이 교인명부 역할을 다시 확인하고 준다
+  const min = await call(bedir.token, "evPerson", { name: "ca-test-min", who_type: "교구", group: "시험", sub: "0" });
+  assert.deepEqual(min.body.candidates, [{ person_id: 990000001, name: "ca-test-min", label: "시험", position: "집사" }]);
+  const text = JSON.stringify([min.body, two.body]);
+  assert.ok(!UP_UUID.test(text), "UUID 꼴 값이 실렸다");
+  for (const k of [CHURCH_ONLY_PHONE, "010-0000-0000", "비밀주소", "photo", "household", "name_key", "mok3", "kind2", "position_detail"]) {
+    assert.ok(!text.includes(k), "새어 나감: " + k);
+  }
+  const pp = await call(bedir.token, "peoplePerson", { id: min.body.candidates[0].person_id });
+  assert.equal(pp.body.ok, true, JSON.stringify(pp.body));
+  assert.equal(pp.body.person.name, "ca-test-min");
+  // 명부에 없는 이름 → 빈 후보(pick null) · 못 고른 것이니 people.lookup {q, count: 0} — 앞 시험의 basic 한 줄과 합해 두 줄
+  //   (ca-test-min 은 명부에 한 분뿐이라 골랐다(pick 0) — 그 부름은 기록이 없고, 위 peoplePerson 이 people.view 를 남겼다)
+  const none = "ca-test-pp-" + STAMP;
+  const miss = await call(bedir.token, "evPerson", { name: none, who_type: "교구", group: "시험", sub: "7" });
+  assert.deepEqual([miss.body.mode, miss.body.pick, miss.body.total, miss.body.candidates], ["full", null, 0, []]);
+  assert.deepEqual(await lookupsAfter(mark), [{ q: none, count: 0 }, { q: upName("기"), count: 2 }]);
+  const logs = (await call(people.super.token, "auditList", { limit: 100, kind: "people" })).body.rows;
+  assert.equal(logs.filter((r) => r.action === "people.lookup" && r.detail.q === none).length, 2, "basic(앞 시험) 한 줄 + 못 고른 full 한 줄");
+  // 교인명부 역할만 있는 분은 이 액션을 못 부른다(성경필사 메뉴의 액션 — 권한 표도 PROBE 로 본다)
+  const dir = await call(people.directory.token, "evPerson", q);
+  assert.deepEqual([dir.status, dir.body.error], [403, "forbidden"]);
 });

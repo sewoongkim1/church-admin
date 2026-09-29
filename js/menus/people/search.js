@@ -96,7 +96,8 @@ function download(text, name) {
 // 한 분 자세히 + 가족(같은 신앙세대주). 가족 이름을 누르면 이 창을 닫고 그분을 연다(열람 기록이 그분 몫으로 남는다).
 // 「가족 모두 목록으로」는 onFamily(세대주 교인ID, 세대주 이름) — 목록을 그 가족으로 바꾼다.
 // back — 창을 닫으면 초점을 돌려줄 줄(창이 뜨면 초점은 「닫기」 단추로 간다).
-async function openPerson(call, id, onFamily, back) {
+// 성경필사(암송) 「이름을 누르면 교적 창」(js/menus/bibleevent/person-popup.js)도 이것을 부른다 — 이름·인자·가족 단추(data-fam·data-fam-all)를 바꾸면 그쪽도.
+export async function openPerson(call, id, onFamily, back) {
   if (opening) return;
   opening = true;
   let handedOff = false;                // 가족으로 넘어가면 opening·초점은 그쪽 호출이 맡는다(아래)

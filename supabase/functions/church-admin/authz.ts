@@ -34,6 +34,30 @@ export const ACTION_ROLES: Record<string, string | null> = {
   peoplePerson: "directory",
   peopleStats: "directory",
   peopleExport: "directory",
+  // 성경필사(암송)(2026-09-29) — 성경암송 앱의 이벤트 명단(events·event_signups). 여기는 읽기 넷
+  // (회차 목록·명단·사람별 이력·통계). 줄은 이름·소속·직분·담당자 메모·교적 표시만 — user_id·신원 키·
+  // 성도님 전화·메모·답은 싣지 않는다. 쓰기(회차 설정·줄 고치기·올리기)는 Task 6~8 이 이 아래에 더한다.
+  evEvents: "bibleevent",
+  evRoster: "bibleevent",
+  evHistory: "bibleevent",
+  evStats: "bibleevent",
+  // 성경필사(암송) — 회차 만들기·설정(Task 6). 만들기는 draft 로만, 성도님께 보이게 되는 저장은
+  // confirmListed 를 받아야 쓴다(needs-confirm). 둘 다 바꾼 기록(event.create·event.settings)에 남는다.
+  evEventCreate: "bibleevent",
+  evEventSave: "bibleevent",
+  // 성경필사(암송) — 한 분 더하기·줄 고치기·빼기(계획 Task 7). 앱 계정은 조회만 해서 잇는다(만들지 않는다).
+  // 앱에서 낸 줄·자격 회차의 줄은 메모만, 자격 회차에는 더하기·빼기 없음. 바꾼 기록 event.add / event.edit / event.delete.
+  evRowAdd: "bibleevent",
+  evRowSave: "bibleevent",
+  evRowDelete: "bibleevent",
+  // 성경필사(암송) — 명단 올리기·교인명부 찾기(계획 Task 8). 살펴보기는 아무것도 안 바꾼다(채우기를 켜면 people.fill 기록),
+  // 넣기는 「넣음」 줄만 더한다(앱 계정은 조회만). 찾기는 이름·구분·소속·세부·직분 다섯 칸만, 부를 때마다 people.lookup.
+  evUploadCheck: "bibleevent",
+  evUploadSave: "bibleevent",
+  evPeopleLookup: "bibleevent",
+  // 성경필사(암송) — 이름을 누르면 교적 창(계획 Task 16 · 2026-09-30). 모양은 index.ts evPerson 이 부른 분의 역할로 정한다:
+  // 교인명부 역할·총괄이면 교인ID(「자세히」 창은 peoplePerson 이 역할을 다시 본다), 아니면 다섯 칸 + 교적 표시(people.lookup).
+  evPerson: "bibleevent",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";
