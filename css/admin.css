@@ -806,3 +806,41 @@ a.mn-tel.sm{padding:2px 8px}
 .pk-cell{display:block;width:100%;min-height:var(--tap);border:0;border-radius:8px;background:none;font-size:15px;cursor:pointer}
 .pk-cell:hover{background:var(--light)}
 .pk-cell.on{background:var(--navy);color:#fff;font-weight:800}
+
+/* ── 성경필사(암송) be- ① 직접 만든 입력 창(js/core/modal.js · 2026-09-29) ─────────────────────────
+   폰(<1024px) = 아래에서 올라오는 판 · PC = 가운데 창. z-index 40 = 머리줄(30) 위 · 확인 창(.dlg-dim 50)·
+   고르개(.pk-dim 55) 아래 — 창 안에서 연 고르개·공개 확인 창이 그 위에 뜬다. 크기·색은 토큰만(뒤 막만 반투명).
+   입력 칸은 공용 .field·.seg·.pk-field 를 그대로 쓴다. ⚠️ .dlg .body(pre-line)를 다시 쓰지 않는다 — 폼 줄바꿈이 깨진다. */
+.be-lock{overflow:hidden}
+.be-modal{position:fixed;inset:0;z-index:40;display:flex;align-items:flex-end;justify-content:center;background:rgba(13,27,62,.45)}
+.be-box{display:flex;flex-direction:column;width:100%;max-width:560px;max-height:92vh;max-height:92dvh;background:var(--paper);color:var(--ink);
+  border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -6px 24px rgba(0,0,0,.18);animation:be-up .18s ease-out}
+@keyframes be-up{from{transform:translateY(100%)}to{transform:none}}
+@media (prefers-reduced-motion:reduce){.be-box{animation:none}}
+.be-grip{flex:none;width:40px;height:5px;margin:8px auto 0;border-radius:999px;background:var(--border)}
+.be-title{flex:none;padding:10px var(--card-pad) 6px;font-size:1.05rem;font-weight:800;color:var(--navy-dark)}
+.be-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px var(--card-pad) 10px;font-size:15px}
+.be-box[aria-busy="true"] .be-body{opacity:.6;pointer-events:none}
+.be-bottom{flex:none;padding:10px var(--card-pad) 12px;border-top:1px solid var(--light)}
+.be-foot{display:flex;gap:8px}
+.be-foot .btn{flex:1 1 0;min-width:0}
+.be-err{margin:0 0 10px;padding:8px 12px;border:1px solid var(--danger-bd);border-radius:10px;background:var(--danger-bg);
+  color:var(--error);font-size:14px;font-weight:700;line-height:1.5}
+.be-ask-t{margin:0 0 10px;font-size:15px;font-weight:800;color:var(--navy-dark)}
+/* 칸 이름 옆 작은 안내 — <small> 의 기본 글씨(smaller)는 13px 아래로 내려간다 */
+.be-body .field small{font-size:13px;font-weight:400;color:var(--gray)}
+.be-body textarea{display:block;width:100%;min-height:88px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
+  background:var(--paper);font:inherit;font-size:1rem;line-height:1.5;resize:vertical}
+.be-note{margin:0 0 12px;padding:9px 12px;border-radius:10px;background:var(--ghost-bg);color:var(--navy);font-size:14px;line-height:1.55}
+.be-warn{margin:0 0 12px;padding:9px 12px;border:1px solid var(--danger-bd);border-radius:10px;background:var(--danger-bg);
+  color:var(--error);font-size:14px;line-height:1.55}
+.be-hint{margin:-4px 0 12px;font-size:13px;color:var(--gray);line-height:1.55}
+/* 알림(toast)은 누름을 가로채지 않게 · 입력 창이나 아래 판 고르개가 떠 있는 동안은 화면 위로 — 폰에서 알림이 4초 동안
+   아래 판의 저장 단추·고르개 줄을 덮고 누름까지 가로챘다(2026-09-29 화면 시험). 누를 것이 없는 알림이라 모든 화면에 둔다. */
+.adm-toast{pointer-events:none}
+body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(12px + env(safe-area-inset-top,0px))}
+@media (min-width:1024px){
+  .be-modal{align-items:center;padding:24px}
+  .be-box{max-width:520px;max-height:86vh;border-radius:16px;box-shadow:0 12px 40px rgba(13,27,62,.25);animation:none}
+  .be-grip{display:none}
+}

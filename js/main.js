@@ -6,6 +6,7 @@ import { menusFor } from "./menus/registry.js";
 import { esc, toast, errorText, affiliation } from "./core/ui.js";
 import { renderLogin, renderRegister, renderPending, renderDisabled, renderError, renderOpenExternal } from "./screens/gate.js";
 import { shouldLeaveKakao, externalUrl, closeUrl } from "./core/inapp.js";
+import { closeAllForms } from "./core/modal.js";
 
 const app = document.getElementById("app");
 let me = null;
@@ -33,6 +34,7 @@ async function boot() {
   try {
     me = null;
     document.body.classList.remove("nav-open");
+    closeAllForms();   // 로그인이 풀리거나 권한이 바뀌어 다시 부팅하면 떠 있던 입력 창(js/core/modal.js)도 닫는다
     // 카카오/Supabase 가 로그인 실패로 돌려보내면 주소에 ?error=…&error_description=… 가 붙는다.
     // error_description 은 영어 원문 그대로라 성도님께 그대로 보이면 안 된다 — error 값으로만 문구를 고른다.
     const params = new URLSearchParams(location.search);
@@ -97,6 +99,8 @@ function renderShell() {
 }
 
 async function route() {
+  // 메뉴를 옮기면 떠 있던 입력 창(js/core/modal.js)을 닫는다 — 안 그러면 다음 메뉴 위에 창이 남는다(설계 §3)
+  closeAllForms();
   if (!me) return;
   const view = document.getElementById("view");
   if (!view) return;
