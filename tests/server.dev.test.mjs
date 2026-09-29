@@ -29,7 +29,6 @@ const CHURCH_COLS = ["person_id", "position_detail", "gender", "birth", "birth_d
   "phone1", "phone2", "guide", "email", "mok_path", "mok1", "mok2", "mok3", "mok_leader", "school_path", "school_dept", "teacher",
   "youth_path", "mission", "address", "address_jibun", "has_photo", "photo_hash", "name_key", "phone_digits"];
 const PHOTO_PATH = "church-people-photos/990000001.jpg";
-let peopleImportId = null;
 
 async function body(res) { const t = await res.text(); try { return JSON.parse(t); } catch { return { raw: t }; } }
 
@@ -167,9 +166,8 @@ before(async () => {
     { person_id: 990000003, name: DIR_NAME, name_key: DIR_NAME, mok1: "시험B", mok2: "시험B", mok3: "시험B-1목장",
       kind1: "교인", kind2: "청년", kind3: "새신자", position: "권사",
       phone1: "010-5555-0000", phone_digits: "01055550000", has_photo: true, photo_hash: "t" });
-  const [imp] = await rest("church_people_imports", "POST",
+  await rest("church_people_imports", "POST",
     { source_date: PEOPLE_SOURCE_DATE, total: 3, added: 3, changed: 0, removed: 0, photos: 2 });
-  peopleImportId = imp.id;
   const up = await fetch(`${URL_}/storage/v1/object/${PHOTO_PATH}`, { method: "POST",
     headers: { ...svc, "Content-Type": "image/jpeg", "x-upsert": "true" }, body: new TextEncoder().encode("ca-test-photo") });
   assert.ok(up.ok, "시험 사진 올리기 실패: " + await up.text());

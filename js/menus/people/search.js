@@ -63,40 +63,43 @@ function download(text, name) {
 async function openPerson(call, id, onFamily, back) {
   if (opening) return;
   opening = true;
-  let r;
-  try { r = await call("peoplePerson", { id: Number(id) }); } catch (e) { opening = false; throw e; }
-  if (!r.ok) { opening = false; toast(errorText(r)); return; }
-  const p = r.person;
-  const rows = detailRows(p).map(([k, v, kind]) => `<dt>${esc(k)}</dt><dd>${kind === "tel" ? telHtml(v) : esc(v)}</dd>`).join("");
-  const photo = p.photo
-    ? `<img class="pp-big" src="${esc(p.photo)}" alt="${esc(p.name)} 사진" referrerpolicy="no-referrer">`
-    : `<div class="pp-big pp-ini">${esc(initialOf(p.name))}</div>`;
-  const fam = familyOrder(r.family || [], p.household_id);
-  const famHtml = !p.household_id || !fam.length ? "" :
-    `<div class="pp-fam"><div class="pp-fam-t"><b>가족</b> <span class="muted">세대주 ${esc(p.household_head || "(명단에 없음)")} · ${fam.length + 1}명</span></div>` +
-    fam.map((f) => `<button type="button" class="pp-fam-b" data-fam="${esc(f.person_id)}">${esc(f.name)} <small>${esc(
-      [f.household_rel, f.age != null && f.age !== "" ? f.age + "세" : ""].filter(Boolean).join(" · "))}</small></button>`).join("") +
-    `<button type="button" class="btn pp-fam-all" data-fam-all="${esc(p.household_id)}">👪 가족 모두 목록으로</button></div>`;
-  // ⚠️ dialog 본문은 pre-line — html 안에 줄바꿈 글자를 넣지 않는다
-  const closed = dialog({ title: p.name + (p.position ? " " + p.position : ""),
-    html: `<div class="pp-detail">${photo}<dl>${rows}</dl>${famHtml}</div>`, ok: "닫기", cancel: null });
-  const dlg = [...document.querySelectorAll(".dlg-dim")].pop();   // dialog 는 창을 곧바로(동기로) 붙인다
-  const okBtn = dlg.querySelector('[data-v="1"]');
-  okBtn.focus();                        // 초점이 줄에 남으면 Enter 한 번에 같은 분 창이 또 뜬다
-  let handedOff = false;
-  dlg.addEventListener("click", (e) => {
-    const f = e.target.closest("[data-fam]"), all = e.target.closest("[data-fam-all]");
-    if (!f && !all) return;
-    handedOff = true;
-    okBtn.click();                                                // 이 창을 닫고
-    opening = false;                                              // 다음 창(가족)은 새로 연다
-    if (f) openPerson(call, f.dataset.fam, onFamily, back);
-    else onFamily(Number(all.dataset.famAll), p.household_head || "");
-  });
-  await closed;
-  if (handedOff) return;               // 가족으로 넘어갔으면 그쪽이 opening·초점을 맡는다
-  opening = false;
-  if (back && back.isConnected) back.focus();
+  let handedOff = false;                // 가족으로 넘어가면 opening·초점은 그쪽 호출이 맡는다(아래)
+  try {
+    const r = await call("peoplePerson", { id: Number(id) });
+    if (!r.ok) { toast(errorText(r)); return; }
+    const p = r.person;
+    const rows = detailRows(p).map(([k, v, kind]) => `<dt>${esc(k)}</dt><dd>${kind === "tel" ? telHtml(v) : esc(v)}</dd>`).join("");
+    const photo = p.photo
+      ? `<img class="pp-big" src="${esc(p.photo)}" alt="${esc(p.name)} 사진" referrerpolicy="no-referrer">`
+      : `<div class="pp-big pp-ini">${esc(initialOf(p.name))}</div>`;
+    const fam = familyOrder(r.family || [], p.household_id);
+    const famHtml = !p.household_id || !fam.length ? "" :
+      `<div class="pp-fam"><div class="pp-fam-t"><b>가족</b> <span class="muted">세대주 ${esc(p.household_head || "(명단에 없음)")} · ${fam.length + 1}명</span></div>` +
+      fam.map((f) => `<button type="button" class="pp-fam-b" data-fam="${esc(f.person_id)}">${esc(f.name)} <small>${esc(
+        [f.household_rel, f.age != null && f.age !== "" ? f.age + "세" : ""].filter(Boolean).join(" · "))}</small></button>`).join("") +
+      `<button type="button" class="btn pp-fam-all" data-fam-all="${esc(p.household_id)}">👪 가족 모두 목록으로</button></div>`;
+    // ⚠️ dialog 본문은 pre-line — html 안에 줄바꿈 글자를 넣지 않는다
+    const closed = dialog({ title: p.name + (p.position ? " " + p.position : ""),
+      html: `<div class="pp-detail">${photo}<dl>${rows}</dl>${famHtml}</div>`, ok: "닫기", cancel: null });
+    const dlg = [...document.querySelectorAll(".dlg-dim")].pop();   // dialog 는 창을 곧바로(동기로) 붙인다
+    const okBtn = dlg.querySelector('[data-v="1"]');
+    okBtn.focus();                        // 초점이 줄에 남으면 Enter 한 번에 같은 분 창이 또 뜬다
+    dlg.addEventListener("click", (e) => {
+      const f = e.target.closest("[data-fam]"), all = e.target.closest("[data-fam-all]");
+      if (!f && !all) return;
+      handedOff = true;
+      okBtn.click();                                                // 이 창을 닫고
+      opening = false;                                              // 다음 창(가족)은 새로 연다
+      if (f) openPerson(call, f.dataset.fam, onFamily, back);
+      else onFamily(Number(all.dataset.famAll), p.household_head || "");
+    });
+    await closed;
+    if (!handedOff && back && back.isConnected) back.focus();
+  } finally {
+    // 가족으로 넘어갔으면(handedOff) 다음 호출이 opening 을 이미 다시 세웠다 — 여기서 덮어쓰면 안 된다.
+    // 그 밖의 모든 경로(응답 실패·중간 예외·정상 닫힘)는 여기서 반드시 푼다.
+    if (!handedOff) opening = false;
+  }
 }
 
 export async function render(el, { call, query }) {
