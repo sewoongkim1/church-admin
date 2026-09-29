@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sourceLine, affText, initialOf, csvText, EXPORT_COLS, detailRows, searchPayload, pageInfo, exportName, familyOrder,
-  pickSummary, filterChoices, sameSet }
+  pickSummary, filterChoices, sameSet, nextSort, SORTS }
   from "../js/menus/people/people-logic.js";
 import { churchBadgeHtml, hasChurch } from "../js/menus/people/church-badge.js";
 
@@ -28,7 +28,8 @@ test("initialOf · pageInfo · exportName · searchPayload", () => {
   assert.deepEqual(pageInfo(0, 0, 50), { from: 0, to: 0, hasPrev: false, hasNext: false });
   assert.equal(exportName({ source_date: "2026-09-29" }, 12), "교인명부_2026-09-29_12명.csv");
   assert.deepEqual(searchPayload({ q: "김", mok1: [], kind2: [], kind3: [], position: [], noPhoto: 1, page: 2 }),
-    { q: "김", mok1: [], kind2: [], kind3: [], position: [], noPhoto: true, household: null, page: 2 });
+    { q: "김", mok1: [], kind2: [], kind3: [], position: [], noPhoto: true, household: null, page: 2, sort: "name", dir: "asc" });
+  assert.deepEqual([searchPayload({ sort: "age", dir: "desc" }).sort, searchPayload({ sort: "age", dir: "desc" }).dir], ["age", "desc"]);
   assert.equal(searchPayload({ household: 45458 }).household, 45458);
   // 거르기는 배열 — 여러 개 · 빈 값 빼기 · 문자열 하나(옛 조건)는 한 칸짜리로 · 없으면 빈 배열
   const p = searchPayload({ mok1: ["기쁨", "", "소망"], kind2: "청년" });
@@ -39,6 +40,16 @@ test("initialOf · pageInfo · exportName · searchPayload", () => {
   const src = { mok1: ["기쁨"] };
   searchPayload(src).mok1.push("x");
   assert.deepEqual(src.mok1, ["기쁨"], "화면 상태를 건드리지 않는다(사본)");
+});
+
+test("nextSort — 같은 머리는 방향만 바꾸고, 다른 머리는 그 머리의 오름차순", () => {
+  assert.deepEqual(nextSort({ sort: "name", dir: "asc" }, "name"), { sort: "name", dir: "desc" });
+  assert.deepEqual(nextSort({ sort: "name", dir: "desc" }, "name"), { sort: "name", dir: "asc" });
+  assert.deepEqual(nextSort({ sort: "name", dir: "desc" }, "age"), { sort: "age", dir: "asc" });
+  assert.deepEqual(nextSort({ sort: "age", dir: "asc" }, "kind2"), { sort: "kind2", dir: "asc" });
+  assert.deepEqual(nextSort({}, "name"), { sort: "name", dir: "desc" });      // 없으면 기본(이름·오름)으로 본다
+  assert.deepEqual(nextSort({}, "aff"), { sort: "aff", dir: "asc" });
+  assert.deepEqual(SORTS.map(([k]) => k), ["name", "age", "aff", "kind2"]);   // 서버 people-query.ts SORT_KEYS 와 같게
 });
 
 test("pickSummary — 없음 「전체」 · 1~2개는 잇고 · 3개 이상은 「첫째 외 N」", () => {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSearch, searchDetail, ageBand, statsOf, PAGE_SIZE, PHOTO_TTL } from "../supabase/functions/church-admin/people-query.ts";
+import { parseSearch, searchDetail, sortOrder, ageBand, statsOf, PAGE_SIZE, PHOTO_TTL, FILTER_MAX } from "../supabase/functions/church-admin/people-query.ts";
 
 test("parseSearch — 숫자 4자리 이상은 전화 뒷자리, 그 밖은 이름(글자·숫자·- 만)", () => {
   assert.equal(parseSearch({ q: " 김 철수 " }).s.name, "김철수");
@@ -55,6 +55,50 @@ test("searchDetail — 빈 거르기는 기록에 남기지 않는다", () => {
     { mok1: ["기쁨", "소망"], position: ["집사"] });
   assert.deepEqual(searchDetail(parseSearch({ household: 45458 }).s), { household: "45458" });
   assert.deepEqual(searchDetail(parseSearch({}).s), {});
+});
+
+test("parseSearch — 정렬(sort·dir) · 기본 이름 오름 · 모르는 값은 invalid", () => {
+  const d = parseSearch({}).s;
+  assert.equal(d.sort, "name");
+  assert.equal(d.dir, "asc");
+  assert.equal(parseSearch({ sort: "", dir: "" }).s.sort, "name");      // 빈 값은 기본
+  for (const k of ["name", "age", "aff", "kind2"]) assert.equal(parseSearch({ sort: k }).s.sort, k);
+  assert.equal(parseSearch({ sort: "age", dir: "desc" }).s.dir, "desc");
+  assert.equal(parseSearch({ sort: "phone1" }).ok, false);               // 모르는 칸
+  assert.equal(parseSearch({ sort: "name_key" }).ok, false);             // 내부 칸 이름도 안 받는다
+  assert.equal(parseSearch({ dir: "down" }).ok, false);
+  assert.equal(parseSearch({ sort: ["age"] }).ok, false);                // 문자열만
+  assert.equal(parseSearch({ dir: 1 }).ok, false);
+});
+
+test("sortOrder — 칸 차례 · 나이 모름은 늘 맨 뒤 · 끝은 person_id", () => {
+  const o = (b) => sortOrder(parseSearch(b).s);
+  const A = { ascending: true }, D = { ascending: false };
+  assert.deepEqual(o({}), [["name_key", A], ["person_id", A]]);
+  assert.deepEqual(o({ dir: "desc" }), [["name_key", D], ["person_id", A]]);
+  assert.deepEqual(o({ sort: "age", dir: "desc" }),
+    [["age", { ascending: false, nullsFirst: false }], ["name_key", A], ["person_id", A]]);
+  assert.deepEqual(o({ sort: "age" }),
+    [["age", { ascending: true, nullsFirst: false }], ["name_key", A], ["person_id", A]]);
+  assert.deepEqual(o({ sort: "aff", dir: "desc" }),
+    [["mok1", D], ["mok3", D], ["school_dept", D], ["name_key", A], ["person_id", A]]);
+  assert.deepEqual(o({ sort: "kind2" }), [["kind2", A], ["kind3", A], ["name_key", A], ["person_id", A]]);
+});
+
+test("searchDetail — 정렬은 기본(이름·오름)이 아닐 때만 남긴다", () => {
+  assert.deepEqual(searchDetail(parseSearch({ sort: "name", dir: "asc" }).s), {});
+  assert.deepEqual(searchDetail(parseSearch({ sort: "age", dir: "desc" }).s), { sort: "age", dir: "desc" });
+  assert.deepEqual(searchDetail(parseSearch({ dir: "desc" }).s), { sort: "name", dir: "desc" });
+  assert.deepEqual(searchDetail(parseSearch({ mok1: ["기쁨"], sort: "aff" }).s), { mok1: ["기쁨"], sort: "aff", dir: "asc" });
+});
+
+test("거르기 목록 — 한도를 넘으면 곧바로 invalid · 받는 배열 자체가 너무 길어도 invalid", () => {
+  // 겹침·빈 값을 빼고 50개면 된다 — 하지만 보낸 배열이 한도의 네 배를 넘으면 훑지 않고 막는다
+  assert.equal(parseSearch({ mok1: Array.from({ length: FILTER_MAX * 4 }, () => "기쁨") }).s.mok1.length, 1);
+  assert.equal(parseSearch({ mok1: Array.from({ length: FILTER_MAX * 4 + 1 }, () => "기쁨") }).ok, false);
+  // 한도를 넘은 뒤에 나오는 이상한 값은 보지도 않는다(그래도 결과는 invalid)
+  const many = Array.from({ length: 51 }, (_, i) => "v" + i);
+  assert.equal(parseSearch({ mok1: [...many, 'x"'] }).ok, false);
 });
 
 test("ageBand", () => {

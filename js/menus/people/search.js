@@ -7,14 +7,18 @@
 //   (안 바뀌었으면 찾지 않는다 — 열람 기록이 쓸데없이 쌓이지 않게 · 2026-09-29).
 // 「사진 없는 분만」은 거르기 줄에 없다 — 현황의 「사진 없는 분 N명」(#/people?nophoto=1)으로 들어올 때만 켜지고,
 //   그때는 줄 끝에 「📷 사진 없는 분만 ✕」 표시가 떠 누르면 풀린다.
+// 정렬(2026-09-29) — 넓으면 표 머리(이름·성별나이·소속·구분)를, 좁으면 목록 위 「정렬」 칩을 누른다. 같은 것을 다시 누르면
+//   방향이 바뀐다(nextSort). 누르면 1쪽부터 다시 찾는다 — 서버가 정렬하므로 쪽을 넘겨도·내려받아도 같은 차례.
+//   가족 보기 중에는 가족 차례(familyOrder)라 정렬을 감춘다(끝나면 원래 정렬로 — 가족 보기가 정렬을 지우지 않는다).
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { sourceLine, affText, csvText, detailRows, searchPayload, initialOf, exportName, pageInfo, familyOrder,
-  FILTER_KEYS, pickSummary, filterChoices, sameSet } from "./people-logic.js";
+  FILTER_KEYS, pickSummary, filterChoices, sameSet, nextSort, SORTS } from "./people-logic.js";
 
 const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
-// 찾기 조건은 메뉴를 옮겨 다녀도 남는다(임명현황과 같게). household = 가족 보기(세대주 교인ID)
+// 찾기 조건은 메뉴를 옮겨 다녀도 남는다(임명현황과 같게) — 정렬(sort·dir)도. household = 가족 보기(세대주 교인ID)
 // ⚠️ 거르기 배열은 늘 새 배열로 바꿔 넣는다(push 금지) — blank() 가 매번 새 배열을 만들지만 사본끼리 섞이지 않게.
-const blank = () => ({ q: "", mok1: [], kind2: [], kind3: [], position: [], noPhoto: false, page: 0, household: null, householdName: "" });
+const blank = () => ({ q: "", mok1: [], kind2: [], kind3: [], position: [], noPhoto: false, page: 0, household: null, householdName: "",
+  sort: "name", dir: "asc" });
 let state = blank();
 let choices = null;   // 고를 목록 [값, 인원] — 교인 현황(peopleStats)에서 한 번 받는다
 const PICKS = [["mok1", "교구"], ["kind2", "구분"], ["kind3", "출석"], ["position", "직분"]];
@@ -42,11 +46,29 @@ const cardsHtml = (rows) => rows.map((p) => `<div class="pp-card" data-id="${esc
       <div class="pp-aff">${esc(affText(p))}</div><div>${telHtml(p.phone1)}</div></div>
   </div>`).join("");
 
-const tableHtml = (rows) => `<table class="pp-table"><thead><tr><th>사진</th><th>이름(직분)</th><th>성별·나이</th>` +
-  `<th>소속</th><th>구분</th><th>연락처</th></tr></thead><tbody>` +
+// 정렬 표시 — 지금 정렬이면 ▲(오름)/▼(내림)
+const arrowOf = (key) => (state.sort === key ? (state.dir === "asc" ? "▲" : "▼") : "");
+// 표 머리 — 정렬되는 칸은 <th> 안의 단추(가족 보기 중에는 글자만). 지금 정렬 머리에 aria-sort.
+const thHtml = (label, key) => {
+  if (!key || state.household) return `<th>${label}</th>`;
+  const on = state.sort === key;
+  const aria = on ? ` aria-sort="${state.dir === "asc" ? "ascending" : "descending"}"` : "";
+  return `<th class="pp-th-sort"${aria}><button type="button" class="pp-sort-h${on ? " on" : ""}" data-act="sort" data-sort="${key}">` +
+    `${label}<span class="pp-sort-a" aria-hidden="true">${arrowOf(key)}</span></button></th>`;
+};
+const tableHtml = (rows) => `<table class="pp-table"><thead><tr>${thHtml("사진")}${thHtml("이름(직분)", "name")}` +
+  `${thHtml("성별·나이", "age")}${thHtml("소속", "aff")}${thHtml("구분", "kind2")}${thHtml("연락처")}</tr></thead><tbody>` +
   rows.map((p) => `<tr class="pp-row" data-id="${esc(p.person_id)}" role="button" tabindex="0"><td>${photoHtml(p, "pp-ph sm")}</td>` +
     `<td>${relHtml(p)}<b>${esc(p.name)}</b>${posHtml(p)}</td><td>${esc(ageText(p))}</td><td>${esc(affText(p))}</td>` +
     `<td>${esc(p.kind2 || "")}</td><td>${telHtml(p.phone1)}</td></tr>`).join("") + `</tbody></table>`;
+
+// 폰(카드) — 목록 위 「정렬」 칩 줄. 지금 것은 채운 칩 + ▲/▼
+const sortBarHtml = () => `<span class="pp-sortbar-l" id="pp-sortbar-l">정렬</span>` +
+  SORTS.map(([k, l]) => {
+    const on = state.sort === k, how = on ? (state.dir === "asc" ? " 오름차순" : " 내림차순") : "";
+    return `<button type="button" class="pp-sort-c${on ? " on" : ""}" data-act="sort" data-sort="${k}" aria-pressed="${on}"` +
+      ` aria-label="${l}${how}">${l}<span class="pp-sort-a" aria-hidden="true">${arrowOf(k)}</span></button>`;
+  }).join("");
 
 // 「여러 개 고르기」 — 단추(라벨 · 고른 요약 · ▾) + 그 아래 판(체크박스 목록 · 인원 수 · 모두 해제)
 const pickHtml = (key, label) => {
@@ -58,10 +80,10 @@ const pickHtml = (key, label) => {
   return `<div class="pp-pick" data-pick="${key}">
     <button type="button" class="pp-pick-b${on.length ? " on" : ""}" data-act="pick" aria-expanded="false" aria-controls="pp-pan-${key}">
       <span class="pp-pick-l">${label}</span><span class="pp-pick-v">${esc(pickSummary(on))}</span>
-      <span class="pp-pick-a" aria-hidden="true">▾</span></button>
+      <span class="pp-pick-a" aria-hidden="true"></span></button>
     <div class="pp-pan" id="pp-pan-${key}" role="group" aria-label="${label} 여러 개 고르기" hidden>
       <div class="pp-pan-top"><span class="muted">여러 개 고를 수 있어요</span>
-        <button type="button" class="pp-pan-clear" data-act="clear">모두 해제</button></div>
+        <button type="button" class="pp-pan-clear" data-act="clear"${on.length ? "" : " disabled"}>모두 해제</button></div>
       <div class="pp-pan-list">${opts}</div>
     </div></div>`;
 };
@@ -137,11 +159,11 @@ export async function render(el, { call, query }) {
       <input type="search" class="search" name="q" placeholder="🔍 이름 또는 전화 뒷자리 4개" aria-label="찾기">
       <div class="pp-filters">${PICKS.map(([k, l]) => pickHtml(k, l)).join("")}
         <button type="button" class="pp-nophoto" data-act="nophoto-off" hidden
-          aria-label="사진 없는 분만 보는 중 — 눌러서 풀기">📷 사진 없는 분만 <span aria-hidden="true">✕</span></button></div>
+          aria-label="사진 없는 분만 보는 중 — 눌러서 풀기"><span class="pp-np-i" aria-hidden="true">📷</span> 사진 없는 분만 <span class="pp-np-x" aria-hidden="true">✕</span></button></div>
       <div class="acts"><button type="submit" class="btn primary">찾기</button>
         <button type="button" class="btn" data-act="csv">⬇️ 내려받기</button></div>
     </form>
-    <p class="muted pp-sum"></p><div class="pp-list"></div>
+    <p class="muted pp-sum"></p><div class="pp-sortbar" role="group" aria-labelledby="pp-sortbar-l" hidden></div><div class="pp-list"></div>
     <div class="acts pp-pager" hidden><button type="button" class="btn" data-act="prev">← 앞</button>
       <button type="button" class="btn" data-act="next">다음 →</button></div>`;
   const form = el.querySelector(".pp-form");
@@ -167,6 +189,7 @@ export async function render(el, { call, query }) {
     box.querySelector(".pp-pick-b").classList.toggle("on", on.length > 0);
     box.querySelector(".pp-pick-v").textContent = pickSummary(on);
     box.querySelectorAll(".pp-pan input[type=checkbox]").forEach((x) => { x.checked = on.includes(x.value); });
+    box.querySelector(".pp-pan-clear").disabled = !on.length;   // 고른 것이 없으면 「모두 해제」는 누를 것이 없다
   }
   const syncFilters = () => {
     FILTER_KEYS.forEach(syncPick);
@@ -195,10 +218,10 @@ export async function render(el, { call, query }) {
     return changed;
   }
 
-  // 가족 보기 — 다른 조건은 모두 비우고 세대주 교인ID 하나로 찾는다
+  // 가족 보기 — 다른 조건은 모두 비우고 세대주 교인ID 하나로 찾는다. 정렬은 남겨 둔다(가족 보기가 끝나면 원래 정렬로).
   const showFamily = (hid, headName) => {
     closePick({ run: false });
-    state = { ...blank(), household: hid, householdName: headName };
+    state = { ...blank(), household: hid, householdName: headName, sort: state.sort, dir: state.dir };
     form.q.value = "";
     syncFilters();
     load();
@@ -215,6 +238,9 @@ export async function render(el, { call, query }) {
       ? `👪 가족 보기 — 세대주 ${esc(state.householdName || String(state.household))} ` +
         `<button type="button" class="btn" data-act="famoff">✕ 가족 보기 끝</button>` : "";
     const shown = state.household ? familyOrder(last.rows, state.household) : last.rows;
+    const bar = el.querySelector(".pp-sortbar");     // 폰에서만 · 가족 보기 중에는 감춘다 · 찾은 분이 있을 때만
+    bar.hidden = mqWide.matches || !!state.household || !shown.length;
+    bar.innerHTML = bar.hidden ? "" : sortBarHtml();
     const list = el.querySelector(".pp-list");
     list.innerHTML = !shown.length ? `<p class="empty">조건에 맞는 분이 없어요</p>`
       : mqWide.matches ? tableHtml(shown) : cardsHtml(shown);
@@ -230,7 +256,8 @@ export async function render(el, { call, query }) {
   }
 
   async function load() {
-    const sent = searchPayload(state);   // 사본 — 기다리는 동안 판에서 고친 것이 섞이지 않게
+    // 사본 — 기다리는 동안 판에서 고친 것이 섞이지 않게. 가족 보기는 가족 차례로 그리므로 서버 정렬은 기본으로(기록도 깨끗이)
+    const sent = searchPayload(state.household ? { ...state, sort: "name", dir: "asc" } : state);
     const r = await busy(el, () => call("peopleSearch", sent));
     if (!r.ok) {
       // 실패한 조건의 옛 명수·가족 보기 줄·앞/다음 단추가 그대로 남으면 사실과 다르다 — 함께 지운다.
@@ -241,6 +268,8 @@ export async function render(el, { call, query }) {
       el.querySelector(".pp-sum").textContent = "";
       el.querySelector(".pp-famon").hidden = true;
       el.querySelector(".pp-pager").hidden = true;
+      el.querySelector(".pp-sortbar").hidden = true;
+      FILTER_KEYS.forEach(syncPick);   // busy 가 되살린 「모두 해제」 잠금을 다시 맞춘다
       return;
     }
     last = r;
@@ -250,6 +279,7 @@ export async function render(el, { call, query }) {
     srcEl.textContent = src.text;
     srcEl.classList.toggle("stale", src.stale);
     draw();   // busy 가 단추를 되살린 뒤 — 앞/다음의 잠금은 여기서 다시 정한다
+    FILTER_KEYS.forEach(syncPick);   // 「모두 해제」 잠금도(기다리는 동안 고른 것이 바뀌었을 수 있다)
   }
 
   async function exportCsv() {
@@ -259,6 +289,7 @@ export async function render(el, { call, query }) {
     if (!yes) return;
     const r = await busy(el, () => call("peopleExport", searchPayload({ ...lastSent, page: 0 })));
     draw();
+    FILTER_KEYS.forEach(syncPick);
     if (!r.ok) { toast(errorText(r)); return; }
     download(csvText(r.rows), exportName(r.source, r.rows.length));
   }
@@ -282,6 +313,13 @@ export async function render(el, { call, query }) {
       if (act === "next") { state.page++; load(); }
       if (act === "csv") exportCsv();
       if (act === "famoff") { state.household = null; state.householdName = ""; state.page = 0; load(); }
+      if (act === "sort") {
+        // 조건은 마지막으로 찾은 그대로(칸에 고쳐 적은 검색어는 「찾기」를 눌러야 들어간다) — 정렬만 바꿔 1쪽부터
+        const key = b.dataset.sort;
+        Object.assign(state, nextSort(state, key));
+        state.page = 0;
+        load().then(() => el.querySelector(`[data-act="sort"][data-sort="${key}"]`)?.focus());   // 다시 그린 뒤 초점을 그 자리로
+      }
       return;
     }
     const row = e.target.closest("[data-id]");

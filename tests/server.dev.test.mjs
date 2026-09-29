@@ -155,7 +155,7 @@ before(async () => {
     { person_id: 990000001, name: "ca-test-min", name_key: "ca-test-min", mok1: "시험", mok2: "시험", mok3: "시험-0목장",
       mok_path: "시험 > 시험 > 시험-0목장", kind1: "교인", kind2: "장년", kind3: "출석교인", position: "집사",
       phone1: "010-0000-0000", phone2: CHURCH_ONLY_PHONE, phone_digits: "01000000000 " + CHURCH_ONLY_PHONE.replace(/\D/g, ""),
-      address: "시험시 비밀주소 " + STAMP, has_photo: true, photo_hash: "t",
+      address: "시험시 비밀주소 " + STAMP, has_photo: true, photo_hash: "t", age: 45,
       household_id: 990000001, household_head: "ca-test-min", household_rel: "본인" });
   await rest("church_people", "POST",
     { person_id: 990000002, name: PAPER_NAME, name_key: PAPER_NAME, mok1: "시험", mok2: "시험", mok3: "시험-5목장",
@@ -165,7 +165,7 @@ before(async () => {
   await rest("church_people", "POST",
     { person_id: 990000003, name: DIR_NAME, name_key: DIR_NAME, mok1: "시험B", mok2: "시험B", mok3: "시험B-1목장",
       kind1: "교인", kind2: "청년", kind3: "새신자", position: "권사",
-      phone1: "010-5555-0000", phone_digits: "01055550000", has_photo: true, photo_hash: "t" });
+      phone1: "010-5555-0000", phone_digits: "01055550000", has_photo: true, photo_hash: "t", age: 30 });   // 002 는 나이 모름(정렬 시험)
   await rest("church_people_imports", "POST",
     { source_date: PEOPLE_SOURCE_DATE, total: 3, added: 3, changed: 0, removed: 0, photos: 2 });
   const up = await fetch(`${URL_}/storage/v1/object/${PHOTO_PATH}`, { method: "POST",
@@ -610,8 +610,27 @@ test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 �
   assert.deepEqual(await ids({ q: "ca-test", mok1: "시험B" }), [990000003], "문자열 하나(옛 화면)");
   assert.equal((await call(d, "peopleSearch", { mok1: ['시"험'] })).body.error, "invalid", "따옴표 든 값");
   assert.equal((await call(d, "peopleSearch", { mok1: Array.from({ length: 51 }, (_, i) => "v" + i) })).body.error, "invalid", "51개");
+  // 정렬(2026-09-29 머리 누르기) — 세 분: 001(ca-test-min · 45세) · 002(ca-test-paper-… · 나이 모름) · 003(ca-test-dir-… · 30세)
+  //   차례를 그대로 본다(sort 하지 않는다). 나이 모르는 분은 오름·내림 모두 맨 뒤.
+  const T = { q: "ca-test", mok1: ["시험", "시험B"] };
+  const order = async (payload, act = "peopleSearch") => {
+    const r = await call(d, act, payload);
+    assert.equal(r.body.ok, true, JSON.stringify(r.body));
+    return r.body.rows.map((x) => x.person_id).filter((id) => PEOPLE_IDS.includes(id));
+  };
+  assert.deepEqual(await order({ ...T, sort: "age", dir: "desc" }), [990000001, 990000003, 990000002], "나이 내림 — 모름은 맨 뒤");
+  assert.deepEqual(await order({ ...T, sort: "age", dir: "asc" }), [990000003, 990000001, 990000002], "나이 오름 — 모름은 그래도 맨 뒤");
+  assert.deepEqual(await order({ ...T, sort: "name", dir: "desc" }), [990000002, 990000001, 990000003], "이름 내림");
+  assert.deepEqual(await order({ ...T }), [990000003, 990000001, 990000002], "기본 — 이름 오름");
+  assert.deepEqual(await order({ ...T, sort: "age", dir: "desc" }, "peopleExport"), [990000001, 990000003, 990000002], "내려받기도 같은 차례");
+  assert.deepEqual(await order({ ...T, sort: "name", dir: "desc" }, "peopleExport"), [990000002, 990000001, 990000003], "내려받기 이름 내림");
+  assert.equal((await call(d, "peopleSearch", { ...T, sort: "phone1" })).body.error, "invalid", "모르는 정렬");
+  assert.equal((await call(d, "peopleExport", { ...T, dir: "up" })).body.error, "invalid", "모르는 방향(내려받기)");
+  const sortLog = (await call(people.super.token, "auditList", { limit: 20, kind: "people" })).body.rows
+    .find((r) => r.action === "people.search" && r.detail?.filters?.sort === "age");
+  assert.deepEqual(sortLog?.detail?.filters, { mok1: ["시험", "시험B"], sort: "age", dir: "asc" }, JSON.stringify(sortLog));
   // 열람 기록 — 배열이 그대로 남는다
-  const logged = (await call(people.super.token, "auditList", { limit: 10, kind: "people" })).body.rows
+  const logged = (await call(people.super.token, "auditList", { limit: 20, kind: "people" })).body.rows
     .find((r) => r.action === "people.search" && r.detail?.q === "ca-test" && r.detail?.filters?.kind2);
   assert.deepEqual(logged?.detail?.filters, { mok1: ["시험", "시험B"], kind2: ["청년"] }, JSON.stringify(logged));
   assert.equal((await call(d, "peopleSearch", { page: -1 })).body.error, "invalid");

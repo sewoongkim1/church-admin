@@ -8,10 +8,16 @@ export const PHOTO_TTL = 600;   // 사진 주소 만료(초) — 새어 나가�
 export const FILTER_KEYS = ["mok1", "kind2", "kind3", "position"] as const;
 export const FILTER_MAX = 50;   // 한 거르기에 고를 수 있는 값 — 가장 긴 목록(직분·교구)도 이보다 짧다
 
+// 정렬(2026-09-29 표 머리 누르기) — 화면 people-logic.js SORTS 와 같은 차례. 기본은 이름 오름.
+export const SORT_KEYS = ["name", "age", "aff", "kind2"] as const;
+export type SortKey = typeof SORT_KEYS[number];
+export type Dir = "asc" | "desc";
+
 export type Search = {
   name: string; tail: string; mok1: string[]; kind2: string[]; kind3: string[]; position: string[]; noPhoto: boolean;
   household: number | null;   // 가족 보기 — 신앙세대주의 교인ID
   page: number;
+  sort: SortKey; dir: Dir;
 };
 
 const clean = (s: unknown, max = 20): string => String(s ?? "").normalize("NFC").trim().slice(0, max);
@@ -22,17 +28,25 @@ const clean = (s: unknown, max = 20): string => String(s ?? "").normalize("NFC")
 function cleanList(v: unknown): string[] | null {
   if (v === undefined || v === null) return [];
   const raw = typeof v === "string" ? [v] : Array.isArray(v) ? v : null;
-  if (!raw) return null;
-  const out: string[] = [];
+  if (!raw || raw.length > FILTER_MAX * 4) return null;   // 겹침·빈 값을 감안해도 이보다 길 까닭이 없다 — 훑지 않고 막는다
+  const out = new Set<string>();
   for (const x of raw) {
     if (x === null || x === undefined) continue;
     if (typeof x !== "string") return null;
     const t = x.normalize("NFC");
     if (t.includes('"') || t.includes("\\")) return null;
     const c = clean(t);
-    if (c && !out.includes(c)) out.push(c);
+    if (!c) continue;
+    out.add(c);
+    if (out.size > FILTER_MAX) return null;               // 한도를 넘는 즉시 멈춘다
   }
-  return out.length > FILTER_MAX ? null : out;
+  return [...out];
+}
+
+// 정렬 값 — 없거나 빈 값은 기본, 모르는 값은 null(invalid)
+function pick<T extends string>(v: unknown, allowed: readonly T[], dflt: T): T | null {
+  if (v === undefined || v === null || v === "") return dflt;
+  return typeof v === "string" && (allowed as readonly string[]).includes(v) ? v as T : null;
 }
 
 // 검색어 하나로 이름과 전화 뒷자리를 가른다 — 숫자(띄어쓰기·- 빼고)만 4~11자리면 전화, 그 밖은 이름.
@@ -47,6 +61,9 @@ export function parseSearch(b: any): { ok: true; s: Search } | { ok: false; erro
   const hv = b?.household;
   const household = hv === undefined || hv === null || hv === "" ? null : Number(hv);
   if (household !== null && (!Number.isSafeInteger(household) || household <= 0)) return { ok: false, error: "invalid" };
+  const sort = pick(b?.sort, SORT_KEYS, "name");
+  const dir = pick(b?.dir, ["asc", "desc"] as const, "asc");
+  if (!sort || !dir) return { ok: false, error: "invalid" };
   const f: Record<string, string[]> = {};
   for (const k of FILTER_KEYS) {
     const list = cleanList(b?.[k]);
@@ -54,7 +71,21 @@ export function parseSearch(b: any): { ok: true; s: Search } | { ok: false; erro
     f[k] = list;
   }
   return { ok: true, s: { name, tail, mok1: f.mok1, kind2: f.kind2, kind3: f.kind3, position: f.position,
-    noPhoto: b?.noPhoto === true, household, page } };
+    noPhoto: b?.noPhoto === true, household, page, sort, dir } };
+}
+
+// 정렬 차례 — [칸, 옵션] 목록(supabase-js .order 에 그대로). 쪽 넘기기·내려받기가 같은 것을 쓴다.
+// 마지막은 늘 person_id — 같은 값끼리 쪽마다 차례가 흔들려 한 분이 두 쪽에 나오거나 빠지지 않게.
+// 나이 모르는 분은 오름·내림 모두 맨 뒤(nullsFirst:false — Postgres 는 내림에서 null 을 맨 앞에 둔다).
+type Order = [string, { ascending: boolean; nullsFirst?: boolean }];
+export function sortOrder(s: Search): Order[] {
+  const d = { ascending: s.dir === "asc" }, A = { ascending: true };
+  const head: Order[] =
+    s.sort === "age" ? [["age", { ...d, nullsFirst: false }], ["name_key", A]]
+    : s.sort === "aff" ? [["mok1", d], ["mok3", d], ["school_dept", d], ["name_key", A]]
+    : s.sort === "kind2" ? [["kind2", d], ["kind3", d], ["name_key", A]]
+    : [["name_key", d]];
+  return [...head, ["person_id", A]];
 }
 
 // 열람 기록에 남길 거르기 — 빈 것은 뺀다. 여러 개는 배열 그대로(바꾼 기록 화면이 「기쁨·소망」으로 잇는다)
@@ -63,6 +94,7 @@ export function searchDetail(s: Search): Record<string, string[] | string | bool
   for (const k of FILTER_KEYS) if (s[k].length) out[k] = [...s[k]];
   if (s.noPhoto) out.noPhoto = true;
   if (s.household) out.household = String(s.household);
+  if (s.sort !== "name" || s.dir !== "asc") { out.sort = s.sort; out.dir = s.dir; }   // 기본 정렬은 남기지 않는다
   return out;
 }
 

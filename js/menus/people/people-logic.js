@@ -29,7 +29,17 @@ const pickList = (v) => (Array.isArray(v) ? v : v ? [v] : []).filter((x) => x !=
 export const searchPayload = (s) => ({
   q: s.q || "", mok1: pickList(s.mok1), kind2: pickList(s.kind2), kind3: pickList(s.kind3), position: pickList(s.position),
   noPhoto: !!s.noPhoto, household: s.household || null, page: s.page || 0,
+  sort: s.sort || "name", dir: s.dir || "asc",
 });
+
+// 정렬 — [키, 이름]. 서버 people-query.ts SORT_KEYS 와 같은 차례(2026-09-29 표 머리 누르기).
+// 이름 = name_key · 나이 = 모르는 분은 늘 맨 뒤 · 소속 = 교구 > 목장 > 교회학교 · 구분 = 구분 > 출석
+export const SORTS = [["name", "이름"], ["age", "나이"], ["aff", "소속"], ["kind2", "구분"]];
+// 같은 머리를 다시 누르면 방향만 바꾸고, 다른 머리를 누르면 그 머리의 오름차순
+export function nextSort(state, key) {
+  const cur = state?.sort || "name", dir = state?.dir || "asc";
+  return cur === key ? { sort: key, dir: dir === "asc" ? "desc" : "asc" } : { sort: key, dir: "asc" };
+}
 
 // 「여러 개 고르기」 단추 아래 줄 — 없으면 「전체」, 1~2개는 잇고, 3개 이상은 「첫째 외 N」
 export function pickSummary(values) {

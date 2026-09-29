@@ -13,7 +13,7 @@ import { statusPatch } from "./ministry.ts";
 import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINISTRY_FREQ_COLS, MINISTRY_FREQ_KEYS } from "./catalog.ts";
 import { appIdentityKey, legacyNorm, ministryPaperKeys, ministryPaperOne, paperName, PAPER_MAX_ROWS } from "./paper.ts";
 import { applicantFromPaper, applicantFromWho, churchFor, lookupKeys, toCand, type Cand } from "./people-match.ts";
-import { parseSearch, searchDetail, statsOf, PAGE_SIZE, PHOTO_TTL, FILTER_KEYS, type Search } from "./people-query.ts";
+import { parseSearch, searchDetail, sortOrder, statsOf, PAGE_SIZE, PHOTO_TTL, FILTER_KEYS, type Search } from "./people-query.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -866,6 +866,12 @@ function peopleFilter(q: any, s: Search) {
   return q;
 }
 
+// 정렬(화면의 표 머리·정렬 칩) — 찾기·내려받기가 같은 차례를 쓴다(끝은 늘 person_id)
+function peopleOrder(q: any, s: Search) {
+  for (const [col, opt] of sortOrder(s)) q = q.order(col, opt);
+  return q;
+}
+
 // 사진 서명 주소 — 실패하면 사진만 빠진다(목록 전체를 실패로 만들지 않는다)
 async function photoUrls(ids: number[]): Promise<Map<number, string>> {
   const out = new Map<number, string>();
@@ -886,8 +892,8 @@ async function peopleSearch(ctx: Ctx, b: any) {
   const source = await peopleSource();
   if (!source) return { ok: true, source: null, total: 0, page: 0, pageSize: PAGE_SIZE, rows: [] };
   const from = s.page * PAGE_SIZE;
-  const { data, error, count } = await peopleFilter(db.from("church_people").select(PEOPLE_LIST_COLS, { count: "exact" }), s)
-    .order("name_key", { ascending: true }).order("person_id", { ascending: true })
+  const { data, error, count } = await peopleOrder(
+    peopleFilter(db.from("church_people").select(PEOPLE_LIST_COLS, { count: "exact" }), s), s)
     .range(from, from + PAGE_SIZE - 1);
   if (error && (error as any).code !== "PGRST103") throw error;   // PGRST103 = 끝을 넘은 쪽 → 빈 쪽
   let total = count ?? 0;
@@ -935,8 +941,7 @@ async function peopleExport(ctx: Ctx, b: any) {
   if (!p.ok) return { ok: false, error: p.error };
   const source = await peopleSource();
   if (!source) return { ok: true, source: null, rows: [] };
-  const rows = await allRows(() => peopleFilter(db.from("church_people").select(PEOPLE_ALL_COLS), p.s)
-    .order("name_key", { ascending: true }).order("person_id", { ascending: true }));
+  const rows = await allRows(() => peopleOrder(peopleFilter(db.from("church_people").select(PEOPLE_ALL_COLS), p.s), p.s));
   await audit(ctx, "people.export", "", { q: norm(b.q).slice(0, 40), filters: searchDetail(p.s), count: rows.length });
   return { ok: true, source, rows };
 }
