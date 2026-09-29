@@ -12,6 +12,7 @@ import { canCall, identityCandidates, kakaoAvatar, kakaoNickname, norm, parseIde
 import { statusPatch } from "./ministry.ts";
 import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINISTRY_FREQ_COLS, MINISTRY_FREQ_KEYS } from "./catalog.ts";
 import { appIdentityKey, legacyNorm, ministryPaperKeys, ministryPaperOne, paperName, PAPER_MAX_ROWS } from "./paper.ts";
+import { applicantFromPaper, applicantFromWho, churchFor, lookupKeys, toCand, type Cand } from "./people-match.ts";
 import { parseSearch, searchDetail, statsOf, PAGE_SIZE, PHOTO_TTL, type Search } from "./people-query.ts";
 
 const cors = {
@@ -360,6 +361,8 @@ async function ministryList() {
     if (e3) throw e3;
     for (const s of (subs ?? []) as any[]) hasPush.add(s.user_id);
   }
+  // 교적 표시(교인명부 · 2026-09-29) — { state, reason } 만. 교적 값은 싣지 않는다.
+  const churchIdx = await churchLookup(rows.map((r) => r.name || umap.get(r.user_id)?.name || ""));
   return {
     ok: true,
     year,
@@ -372,6 +375,7 @@ async function ministryList() {
         name: r.name || u?.name || "", who: r.who || uWho,
         note: r.note ?? "", notified_at: r.notified_at ?? null, canPush: hasPush.has(r.user_id),
         phone: r.phone ?? "", source: r.source === "paper" ? "paper" : "app",
+        church: churchFor(churchIdx, applicantFromWho(r.name || u?.name || "", r.who || uWho, r.phone ?? "")),
       };
     }),
   };
@@ -659,6 +663,9 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
     .select("id,user_id,name,phone,team_id,status").eq("year", year));
 
   const rows = raws.map((r: any, i: number) => ministryPaperOne(r, i));
+  // 교적 표시(교인명부 · 2026-09-29) — 오류 줄에도 붙인다(이름·소속을 고칠 때 도움이 된다). 교적 값은 싣지 않는다.
+  const churchIdx = await churchLookup(rows.map((r: any) => r.name));
+  for (const r of rows) r.church = churchFor(churchIdx, applicantFromPaper(r));
 
   // 줄마다 계정 찾기 — 있으면 잇고, 없으면 save 때 만든다
   const keyOf = new Map<number, string[]>();
@@ -829,6 +836,24 @@ async function peopleSource(): Promise<{ source_date: string; total: number } | 
     .order("id", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
   return data ? { source_date: data.source_date, total: data.total } : null;
+}
+
+// 사역신청 줄을 교적과 맞댄다 — 명부가 한 번도 안 올라왔으면 null(화면이 표시를 아예 그리지 않는다).
+// 신청자 이름으로만 묻는다(200개씩) — 8,672명 전체를 읽지 않게.
+async function churchLookup(names: unknown[]): Promise<Map<string, Cand[]> | null> {
+  if (!(await peopleSource())) return null;
+  const keys = lookupKeys(names);
+  const out = new Map<string, Cand[]>();
+  for (let i = 0; i < keys.length; i += 200) {
+    const { data, error } = await db.from("church_people").select("name_key,mok1,mok3,school_dept,phone_digits")
+      .in("name_key", keys.slice(i, i + 200));
+    if (error) throw error;
+    for (const r of (data ?? []) as any[]) {
+      if (!out.has(r.name_key)) out.set(r.name_key, []);
+      out.get(r.name_key)!.push(toCand(r));
+    }
+  }
+  return out;
 }
 
 function peopleFilter(q: any, s: Search) {

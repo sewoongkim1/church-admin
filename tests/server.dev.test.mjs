@@ -350,6 +350,22 @@ test("신청 현황: 목록 모양 · 동시 수정 · 취소 사유 · 임명 �
   assert.ok(acts.includes("ministry.status") && acts.includes("ministry.delete"), JSON.stringify(acts));
 });
 
+test("사역 화면의 교적 표시: 두 칸만 · 교적 값은 싣지 않는다 · 맞음/확인 필요/없음", async () => {
+  const m = people.ministry.token;
+  const list = await call(m, "ministryList");
+  assert.equal(list.body.ok, true, JSON.stringify(list.body));
+  const mine = list.body.list.filter((x) => x.name === "ca-test-min");
+  assert.ok(mine.length >= 1);
+  for (const x of mine) assert.deepEqual(x.church, { state: "맞음", reason: "" });
+  assert.ok(!JSON.stringify(list.body).includes("비밀주소"), "교적 주소가 사역 응답에 실렸다");
+
+  const row = (name) => ({ gu: "시험", mok: "0", name, position: "집사", phone: "010-1234-5678", team: "없는팀-" + STAMP });
+  const chk = await call(m, "ministryPaperCheck", { rows: [row(PAPER_NAME), row("ca-test-nobody-" + STAMP)] });
+  assert.equal(chk.body.ok, true, JSON.stringify(chk.body));
+  assert.deepEqual(chk.body.rows[0].church, { state: "확인 필요", reason: "소속 다름" });   // 명부는 시험-5목장, 전화가 같다
+  assert.deepEqual(chk.body.rows[1].church, { state: "없음", reason: "" });
+});
+
 test("사역팀 정보: 목록 모양 · 설명 고치기(원래대로 되돌림) · 주일 끄면 시각 비움 · <script> 안 먹힘 · 차례(전체 ok·일부 오류) · 바뀐 기록", async () => {
   const m = people.ministry.token;
 
