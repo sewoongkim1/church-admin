@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sourceLine, affText, initialOf, csvText, EXPORT_COLS, detailRows, searchPayload, pageInfo, exportName, familyOrder }
+import { sourceLine, affText, initialOf, csvText, EXPORT_COLS, detailSections, searchPayload, pageInfo, exportName, familyOrder }
   from "../js/menus/people/people-logic.js";
 import { churchBadgeHtml, hasChurch } from "../js/menus/people/church-badge.js";
 
@@ -50,11 +50,58 @@ test("csvText — BOM · 머리글 · 따옴표 · 사진 있음/없음", () => 
   assert.ok(lines[2].endsWith('"없음"'));
 });
 
-test("detailRows — 빈 칸은 빼고 연락처는 전화 표시", () => {
-  const rows = detailRows({ position: "집사", position_detail: "서리집사", phone1: "010-1111-2222", phone2: "", address: "시험로 1" });
-  assert.deepEqual(rows.find(([k]) => k === "직분"), ["직분", "집사 · 서리집사"]);
-  assert.deepEqual(rows.find(([k]) => k === "연락처"), ["연락처", "010-1111-2222", "tel"]);
-  assert.equal(rows.some(([k]) => k === "연락처 2"), false);
+const FULL = {
+  name: "김하늘", position: "집사", position_detail: "서리집사", gender: "남", age: 45, birth: "1981-03-15", lunar: "양",
+  kind1: "교인", kind2: "장년", kind3: "출석교인", registered: "2015-05-02", reg_type: "세례", guide: "이바다",
+  phone1: "010-0000-0001", phone2: "010-0000-0002", email: "sky@example.com",
+  address: "시험시 시험구 시험로 1", address_jibun: "시험시 시험동 1-1",
+  mok1: "기쁨", mok3: "기쁨-12목장", mok_leader: "박가람", school_path: "교육위원회 > 고등부 > 1학년 > 1반",
+  teacher: "최나래", youth_path: "청년부 > 청년1부", mission: "남선교회",
+  spouse: "이슬", spouse_position: "집사", household_head: "김하늘", household_rel: "본인",
+};
+
+test("detailSections — 네 묶음 · 칸 모양 · 넓은 칸", () => {
+  const secs = detailSections(FULL);
+  assert.deepEqual(secs.map((s) => s.key), ["basic", "contact", "affil", "family"]);
+  assert.deepEqual(secs.map((s) => s.title), ["기본", "연락", "소속", "가족"]);
+  const f = (key, label) => secs.find((s) => s.key === key).fields.find((x) => x.label === label);
+  assert.deepEqual(f("basic", "생년월일"), { label: "생년월일", value: "1981-03-15 · 양" });
+  assert.equal(f("basic", "교인 구분").value, "교인 > 장년 > 출석교인");
+  assert.equal(f("basic", "등록").value, "2015-05-02 · 세례");
+  assert.equal(f("contact", "주소").wide, true);
+  assert.equal(f("contact", "지번 주소").wide, true);
+  assert.equal(f("affil", "교회학교").wide, true);
+  assert.equal(f("affil", "청년").wide, true);
+  assert.equal(f("contact", "이메일").wide, true);
+  assert.equal(f("affil", "목장 리더").wide, undefined);
+  assert.equal(f("family", "배우자").value, "이슬 · 집사");
+  assert.equal(f("family", "신앙세대주").value, "김하늘 · 본인");
+});
+
+test("detailSections — 칸은 화면에 놓이는 차례 그대로(짧은 칸 둘이 먼저 한 줄 · 교회학교 바로 아래 교사 · dense 를 안 쓴다)", () => {
+  const affil = detailSections({ ...FULL, school_path: "교육위원회 > 고등부", youth_path: "청년부 > 청년1부" })
+    .find((s) => s.key === "affil").fields;
+  assert.deepEqual(affil.map((x) => x.label), ["목장 리더", "선교회", "교회학교", "교사", "청년"]);
+  assert.deepEqual(affil.map((x) => !!x.wide), [false, false, true, true, true]);
+  // 넓은 칸 아닌 것이 둘씩 이어져 한 줄을 채운다(장년: 목장 리더 · 선교회)
+  assert.deepEqual(detailSections({ mok_leader: "박가람", mission: "남선교회" })[0].fields.map((x) => x.label), ["목장 리더", "선교회"]);
+  // 오른쪽 칸에는 전화 링크 표시가 없다(연락처는 왼쪽 단 전화 단추로)
+  assert.equal(detailSections(FULL).flatMap((s) => s.fields).some((x) => "tel" in x), false);
+});
+
+test("detailSections — 왼쪽에 있는 것(이름·직분·소속·나이·연락처)은 되풀이하지 않는다", () => {
+  const labels = detailSections(FULL).flatMap((s) => s.fields.map((x) => x.label));
+  for (const no of ["이름", "직분", "소속", "성별 · 나이", "연락처", "연락처 2"]) assert.equal(labels.includes(no), false, no);
+  const values = detailSections(FULL).flatMap((s) => s.fields.map((x) => x.value));
+  assert.equal(values.some((v) => v.includes("010-0000-0001")), false);
+});
+
+test("detailSections — 빈 값·빈 묶음은 뺀다", () => {
+  assert.deepEqual(detailSections({}), []);
+  const secs = detailSections({ email: "  ", address: "시험로 1", lunar: "", birth: null, kind2: "장년" });
+  assert.deepEqual(secs.map((s) => s.key), ["basic", "contact"]);
+  assert.deepEqual(secs[0].fields, [{ label: "교인 구분", value: "장년" }]);
+  assert.deepEqual(secs[1].fields, [{ label: "주소", value: "시험로 1", wide: true }]);
 });
 
 test("churchBadgeHtml — 셋 · null 은 빈 글자 · reason 은 esc", () => {

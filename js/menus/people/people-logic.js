@@ -59,29 +59,40 @@ export function csvText(rows) {
   return "﻿" + [head, ...body].map((row) => row.map(cell).join(",")).join("\r\n");
 }
 
-// 자세히 보기 — [칸 이름, 값, 종류?]. 빈 값은 뺀다. 종류 "tel" 은 전화 걸기로 그린다.
-export function detailRows(p) {
-  const join = (...xs) => xs.filter(Boolean).join(" · ");
-  const rows = [
-    ["직분", join(p.position, p.position_detail)],
-    ["성별 · 나이", join(p.gender, p.age != null && p.age !== "" ? `${p.age}세` : "")],
-    ["생년월일", join(p.birth, p.lunar)],
-    ["소속", affText(p)],
-    ["목장 리더", p.mok_leader],
-    ["교회학교", p.school_path],
-    ["교사", p.teacher],
-    ["청년", p.youth_path],
-    ["선교회", p.mission],
-    ["교인 구분", [p.kind1, p.kind2, p.kind3].filter(Boolean).join(" > ")],
-    ["등록", join(p.registered, p.reg_type)],
-    ["연락처", p.phone1, "tel"],
-    ["연락처 2", p.phone2, "tel"],
-    ["이메일", p.email],
-    ["배우자", join(p.spouse, p.spouse_position)],
-    ["신앙세대주", join(p.household_head, p.household_rel)],
-    ["인도자", p.guide],
-    ["주소", p.address],
-    ["지번 주소", p.address_jibun],
+// 자세히 보기의 오른쪽 묶음 — [{ key, title, fields:[{ label, value, wide? }] }]. 빈 값·빈 묶음은 뺀다.
+// 왼쪽(사진 옆)에 이미 있는 것 — 이름·직분·소속·성별·나이·연락처 — 는 여기 되풀이하지 않는다(person-detail.js).
+// wide 는 칸 두 개 폭(긴 주소·교회학교 경로). 화면은 이 차례 그대로 놓는다(grid dense 를 안 쓴다 — 화면 차례 = 읽는 차례).
+// 소속은 교회학교(넓게) 바로 뒤에 교사가 오도록 · 목장 리더는 교사 옆 칸을 채우고 · 장년이면 목장 리더와 선교회가 한 줄에.
+export function detailSections(p) {
+  const has = (v) => v !== undefined && v !== null && String(v).trim() !== "";
+  const join = (sep, ...xs) => xs.filter(has).map((x) => String(x).trim()).join(sep);
+  const f = (label, value, extra) => ({ label, value: has(value) ? String(value).trim() : "", ...extra });
+  const W = { wide: true };
+  const sections = [
+    { key: "basic", title: "기본", fields: [
+      f("생년월일", join(" · ", p.birth, p.lunar)),
+      f("교인 구분", join(" > ", p.kind1, p.kind2, p.kind3)),
+      f("등록", join(" · ", p.registered, p.reg_type)),
+      f("인도자", p.guide),
+    ] },
+    { key: "contact", title: "연락", fields: [
+      f("이메일", p.email, W),
+      f("주소", p.address, W),
+      f("지번 주소", p.address_jibun, W),
+    ] },
+    { key: "affil", title: "소속", fields: [
+      // 짧은 칸 둘(목장 리더 · 선교회)이 한 줄을 채우고, 교회학교 → 교사(교회학교에 딸린 값) → 청년은 넓은 칸으로 한 줄씩.
+      // 짧은·넓은 칸을 섞으면 반 칸만 찬 줄이 생겨 지그재그로 보이고, 교사와 목장 리더가 한 줄에 짝지어져 뜻이 섞인다.
+      f("목장 리더", p.mok_leader),
+      f("선교회", p.mission),
+      f("교회학교", p.school_path, W),
+      f("교사", p.teacher, W),
+      f("청년", p.youth_path, W),
+    ] },
+    { key: "family", title: "가족", fields: [
+      f("배우자", join(" · ", p.spouse, p.spouse_position)),
+      f("신앙세대주", join(" · ", p.household_head, p.household_rel)),
+    ] },
   ];
-  return rows.filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "");
+  return sections.map((s) => ({ ...s, fields: s.fields.filter((x) => x.value !== "") })).filter((s) => s.fields.length);
 }

@@ -2,6 +2,7 @@
   --navy:#1a3a6b; --navy-dark:#0d1b3e; --gold:#c8a84b;
   --cream:#fdf8f0; --gray:#6b778c; --border:#ddd6c8; --light:#f3f0ea;
   --green:#2c5f2d; --error:#c0392b;
+  --ink:#222; --ink-2:#5a6477; --paper:#fff;   /* 본문 글자 · 라벨처럼 한 단계 옅은 글자(--gray 보다 진해 노안에도 읽힌다) · 창 바탕 */
   --ghost-bg:#eef3fb; --ghost-bd:#a9c3e8; --danger-bg:#fdeceb; --danger-bd:#e7b3ad;
   /* 관리 화면 표준 v1 (bible-memorize-church-app-v2 docs/notes/ministry-admin-ui.md) */
   --tap-lg:48px; --tap:44px; --chip:36px; --gap:10px; --gap-s:6px; --card-pad:18px;

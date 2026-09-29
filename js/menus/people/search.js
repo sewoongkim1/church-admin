@@ -4,8 +4,9 @@
 //    자세히 보기는 열 때마다 서버가 새 주소를 준다.
 // ⚠️ 내려받기는 **마지막으로 찾은 조건** 그대로다(칸을 바꾸고 「찾기」를 안 눌렀으면 옛 조건) — 화면의 수와 파일이 같게.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
-import { sourceLine, affText, csvText, detailRows, searchPayload, initialOf, exportName, pageInfo, familyOrder }
+import { sourceLine, affText, csvText, searchPayload, initialOf, exportName, pageInfo, familyOrder }
   from "./people-logic.js";
+import { personDetailHtml } from "./person-detail.js";
 
 const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
 // 찾기 조건은 메뉴를 옮겨 다녀도 남는다(임명현황과 같게). household = 가족 보기(세대주 교인ID)
@@ -68,20 +69,20 @@ async function openPerson(call, id, onFamily, back) {
     const r = await call("peoplePerson", { id: Number(id) });
     if (!r.ok) { toast(errorText(r)); return; }
     const p = r.person;
-    const rows = detailRows(p).map(([k, v, kind]) => `<dt>${esc(k)}</dt><dd>${kind === "tel" ? telHtml(v) : esc(v)}</dd>`).join("");
-    const photo = p.photo
-      ? `<img class="pp-big" src="${esc(p.photo)}" alt="${esc(p.name)} 사진" referrerpolicy="no-referrer">`
-      : `<div class="pp-big pp-ini">${esc(initialOf(p.name))}</div>`;
     const fam = familyOrder(r.family || [], p.household_id);
-    const famHtml = !p.household_id || !fam.length ? "" :
-      `<div class="pp-fam"><div class="pp-fam-t"><b>가족</b> <span class="muted">세대주 ${esc(p.household_head || "(명단에 없음)")} · ${fam.length + 1}명</span></div>` +
-      fam.map((f) => `<button type="button" class="pp-fam-b" data-fam="${esc(f.person_id)}">${esc(f.name)} <small>${esc(
-        [f.household_rel, f.age != null && f.age !== "" ? f.age + "세" : ""].filter(Boolean).join(" · "))}</small></button>`).join("") +
-      `<button type="button" class="btn pp-fam-all" data-fam-all="${esc(p.household_id)}">👪 가족 모두 목록으로</button></div>`;
-    // ⚠️ dialog 본문은 pre-line — html 안에 줄바꿈 글자를 넣지 않는다
-    const closed = dialog({ title: p.name + (p.position ? " " + p.position : ""),
-      html: `<div class="pp-detail">${photo}<dl>${rows}</dl>${famHtml}</div>`, ok: "닫기", cancel: null });
+    // 본문(사진·이름·전화 | 묶음·가족)은 person-detail.js — 이름이 본문 안에 있어 창 제목은 비운다(ui.js 가 숨긴다)
+    const closed = dialog({ title: "", html: personDetailHtml(p, fam), ok: "닫기", cancel: null, cls: "pd" });
     const dlg = [...document.querySelectorAll(".dlg-dim")].pop();   // dialog 는 창을 곧바로(동기로) 붙인다
+    dlg.querySelector(".dlg").setAttribute("aria-label", `${p.name || "이름 없음"} 자세히`);
+    // 사진 주소가 그사이 만료됐거나 못 불러오면 같은 크기의 첫 글자 칸으로
+    const img = dlg.querySelector("img.pd-photo");
+    if (img) img.addEventListener("error", () => {
+      const d = document.createElement("div");
+      d.className = "pd-photo pd-ini";
+      d.setAttribute("aria-hidden", "true");
+      d.textContent = img.dataset.ini;
+      img.replaceWith(d);
+    }, { once: true });
     const okBtn = dlg.querySelector('[data-v="1"]');
     okBtn.focus();                        // 초점이 줄에 남으면 Enter 한 번에 같은 분 창이 또 뜬다
     dlg.addEventListener("click", (e) => {
