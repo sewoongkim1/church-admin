@@ -24,6 +24,8 @@ import { BE_NEEDS_DEFAULT, checkEvent, eligibilityStart, EV_CREATE_KEYS, EV_EDIT
 // 성경필사(암송) — 한 분 더하기·줄 고치기·빼기(계획 Task 7)
 import { checkNote, checkRow, identKey, type EvRow } from "./events-rules.ts";
 import { ADD_TAG, askableKeys, checkChanged, formRow, oddPosition, rowPatch, sameKeys, tagNote, touchesRow } from "./events-rows.ts";
+// 성경필사(암송) 명단 올리기·교인명부 찾기(Task 8) — 이 과제의 이름은 events-upload.ts 에서만 가져온다(CONTRACT 5)
+import { applyFill, fillNames, filledNames, judgeUpload, lookupName, lookupOut, LOOKUP_MAX, tidyUpload, tooManyRows, uploadCounts, uploadEventError, uploadKeys, uploadOut, uploadRecords } from "./events-upload.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1351,6 +1353,126 @@ async function evRowDelete(ctx: Ctx, b: any) {
   return { ok: true, deleted: { id: cur.id, name: cur.name } };
 }
 
+// ---------- 성경필사(암송) — 명단 올리기 · 교인명부 찾기 (Task 8 · 2026-09-29) ----------
+// 설계 §1(같은 분 판정)·§2(evUploadCheck/Save·evPeopleLookup)·§3(명단 올리기). 판정은 events-upload.ts(순수 함수)에 있다.
+// ⚠️ 살펴보기와 넣기가 판정을 **처음부터 다시** 돈다 — 화면이 보낸 살펴보기 결과를 믿지 않는다(그 사이 누가 더했을 수 있다).
+// ⚠️ 자격 회차(needs.eligibility — isEligEvent 하나로 판정)에는 올리지 않는다 — 가을 설계 §12 「대리 등록은 보정 창구로만」.
+// ⚠️ 앱 계정은 찾기만 한다(member_login 을 부르지 않는다). user_id·ident_key 는 응답에 싣지 않는다.
+// ⚠️ 교인명부 값은 다섯 칸(이름·구분·소속·세부·직분)으로만 나간다 — 찾기는 people.lookup(검색어·결과 수),
+//    살펴보기에서 채운 값을 돌려줄 때는 people.fill(채운 이름)로 남긴다. 둘 다 「교인명부 기록」 보기로 간다.
+// ⚠️ 같은 분 판정을 줄마다 sameInEvent 로 부르지 않는다 — 600줄이면 요청이 2천 번을 넘는다.
+//    회차 명단을 한 번(allRows), 앱 계정을 한 번(evAccountIndex) 읽고 judgeUpload 가 같은 규칙으로 맞댄다.
+const EV_FILL_COLS = "name_key,kind2,mok1,mok3,school_dept,position,position_detail";   // ChurchPerson — 연락처·주소·생년월일은 읽지 않는다
+const EV_LOOKUP_COLS = "name," + EV_FILL_COLS;
+
+// 빈칸 채우기용 명부 후보 — 이름 키로만, 100개씩(한글 키 .in() 주소 길이). 한 묶음이 1,000행을 넘어도 잘리지 않게 allRows.
+async function evChurchCands(keys: string[]): Promise<Map<string, any[]>> {
+  const out = new Map<string, any[]>();
+  for (let i = 0; i < keys.length; i += 100) {
+    const part = keys.slice(i, i + 100);
+    const rows = await allRows(() => db.from("church_people").select(EV_FILL_COLS)
+      .in("name_key", part).order("person_id", { ascending: true }));
+    for (const r of rows) {
+      if (!out.has(r.name_key)) out.set(r.name_key, []);
+      out.get(r.name_key)!.push(r);
+    }
+  }
+  return out;
+}
+
+// 앱 계정 전부 — 신원 키 → 계정 id 들(users.identity_key + user_identity_aliases 의 옛 키).
+// ⚠️ 설계 §1-2: users 는 쪽을 나눠 **전부** 읽는다(지금 421행). 올리기의 후보 키는 수천 개라 usersByKeys(100개씩 .in())로
+//    물으면 요청이 수십 번이고 한글 키 100개 주소가 11KB 안팎이다 — 성경암송 eventImport 는 164개에서 주소 한도를 넘었다.
+//    usersByKeys 는 키가 스무 개 안쪽인 한 분 더하기·고치기(Task 7)에만 쓴다.
+// ⚠️ 키를 다시 다듬지 않는다(NFC 금지) — sameKeys 가 appIdentityKey 로 만든 그대로 맞댄다.
+async function evAccountIndex(): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  const add = (k: unknown, id: unknown) => {
+    if (typeof k !== "string" || !k || typeof id !== "string" || !id) return;
+    const l = out.get(k) ?? [];
+    if (!l.includes(id)) l.push(id);
+    out.set(k, l);
+  };
+  const us = await allRows(() => db.from("users").select("id,identity_key").order("id", { ascending: true }));
+  for (const u of us) add(u.identity_key, u.id);
+  const al = await allRows(() => db.from("user_identity_aliases").select("identity_key,user_id")
+    .order("identity_key", { ascending: true }));
+  for (const a of al) add(a.identity_key, a.user_id);
+  return out;
+}
+
+async function evUpload(ctx: Ctx, b: any, save: boolean) {
+  const raws: unknown[] = Array.isArray(b.rows) ? b.rows : [];
+  if (tooManyRows(raws)) return { ok: false, error: "too-many" };   // 회차를 읽기 전에
+  const ev = await evRead(b.event_id);                               // 모양이 틀린 id 는 묻지 않고 null
+  const blocked = uploadEventError(ev);                              // not-found · eligibility-event
+  if (blocked) return { ok: false, error: blocked };
+  const eventId: string = ev.id;
+  const fill = b.fill === true;
+
+  // ① 다듬기·모양 ② (켰으면) 빈칸 채우기 — 빈칸이 있는 줄의 이름만 명부에 묻는다
+  const items = tidyUpload(raws);
+  if (fill) {
+    const need = fillNames(items);
+    if (need.length) applyFill(items, (await peopleSource()) ? await evChurchCands(need) : null);
+  }
+  // ③ 이 회차 명단(전부 · 1,000행 넘어도)과 앱 계정(통째로 한 번 — 넣을 줄이 있을 때만)에 맞댄다
+  const signups = await allRows(() => db.from("event_signups").select("id,ident_key,user_id")
+    .eq("event_id", eventId).order("id", { ascending: true }));
+  judgeUpload(items, {
+    eventKeys: new Set(signups.map((r) => r.ident_key)),
+    eventUids: new Set(signups.map((r) => r.user_id).filter(Boolean)),
+    users: uploadKeys(items).length ? await evAccountIndex() : new Map<string, string[]>(),
+  });
+  const counts = uploadCounts(items);
+
+  if (!save) {
+    // 채운 교적 값이 화면으로 나간다 — 넣기와 상관없이 남긴다(설계 §2 기록 표)
+    const filled = filledNames(items);
+    if (filled.length) await audit(ctx, "people.fill", eventId, { rows: filled.length, names: filled });
+    return { ok: true, total: signups.length, rows: uploadOut(items), counts };
+  }
+
+  // ── 넣기 ── 500줄 묶음. 묶음이 실패하면 그 묶음만 한 줄씩 다시(한 줄 때문에 나머지가 막히지 않게).
+  const recs = uploadRecords(items, eventId, new Date().toISOString());
+  let saved = 0;
+  const failed: { i: number; error: string }[] = [];
+  for (let s = 0; s < recs.length; s += 500) {
+    const chunk = recs.slice(s, s + 500);
+    const { error } = await db.from("event_signups").insert(chunk.map((x) => x.rec));
+    if (!error) { saved += chunk.length; continue; }
+    console.error("evUploadSave chunk", error);
+    for (const x of chunk) {
+      const { error: e1 } = await db.from("event_signups").insert(x.rec);
+      if (!e1) { saved++; continue; }
+      // 23505 = 그 사이 같은 계정의 줄이 들어왔다(unique event_id+user_id) → 「이미 있음」. 그 밖은 서버 기록으로만.
+      const dup = (e1 as any).code === "23505";
+      if (!dup) console.error("evUploadSave row", x.i, e1);
+      failed.push({ i: x.i, error: dup ? "already" : "server" });
+    }
+  }
+  // 건수만, 납작하게(CONTRACT 5 「기록 모양」) — 이름을 싣지 않는다(설계 §2 기록 표). failed 는 개수.
+  if (raws.length) {
+    await audit(ctx, "event.upload", eventId, { rows: raws.length, fillOn: fill, ...counts, saved, failed: failed.length });
+  }
+  return { ok: true, counts, saved, failed };
+}
+
+// 교인명부에서 이름으로 찾기 — 이름 키가 **정확히 같은** 분만, 20명까지, 다섯 칸만.
+// 화면은 「찾기」 단추·Enter 로만 부른다(글자마다 부르지 않는다). 부를 때마다 검색어·결과 수를 기록한다(people.search 와 같게).
+async function evPeopleLookup(ctx: Ctx, b: any) {
+  const q = lookupName(b.name);                          // no-name · bad-char · too-long
+  if (q.error) return { ok: false, error: q.error };
+  const src = await peopleSource();
+  if (!src) return { ok: true, source: null, people: [] };   // 명부가 없으면 묻지 않는다(기록할 열람도 없다)
+  const { data, error } = await db.from("church_people").select(EV_LOOKUP_COLS)
+    .eq("name_key", q.key).order("person_id", { ascending: true }).limit(LOOKUP_MAX);
+  if (error) throw error;
+  const people = ((data ?? []) as any[]).map((p) => lookupOut(p));
+  await audit(ctx, "people.lookup", "", { q: q.name, count: people.length });
+  return { ok: true, source: { date: src.source_date, total: src.total }, people };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -1399,6 +1521,9 @@ Deno.serve(async (req) => {
       case "evRowAdd":    return json(await evRowAdd(ctx, b));
       case "evRowSave":   return json(await evRowSave(ctx, b));
       case "evRowDelete": return json(await evRowDelete(ctx, b));
+      case "evUploadCheck":  return json(await evUpload(ctx, b, false));
+      case "evUploadSave":   return json(await evUpload(ctx, b, true));
+      case "evPeopleLookup": return json(await evPeopleLookup(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);
