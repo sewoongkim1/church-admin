@@ -3,6 +3,7 @@
 // ⚠️ sched·desc·capacity·leader·members 는 서버(ministryCatalogAdmin)가 이미 ministryHtml 로 거른 HTML 이다 —
 //    여기서 또 esc 하지 않는다(태그가 글자로 보인다). 그 밖의 사람 글자(team·committee·group 등)는 esc.
 import { esc } from "../../core/ui.js";
+import { fmtTimeLabel } from "../../core/picker.js";
 
 // 요일 넷 · 주기 넷 — 열쇠 이름이 DB 칸 이름과 짝이다(day_sun · freq_weekly …).
 // ⚠️ 「평일」은 금요일을 뺀 날이다 — 금요 사역(금요성령집회 등)이 많아 따로 뺐다.
@@ -21,6 +22,17 @@ export function mcWhenText(r) {
   const time = r.from || r.to ? `${r.from || ""}~${r.to || ""}` : "";
   return [days, time, freq].filter(Boolean).join(" ");
 }
+// 주일 시각 단추 글자 — 값은 옆 hidden 칸(data-f="from"·"to")에, 단추는 「오전 9:30」처럼 읽기 쉬운 글자만.
+// 시스템 시각 칸(<input type="time">) 대신 picker.js 의 pickTime 을 연다(2026-09-29).
+export const MC_TIME_NONE = { from: "시작 시각", to: "끝 시각" };
+export const mcTimeText = (k, v) => fmtTimeLabel(v) || MC_TIME_NONE[k];
+// 단추 이름에 고른 시각도 함께 — 화면 읽기 프로그램이 「주일 시작 시각, 오전 9:30」으로 읽게(값을 바꾸면 catalog.js setTime 이 고친다)
+export const mcTimeAria = (k, v) => `주일 ${k === "from" ? "시작" : "끝"} 시각, ${fmtTimeLabel(v) || "비어 있음"}`;
+const timeField = (r, k) => `<input type="hidden" data-f="${k}" data-id="${r.id}" value="${esc(r[k])}">` +
+  `<button type="button" class="pk-field mc-time${r[k] ? "" : " empty"}" data-time="${k}" data-id="${r.id}"
+    aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(mcTimeAria(k, r[k]))}"${r.sun ? "" : " disabled"}>` +
+  `<span class="pk-field-v">${esc(mcTimeText(k, r[k]))}</span><span class="pk-field-x" aria-hidden="true">▾</span></button>`;
+
 // 「② 언제」 여덟 체크박스 중 하나라도 켜져 있거나 시각이 있으면 "채움"
 export const mcHasWhen = (r) => MC_WHEN_KEYS.some((k) => r[k]) || !!r.from || !!r.to;
 export const mcEmpty = (r) => !r.appoint && !r.sched && !r.desc;
@@ -76,9 +88,9 @@ export function formHtml(r) {
         `<label><input type="checkbox" data-f="${k}" data-id="${r.id}"${r[k] ? " checked" : ""}>${esc(t)}${
           h ? `<i>${esc(h)}</i>` : ""}</label>`).join("")}</span>
       <span class="mc-w-r mc-w-time"><b>주일 시각</b>
-        <input type="time" data-f="from" data-id="${r.id}" value="${esc(r.from)}" step="300"${r.sun ? "" : " disabled"}>
+        ${timeField(r, "from")}
         <span class="mc-w-tw">~</span>
-        <input type="time" data-f="to" data-id="${r.id}" value="${esc(r.to)}" step="300"${r.sun ? "" : " disabled"}>
+        ${timeField(r, "to")}
         <i class="mc-w-off" data-off="${r.id}"${r.sun ? " hidden" : ""}>주일을 체크하면 넣을 수 있어요</i></span>
     </div>
     <label class="wide">하는 일<textarea data-f="desc" data-id="${r.id}" rows="2"

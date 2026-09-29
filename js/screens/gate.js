@@ -1,9 +1,16 @@
 // 들어오는 화면들 — 로그인 · 처음 등록 · 승인 대기 · 정지 · 오류
 import { esc, errorText, busy, affiliation } from "../core/ui.js";
+import { pickOne } from "../core/picker.js";
 
 // 성경암송 앱(app.js GU_LIST·BU_LIST)과 같게 — 교구·부서가 늘면 두 곳을 함께 고친다(서버는 목록을 거르지 않는다)
 const GU_LIST = ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨", "새가족"];
 const BU_LIST = ["사랑부", "영아부", "유아부", "유치부", "유년부", "초등부", "중등부", "고등부", "청년부"];
+// 교구·부서는 시스템 <select> 대신 우리 고르개(picker.js)로 — 값은 hidden 칸(name="gu"·"bu")에 둬서
+// 제출하는 코드(f.elements.gu.value)가 그대로 읽는다. 단추는 글자만 보여 준다.
+const PICKS = { gu: { list: GU_LIST, what: "교구" }, bu: { list: BU_LIST, what: "부서" } };
+const pickField = (k) => `<div class="field"><span id="lb-${k}">${PICKS[k].what}</span><input type="hidden" name="${k}">
+  <button type="button" class="pk-field" data-pick="${k}" aria-haspopup="dialog" aria-expanded="false"
+    aria-labelledby="lb-${k} pv-${k}"><span class="pk-field-v" id="pv-${k}"></span><span class="pk-field-x" aria-hidden="true">▾</span></button></div>`;
 
 // onSwitch — 「다른 카카오 계정으로」. 로그아웃해도 브라우저의 카카오 로그인은 남아 「카카오로 시작하기」가
 // 같은 계정으로 바로 들어가므로, 공용 PC 에서 다른 분이 들어오려면 카카오에 계정을 다시 묻게 해야 한다.
@@ -32,11 +39,11 @@ export function renderRegister(el, { nickname = "", member = null, onSubmit, onS
         <button type="button" data-t="교구">교구</button><button type="button" data-t="교회학교">교회학교</button>
       </div>
       <div data-for="교구">
-        <label class="field"><span>교구</span><select name="gu"><option value="">고르기</option>${GU_LIST.map((g) => `<option>${g}</option>`).join("")}</select></label>
+        ${pickField("gu")}
         <label class="field"><span>목장</span><input name="mok" placeholder="숫자 또는 남성 (예: 3, 남성, 없으면 99)" autocomplete="off"></label>
       </div>
       <div data-for="교회학교">
-        <label class="field"><span>부서</span><select name="bu"><option value="">고르기</option>${BU_LIST.map((b) => `<option>${b}</option>`).join("")}</select></label>
+        ${pickField("bu")}
         <label class="field"><span>학년</span><input name="grade" placeholder="예: 3학년" autocomplete="off"></label>
       </div>
       <label class="field"><span>이름</span><input name="name" autocomplete="name"></label>
@@ -55,6 +62,23 @@ export function renderRegister(el, { nickname = "", member = null, onSubmit, onS
   };
   el.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => setType(b.dataset.t)));
   for (const k of ["gu", "mok", "bu", "grade", "name"]) f.elements[k].value = v[k] || "";
+  // 교구·부서 단추 글자 — 목록에 없는 옛 값은 비운다(옛 <select> 도 그런 값은 「고르기」로 두어 빈 값으로 보냈다)
+  const showPick = (k) => {
+    const h = f.elements[k];
+    if (!PICKS[k].list.includes(h.value)) h.value = "";
+    const b = f.querySelector(`[data-pick="${k}"]`);
+    b.querySelector(".pk-field-v").textContent = h.value || `${PICKS[k].what} 고르기`;
+    b.classList.toggle("empty", !h.value);
+  };
+  Object.keys(PICKS).forEach(showPick);
+  f.querySelectorAll("[data-pick]").forEach((b) => (b.onclick = async () => {
+    const k = b.dataset.pick;
+    const got = await pickOne({ anchor: b, title: `${PICKS[k].what} 고르기`, value: f.elements[k].value,
+      options: PICKS[k].list.map((x) => ({ value: x, label: x })) });
+    if (got === null) return;
+    f.elements[k].value = got;
+    showPick(k);
+  }));
   setType(type);
   el.querySelector(".out").onclick = onSwitch;
   f.onsubmit = (e) => {

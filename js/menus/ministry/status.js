@@ -10,6 +10,7 @@ import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap,
   from "./status-logic.js";
 import { cardHtml, groupsHtml, dupBadgeHtml, tableHtml, askCancelReason, confirmAppoint, confirmDelete } from "./status-ui.js";
 import { CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
+import { pickDate, fmtDateLabel } from "../../core/picker.js";
 
 const TITLE = `<h2 class="page-title">📋 신청 현황</h2>`;
 const VIEWS = [["row", "건별", "건"], ["person", "사람별", "명"], ["team", "사역별", "팀"]];
@@ -62,15 +63,17 @@ export async function render(el, { call }) {
         <div class="mn-range"><span class="mn-range-lb">신청일</span>${RANGES.map(([k, t]) =>
           `<button type="button" data-act="range" data-range="${k}">${t}</button>`).join("")}</div>
         <div class="mn-custom" hidden>
-          <input type="date" class="mn-from" aria-label="신청일 시작"><span>~</span><input type="date" class="mn-to" aria-label="신청일 끝">
+          <button type="button" class="pk-field mn-from" data-act="date" data-k="from" aria-haspopup="dialog" aria-expanded="false"
+            aria-label="신청일 시작"><span class="pk-field-v"></span><span class="pk-field-x" aria-hidden="true">▾</span></button>
+          <span>~</span>
+          <button type="button" class="pk-field mn-to" data-act="date" data-k="to" aria-haspopup="dialog" aria-expanded="false"
+            aria-label="신청일 끝"><span class="pk-field-v"></span><span class="pk-field-x" aria-hidden="true">▾</span></button>
         </div>
       </div>
       <div class="mn-list"></div>
       <div class="mn-teams"></div>
     </div>`;
   el.querySelector(".mn-q").value = q;
-  el.querySelector(".mn-from").value = from;
-  el.querySelector(".mn-to").value = to;
   const list = el.querySelector(".mn-list");
   const find = (id) => rows.find((x) => String(x.id) === String(id));
   // PC(≥1024px) 건별만 표로 — 창 폭을 바꾸면 다시 그린다(detach 는 아래 document 리스너와 함께 묶는다)
@@ -96,6 +99,15 @@ export async function render(el, { call }) {
     cs.classList.toggle("on", !!sum);
     el.querySelectorAll('[data-act="range"]').forEach((b) => b.classList.toggle("on", b.dataset.range === range));
     el.querySelector(".mn-custom").hidden = range !== "custom";
+    // 직접 고른 날 — 시스템 날짜 칸 대신 단추(picker.js). 값은 from·to 변수 하나뿐
+    // 이름에 고른 날도 함께 — 화면 읽기 프로그램이 「신청일 시작, 9월 1일 (화)」로 읽게
+    for (const [k, v, none, nm] of [["from", from, "시작일 고르기", "신청일 시작"], ["to", to, "끝날 고르기", "신청일 끝"]]) {
+      const b = el.querySelector(".mn-" + k);
+      const txt = v ? fmtDateLabel(v) : none;
+      b.querySelector(".pk-field-v").textContent = txt;
+      b.setAttribute("aria-label", `${nm}, ${txt}`);
+      b.classList.toggle("empty", !v);
+    }
     // 보기 — 단추 안 숫자는 지금 걸러진 것 기준(건·명·팀)
     const vc = { row: shown.length, person: new Set(shown.map(personKey)).size, team: new Set(shown.map(teamKey)).size };
     el.querySelectorAll("[data-vcnt]").forEach((e) => { e.textContent = vc[e.dataset.vcnt]; });
@@ -184,6 +196,17 @@ export async function render(el, { call }) {
     toast(`🗑 ${r.name}님의 ${r.team} 신청을 지웠어요`);
   }
 
+  // 신청일 직접 — 고르면(지우기 = "") 옛 날짜 칸의 change 와 같게 값을 바꾸고 다시 그린다. 닫기(null)면 그대로
+  async function pickDay(b) {
+    const k = b.dataset.k;
+    // 기간이라 반대쪽 끝을 넘지 못하게 — 시작일 창은 끝날까지, 끝날 창은 시작일부터
+    const v = await pickDate({ anchor: b, title: k === "from" ? "신청일 시작" : "신청일 끝", value: k === "from" ? from : to,
+      min: k === "to" ? from : "", max: k === "from" ? to : "" });
+    if (v === null || !el.isConnected) return;
+    if (k === "from") from = v; else to = v;
+    draw();
+  }
+
   // 상태 메뉴 — 한 번에 하나만 연다. 아래 여유가 모자라면 위로(표준 v1: 210px — 삭제가 더해져 메뉴가 그보다 길면 그 높이로)
   const closeMenus = () => el.querySelectorAll(".pl-drop.open").forEach((w) => {
     w.classList.remove("open", "up");
@@ -221,6 +244,7 @@ export async function render(el, { call }) {
       b.setAttribute("aria-expanded", String(condOpen));
       return;
     }
+    if (act === "date") return pickDay(b);
     if (act === "all") { el.querySelectorAll("details.mn-grp").forEach((g) => { g.open = b.dataset.v === "open"; }); return; }
     if (act === "st") {
       // 「전체」면 모두 · 하나를 누르면 더하거나 뺀다 · 다 고르면 곧 전체
@@ -233,12 +257,6 @@ export async function render(el, { call }) {
     draw();
   });
   el.addEventListener("input", (e) => { if (e.target.matches(".mn-q")) { q = e.target.value; draw(); } });
-  el.addEventListener("change", (e) => {
-    if (e.target.matches(".mn-from")) from = e.target.value;
-    else if (e.target.matches(".mn-to")) to = e.target.value;
-    else return;
-    draw();
-  });
   // <details> 의 toggle 은 거품이 일지 않는다 — 잡는 단계(capture)에서 받는다
   el.addEventListener("toggle", (e) => {
     const g = e.target;
