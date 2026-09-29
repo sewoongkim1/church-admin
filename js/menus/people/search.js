@@ -73,7 +73,7 @@ async function openPerson(call, id, onFamily, back) {
     // 본문(사진·이름·전화 | 묶음·가족)은 person-detail.js — 이름이 본문 안에 있어 창 제목은 비운다(ui.js 가 숨긴다)
     const closed = dialog({ title: "", html: personDetailHtml(p, fam), ok: "닫기", cancel: null, cls: "pd" });
     const dlg = [...document.querySelectorAll(".dlg-dim")].pop();   // dialog 는 창을 곧바로(동기로) 붙인다
-    dlg.querySelector(".dlg").setAttribute("aria-label", `${p.name || ""} 자세히`);
+    dlg.querySelector(".dlg").setAttribute("aria-label", `${p.name || "이름 없음"} 자세히`);
     // 사진 주소가 그사이 만료됐거나 못 불러오면 같은 크기의 첫 글자 칸으로
     const img = dlg.querySelector("img.pd-photo");
     if (img) img.addEventListener("error", () => {

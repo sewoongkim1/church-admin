@@ -78,10 +78,11 @@ test("detailSections — 네 묶음 · 칸 모양 · 넓은 칸", () => {
   assert.equal(f("family", "신앙세대주").value, "김하늘 · 본인");
 });
 
-test("detailSections — 칸은 화면에 놓이는 차례 그대로(교회학교 바로 뒤에 교사 · dense 를 안 쓴다)", () => {
+test("detailSections — 칸은 화면에 놓이는 차례 그대로(짧은 칸 둘이 먼저 한 줄 · 교회학교 바로 아래 교사 · dense 를 안 쓴다)", () => {
   const affil = detailSections({ ...FULL, school_path: "교육위원회 > 고등부", youth_path: "청년부 > 청년1부" })
-    .find((s) => s.key === "affil").fields.map((x) => x.label);
-  assert.deepEqual(affil, ["교회학교", "교사", "목장 리더", "청년", "선교회"]);
+    .find((s) => s.key === "affil").fields;
+  assert.deepEqual(affil.map((x) => x.label), ["목장 리더", "선교회", "교회학교", "교사", "청년"]);
+  assert.deepEqual(affil.map((x) => !!x.wide), [false, false, true, true, true]);
   // 넓은 칸 아닌 것이 둘씩 이어져 한 줄을 채운다(장년: 목장 리더 · 선교회)
   assert.deepEqual(detailSections({ mok_leader: "박가람", mission: "남선교회" })[0].fields.map((x) => x.label), ["목장 리더", "선교회"]);
   // 오른쪽 칸에는 전화 링크 표시가 없다(연락처는 왼쪽 단 전화 단추로)

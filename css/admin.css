@@ -583,7 +583,7 @@ a.mn-tel.sm{padding:2px 8px}
   margin-bottom:-20px;background:var(--paper);border-top:1px solid var(--light)}
 /* 창 안을 스크롤할 때(폰) 닫기 줄 위로 다음 글자가 반쯤 잘려 비치지 않게 위쪽을 흐린다 — 넘치지 않으면 빈 여백 위라 안 보인다 */
 .dlg.pd .acts::before{content:"";position:absolute;left:0;right:0;bottom:calc(100% + 1px);height:18px;pointer-events:none;
-  background:linear-gradient(to bottom,rgba(255,255,255,0),var(--paper))}
+  background:linear-gradient(to bottom,transparent,var(--paper))}
 .dlg.pd .acts .btn{flex:none;min-width:112px;min-height:var(--tap);padding:0 28px}
 .dlg.pd .pd-wrap{display:flex;flex-direction:column;gap:22px}
 
@@ -602,6 +602,10 @@ a.mn-tel.sm{padding:2px 8px}
   padding:0 10px;border-radius:999px;border:1px solid var(--ghost-bd);background:var(--ghost-bg);color:var(--navy);
   font-size:15px;font-weight:700;text-decoration:none;white-space:nowrap;font-variant-numeric:tabular-nums}
 .dlg.pd .pd-tel:hover{border-color:var(--navy)}
+.dlg.pd .pd-ico{flex:none;width:16px;height:16px}
+.dlg.pd .pd-tel small{font-size:13px;font-weight:600;color:var(--ink-2)}
+/* 번호가 하나뿐이면 줄 전체를 채우는 긴 알약(입력칸처럼 보인다) 대신 내용 폭으로 — 사진 왼쪽 선에 맞춰 왼쪽에 둔다 */
+.dlg.pd .pd-tel:only-child{flex:0 1 auto;min-width:200px;padding:0 22px}
 .dlg.pd .pd-none{font-size:14px;color:var(--ink-2)}
 .dlg.pd .pd-main>.pd-none{text-align:center}
 
@@ -613,14 +617,16 @@ a.mn-tel.sm{padding:2px 8px}
 .dlg.pd .pd-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px 24px}
 .dlg.pd .pd-f{min-width:0}
 .dlg.pd .pd-f dt{font-size:14px;line-height:1.3;color:var(--ink-2);white-space:nowrap}
-.dlg.pd .pd-f dd{font-size:15px;line-height:1.4;color:var(--ink);overflow-wrap:anywhere}
+/* 한글은 띄어쓰기 자리에서 끊는다(keep-all · 「…아파 / 트)」처럼 두 글자만 넘어가지 않게) — 띄어쓰기 없는 긴 이메일만 anywhere 로 */
+.dlg.pd .pd-f dd{font-size:15px;line-height:1.4;color:var(--ink);word-break:keep-all;overflow-wrap:anywhere;text-wrap:pretty}
 .dlg.pd .pd-sep{margin:0 1px;color:var(--gray);opacity:.7}
-.dlg.pd .pd-fams{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-.dlg.pd .pd-chip{display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);padding:0 14px;border-radius:999px;
-  border:1px solid var(--border);background:var(--paper);color:var(--ink);font-size:14px;cursor:pointer}
+/* 가족 칩 — 폰(한 단)에서는 손가락 크기(--tap)·간격 8px, 넓은 두 단에서만 --chip 으로 줄인다(아래 @container) */
+.dlg.pd .pd-fams{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.dlg.pd .pd-chip{display:inline-flex;align-items:center;gap:6px;min-height:var(--tap);padding:0 14px;border-radius:999px;
+  border:1px solid var(--ghost-bd);background:var(--paper);color:var(--ink);font-size:14px;cursor:pointer}
 .dlg.pd .pd-chip small{font-size:13px;color:var(--ink-2)}
 .dlg.pd .pd-chip:hover,.dlg.pd .pd-fam-all:hover{border-color:var(--navy)}
-.dlg.pd .pd-fam-all{display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);padding:0 14px;border-radius:999px;
+.dlg.pd .pd-fam-all{display:inline-flex;align-items:center;gap:6px;min-height:var(--tap);padding:0 14px;border-radius:999px;
   border:1px solid var(--ghost-bd);background:var(--ghost-bg);color:var(--navy);font-size:14px;font-weight:700;cursor:pointer}
 @container (min-width:480px){
   .dlg.pd .pd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -641,7 +647,7 @@ a.mn-tel.sm{padding:2px 8px}
   .dlg.pd .pd-pos{margin-top:4px}
   .dlg.pd .pd-aff{margin-top:6px}
   .dlg.pd .pd-tels{flex-direction:column;margin-top:16px}
-  .dlg.pd .pd-tel{flex:none;width:100%}
+  .dlg.pd .pd-tel,.dlg.pd .pd-tel:only-child{flex:none;width:100%;min-width:0;padding:0 10px}
   .dlg.pd .pd-main{gap:0}
   .dlg.pd .pd-sec{display:grid;grid-template-columns:64px minmax(0,1fr);column-gap:20px;padding:12px 0;border-top:1px solid var(--light)}
   /* 첫 줄 글자 윗선을 사진 윗선에 맞춘다(줄 높이 22px 안에서 글자가 내려앉는 만큼 올린다) */
@@ -654,5 +660,6 @@ a.mn-tel.sm{padding:2px 8px}
   .dlg.pd .pd-f{display:grid;grid-template-columns:80px minmax(0,1fr);column-gap:12px;align-items:baseline}
   .dlg.pd .pd-f dd{line-height:22px}
   .dlg.pd .pd-grid+.pd-fams{margin-top:10px}
-  .dlg.pd .pd-fams{margin-top:0}
+  .dlg.pd .pd-fams{margin-top:0;gap:6px}
+  .dlg.pd .pd-chip,.dlg.pd .pd-fam-all{min-height:var(--chip)}
 }

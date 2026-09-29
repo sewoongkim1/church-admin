@@ -81,11 +81,13 @@ export function detailSections(p) {
       f("지번 주소", p.address_jibun, W),
     ] },
     { key: "affil", title: "소속", fields: [
-      f("교회학교", p.school_path, W),
-      f("교사", p.teacher),
+      // 짧은 칸 둘(목장 리더 · 선교회)이 한 줄을 채우고, 교회학교 → 교사(교회학교에 딸린 값) → 청년은 넓은 칸으로 한 줄씩.
+      // 짧은·넓은 칸을 섞으면 반 칸만 찬 줄이 생겨 지그재그로 보이고, 교사와 목장 리더가 한 줄에 짝지어져 뜻이 섞인다.
       f("목장 리더", p.mok_leader),
-      f("청년", p.youth_path, W),
       f("선교회", p.mission),
+      f("교회학교", p.school_path, W),
+      f("교사", p.teacher, W),
+      f("청년", p.youth_path, W),
     ] },
     { key: "family", title: "가족", fields: [
       f("배우자", join(" · ", p.spouse, p.spouse_position)),

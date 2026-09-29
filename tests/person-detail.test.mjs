@@ -29,6 +29,23 @@ test("personDetailHtml — 모든 값을 esc 한다", () => {
   assert.ok(html.includes("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;"));
   assert.ok(html.includes('src="a&quot;b"'));
   assert.ok(html.includes('data-fam="1&quot;x"'));
+  // 속성 값 셋(data-fam-all · data-ini · 전화 aria-label)도 — 나중에 한 곳이 esc 에서 빠지면 여기서 잡는다
+  const attr = personDetailHtml({ ...FULL, name: '"<', household_id: '7"x', phone1: '010-1"<2' }, FAM);
+  assert.ok(attr.includes('data-fam-all="7&quot;x"'));
+  assert.ok(attr.includes('data-ini="&quot;"'));
+  const labels = [...attr.matchAll(/aria-label="([^"]*)"/g)].map((m) => m[1]);
+  assert.ok(labels.length >= 2);
+  for (const l of labels) assert.equal(/[<>]/.test(l), false, l);
+  assert.ok(labels.includes("&quot;&lt;에게 전화 010-1&quot;&lt;2"));
+});
+
+test("personDetailHtml — 전화 단추: 휴대폰·전화 표시 · 수화기는 그림(이모지 아님) · 이름이 없으면 「이름 없음」", () => {
+  const html = personDetailHtml({ ...FULL, phone2: "02-2615-0000" }, FAM);
+  assert.ok(html.includes('<small class="pd-tel-k" aria-hidden="true">휴대폰</small>010-0000-0001'));
+  assert.ok(html.includes('<small class="pd-tel-k" aria-hidden="true">전화</small>02-2615-0000'));
+  assert.equal(html.includes("📞"), false);
+  assert.ok(html.includes('<svg class="pd-ico"'));
+  assert.ok(personDetailHtml({ phone1: "010-0000-0000" }, []).includes('aria-label="이름 없음에게 전화 010-0000-0000"'));
 });
 
 test("personDetailHtml — 꽉 찬 기록: 사진 · 이름 · 직분 · 소속 · 전화 · 묶음", () => {

@@ -10,10 +10,19 @@ const has = (v) => v !== undefined && v !== null && String(v).trim() !== "";
 const t = (v) => esc(String(v ?? "").replace(/[\r\n]+/g, " ").trim());
 const ageOf = (x) => (x.age !== undefined && x.age !== null && x.age !== "" ? `${x.age}세` : "");
 
+// 수화기 그림 — 이모지(📞)는 기기마다 분홍·주황으로 그려져 남색 한 벌 속에서 혼자 튄다. currentColor 로 글자색을 따른다.
+const TEL_SVG = '<svg class="pd-ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' +
+  '<path fill="currentColor" d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57' +
+  '.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57' +
+  '.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>';
+
+// 번호 앞에 「휴대폰」·「전화」를 붙인다 — 번호 둘이 나란히 있으면 어느 쪽이 휴대폰인지 바로 보이게(01 로 시작하면 휴대폰)
 function telHtml(phone, name) {
   const d = String(phone || "").replace(/\D/g, "");
   if (!d) return "";
-  return `<a class="pd-tel" href="tel:${d}" aria-label="${t(name)}에게 전화 ${t(phone)}"><span aria-hidden="true">📞</span>${t(phone)}</a>`;
+  const kind = d.startsWith("01") ? "휴대폰" : "전화";
+  return `<a class="pd-tel" href="tel:${d}" aria-label="${t(name)}에게 전화 ${t(phone)}">${TEL_SVG}` +
+    `<small class="pd-tel-k" aria-hidden="true">${kind}</small>${t(phone)}</a>`;
 }
 
 // 값 속 「 > 」(교인 구분·교회학교 경로)는 옅은 「›」로 — 본문과 같은 굵기의 꺾쇠는 코드처럼 시끄럽다.
@@ -45,7 +54,7 @@ export function personDetailHtml(p, family = []) {
   const photo = p.photo
     ? `<img class="pd-photo" src="${t(p.photo)}" alt="${t(name)} 사진" referrerpolicy="no-referrer" data-ini="${t(initialOf(name))}">`
     : `<div class="pd-photo pd-ini" aria-hidden="true">${t(initialOf(name))}</div>`;
-  const tels = [p.phone1, p.phone2].map((x) => telHtml(x, name)).join("");
+  const tels = [p.phone1, p.phone2].map((x) => telHtml(x, name || "이름 없음")).join("");
 
   const secs = detailSections(p);
   const famBody = familyHtml(p, family);
