@@ -61,7 +61,10 @@ function bindPop() {
 }
 
 // history.back() 으로 쌓은 칸을 거두고, 거둔 뒤에 fn. popstate 가 안 오는 드문 경우에도 1초 뒤엔 부른다.
+// 맨 위 칸이 이 창의 칸(beModal)이 아니면 거두지 않고 곧바로 fn — 그 위에 남의 칸(이름 창 bePerson 등)이 쌓였을 때
+// history.back() 이 그 칸을 빼면 그쪽 창이 닫힌다(최종 검토 FE-1 · person-popup.js back() 과 같은 가드).
 function backThen(fn) {
+  if (history.state?.beModal !== 1) { fn(); return; }
   const w = { fn, t: 0 };
   w.t = setTimeout(() => {
     const i = waiters.indexOf(w);
