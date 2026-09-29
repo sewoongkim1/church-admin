@@ -274,3 +274,63 @@ test("judgeUpload — 교구 줄은 한쪽 목장이 비었거나 99 면 구분|
   assert.ok(it[9].notes.some((n) => n.includes("위 9번 줄")));
   assert.ok(it[0].notes.some((n) => n.includes("이미 있어요")));
 });
+
+// ---------- 읽기만 하는 이름(👤 이력 · 이름을 누르면 evPerson) — 괄호·쉼표가 든 옛 이름도 받는다(최종 검토 SEC-7 · 2026-09-30) ----------
+import { readName } from "../supabase/functions/church-admin/events-upload.ts";
+
+test("readName — 괄호·쉼표가 든 옛 이름(「홍길동(구)」)도 받는다 · 큰따옴표·역슬래시·세로줄만 bad-char · 빈 이름 · 41자", () => {
+  assert.deepEqual(readName("홍길동(구)"), { name: "홍길동(구)", key: "홍길동(구)", error: null });
+  assert.deepEqual(readName("  홍  길동 "), { name: "홍 길동", key: "홍길동", error: null });
+  assert.equal(readName("홍길동".normalize("NFD")).key, "홍길동");
+  assert.equal(readName("홍,길동").error, null);
+  for (const bad of ['홍"길동', "홍" + String.fromCharCode(92) + "길동", "홍|길동"]) {   // 92 = 역슬래시
+    assert.equal(readName(bad).error, "bad-char", bad);
+    assert.equal(readName(bad).key, "", "틀린 이름은 묻지 않는다: " + bad);
+  }
+  assert.equal(readName("  ").error, "no-name");
+  assert.equal(readName(null).error, "no-name");
+  assert.equal(readName("가".repeat(41)).error, "too-long");
+  assert.equal(readName("가".repeat(40)).error, null);
+  // 한 분 더하기의 찾기(lookupName)는 새 이름을 적는 길이라 그대로 막는다
+  assert.equal(lookupName("홍길동(구)").error, "bad-char");
+  assert.equal(lookupName("홍,길동").error, "bad-char");
+});
+
+// ---------- 아이 줄의 빈 직분 때문에 교인명부를 읽지 않는다(kid-position-reads-directory · 2026-09-30) ----------
+test("fillNames — 교회학교 부서 줄(청년부 빼고)은 직분·학년이 비어도 묻지 않는다 · 청년부 줄은 직분이 비면 묻는다", () => {
+  const it = tidyUpload([R("하카", "교회학교", "유년", ""), R("타파", "청년부", "", ""), R("차카", "교회학교", "", "")]);
+  assert.equal(it[0].row.group_name, "유년부");
+  assert.equal(it[1].row.group_name, "청년부");
+  assert.deepEqual(fillNames(it).sort(), ["차카", "타파"].sort(), "부서가 빈 교회학교 줄(소속 없음)은 묻는다");
+});
+
+test("applyFill — 아이 줄(교회학교 유년부 · 직분 빈칸)은 명부 후보가 있어도 건드리지 않는다(넣음 그대로 · 교인명부 알림 없음)", () => {
+  const it = tidyUpload([R("하카", "교회학교", "유년", ""), R("파카", "교회학교", "중등부", "")]);
+  applyFill(it, new Map([
+    ["하카", [P({ name_key: "하카", kind2: "교회학교", school_dept: "유년부", position: "학생" })]],
+    ["파카", [P({ name_key: "파카", mok1: "화평", mok3: "화평-5목장", position: "권사" })]],
+  ]));
+  assert.deepEqual(it.map((x) => x.mark), ["add", "add"]);
+  assert.deepEqual(it[0].row, { who_type: "교회학교", group_name: "유년부", sub_name: "", name: "하카", position: "" });
+  assert.equal(it[0].filled, false);
+  for (const x of it) assert.ok(!x.notes.some((n) => n.includes("교인명부")), JSON.stringify(x.notes));
+});
+
+// ---------- applyFill 의 갈래 둘(applyfill-branches-untested · 2026-09-30) ----------
+test("applyFill — 교구 칸이 빈 줄을 명부로 채웠는데 명부 목장이 없으면 적힌 목장을 비우고 알린다", () => {
+  const it = tidyUpload([R("아차", "", "21", "")]);
+  applyFill(it, new Map([["아차", [P({ name_key: "아차", mok1: "화평", mok3: "화평", position: "권사" })]]]));
+  assert.equal(it[0].mark, "fill");
+  assert.deepEqual(it[0].row, { who_type: "교구", group_name: "화평", sub_name: "", name: "아차", position: "권사" });
+  assert.ok(it[0].notes.some((n) => n.includes("적힌 목장 21 대신 교인명부처럼 목장을 비웠어요")), JSON.stringify(it[0].notes));
+});
+
+test("applyFill — 명부 값이 명단 모양에 맞지 않으면(부서 「유년부(1)」) 채우지 않고 알린다", () => {
+  const it = tidyUpload([R("가다")]);
+  const before = { ...it[0].row };
+  applyFill(it, new Map([["가다", [P({ name_key: "가다", kind2: "교회학교", school_dept: "유년부(1)" })]]]));
+  assert.equal(it[0].mark, "blank");
+  assert.equal(it[0].filled, false);
+  assert.deepEqual(it[0].row, before);
+  assert.ok(it[0].notes.some((n) => n.includes("교인명부 값이 명단 모양에 맞지 않아 채우지 않았어요")), JSON.stringify(it[0].notes));
+});

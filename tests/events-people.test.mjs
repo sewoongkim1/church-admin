@@ -178,3 +178,8 @@ test("fillDecision — 소속이 빈 줄인데 명부도 소속을 못 정하면
   assert.deepEqual(fillDecision(W({ position: "집사" }), [P({ mok1: "임시교구", mok3: "임시-1", position: "집사" })]),
     NONE("no-affiliation"));
 });
+
+test("fillDecision — 직분이 자모분리(NFD) 「학생」이어도 아이 줄로 본다(kid-adult · fill-position-nfd)", () => {
+  const row = { who_type: "", group_name: "", sub_name: "", name: "가나", position: "학생".normalize("NFD") };
+  assert.deepEqual(fillDecision(row, [P({ name_key: "가나", kind2: "장년", mok1: "화평", mok3: "화평-5목장" })]), NONE("kid-adult"));
+});

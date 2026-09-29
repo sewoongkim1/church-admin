@@ -32,6 +32,12 @@ import { personAsk, personOut, type PersonCand } from "./events-person.ts";
 // 목장이 비었거나 99 인 교구 줄의 같은 분 판정(최종 검토 I1) — 위 import 에 없는 이름만
 import { looseKey, looseSame } from "./events-rows.ts";
 import { looseIndex } from "./events-upload.ts";
+// 이력 정렬을 통계와 같은 코드 포인트 차례로(history-sort-localecompare · 2026-09-30) — localeCompare 는 ICU 에 따라 달라진다
+import { codeCmp } from "./events-stats.ts";
+// 읽기만 하는 이름(👤 이력 · 이름을 누르면) — 괄호·쉼표가 든 옛 이름도 받는다(최종 검토 SEC-7)
+import { readName } from "./events-upload.ts";
+// 한글 키 .in() 묶음을 개수(100)와 주소 길이(6KB)로 함께 자른다(최종 검토 SEC-4 · churchcands-url-length)
+import { inChunks } from "./events-rows.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1059,11 +1065,10 @@ async function evRoster(b: any) {
 // ⚠️ DB 에 name=eq 로 묻지 않는다 — 맥에서 온 자모분리(NFD)·띄어쓰기가 다른 줄을 놓친다. 줄 전체를 쪽을
 //    나눠 읽고(2026-09-29 기준 2,834행 = 세 쪽) 여기서 거른다. 교적 값이 아니라 기록은 남기지 않는다.
 async function evHistory(b: any) {
-  const raw = legacyNorm(b.name);
-  if (!raw) return { ok: false, error: "no-name" };
-  if (BE_BAD_CHARS.test(raw)) return { ok: false, error: "bad-char" };
-  if (raw.length > BE_FIELD_MAX) return { ok: false, error: "too-long" };
-  const key = nameKey(raw);
+  // 이름은 메모리에서만 맞댄다(DB 에 묻지 않는다) — 괄호·쉼표가 든 옛 이름도 받는다(readName · SEC-7)
+  const q = readName(b.name);
+  if (q.error) return { ok: false, error: q.error };
+  const key = q.key;
   const [evs, all] = await Promise.all([
     allRows(() => db.from("events").select("id,title,closes_on").order("id", { ascending: true })),
     allRows(() => db.from("event_signups").select("id,event_id,user_id,who_type,group_name,sub_name,name,position,source")
@@ -1073,9 +1078,10 @@ async function evHistory(b: any) {
   // 최근 회차 먼저 — 마감일 늦은 것 → 같은 마감일이면 회차 id 큰 것 → 같은 회차면 줄 id 큰 것.
   // ⚠️ 이 차례는 events-stats.ts statsOf 가 「가장 최근 줄」을 고르는 차례(마감일·회차 id 오름차순의 마지막, 같은 회차면 뒤 줄)와
   //    **같아야** 한다 — 그래야 이력 이름표와 통계 「여러 번 참여한 분」 이름표가 같은 글자가 된다. 묶음 순번도 이 차례로 매겨진다.
+  //    두 곳 모두 코드 포인트 차례(codeCmp)로 — localeCompare 는 ICU 에 따라 「-」 같은 글자의 차례가 달라질 수 있다.
   const rows = all.filter((r) => nameKey(r.name) === key).sort((x, y) =>
-    String(evBy.get(y.event_id)?.closes_on ?? "").localeCompare(String(evBy.get(x.event_id)?.closes_on ?? ""))
-    || String(y.event_id).localeCompare(String(x.event_id)) || Number(y.id) - Number(x.id));
+    codeCmp(String(evBy.get(y.event_id)?.closes_on ?? ""), String(evBy.get(x.event_id)?.closes_on ?? ""))
+    || codeCmp(String(y.event_id), String(x.event_id)) || Number(y.id) - Number(x.id));
   const gi = personGroups(rows as StatIn[]);
   const groups: { n: number; label: string; rows: any[] }[] = [];
   rows.forEach((r, i) => {
@@ -1192,7 +1198,7 @@ async function evEventSave(ctx: Ctx, b: any) {
 // ⚠️ 자격 회차 판정은 events-rules.ts isEligEvent(needs) 하나 — 화면의 hasEligibility(evOut)와 같은 함수다.
 
 // 신원 키 → 앱 계정 id 들. users.identity_key 와 user_identity_aliases(소속을 고친 분의 옛 키) 둘 다 본다.
-// ⚠️ 한글 키는 주소가 길다 — 100개씩 나눠 묻는다(성경암송 eventImport 는 164개에서 GET 주소 한도를 넘어 조용히 0명이 됐다).
+// ⚠️ 한글 키는 주소가 길다 — 100개·6KB 씩(inChunks) 나눠 묻는다(성경암송 eventImport 는 164개에서 GET 주소 한도를 넘어 조용히 0명이 됐다).
 // ⚠️ 키를 다시 다듬지 않는다 — candidateKeys 가 appIdentityKey 로 만든 그대로 맞댄다(keysToUserIds 는 NFC 로 맞춰서 못 쓴다).
 async function usersByKeys(keys: string[]): Promise<Map<string, string[]>> {
   const uniq = askableKeys(keys);
@@ -1202,8 +1208,7 @@ async function usersByKeys(keys: string[]): Promise<Map<string, string[]>> {
     if (!l.includes(id)) l.push(id);
     out.set(k, l);
   };
-  for (let i = 0; i < uniq.length; i += 100) {
-    const part = uniq.slice(i, i + 100);
+  for (const part of inChunks(uniq)) {                     // 100개·6KB 씩(한글 키 주소 길이 · SEC-4)
     const { data: us, error: e1 } = await db.from("users").select("id,identity_key").in("identity_key", part);
     if (e1) throw e1;
     for (const u of (us ?? []) as any[]) add(u.identity_key, u.id);
@@ -1218,8 +1223,8 @@ async function usersByKeys(keys: string[]): Promise<Map<string, string[]>> {
 // user_id 가 없는 줄은 DB unique 가 막지 않으므로(NULLS DISTINCT) 이 판정이 유일한 막이다. excludeId = 고치는 줄 자신.
 async function sameInEvent(eventId: string, row: EvRow, excludeId?: number): Promise<"already" | null> {
   const keys = askableKeys(sameKeys(row));
-  for (let i = 0; i < keys.length; i += 100) {
-    let q = db.from("event_signups").select("id").eq("event_id", eventId).in("ident_key", keys.slice(i, i + 100));
+  for (const part of inChunks(keys)) {                     // 100개·6KB 씩(한글 키 주소 길이 · SEC-4)
+    let q = db.from("event_signups").select("id").eq("event_id", eventId).in("ident_key", part);
     if (excludeId) q = q.neq("id", excludeId);
     const { data, error } = await q.limit(1);
     if (error) throw error;
@@ -1389,11 +1394,11 @@ async function evRowDelete(ctx: Ctx, b: any) {
 const EV_FILL_COLS = "name_key,kind2,mok1,mok3,school_dept,position,position_detail";   // ChurchPerson — 연락처·주소·생년월일은 읽지 않는다
 const EV_LOOKUP_COLS = "name," + EV_FILL_COLS;
 
-// 빈칸 채우기용 명부 후보 — 이름 키로만, 100개씩(한글 키 .in() 주소 길이). 한 묶음이 1,000행을 넘어도 잘리지 않게 allRows.
+// 빈칸 채우기용 명부 후보 — 이름 키로만, 100개·6KB 씩(한글 키 .in() 주소 길이 — 40자 이름 100개면 36KB 라 500 이 났다 · SEC-4).
+// 한 묶음이 1,000행을 넘어도 잘리지 않게 allRows.
 async function evChurchCands(keys: string[]): Promise<Map<string, any[]>> {
   const out = new Map<string, any[]>();
-  for (let i = 0; i < keys.length; i += 100) {
-    const part = keys.slice(i, i + 100);
+  for (const part of inChunks(keys)) {
     const rows = await allRows(() => db.from("church_people").select(EV_FILL_COLS)
       .in("name_key", part).order("person_id", { ascending: true }));
     for (const r of rows) {
@@ -1515,7 +1520,7 @@ async function evPeopleLookup(ctx: Ctx, b: any) {
 const EV_PERSON_COLS = "person_id," + EV_LOOKUP_COLS;
 
 async function evPerson(ctx: Ctx, b: any) {
-  const q = lookupName(b.name);                                     // no-name · bad-char · too-long(evPeopleLookup 과 같은 규칙)
+  const q = readName(b.name);                                       // no-name · bad-char(" \ | 만) · too-long — 이름은 .eq() 로만 묻는다 · 괄호가 든 옛 이름도 누를 수 있게(SEC-7)
   if (q.error) return { ok: false, error: q.error };
   if (!(await peopleSource())) return { ok: true, mode: "none" };   // 명부가 한 번도 안 올라왔다 — 묻지도 기록하지도 않는다
   const cands = await allRows(() => db.from("church_people").select(EV_PERSON_COLS)

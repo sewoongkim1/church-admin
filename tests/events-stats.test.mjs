@@ -191,3 +191,17 @@ test("statsOf — user_id 를 내보내지 않는다 · 빈 입력", () => {
   });
   assert.deepEqual(statsOf(ROWS, []), { perEvent: [], byGroup: [], repeaters: [] });
 });
+
+// ---------- 글자 차례(코드 포인트) — 이력(evHistory)도 이것으로 정렬한다(history-sort-localecompare · 2026-09-30) ----------
+// localeCompare 는 Deno·Node 의 ICU 에 따라 「-」 같은 글자의 차례가 달라질 수 있다. 통계(statsOf)와 이력이 같은 차례여야 이름표가 같다.
+import { codeCmp } from "../supabase/functions/church-admin/events-stats.ts";
+
+test("codeCmp — 코드 포인트 차례(localeCompare 아님) · 같으면 0", () => {
+  assert.ok(codeCmp("lent-2022", "lent-booklet-2022") < 0);      // 「2」(0x32) < 「b」(0x62)
+  assert.ok(codeCmp("lent-booklet-2022", "lent-2022") > 0);
+  assert.ok(codeCmp("2026-03-01", "2026-10-01") < 0);
+  assert.equal(codeCmp("a", "a"), 0);
+  assert.equal(codeCmp("", ""), 0);
+  assert.deepEqual(["summer-2026", "lent-booklet-2026", "lent-2026"].sort(codeCmp),
+    ["lent-2026", "lent-booklet-2026", "summer-2026"]);
+});

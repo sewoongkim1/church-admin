@@ -116,8 +116,10 @@ const aff = (s: unknown): string => legacyNorm(String(s ?? "").normalize("NFC"))
 // 직분 다듬기 — 성경암송 api evtImportPosition: 괄호 속 떼기 · 끝 「님」 떼기.
 // 원문은 「님」을 뗀 뒤 다시 다듬지 않아 「집사 님」이 「집사 」(끝 빈칸)가 됐다 — 여기서는 마지막에 한 번 더 다듬는다.
 // ⚠️ 앱 직분 목록(MIN_POSITIONS · 9개)으로 **막지 않는다** — 명예권사·은퇴장로 같은 값이 수백 줄 있다(목록 밖은 경고만).
+// 직분은 완성형(NFC)으로 — 신원 키(appIdentityKey)에 들어가지 않아 계정 매칭에 해가 없다 · 이름은 여전히 NFC 금지(최종 검토 M1)
 export function cleanPosition(v: unknown): string {
-  return legacyNorm(legacyNorm(legacyNorm(v).replace(/\(.*?\)/g, "")).replace(/님$/, ""));
+  const s = legacyNorm(String(v ?? "").normalize("NFC"));
+  return legacyNorm(legacyNorm(s.replace(/\(.*?\)/g, "")).replace(/님$/, ""));
 }
 
 // 목장 칸 — 「20목장」→20 · 「07」→7(앞자리 0) · 「남성목장」→남성. 그 밖의 글자는 그대로 두어 checkRow 가 bad-sub 로 잡는다.

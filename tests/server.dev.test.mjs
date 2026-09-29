@@ -1894,3 +1894,81 @@ test("성경필사 이름을 누르면(evPerson) — 교인명부 역할도 있�
   const dir = await call(people.directory.token, "evPerson", q);
   assert.deepEqual([dir.status, dir.body.error], [403, "forbidden"]);
 });
+
+// ---------- 성경필사(암송) 작은 지적 A(2026-09-30) — 직분 NFC · 구분만 바꾸기 · 읽기 이름 · .in() 길이 ----------
+test("성경필사 한 분 더하기: 자모분리(NFD) 직분도 완성형으로 — 「집사님」→집사 · 목록 안이라 경고 없음(최종 검토 M1)", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const a = await call(t, "evRowAdd", { event_id: RX.ev,
+    row: { who_type: "교구", group: "화평", sub: "3", name: rxName("nfdpos"), position: "집사님".normalize("NFD"), note: "" } });
+  if (a.body.row?.id) RX.rowIds.push(a.body.row.id);
+  assert.equal(a.body.ok, true, JSON.stringify(a.body));
+  rxClean(a);
+  assert.equal(a.body.row.position, "집사");
+  assert.deepEqual(a.body.warnings, [], "목록 안 직분인데 「앱 직분 목록에 없어요」 경고가 붙었다");
+  assert.equal((await rxDb(a.body.row.id)).position, "집사");
+});
+
+test("성경필사 줄 고치기: 구분만 바꾸고 소속을 안 보내면 no-group — 옛 교구가 새 구분에 남지 않는다 · 소속을 함께 보내면 저장(최종 검토 M4)", async () => {
+  await rowFixtures();
+  const t = people.bibleevent.token;
+  const a = await call(t, "evRowAdd", { event_id: RX.ev,
+    row: { who_type: "교구", group: "화평", sub: "20", name: rxName("typechg"), position: "", note: "" } });
+  if (a.body.row?.id) RX.rowIds.push(a.body.row.id);
+  assert.equal(a.body.ok, true, JSON.stringify(a.body));
+  const id = a.body.row.id;
+  const s = await call(t, "evRowSave", { id, expect: a.body.row.updated_at, patch: { who_type: "교회학교" } });
+  assert.equal(s.body.error, "no-group", JSON.stringify(s.body));
+  const [d] = await rest(`event_signups?select=who_type,group_name,sub_name,updated_at&id=eq.${id}`, "GET");
+  assert.deepEqual([d.who_type, d.group_name, d.sub_name], ["교구", "화평", "20"], "막힌 저장이 줄을 바꿨다");
+  assert.equal(d.updated_at, a.body.row.updated_at);
+  // 소속을 함께 보내면 저장된다(학년 칸 20 은 막지 않는다)
+  const s2 = await call(t, "evRowSave", { id, expect: a.body.row.updated_at, patch: { who_type: "교회학교", group: "중등부" } });
+  assert.equal(s2.body.ok, true, JSON.stringify(s2.body));
+  rxClean(s2);
+  assert.deepEqual([s2.body.row.who_type, s2.body.row.group, s2.body.row.sub], ["교회학교", "중등부", "20"]);
+});
+
+test("성경필사 이력·이름 누르기: 괄호가 든 옛 이름(「…(구)」)도 찾는다 · 큰따옴표·역슬래시·세로줄은 그대로 막는다(최종 검토 SEC-7)", async () => {
+  const ev = `ca-test-paren-${STAMP}`;
+  const name = `ca-test-paren-${STAMP}(구)`;
+  await rest("events", "POST", { id: ev, title: "ca-test 괄호 이름 " + STAMP, opens_on: "2000-08-01", closes_on: "2000-08-31",
+    status: "draft", kind: "signup", needs: { position: true, phone: false, memo: false, extra: [] } });
+  await rest("event_signups", "POST", { event_id: ev, who_type: "교구", group_name: "화평", sub_name: "1", name,
+    ident_key: `교구|화평|1|||${name}`, source: "import", position: "", note: "" });
+  const t = people.bibleevent.token;
+  const h = await call(t, "evHistory", { name });
+  assert.equal(h.body.ok, true, JSON.stringify(h.body));
+  assert.equal(h.body.groups.length, 1, JSON.stringify(h.body.groups));
+  assert.deepEqual(h.body.groups[0].rows.map((x) => x.event_id), [ev]);
+  assert.equal(h.body.groups[0].label, name + " · 화평 1목장");
+  const p = await call(t, "evPerson", { name, who_type: "교구", group: "화평", sub: "1" });
+  assert.equal(p.body.ok, true, JSON.stringify(p.body));
+  assert.equal(p.body.mode, "basic");
+  assert.deepEqual(p.body.people, [], "명부에 없는 이름");
+  for (const bad of ['ca"test', "ca\\test", "ca|test"]) {
+    assert.equal((await call(t, "evHistory", { name: bad })).body.error, "bad-char", "evHistory " + bad);
+    assert.equal((await call(t, "evPerson", { name: bad, who_type: "교구", group: "화평", sub: "1" })).body.error, "bad-char", "evPerson " + bad);
+  }
+  // 한 분 더하기의 찾기(새 이름)는 그대로 막는다
+  assert.equal((await call(t, "evPeopleLookup", { name })).body.error, "bad-char");
+});
+
+test("성경필사 명단 올리기 살펴보기: 40자 한글 이름 150줄도 빈칸 채우기가 주소 길이에 막히지 않는다(.in() 100개·6KB 묶음 · 최종 검토 SEC-4)", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  // 지어낸 이름 — 「험」 38자 + 음절 표 두 글자(끝이 숫자가 아니게 · 올리기는 이름 끝 숫자를 뗀다). 한 자 = 주소 9바이트라 100개면 36KB
+  const S = "가나다라마바사아자차카타파하";
+  const rows = Array.from({ length: 150 }, (_, i) => ({ name: "험".repeat(38) + S[i % 14] + S[Math.floor(i / 14) % 14], gu: "", mok: "", pos: "" }));
+  assert.equal(new Set(rows.map((r) => r.name)).size, 150);
+  const before = await dbCount(UP.ev);
+  const r = await call(t, "evUploadCheck", { event_id: UP.ev, rows, fill: true });
+  assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body).slice(0, 300));
+  assert.equal(r.body.rows.length, 150);
+  for (const x of r.body.rows) {
+    assert.equal(x.mark, "blank", JSON.stringify(x));
+    assert.ok(x.notes.some((n) => n.includes("교인명부에 없는 이름")), JSON.stringify(x.notes));
+  }
+  assert.equal(await dbCount(UP.ev), before, "살펴보기가 줄을 넣었다");
+});

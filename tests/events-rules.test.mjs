@@ -447,3 +447,19 @@ test("eventDiff — 바뀐 칸만 전·후 · 같으면 빈 것 · id 는 보지
     { before: { list_until: "2026-12-31" }, after: { list_until: null } });
   assert.deepEqual(eventDiff(a, { ...a, id: "y-2" }), { before: {}, after: {} });
 });
+
+// ---------- 직분은 완성형(NFC)으로(최종 검토 M1 · 2026-09-30) ----------
+// 맥에서 온 자모분리(NFD) 직분은 「님」·목록 판정이 빗나갔다(「집사님」이 그대로 · 앱 직분 목록 밖 경고).
+// 직분은 신원 키(appIdentityKey)에 들어가지 않아 완성형으로 바꿔도 계정 매칭에 해가 없다 — 이름은 여전히 NFC 금지.
+test("cleanPosition — 자모분리(NFD) 직분도 완성형으로 다듬는다(「님」·괄호 떼기가 빗나가지 않게 · M1)", () => {
+  assert.equal(cleanPosition("집사님".normalize("NFD")), "집사");
+  assert.equal(cleanPosition("은퇴권사(협동)".normalize("NFD")), "은퇴권사");
+  const kid = cleanPosition("학생".normalize("NFD"));
+  assert.equal(kid, "학생");
+  assert.equal(kid, kid.normalize("NFC"));
+  // tidyRow 도 같은 함수를 부른다 — 직분만 완성형, 이름은 그대로
+  const nfd = "홍길동".normalize("NFD");
+  const t = tidyRow(R({ name: nfd, position: "권사님".normalize("NFD") }));
+  assert.equal(t.position, "권사");
+  assert.equal(t.name, nfd);
+});
