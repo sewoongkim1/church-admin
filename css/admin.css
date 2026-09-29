@@ -520,3 +520,56 @@ a.mn-tel.sm{padding:2px 8px}
 .mp-i-msg{font-size:13px;line-height:1.6;margin-top:4px}
 .mp-i-msg.bad{color:var(--error)}
 .mp-i-msg.warn{color:#7a5f16}
+
+/* 교인명부(2026-09-29) — 교인 찾기 · 교인 현황 */
+.pp-src{margin:-4px 0 12px}
+.pp-src.stale{color:var(--error);font-weight:700}
+.pp-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.pp-sel{display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--gray);flex:1 1 140px;min-width:0}
+.pp-sel select{min-height:var(--tap);padding:0 8px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:15px;color:#222}
+.pp-chk{display:flex;align-items:center;gap:6px;min-height:var(--tap);font-size:14px;flex:1 1 140px}
+.pp-chk input{width:20px;height:20px}
+.pp-form .acts{margin-bottom:12px}
+.pp-sum{margin-bottom:8px}
+.pp-card{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:var(--gap);cursor:pointer}
+.pp-card:focus-visible,.pp-row:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:2px}
+.pp-ph{width:56px;height:72px;border-radius:8px;object-fit:cover;flex:none;background:var(--light)}
+.pp-ph.sm{width:36px;height:46px}
+.pp-ini{display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:var(--gray);background:var(--light)}
+.pp-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pp-main b{font-size:16px}
+.pp-aff{font-size:14px;color:#333}
+.pp-tel{display:inline-flex;align-items:center;min-height:var(--chip);font-weight:700;text-decoration:none}
+.pp-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border)}
+.pp-table th,.pp-table td{padding:8px 10px;border-bottom:1px solid var(--light);text-align:left;font-size:14px;vertical-align:middle}
+.pp-table thead th{background:var(--light);font-size:13px;color:var(--gray)}
+.pp-row{cursor:pointer}
+.pp-row:hover{background:var(--ghost-bg)}
+.pp-pager{margin-top:8px}
+.pp-detail{display:flex;flex-direction:column;align-items:center;gap:12px;white-space:normal}
+.pp-big{width:150px;height:195px;border-radius:12px;object-fit:cover;font-size:48px}
+.pp-detail dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;width:100%;font-size:14px}
+.pp-detail dt{color:var(--gray)}
+.pp-detail dd{overflow-wrap:anywhere}
+.pp-fam{width:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-top:1px solid var(--light);padding-top:10px}
+.pp-fam-t{width:100%;font-size:14px}
+.pp-fam-b{min-height:var(--chip);padding:0 12px;border-radius:999px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:14px}
+.pp-fam-b small{color:var(--gray)}
+.pp-fam-all{width:100%;margin-top:4px}
+.pp-famon{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 10px;font-weight:700;color:var(--navy)}
+.pp-rel{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;margin-right:6px;border-radius:999px;background:var(--ghost-bg);color:var(--navy);font-size:12px;font-weight:700}
+.pp-kpis{display:flex;gap:var(--gap);flex-wrap:wrap}
+.pp-kpi{flex:1 1 160px;display:flex;flex-direction:column;gap:2px}
+.pp-kpi b{font-size:1.4rem;color:var(--navy)}
+.pp-stat{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);margin-bottom:8px}
+.pp-stat th,.pp-stat td{padding:6px 10px;border-bottom:1px solid var(--light);font-size:14px;text-align:right}
+.pp-stat th:first-child,.pp-stat td:first-child{text-align:left}
+.pp-stat thead th{background:var(--light);color:var(--gray);font-size:13px}
+/* 사역 화면의 교적 표시 */
+.cb{display:inline-flex;align-items:center;gap:4px;min-height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-style:normal;font-weight:700;margin-left:6px;white-space:nowrap}
+.cb small{font-weight:400}
+.cb-ok{background:#e6f2e6;color:var(--green)}
+.cb-check{background:#fff3e0;color:#9a5b00}
+.cb-none{background:var(--light);color:var(--gray)}
+.cb-legend{margin:0 0 10px;line-height:2}
+.cb-legend .cb{margin-left:0}
