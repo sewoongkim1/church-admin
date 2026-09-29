@@ -59,29 +59,37 @@ export function csvText(rows) {
   return "﻿" + [head, ...body].map((row) => row.map(cell).join(",")).join("\r\n");
 }
 
-// 자세히 보기 — [칸 이름, 값, 종류?]. 빈 값은 뺀다. 종류 "tel" 은 전화 걸기로 그린다.
-export function detailRows(p) {
-  const join = (...xs) => xs.filter(Boolean).join(" · ");
-  const rows = [
-    ["직분", join(p.position, p.position_detail)],
-    ["성별 · 나이", join(p.gender, p.age != null && p.age !== "" ? `${p.age}세` : "")],
-    ["생년월일", join(p.birth, p.lunar)],
-    ["소속", affText(p)],
-    ["목장 리더", p.mok_leader],
-    ["교회학교", p.school_path],
-    ["교사", p.teacher],
-    ["청년", p.youth_path],
-    ["선교회", p.mission],
-    ["교인 구분", [p.kind1, p.kind2, p.kind3].filter(Boolean).join(" > ")],
-    ["등록", join(p.registered, p.reg_type)],
-    ["연락처", p.phone1, "tel"],
-    ["연락처 2", p.phone2, "tel"],
-    ["이메일", p.email],
-    ["배우자", join(p.spouse, p.spouse_position)],
-    ["신앙세대주", join(p.household_head, p.household_rel)],
-    ["인도자", p.guide],
-    ["주소", p.address],
-    ["지번 주소", p.address_jibun],
+// 자세히 보기의 오른쪽 묶음 — [{ key, title, fields:[{ label, value, tel?, wide? }] }]. 빈 값·빈 묶음은 뺀다.
+// 왼쪽(사진 옆)에 이미 있는 것 — 이름·직분·소속·성별·나이·연락처 — 는 여기 되풀이하지 않는다(person-detail.js).
+// wide 는 칸 두 개 폭(긴 주소·교회학교 경로). 화면은 빈자리를 채워 가며 놓는다(grid dense).
+export function detailSections(p) {
+  const has = (v) => v !== undefined && v !== null && String(v).trim() !== "";
+  const join = (sep, ...xs) => xs.filter(has).map((x) => String(x).trim()).join(sep);
+  const f = (label, value, extra) => ({ label, value: has(value) ? String(value).trim() : "", ...extra });
+  const W = { wide: true };
+  const sections = [
+    { key: "basic", title: "기본", fields: [
+      f("생년월일", join(" · ", p.birth, p.lunar)),
+      f("교인 구분", join(" > ", p.kind1, p.kind2, p.kind3)),
+      f("등록", join(" · ", p.registered, p.reg_type)),
+      f("인도자", p.guide),
+    ] },
+    { key: "contact", title: "연락", fields: [
+      f("이메일", p.email, W),
+      f("주소", p.address, W),
+      f("지번 주소", p.address_jibun, W),
+    ] },
+    { key: "affil", title: "소속", fields: [
+      f("목장 리더", p.mok_leader),
+      f("교회학교", p.school_path, W),
+      f("교사", p.teacher),
+      f("청년", p.youth_path, W),
+      f("선교회", p.mission),
+    ] },
+    { key: "family", title: "가족", fields: [
+      f("배우자", join(" · ", p.spouse, p.spouse_position)),
+      f("신앙세대주", join(" · ", p.household_head, p.household_rel)),
+    ] },
   ];
-  return rows.filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "");
+  return sections.map((s) => ({ ...s, fields: s.fields.filter((x) => x.value !== "") })).filter((s) => s.fields.length);
 }

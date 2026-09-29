@@ -549,16 +549,6 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-row{cursor:pointer}
 .pp-row:hover{background:var(--ghost-bg)}
 .pp-pager{margin-top:8px}
-.pp-detail{display:flex;flex-direction:column;align-items:center;gap:12px;white-space:normal}
-.pp-big{width:150px;height:195px;border-radius:12px;object-fit:cover;font-size:48px}
-.pp-detail dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;width:100%;font-size:14px}
-.pp-detail dt{color:var(--gray)}
-.pp-detail dd{overflow-wrap:anywhere}
-.pp-fam{width:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-top:1px solid var(--light);padding-top:10px}
-.pp-fam-t{width:100%;font-size:14px}
-.pp-fam-b{min-height:var(--chip);padding:0 12px;border-radius:999px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:14px}
-.pp-fam-b small{color:var(--gray)}
-.pp-fam-all{width:100%;margin-top:4px}
 .pp-famon{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 10px;font-weight:700;color:var(--navy)}
 .pp-rel{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;margin-right:6px;border-radius:999px;background:var(--ghost-bg);color:var(--navy);font-size:12px;font-weight:700}
 .pp-kpis{display:flex;gap:var(--gap);flex-wrap:wrap}
@@ -576,3 +566,81 @@ a.mn-tel.sm{padding:2px 8px}
 .cb-none{background:var(--light);color:var(--gray)}
 .cb-legend{margin:0 0 10px;line-height:2}
 .cb-legend .cb{margin-left:0}
+
+/* 교인 한 분 자세히 — dialog({cls:"pd"}) · 본문은 js/menus/people/person-detail.js (2026-09-29)
+   넓으면(창 안쪽 720px 이상) 왼쪽 사진·이름·전화 | 오른쪽 묶음 두 단 — PC 에서 창 안 스크롤 없이 한 화면에.
+   좁으면 한 단(사진 옆에 이름). ⚠️ vw·vh 를 쓰지 않는다 — .dlg-dim 이 곧 화면이라 100% 로 잰다.
+   ⚠️ 다른 확인 창에 새지 않게 모두 .dlg.pd 아래에만 둔다. */
+.dlg-dim:has(> .dlg.pd){padding:12px}
+.dlg.pd{width:min(960px,100%);max-width:none;max-height:100%;padding:28px clamp(18px,3.4%,32px) 20px;container-type:inline-size;overflow-y:auto}
+.dlg.pd .body{margin:0;white-space:normal;font-size:15px;color:#222}
+.dlg.pd .acts{position:sticky;bottom:-20px;justify-content:flex-end;margin-top:16px;padding:12px 0 20px;
+  margin-bottom:-20px;background:#fff;border-top:1px solid var(--light)}
+.dlg.pd .acts .btn{flex:none;min-width:112px;min-height:var(--tap);padding:0 28px}
+.dlg.pd .pd-wrap{display:flex;flex-direction:column;gap:22px}
+
+/* 왼쪽(좁을 때는 윗부분): 사진 · 이름 · 직분 · 소속 · 나이 · 전화 */
+.dlg.pd .pd-side{display:grid;grid-template-columns:88px minmax(0,1fr);align-items:center;gap:16px}
+.dlg.pd .pd-photo{display:block;width:88px;height:114px;border-radius:10px;object-fit:cover;background:var(--light)}
+.dlg.pd .pd-ini{display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;color:var(--gray)}
+.dlg.pd .pd-id{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.dlg.pd .pd-name{margin:0;font-size:22px;font-weight:800;line-height:1.25;color:var(--navy-dark);overflow-wrap:anywhere}
+.dlg.pd .pd-pos{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;
+  background:var(--ghost-bg);color:var(--navy);font-size:13px;font-weight:700}
+.dlg.pd .pd-aff{font-size:15px;color:#222;font-weight:600}
+.dlg.pd .pd-age{font-size:14px;color:var(--gray)}
+.dlg.pd .pd-tels{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+.dlg.pd .pd-tel{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:6px;min-height:var(--tap);
+  padding:0 10px;border-radius:999px;border:1px solid var(--ghost-bd);background:var(--ghost-bg);color:var(--navy);
+  font-size:15px;font-weight:700;text-decoration:none;white-space:nowrap;font-variant-numeric:tabular-nums}
+.dlg.pd .pd-tel:hover{border-color:var(--navy)}
+.dlg.pd .pd-none{font-size:14px;color:var(--gray)}
+
+/* 오른쪽(좁을 때는 아랫부분): 묶음 — 제목 한 줄 + 칸(라벨 위 · 값 아래) */
+.dlg.pd .pd-main{min-width:0;display:flex;flex-direction:column;gap:20px}
+.dlg.pd .pd-st{display:flex;align-items:baseline;gap:8px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border);
+  font-size:12px;font-weight:700;line-height:1.3;color:var(--navy);letter-spacing:.04em}
+.dlg.pd .pd-cnt{font-weight:600;color:var(--gray);letter-spacing:0}
+.dlg.pd .pd-grid{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-flow:row dense;gap:10px 24px}
+.dlg.pd .pd-f{min-width:0}
+.dlg.pd .pd-f dt{font-size:12px;line-height:1.3;color:var(--gray);white-space:nowrap}
+.dlg.pd .pd-f dd{font-size:15px;line-height:1.4;color:#222;overflow-wrap:anywhere}
+.dlg.pd .pd-fams{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.dlg.pd .pd-chip{display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);padding:0 14px;border-radius:999px;
+  border:1px solid var(--border);background:#fff;font-size:14px;cursor:pointer}
+.dlg.pd .pd-chip small{font-size:12px;color:var(--gray)}
+.dlg.pd .pd-chip:hover,.dlg.pd .pd-fam-all:hover{border-color:var(--navy)}
+.dlg.pd .pd-fam-all{display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);padding:0 14px;border-radius:999px;
+  border:1px solid var(--ghost-bd);background:var(--ghost-bg);color:var(--navy);font-size:14px;font-weight:700;cursor:pointer}
+@container (min-width:480px){
+  .dlg.pd .pd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dlg.pd .pd-f.w{grid-column:1/-1}
+  .dlg.pd .pd-tel{flex:0 1 240px}
+}
+/* 넓을 때 — 두 단. 오른쪽은 한 줄이라도 아끼려고 묶음 제목을 왼쪽 여백 칸에, 라벨을 값 옆에 둔다
+   (라벨 위·값 아래로 두면 꽉 찬 기록이 1366×768 노트북에서 약 200px 넘친다 — 2026-09-29 재어 봄) */
+@container (min-width:720px){
+  .dlg.pd .pd-wrap{display:grid;grid-template-columns:200px minmax(0,1fr);column-gap:32px;align-items:start}
+  .dlg.pd .pd-side{display:flex;flex-direction:column;align-items:stretch;gap:0}
+  .dlg.pd .pd-photo{width:200px;height:260px;border-radius:12px}
+  .dlg.pd .pd-ini{font-size:72px}
+  .dlg.pd .pd-id{margin-top:14px}
+  .dlg.pd .pd-name{font-size:24px}
+  .dlg.pd .pd-pos{margin-top:4px}
+  .dlg.pd .pd-aff{margin-top:6px}
+  .dlg.pd .pd-tels{flex-direction:column;margin-top:16px}
+  .dlg.pd .pd-tel{flex:none;width:100%}
+  .dlg.pd .pd-main{gap:0}
+  .dlg.pd .pd-sec{display:grid;grid-template-columns:56px minmax(0,1fr);column-gap:20px;padding:12px 0;border-top:1px solid var(--light)}
+  .dlg.pd .pd-sec:first-child{padding-top:2px;border-top:0}
+  .dlg.pd .pd-sec:last-child{padding-bottom:0}
+  .dlg.pd .pd-sec>:not(.pd-st){grid-column:2}
+  .dlg.pd .pd-st{grid-row:span 2;flex-direction:column;align-items:flex-start;gap:0;margin:0;padding:0;border:0;line-height:22px}
+  .dlg.pd .pd-cnt{line-height:1.3}
+  .dlg.pd .pd-grid{row-gap:8px}
+  .dlg.pd .pd-f{display:grid;grid-template-columns:72px minmax(0,1fr);column-gap:12px;align-items:baseline}
+  .dlg.pd .pd-f dt{font-size:13px}
+  .dlg.pd .pd-f dd{line-height:22px}
+  .dlg.pd .pd-grid+.pd-fams{margin-top:10px}
+  .dlg.pd .pd-fams{margin-top:0}
+}
