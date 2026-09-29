@@ -6,6 +6,7 @@ const LABEL = {
   register: "승인 요청", "register.update": "요청 고침",
   "members.approve": "승인", "members.roles": "역할 바꿈", "members.status": "상태 바꿈",
   "ministry.status": "사역 상태 바꿈", "ministry.delete": "사역 신청 삭제",
+  "ministry.catalog": "사역팀 정보 고침", "ministry.order": "사역팀 차례 바꿈",
 };
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };
 
@@ -17,6 +18,8 @@ function detailText(r) {
   if (r.action.startsWith("register")) return [d.gu, d.mok, d.bu, d.grade].filter(Boolean).join(" ");
   if (r.action === "ministry.status") return `${d.name || ""} · ${d.team || ""} · ${d.before || ""} → ${d.after || ""}${d.note ? " · 사유: " + d.note : ""}`;
   if (r.action === "ministry.delete") return `${d.name || ""} · ${d.who || ""} · ${d.committee || ""} ${d.team || ""} (${d.status || ""})`;
+  if (r.action === "ministry.catalog") return `${d.team || ""} · ${(d.fields || []).join(", ")}`;
+  if (r.action === "ministry.order") return `${(d.ids || []).length}팀`;
   return "";
 }
 

@@ -356,3 +356,121 @@ a.mn-tel.sm{padding:2px 8px}
 .mn-tbl-tel .mn-dup{white-space:normal;word-break:keep-all}
 .mn-table td.mn-date::before{content:none}
 .mn-modal-foot .yes:disabled{opacity:.45;cursor:default}
+
+/* ── 🗂️ 사역팀 정보(성경암송 admin-stats.html 의 .mc-* 를 옮김 · 2026-09-29) ──────────────────
+   원문: docs/port/ministry-catalog-legacy.md 2.12~2.14. 크기는 토큰으로, 11~12px 글씨는 13px 이상으로 올렸다.
+   ⚠️ 좁은 폰 규칙(마지막 @media 블록의 .mc-in label)은 반드시 아래 기본 .mc-in label 규칙보다 **뒤**에 둔다
+      (원문 2.14 그대로 — 소스 순서가 뒤여야 같은 우선순위에서 이긴다). */
+.mc-acts{margin-bottom:var(--gap)}
+.mc-panel{padding-top:12px}
+/* 붙는 머리 — 찾기 · 부서 고르기(접기/펼치기, 가로 스크롤 없음) */
+.mc-head{position:sticky;top:var(--head-h);z-index:20;background:#fff;
+  margin:calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) 0;padding:10px var(--card-pad) 0;
+  border-radius:14px 14px 0 0}
+.mc-head .search{margin-bottom:8px}
+.mc-pick{display:flex;align-items:center;gap:7px;width:100%;height:var(--tap);padding:0 12px;margin-bottom:8px;
+  font:inherit;background:#fff;border:1px solid var(--border);border-radius:10px;cursor:pointer;color:#41506b}
+.mc-pick-l{font-size:13px;font-weight:800;color:var(--gray);flex:none}
+.mc-pick b{flex:1;min-width:0;text-align:left;font-size:14px;font-weight:800;color:var(--navy);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-pick-x{flex:none;font-size:13px;color:var(--gray);transition:transform .15s}
+.mc-pick[aria-expanded="true"] .mc-pick-x{transform:rotate(180deg)}
+.mc-head-b{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.mc-only{display:flex;align-items:center;gap:5px;min-height:var(--chip);font-size:13px;font-weight:700;color:#41506b;cursor:pointer}
+.mc-only input[type=checkbox]{width:20px;height:20px}
+.mc-found{margin-left:auto;font-size:13px;color:var(--gray)}
+.mc-found b{color:var(--navy)}
+.mc-found i{font-style:normal;color:#a0a9b8}
+.mc-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.mc-tab{min-height:var(--chip);padding:0 14px;font:inherit;font-size:13px;font-weight:700;color:#41506b;
+  background:#fff;border:1px solid var(--border);border-radius:999px;cursor:pointer}
+.mc-tab em{font-style:normal;color:var(--gray);font-size:13px;margin-left:3px}
+.mc-tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.mc-tab.on em{color:#cfe0ff}
+.mc-tab.done{border-color:#5aab7c}
+.mc-sum{font-size:13px;color:#41506b;background:#eef1f8;border-radius:8px;padding:8px 12px;margin-bottom:10px}
+.mc-sum b{font-size:15px;color:var(--navy)}
+.mc-rest{color:var(--error);margin-left:8px;font-size:13px}
+/* 차례를 바꿨는데 아직 안 보낸 상태 — 버튼은 표준 v1 .btn 을 그대로 쓴다(primary=저장) */
+.mc-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;background:#fdf6e3;border:1px solid #e8d6a8;
+  border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:#7a5f1e}
+.mc-bar .btn{min-height:var(--chip)}
+/* 📌 적는 법 — 접어 두는 안내 */
+.mc-guide{margin:0 0 10px;border:1px solid #e3e8f1;border-radius:10px;background:#f8fafd}
+.mc-guide>summary{list-style:none;cursor:pointer;padding:10px 12px;font-size:14px;font-weight:800;color:var(--navy)}
+.mc-guide>summary::-webkit-details-marker{display:none}
+.mc-guide[open]>summary{border-bottom:1px solid #e3e8f1}
+.mc-help{font-size:13px;color:#5b6472;line-height:1.7;margin:10px 12px}
+.mc-tags{font-size:13px;color:#7a869c}
+.mc-tags code{background:#f3f6fb;border:1px solid #e2e8f4;border-radius:5px;padding:1px 5px;font-size:13px}
+/* 한 팀 = 한 줄 카드, 눌러야 자세히 */
+.mc-card{border:1px solid var(--border);border-radius:12px;margin-bottom:var(--gap);background:#fff;overflow:hidden}
+.mc-card.off{background:#f7f8fa}
+.mc-card.on{border-color:var(--navy);box-shadow:0 2px 10px rgba(26,58,107,.08)}
+.mc-card.dirty{border-color:#c3a253;box-shadow:0 0 0 2px #f6edd8}
+.mc-c-h{display:flex;align-items:center;flex-wrap:wrap;gap:2px 8px;width:100%;min-height:var(--tap);text-align:left;
+  font:inherit;background:none;border:none;cursor:pointer;padding:11px 14px}
+.mc-c-nm{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 6px}
+.mc-c-nm b{font-size:15px;font-weight:800;color:var(--navy)}
+.mc-c-nm em{font-style:normal;font-size:13px;color:var(--gray)}
+.mc-c-sub{flex-basis:100%;font-size:13px;color:#7a869c;line-height:1.5;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-c-x{flex:none;color:var(--gray);font-size:13px}
+.mc-tag{font-size:13px;color:var(--gray);font-weight:600;margin-left:6px}
+.mc-tag.empty{background:#fdf1f1;border:1px solid #e6bcbc;color:var(--error);border-radius:999px;padding:1px 8px}
+.mc-dot{font-size:13px;font-weight:700;color:#a3791f;margin-left:6px}
+/* 펼친 모습 — 읽기 */
+.mc-open{padding:2px 14px 12px;border-top:1px solid #eef1f6}
+.mc-r{display:flex;gap:8px;padding:7px 0;border-top:1px solid #f3f5f9;font-size:13px;line-height:1.6}
+.mc-r:first-child{border-top:none}
+.mc-r-l{flex:none;width:70px;font-size:13px;font-weight:800;color:#8a6a1e}
+.mc-r-v{flex:1;min-width:0;color:#41506b;word-break:break-word}
+.mc-r-v.none{color:#a0a9b8}
+.mc-open-acts{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}
+.mc-btn{font:inherit;font-size:14px;font-weight:800;color:var(--navy);background:var(--ghost-bg);
+  min-height:var(--tap);border:1px solid var(--ghost-bd);border-radius:10px;padding:0 14px;cursor:pointer}
+.mc-open-acts .mc-ord{margin-left:auto}
+.mc-ord{display:inline-flex;gap:8px}
+.mc-ord button{width:var(--tap);height:var(--tap);font-size:15px;padding:0;border:1px solid var(--border);
+  border-radius:8px;background:#fff;color:#5b6472;cursor:pointer}
+.mc-ord button:disabled{opacity:.28;cursor:default}
+/* 고치는 폼 */
+.mc-in{padding:10px 14px 14px;border-top:1px solid #eef1f6;display:flex;flex-direction:column;gap:9px}
+.mc-in label{display:flex;align-items:center;gap:8px;font-size:13px;color:#5b6472;font-weight:700}
+.mc-in label.wide{align-items:flex-start;flex-direction:column}
+.mc-in input,.mc-in textarea{flex:1;font:inherit;font-size:1rem;padding:8px 10px;min-height:var(--tap);
+  border:1px solid var(--border);border-radius:8px;min-width:0;width:100%;box-sizing:border-box}
+.mc-in textarea{resize:vertical;line-height:1.6;min-height:auto}
+.mc-hint{font-weight:500;font-size:13px;color:#8a8f9a}
+.mc-prev{font-size:13px;color:#6b7280;background:#f7f8fa;border-radius:7px;padding:8px 10px;line-height:1.6}
+.mc-none{color:#b0b8c6}
+.mc-note{font-size:13px;color:var(--gray)}
+/* 「② 언제」 상자 — 요일 · 주기 · 주일 시각 */
+.mc-when{display:flex;flex-direction:column;gap:6px;background:#f7f9fd;border:1px solid #e6ecf6;
+  border-radius:8px;padding:9px 10px}
+.mc-w-t{font-size:13px;font-weight:800;color:var(--navy)}
+.mc-w-t em{font-style:normal;font-weight:500;color:var(--gray);margin-left:6px}
+.mc-w-r{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.mc-w-r>b{font-size:13px;font-weight:800;color:#6b7688;min-width:44px}
+.mc-when label{display:flex;align-items:center;min-height:var(--tap);padding:0 10px;gap:5px;font-size:13px;
+  font-weight:600;color:#41506b;border:1px solid var(--border);border-radius:10px;cursor:pointer}
+.mc-when label i{font-style:normal;font-weight:500;font-size:13px;color:#9aa4b4;margin-left:2px}
+.mc-when input[type=checkbox]{width:20px;height:20px;flex:none;margin:0}
+.mc-when input[type=time]{flex:1 1 0;min-width:96px;min-height:var(--tap);font:inherit;font-size:1rem;
+  padding:0 8px;border:1px solid var(--border);border-radius:8px;background:#fff}
+.mc-when input[type=time]:disabled{background:#eef0f4;color:#aab2c0}
+.mc-w-off{flex-basis:100%;font-style:normal;font-size:13px;color:#a3701e}
+.mc-w-tw{flex:none;font-size:13px;color:var(--gray)}
+.mc-w-time{flex-wrap:wrap}
+.mc-w-time>b{flex-basis:100%;margin-bottom:2px}
+.mc-in-acts{display:flex;gap:8px;align-items:stretch;margin-top:2px}
+.mc-in-acts .mc-save{flex:1}
+.mc-save{font:inherit;font-size:1rem;font-weight:700;min-height:var(--tap-lg);padding:0 16px;
+  border:1px solid var(--navy);border-radius:10px;background:var(--navy);color:#fff;cursor:pointer}
+/* 좁은 폰 — ⚠️ 위 기본 .mc-in label 규칙보다 뒤에 있어야 이긴다(원문 2.14) */
+@media (max-width:420px){
+  .mc-r-l{width:60px}
+  .mc-in label{flex-direction:column;align-items:flex-start;gap:4px}
+  .mc-in label.wide{align-items:flex-start}
+  .mc-in .mc-when label{flex-direction:row;align-items:center}
+}
