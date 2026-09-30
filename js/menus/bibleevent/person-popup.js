@@ -36,20 +36,34 @@ import { NOT_FOUND, NO_DIRECTORY, FAMILY_NOTE, personDecision, candOptions, choo
 const DETAIL_DLG = ":scope > .dlg.pd";
 // 앞 묶음이 「자세히」 창의 답을 기다리며 끝나는 중(뒤로 가기·메뉴 옮기기 뒤)에 이름을 또 누르면 — 말없이 버리지 않는다
 const WAIT_NOTE = "앞 창을 닫는 중이에요 — 잠시 뒤 다시 눌러 주세요";
+// ⑤ 교적을 기다린 지 700ms 가 넘으면 알림 한 줄 — 흐림(css/admin.css #view > section[aria-busy])만으로는 느린 통신에서 「눌렸나?」 하신다(FE1-M1)
+const WAIT_LOAD = "교적을 불러오는 중이에요…";
 
-// 지금 묶음 { pushed, popped, cancelled, next, picking, detail, dlg, host, anchor } — 묻는 중이거나 창이 떠 있는 동안
+// 지금 묶음 { pushed, popped, cancelled, next, picking, detail, dlg, host, anchor, waitT, prevFocus, late } — 묻는 중이거나 창이 떠 있는 동안
 // (두 번 눌러도 창·기록은 하나)
 let session = null;
 let backWaiter = null;  // 우리가 부른 history.back() 이 돌아오면 부를 것
 let bound = false;
 let watcher = null;
+let unFocusIn = null;   // 늦게 뜬 「자세히」 창이 가져간 초점 잡기(watch) 떼기
 
 // ⑤ 기다리는 동안 누른 메뉴 화면을 잠근다/푼다. 잠그면 누른 단추의 초점이 빠지므로, 풀 때 초점이 갈 곳이 없으면 그 단추로 돌려준다
 // (창·고르개가 곧바로 제 단추로 초점을 옮기므로 그쪽을 막지 않는다).
+// 기다린다는 표시(FE1-M1): aria-busy 에 css 가 늦춘 흐림·progress 커서를 걸고, 700ms 가 넘으면 알림 한 줄(WAIT_LOAD).
+// 풀 때는 그 알림도 거둔다 — 창이 뜬 뒤까지 「불러오는 중」이 남지 않게.
 function setWait(s, on) {
   const h = s.host;
   if (!h) return;
-  if (on) { h.inert = true; h.setAttribute("aria-busy", "true"); return; }
+  if (on) {
+    h.inert = true;
+    h.setAttribute("aria-busy", "true");
+    clearTimeout(s.waitT);
+    s.waitT = setTimeout(() => { if (h.inert && session === s) toast(WAIT_LOAD); }, 700);
+    return;
+  }
+  clearTimeout(s.waitT);
+  const t = document.querySelector(".adm-toast");
+  if (t && !t.hidden && t.textContent === WAIT_LOAD) t.hidden = true;
   if (!h.inert) return;
   h.inert = false;
   h.removeAttribute("aria-busy");
@@ -104,17 +118,32 @@ function bind() {
 
 // ③ 「자세히」 창을 기다리는 동안만 — 몸(body)에 붙은 것 가운데 .dlg.pd 를 품은 .dlg-dim 이 이 묶음의 창이다.
 //    잡아 두고(뒤로 가기·메뉴 옮기기가 나중에 오면 이것만 닫는다), 잠금을 풀고, 이미 뒤로 갔거나 메뉴를 옮겼으면 곧바로 닫는다.
+//    그렇게 닫는 늦은 창은 붙자마자 제 「닫기」로 초점을 가져간 뒤다(search.js openPerson · 감시자보다 먼저 돈다) — 그 직전 초점
+//    (그사이 연 고르개 등)을 focusin 의 relatedTarget 으로 잡아 두었다가 돌려준다(FE1-M2 · 안 그러면 초점이 body 로 빠진다).
 function watch(s, on) {
   watcher?.disconnect();
   watcher = null;
+  unFocusIn?.();
+  unFocusIn = null;
   if (!on) return;
+  const onIn = (e) => {
+    if (!(s.cancelled || s.popped) || !(e.target instanceof Element)) return;
+    if (e.target.closest(".dlg-dim")?.querySelector(DETAIL_DLG)) s.prevFocus = e.relatedTarget;
+  };
+  document.addEventListener("focusin", onIn, true);
+  unFocusIn = () => document.removeEventListener("focusin", onIn, true);
   watcher = new MutationObserver((recs) => {
     for (const rec of recs) {
       for (const n of rec.addedNodes) {
         if (!(n instanceof Element) || !n.classList.contains("dlg-dim") || !n.querySelector(DETAIL_DLG)) continue;
         s.dlg = n;
         setWait(s, false);
-        if (s.cancelled || s.popped) n.querySelector('[data-v="1"]')?.click();
+        if (!(s.cancelled || s.popped)) continue;
+        s.late = true;                                  // 끝나는 중에 늦게 뜬 창 — openPerson 이 이름 단추로 초점을 돌리지 않게(back 대리)
+        n.querySelector('[data-v="1"]')?.click();
+        const p = s.prevFocus;
+        s.prevFocus = null;
+        if (p instanceof HTMLElement && p.isConnected && (!document.activeElement || document.activeElement === document.body)) p.focus({ preventScroll: true });
       }
     }
   });
@@ -148,7 +177,7 @@ export async function openChurchPerson({ call, name = "", who_type = "", group =
   bind();
   const host = anchor instanceof Element ? anchor.closest("#view > section") : null;   // ⑤ 잠글 메뉴 화면
   const s = session = { pushed: false, popped: false, cancelled: false, next: null,
-    picking: false, detail: false, dlg: null, host, anchor };
+    picking: false, detail: false, dlg: null, host, anchor, waitT: 0, prevFocus: null, late: false };
   // 그사이 뒤로 갔거나(①) 메뉴를 옮겼거나(②) 명단을 다시 그려 누른 단추가 없어졌다 — 창을 띄우지 않는다
   const gone = () => s.cancelled || s.popped || (anchor != null && !anchor.isConnected);
   setWait(s, true);
@@ -188,7 +217,11 @@ export async function openChurchPerson({ call, name = "", who_type = "", group =
       s.detail = true;
       setWait(s, true);                                 // 창이 붙으면 감시자가 푼다
       watch(s, true);
-      try { await openPerson(call, id, () => toast(FAMILY_NOTE), anchor); }
+      // 끝나는 중인 묶음(뒤로 가기·메뉴 옮기기 뒤)에서는 초점을 가져가지 않는다 — 그사이 연 고르개의 초점을 뺏지 않게(FE1-M2).
+      // openPerson 은 창이 닫히면 back.isConnected 일 때만 back.focus() 한다. 뒤로 가기는 「창을 기다리는 사이」(늦게 뜬 창 · s.late)만
+      // 막는다 — 떠 있던 창을 뒤로 가기로 닫았을 때는 그사이 연 것이 없으니 전처럼 이름 단추로 돌려준다.
+      const back = anchor ? { get isConnected() { return anchor.isConnected && !s.cancelled && !s.late; }, focus: (o) => anchor.focus(o) } : null;
+      try { await openPerson(call, id, () => toast(FAMILY_NOTE), back); }
       finally { watch(s, false); s.detail = false; s.dlg = null; setWait(s, false); }
       id = s.next;
     }

@@ -18,6 +18,8 @@ import { personDetailHtml } from "./person-detail.js";
 import { pickMany } from "../../core/picker.js";
 
 const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
+// 앞 「자세히」 창을 아직 여는 중(peoplePerson 을 기다림)에 또 누르면 — 말없이 버리지 않는다(FE1-M2)
+const OPENING_NOTE = "앞 창을 여는 중이에요 — 잠시 뒤 다시 눌러 주세요";
 // 찾기 조건은 메뉴를 옮겨 다녀도 남는다(임명현황과 같게) — 정렬(sort·dir)도. household = 가족 보기(세대주 교인ID)
 // ⚠️ 거르기 배열은 늘 새 배열로 바꿔 넣는다(push 금지) — blank() 가 매번 새 배열을 만들지만 사본끼리 섞이지 않게.
 const blank = () => ({ q: "", mok1: [], kind2: [], kind3: [], position: [], noPhoto: false, page: 0, household: null, householdName: "",
@@ -98,7 +100,7 @@ function download(text, name) {
 // back — 창을 닫으면 초점을 돌려줄 줄(창이 뜨면 초점은 「닫기」 단추로 간다).
 // 성경필사(암송) 「이름을 누르면 교적 창」(js/menus/bibleevent/person-popup.js)도 이것을 부른다 — 이름·인자·가족 단추(data-fam·data-fam-all)를 바꾸면 그쪽도.
 export async function openPerson(call, id, onFamily, back) {
-  if (opening) return;
+  if (opening) { toast(OPENING_NOTE); return; }
   opening = true;
   let handedOff = false;                // 가족으로 넘어가면 opening·초점은 그쪽 호출이 맡는다(아래)
   try {

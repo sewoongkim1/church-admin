@@ -1065,6 +1065,10 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
 .be-name:hover b,.be-name:focus-visible b{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
 .be-name:focus-visible{outline:2px solid var(--navy);outline-offset:-2px}
 .be-name:disabled{cursor:default}
+/* 교적을 기다리는 동안(person-popup.js setWait · FE1-M1) — 늦춘 흐림이라 빨리 오면 깜빡이지 않는다 · 풀 때는 바로 돌아온다.
+   aria-busy 를 거는 section 은 person-popup 뿐이다(700ms 넘으면 알림 한 줄도 그쪽이 띄운다). */
+#view > section[aria-busy="true"]{opacity:.6;transition:opacity .15s ease .35s}
+body:has(#view > section[aria-busy="true"]){cursor:progress}
 /* PC 표 — 좁은 칸에서 이름이 한 글자씩 꺾이지 않게 */
 .be-table .be-name{white-space:nowrap}
 /* 👤 여러 번 참여한 분 — 이름(교적 창) · 소속 · 횟수 · 「📜 이력」(줄 오른쪽 끝) · 참여 회차(다음 줄) */
