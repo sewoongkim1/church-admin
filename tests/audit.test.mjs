@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LABEL, detailText } from "../js/menus/system/audit.js";
+import { LABEL, LOOKUP_MINISTRY, detailText, labelOf } from "../js/menus/system/audit.js";
+import { ministryApplicant, ministryLookupLog, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
 
 // 기록 한 줄 — 서버 auditList 가 주는 모양({action, target, detail})
 const R = (action, detail, target = "") => ({ action, target, detail });
@@ -114,7 +115,44 @@ test("people.fill — 물은 이름 N(이름들) · 채운 줄 M(이름들) · �
   assert.equal(detailText(R("people.fill", { rows: 2, names: ["홍길동", "홍길순"] })), "채운 줄 2 · 홍길동, 홍길순");
 });
 
+test("people.lookup — 사역신청·담당자 화면(ministryPerson · from 「ministry」)은 「명부 찾기(사역신청·담당자)」 · 번호로 골랐으면 「번호로 고름」(검토 5)", () => {
+  // 성경필사(evPeopleLookup·evPerson)는 from 이 없다 — 이름은 그대로
+  assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 2 })), "명부 찾기(성경필사)");
+  assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 3, from: "ministry" })), "명부 찾기(사역신청·담당자)");
+  assert.equal(LOOKUP_MINISTRY, "명부 찾기(사역신청·담당자)");
+  // 모르는 from · 다른 기록의 from 은 LABEL 그대로(detail 이 이름을 바꾸는 것은 people.lookup 뿐)
+  assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 1, from: "constructor" })), "명부 찾기(성경필사)");
+  assert.equal(labelOf(R("people.view", { name: "홍길동", from: "ministry" })), LABEL["people.view"]);
+  // LABEL 에 없는 기록은 영문 코드 그대로(옛 화면과 같다) · detail 이 없어도 된다
+  assert.equal(labelOf({ action: "something.else" }), "something.else");
+  assert.equal(labelOf({ action: "people.lookup" }), "명부 찾기(성경필사)");
+  // 줄 — 번호 자체는 서버가 싣지 않는다. 번호로 한 분을 가렸다는 사실만(byPhone:true)
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 3, from: "ministry" })), "‘홍길동’ · 3명");
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 1, from: "ministry", byPhone: true })), "‘홍길동’ · 1명 · 번호로 고름");
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 1, byPhone: "true" })), "‘홍길동’ · 1명", "참(true)일 때만");
+});
+
+test("people.lookup — 서버 ministryLookupLog 가 남기는 모양 그대로를 기록 화면이 읽는다(칸 이름·값이 한 벌)", () => {
+  // 가짜 명부 — 같은 소속(화평 20)에 홍길동 둘 · 번호로 한 분(검토 4 — full 만 번호로 고른다)
+  const P = (person_id, phone_digits) => ({ person_id, name: "홍길동", name_key: "홍길동", kind2: "장년", mok1: "화평", mok3: "화평-20목장",
+    school_dept: "", position: "집사", position_detail: "", phone_digits });
+  const cands = [P(1, "01000000001"), P(2, "01000000002")];
+  const a = ministryApplicant({ who: "화평 20목장", phone: "010-0000-0002" }, "홍길동");
+  const byPhone = ministryLookupLog(cands, a, personOutFor(cands, a, true), "홍길동");
+  const basic = ministryLookupLog(cands, a, personOutFor(cands, a, false), "홍길동");
+  assert.equal(labelOf(R("people.lookup", byPhone)), LOOKUP_MINISTRY);
+  assert.equal(detailText(R("people.lookup", byPhone)), "‘홍길동’ · 1명 · 번호로 고름");
+  assert.equal(labelOf(R("people.lookup", basic)), LOOKUP_MINISTRY);
+  assert.equal(detailText(R("people.lookup", basic)), "‘홍길동’ · 2명");
+});
+
 test("옛 기록은 그대로 — people.search · 모르는 기록은 빈 줄", () => {
   assert.equal(detailText(R("people.search", { q: "홍", filters: {}, total: 3 })), "‘홍’ · 3명");
   assert.equal(detailText(R("something.else", { a: 1 })), "");
+});
+
+test("ministry.tester — 더함/뺌 · 이름 · 소속", () => {
+  assert.match(LABEL["ministry.tester"], /[가-힣]/);
+  assert.equal(detailText(R("ministry.tester", { op: "add", name: "홍길동", who: "화평 20목장" })), "더함 · 홍길동 · 화평 20목장");
+  assert.equal(detailText(R("ministry.tester", { op: "remove", name: "홍길동", who: "" })), "뺌 · 홍길동");
 });

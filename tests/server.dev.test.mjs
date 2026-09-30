@@ -48,6 +48,12 @@ const UP_DIR_IDS = [990000011, 990000012, 990000013, 990000014, ...Array.from({ 
 const UP_OUT_KEYS = ["error", "i", "mark", "notes", "row"];
 const UP_ROW_KEYS = ["group", "name", "position", "sub", "who_type"];
 let upReady = null;
+// 사역신청·담당자 이름을 누르면(ministryPerson · 2026-09-30 검토 6) — 교인명부 같은 이름 세 분(교인ID 990000051~3 고정 ·
+//   이름 ca-test-mp-<STAMP>-가 · 번호·주소는 지어낸 것). 첫 시험이 한 번 만든다(mpFixtures) · after() 가 지운다.
+//   번호는 글자로 적지 않고 만든다(mpPhone) — 명단 검사(tools/leak-scan.mjs)가 이 파일의 번호 수를 센다.
+const MP = { name: `ca-test-mp-${STAMP}-가`, ids: [990000051, 990000052, 990000053] };
+const mpPhone = (n) => "010-0000-00" + n;
+let mpReady = null;
 // 성경필사(암송)(2026-09-29) 시험 자료 — 초안(draft) 회차 둘(보통·자격) + 줄 여섯. draft 라 성도님 화면에는 안 보인다.
 //   회차 id 는 모두 ca-test- 로 시작하고 STAMP 를 담는다(Task 6~8 도) — after() 가 이번 실행의 회차를 한꺼번에 지운다(줄은 CASCADE).
 //   앱 줄 하나는 시험 users 에 잇는다(누출 시험용).
@@ -116,6 +122,12 @@ const PROBE = {
   ministryCatalogOrder: { ids: [] },
   ministryPaperCheck: { rows: [] },
   ministryPaperSave: { rows: [] },
+  // 시험 참여자(2026-09-30) — 없는 이름 찾기 · 없는 키 빼기(명단에 없으면 쓰지도 기록하지도 않는다)
+  ministryTesters: {},
+  ministryTesterFind: { name: "ca-test-probe-없음" },
+  ministryTesterSave: { op: "remove", key: "ca-test-probe-없음" },
+  // 이름을 누르면 교적 창(사역신청·담당자 · 2026-09-30) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
+  ministryPerson: { name: "" },
   peopleSearch: { q: "ca-test-probe-없음" },
   peoplePerson: { id: 0 },
   peopleStats: {},
@@ -320,6 +332,8 @@ after(async () => {
   // 성경필사 명단 올리기 시험(Task 8) — 교인명부 시험 줄 · 시험 계정 셋(올리기는 계정을 만들지 않는다).
   //   시험 회차는 Task 5 단계가 ca-test-*<STAMP>* 로 지운다(줄은 CASCADE).
   await step("올리기 시험 교인명부", () => rest(`church_people?person_id=in.(${UP_DIR_IDS.join(",")})`, "DELETE"));
+  // 사역신청 이름 누르기 시험(ministryPerson) — 교인명부 세 분. 시험 담당자(people.mindir)는 위 사용자 줄이 지운다.
+  await step("사역신청 이름 누르기 시험 교인명부", () => rest(`church_people?person_id=in.(${MP.ids.join(",")})`, "DELETE"));
   await step("올리기 시험 계정", async () => {
     await rest(`users?name=like.ca-test-up-${STAMP}-*`, "DELETE");
     assert.equal((await rest(`users?select=id&name=like.ca-test-up-${STAMP}-*`, "GET")).length, 0, "올리기 시험 계정이 남았다");
@@ -1975,6 +1989,154 @@ test("성경필사 이름을 누르면(evPerson) — 교인명부 역할도 있�
   assert.deepEqual([dir.status, dir.body.error], [403, "forbidden"]);
 });
 
+// ---------- 사역신청·담당자 — 이름을 누르면 교적 창 ministryPerson (2026-09-30 검토 3·4·5·6) ----------
+// evPerson 시험을 본떴다. 교인명부는 mpFixtures 의 세 분(믿음 1 집사 · 사랑 2 권사 · 사랑 2 집사 — 같은 이름, 번호 하나씩)과
+// before() 의 ca-test-min(시험-0목장) · PAPER_NAME(시험-5목장)을 쓴다. 이름·번호·주소는 모두 지어낸 것.
+function mpFixtures() {
+  mpReady ??= (async () => {
+    await rest(`church_people?person_id=in.(${MP.ids.join(",")})`, "DELETE");   // 고정 교인ID — 지난번 찌꺼기(PK 가 부딪힌다)
+    // ⚠️ 배치 insert 는 객체들의 칸이 모두 같아야 한다(PGRST102) — d() 한 모양으로만 만든다.
+    const d = (person_id, mok1, mok3, position, n) => ({ person_id, name: MP.name, name_key: MP.name, kind2: "장년", mok1, mok3,
+      position, phone1: mpPhone(n), phone_digits: mpPhone(n).replace(/\D/g, ""), address: "시험시 비밀주소 " + STAMP });
+    await rest("church_people", "POST", [
+      d(MP.ids[0], "믿음", "믿음-1목장", "집사", 51),
+      d(MP.ids[1], "사랑", "사랑-2목장", "권사", 52),
+      d(MP.ids[2], "사랑", "사랑-2목장", "집사", 53),
+    ]);
+  })();
+  return mpReady;
+}
+
+// 「사역신청 + 교인명부」 두 역할을 가진 분 — 처음 부를 때 한 번 만든다(people 에 넣어 두면 after() 가 지운다 · bedirPerson 과 같다)
+async function mindirPerson() {
+  if (!people.mindir) {
+    people.mindir = await makeUser("mindir");
+    await makeMember(people.mindir, "active", ["ministry", "directory"]);
+  }
+  return people.mindir;
+}
+
+// 교인명부 기록의 마지막 id — 그 뒤에 남은 people.lookup 만 센다(같은 개발 DB의 다른 세션 기록이 섞이지 않게 이번 실행의 검색어로 거른다)
+async function auditMark() {
+  return (await call(people.super.token, "auditList", { limit: 1, kind: "people" })).body.rows[0]?.id ?? 0;
+}
+async function lookupsSince(mark, qs) {
+  return (await call(people.super.token, "auditList", { limit: 200, kind: "people" })).body.rows
+    .filter((r) => r.id > mark && r.action === "people.lookup" && qs.includes(r.detail?.q)).map((r) => r.detail);
+}
+
+// 응답에 실리면 안 되는 것 — 교인ID(숫자)·UUID·명부 번호(글자·숫자)·보낸 번호·주소·명부 원래 칸
+function mpNoLeak(bodies, { ids = true } = {}) {
+  const text = JSON.stringify(bodies);
+  assert.ok(!UUID_RE.test(text), "UUID 꼴 값이 실렸다");
+  if (ids) for (const id of [...MP.ids, 990000001, 990000002]) assert.ok(!text.includes(String(id)), "교인ID 가 실렸다: " + id);
+  const phones = [51, 52, 53, 59].flatMap((n) => [mpPhone(n), mpPhone(n).replace(/\D/g, "")]);
+  for (const k of [...phones, "010-1234-5678", "01012345678", CHURCH_ONLY_PHONE, "phone", "비밀주소", "address", "name_key", "mok1",
+    "mok3", "kind2", "position_detail", "믿음-1목장", "사랑-2목장"]) assert.ok(!text.includes(k), "새어 나감: " + k);
+}
+
+test("사역신청 이름을 누르면(ministryPerson) — 사역신청 역할만: 다섯 칸 + 교적 표시 · 번호로 고르지 않는다 · 명단 표시와 같다 · 새지 않는다 · people.lookup {q, count, from}", async () => {
+  await mpFixtures();
+  const m = people.ministry.token;
+  const ask = (extra) => call(m, "ministryPerson", { name: MP.name, ...extra });
+  const mark = await auditMark();
+
+  // ① 같은 소속 한 분(믿음 1) → 그분 한 분만(같은 이름 두 분은 싣지 않는다)
+  const one = await ask({ who: "믿음 1목장" });
+  assert.equal(one.body.ok, true, JSON.stringify(one.body));
+  assert.deepEqual(Object.keys(one.body).sort(), ["church", "mode", "ok", "people", "pick", "total"]);
+  assert.deepEqual([one.body.mode, one.body.pick, one.body.total], ["basic", 0, 3]);
+  assert.deepEqual(one.body.people, [{ name: MP.name, who_type: "교구", group: "믿음", sub: "1", position: "집사" }]);
+  assert.deepEqual(one.body.church, { state: "맞음", reason: "" });
+  // ② 소속 다른 줄 + 명부 한 분(사랑 2 권사)의 번호 → 고르지 않는다(검토 4 — 아무 번호로 「이 번호는 누구」를 떠볼 수 없게).
+  //    교적 표시만 명단처럼 「소속 다름」
+  const ph = await ask({ who: "기쁨 3목장", phone: mpPhone(52) });
+  assert.deepEqual([ph.body.mode, ph.body.pick, ph.body.total], ["basic", null, 3], JSON.stringify(ph.body));
+  assert.deepEqual(ph.body.people.map((p) => [p.group, p.sub, p.position]), [["믿음", "1", "집사"], ["사랑", "2", "권사"], ["사랑", "2", "집사"]]);
+  assert.deepEqual(ph.body.church, { state: "확인 필요", reason: "소속 다름" });
+  // 번호가 틀려도 후보는 같다 — 번호에 따라 달라지는 것은 교적 표시뿐(명단 표시와 같은 수준)
+  const wrong = await ask({ who: "기쁨 3목장", phone: mpPhone(59) });
+  assert.deepEqual([wrong.body.pick, wrong.body.people], [null, ph.body.people]);
+  assert.deepEqual(wrong.body.church, { state: "확인 필요", reason: "같은 이름 3명" });
+  // 같은 소속 둘(사랑 2) + 그중 한 분 번호 → 그래도 고르지 않는다(같은 소속 먼저 · 교인ID 차례)
+  const two = await ask({ who: "사랑 2목장", phone: mpPhone(53) });
+  assert.deepEqual([two.body.pick, two.body.church], [null, { state: "확인 필요", reason: "같은 소속에 같은 이름 2명" }]);
+  assert.deepEqual(two.body.people.map((p) => [p.group, p.position]), [["사랑", "권사"], ["사랑", "집사"], ["믿음", "집사"]]);
+
+  // ③ 창의 표시 = 명단의 표시 — 신청 현황(ministryList)·종이 명단 살펴보기(ministryPaperCheck)의 줄을 화면이 보내는 그대로 보낸다
+  //    (rowAsk: 이름·who·번호 / paperAsk: 교구·목장·이름·번호). 서버가 되읽는 식(ministryApplicant)과 명단 쪽 식이 갈라지면 여기서 잡힌다.
+  const list = await call(m, "ministryList");
+  assert.equal(list.body.ok, true, JSON.stringify(list.body));
+  const mine = list.body.list.filter((x) => x.name === "ca-test-min");
+  assert.ok(mine.length >= 1);
+  for (const x of mine) {
+    const r = await call(m, "ministryPerson", { name: x.name, who: x.who, ...(x.phone ? { phone: x.phone } : {}) });
+    assert.deepEqual(r.body.church, x.church, "신청 현황 " + x.id);
+  }
+  const chk = await call(m, "ministryPaperCheck",
+    { rows: [{ gu: "시험", mok: "0", name: PAPER_NAME, position: "집사", phone: "010-1234-5678", team: "없는팀-" + STAMP }] });
+  assert.equal(chk.body.ok, true, JSON.stringify(chk.body));
+  const pr = chk.body.rows[0];
+  const pw = await call(m, "ministryPerson", { name: pr.name, who_type: "교구", group: pr.gu, sub: pr.mok, phone: pr.phone });
+  assert.deepEqual(pw.body.church, pr.church, "종이 명단");
+  assert.deepEqual(pw.body.church, { state: "확인 필요", reason: "소속 다름" }, "명부는 시험-5목장, 번호가 같다");
+
+  // ④ 새어 나가지 않는다 — 교인ID·명부 번호·보낸 번호·주소·원래 칸
+  mpNoLeak([one.body, ph.body, wrong.body, two.body, pw.body]);
+  for (const b of [one.body, ph.body, two.body, pw.body]) for (const p of b.people) assert.deepEqual(Object.keys(p).sort(), UP_ROW_KEYS);
+  // 틀린 이름은 명부에 묻지 않는다(evPerson 과 같은 readName)
+  assert.equal((await call(m, "ministryPerson", { name: "", who: "믿음 1목장" })).body.error, "no-name");
+  assert.equal((await call(m, "ministryPerson", { name: 'ca-test-"x', who: "믿음 1목장" })).body.error, "bad-char");
+
+  // ⑤ 기록 — 부를 때마다 people.lookup 한 줄 {q, count, from:"ministry"} · 번호는 없다 · byPhone 없음(basic 은 번호로 고르지 않는다)
+  //    최근 것이 앞(auditList 는 id 내림차순)
+  const F = { q: MP.name, from: "ministry" };
+  assert.deepEqual(await lookupsSince(mark, [MP.name]), [{ ...F, count: 3 }, { ...F, count: 3 }, { ...F, count: 3 }, { ...F, count: 1 }]);
+  // 기록 줄을 담당자 화면이 「명부 찾기(사역신청·담당자)」로 읽는다 — audit.js 는 detail.from 을 본다(tests/audit.test.mjs)
+});
+
+test("사역신청 이름을 누르면(ministryPerson) — 교인명부 역할도 있으면·총괄: 교인ID 로 「자세히」 창 · 소속으로 한 분이면 기록 없음 · 번호로 고르면 byPhone · 못 고르면 people.lookup", async () => {
+  await mpFixtures();
+  const md = await mindirPerson();
+  const mark = await auditMark();
+  // 소속으로 한 분(믿음 1) — 번호가 다른 분 것이어도 소속이 먼저 · 기록 없음(「자세히」 창의 peoplePerson 이 people.view 를 남긴다)
+  for (const who of ["mindir", "super"]) {
+    const r = await call(people[who].token, "ministryPerson", { name: MP.name, who: "믿음 1목장", phone: mpPhone(52) });
+    assert.equal(r.body.ok, true, who + " " + JSON.stringify(r.body));
+    assert.deepEqual(Object.keys(r.body).sort(), ["candidates", "mode", "ok", "pick", "total"], who);
+    assert.deepEqual([r.body.mode, r.body.pick, r.body.total], ["full", 0, 3], who);
+    assert.deepEqual(r.body.candidates, [{ person_id: MP.ids[0], name: MP.name, label: "믿음 1목장", position: "집사" }], who);
+  }
+  assert.deepEqual(await lookupsSince(mark, [MP.name]), [], "소속으로 고른 full 이 people.lookup 을 남겼다(이름 한 번에 두 줄이 된다)");
+  // 같은 소속 둘(사랑 2) + 그중 한 분 번호 → 그분 · 번호로 가렸다는 사실만 한 줄(byPhone · 번호 없음)
+  const bp = await call(md.token, "ministryPerson", { name: MP.name, who: "사랑 2목장", phone: mpPhone(53) });
+  assert.deepEqual([bp.body.mode, bp.body.pick, bp.body.total], ["full", 0, 3], JSON.stringify(bp.body));
+  assert.deepEqual(bp.body.candidates, [{ person_id: MP.ids[2], name: MP.name, label: "사랑 2목장", position: "집사" }]);
+  const F = { q: MP.name, from: "ministry" };
+  assert.deepEqual(await lookupsSince(mark, [MP.name]), [{ ...F, count: 1, byPhone: true }]);
+  // 번호가 같은 소속 밖 분(믿음 1)과만 맞으면 고르지 않는다 — 같은 소속 먼저 · 교인ID 차례
+  const out = await call(md.token, "ministryPerson", { name: MP.name, who: "사랑 2목장", phone: mpPhone(51) });
+  assert.equal(out.body.pick, null);
+  assert.deepEqual(out.body.candidates.map((c) => c.person_id), [MP.ids[1], MP.ids[2], MP.ids[0]]);
+  // 담당자 화면 모양(who 없이 구분·소속·세부 · 번호 없음) — 같은 소속 둘이라 못 고름 → 후보 셋
+  const mem = await call(md.token, "ministryPerson", { name: MP.name, who_type: "교구", group: "사랑", sub: "2" });
+  assert.deepEqual([mem.body.pick, mem.body.candidates.map((c) => c.person_id)], [null, [MP.ids[1], MP.ids[2], MP.ids[0]]]);
+  assert.deepEqual(await lookupsSince(mark, [MP.name]), [{ ...F, count: 3 }, { ...F, count: 3 }, { ...F, count: 1, byPhone: true }]);
+  // 연락처·주소·원래 칸은 full 에도 없다(교인ID 만) — 그것은 「자세히」 창(peoplePerson)이 교인명부 역할을 다시 확인하고 준다
+  mpNoLeak([bp.body, out.body, mem.body], { ids: false });
+  const pp = await call(md.token, "peoplePerson", { id: bp.body.candidates[0].person_id });
+  assert.equal(pp.body.ok, true, JSON.stringify(pp.body));
+  assert.equal(pp.body.person.name, MP.name);
+});
+
+test("사역신청 이름을 누르면(ministryPerson) — 성경필사·교인명부 역할만인 분은 못 부른다(403)", async () => {
+  await mpFixtures();
+  for (const who of ["bibleevent", "directory"]) {
+    const r = await call(people[who].token, "ministryPerson", { name: MP.name, who: "믿음 1목장" });
+    assert.deepEqual([r.status, r.body.error], [403, "forbidden"], who);
+  }
+});
+
 // ---------- 성경필사(암송) 작은 지적 A(2026-09-30) — 직분 NFC · 구분만 바꾸기 · 읽기 이름 · .in() 길이 ----------
 test("성경필사 한 분 더하기: 자모분리(NFD) 직분도 완성형으로 — 「집사님」→집사 · 목록 안이라 경고 없음(최종 검토 M1)", async () => {
   await rowFixtures();
@@ -2051,6 +2213,50 @@ test("성경필사 명단 올리기 살펴보기: 40자 한글 이름 150줄도 
     assert.ok(x.notes.some((n) => n.includes("교인명부에 없는 이름")), JSON.stringify(x.notes));
   }
   assert.equal(await dbCount(UP.ev), before, "살펴보기가 줄을 넣었다");
+});
+
+// ---------- 사역신청 시험 참여자(2026-09-30) ----------
+test("시험 참여자: 찾기 → 더하기 → 명단 → 다시 더하기(already) → 빼기 · user_id 안 실음", async () => {
+  const [row] = await rest("app_config?select=value&key=eq.ministryTesters", "GET");
+  const orig = row ? row.value : null;
+  const tok = people.ministry.token;
+  const key = "교구|시험|0|||ca-test-min-" + STAMP;
+  try {
+    const f = await call(tok, "ministryTesterFind", { name: "ca-test-min" });
+    assert.equal(f.body.ok, true, JSON.stringify(f.body));
+    const me = f.body.users.find((u) => u.key === key);
+    assert.ok(me, "찾기에 시험 계정이 없다");
+    assert.equal(me.tester, false);
+    assert.ok(!UUID_RE.test(JSON.stringify(f.body)), "찾기 응답에 UUID");
+
+    const a = await call(tok, "ministryTesterSave", { op: "add", key });
+    assert.equal(a.body.ok, true, JSON.stringify(a.body));
+    const t = a.body.testers.find((x) => x.key === key);
+    assert.ok(t && t.name === "ca-test-min" && t.missing === false, JSON.stringify(a.body.testers));
+    assert.ok(!UUID_RE.test(JSON.stringify(a.body)), "명단 응답에 UUID");
+
+    const again = await call(tok, "ministryTesterSave", { op: "add", key });
+    assert.equal(again.body.already, true);
+    assert.equal(again.body.testers.filter((x) => x.key === key).length, 1);
+
+    const f2 = await call(tok, "ministryTesterFind", { name: "ca-test-min" });
+    assert.equal(f2.body.users.find((u) => u.key === key).tester, true);
+
+    const nf = await call(tok, "ministryTesterSave", { op: "add", key: key + "-없음" });
+    assert.equal(nf.body.error, "not-found");
+    assert.equal((await call(tok, "ministryTesterFind", { name: "" })).body.error, "no-name");
+    assert.equal((await call(tok, "ministryTesterSave", { op: "x", key })).body.error, "invalid");
+
+    const r = await call(tok, "ministryTesterSave", { op: "remove", key });
+    assert.equal(r.body.ok, true);
+    assert.equal(r.body.testers.some((x) => x.key === key), false);
+
+    const log = await rest(`admin_audit?select=action,detail&action=eq.ministry.tester&member_id=eq.${people.ministry.memberId}&order=id.desc&limit=2`, "GET");
+    assert.deepEqual(log.map((x) => x.detail.op), ["remove", "add"]);
+  } finally {
+    await rest("app_config?key=eq.ministryTesters", "DELETE");
+    if (orig !== null) await rest("app_config", "POST", { key: "ministryTesters", value: orig });
+  }
 });
 
 // ---------- 친구 결정(2026-09-30) — SEC-2 · M2 · M5 ----------

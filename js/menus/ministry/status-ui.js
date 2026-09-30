@@ -2,9 +2,11 @@
 // 성경암송 admin-stats.html 의 mnCard·mnRowsHtml·mnPhoneHtml·mnDupBadge·mnGroupsHtml·mnAskCancelReason 을 옮겼다.
 // ⚠️ 사람·서버 글자는 모두 esc — 이 파일이 만든 글이 그대로 innerHTML 로 들어간다.
 // ⚠️ ui.js dialog 의 본문은 white-space:pre-line 이다 — dialog 에 넘기는 html 에는 줄바꿈 글자를 넣지 않는다.
+// 이름을 누르면 교적 창(2026-09-30) — 카드·표·사람별 묶음 머리의 이름이 단추(person-link.js · 열쇠 = 신청 id). 확인 창 안의 이름은 글자 그대로.
 import { esc, dialog } from "../../core/ui.js";
 import { STATES, SHORT, CLS, personKey, teamKey, dupOthers } from "./status-logic.js";
 import { churchBadgeHtml } from "../people/church-badge.js";
+import { personLinkHtml } from "./person-link.js";
 
 const short = (st) => SHORT[st] || st;
 
@@ -58,7 +60,7 @@ export function cardHtml(r, inView, dupHtml) {
   const nm = inView === "person"
     ? `<div class="mn-in-team"><b>${esc(r.team)}</b>${opt}</div>` +
       `<span class="mn-sub"><i>${esc(r.committee)}</i><span class="mn-date" title="신청일">${at} 신청</span></span>`
-    : `<b>${esc(r.name)}</b>${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${paper}${churchBadgeHtml(r.church)}` +
+    : `${personLinkHtml(r.id, r.name)}${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${paper}${churchBadgeHtml(r.church)}` +
       `<span class="mn-sub"><i>${esc(r.who)}</i>${inView === "team" && r.option ? `<i class="mn-in-opt">(${esc(r.option)})</i>` : ""}<span class="mn-date" title="신청일">${at}</span></span>`;
   return `<div class="pl-card ${cls}${inView ? " mn-in" : ""}">
     <div class="pl-hd">
@@ -85,7 +87,7 @@ export function tableHtml(rows, dupM) {
     const at = esc(String(r.at || "").replace(/-/g, "."));
     const dupHtml = dupBadgeHtml(dupOthers(dupM, r));
     return `<tr class="${cls}">
-      <td class="mn-tbl-nm"><b>${esc(r.name)}</b>${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${push}${paper}${churchBadgeHtml(r.church)}</td>
+      <td class="mn-tbl-nm">${personLinkHtml(r.id, r.name)}${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${push}${paper}${churchBadgeHtml(r.church)}</td>
       <td>${esc(r.who)}</td>
       <td class="mn-tbl-team"><i>${esc(r.committee)}</i> › <b>${esc(r.team)}</b>${opt}</td>
       <td class="mn-date">${at}</td>
@@ -136,7 +138,12 @@ export function groupsHtml(rows, view, openSet, dupM) {
       const phone = list.map((r) => r.phone).find(Boolean) || "";
       const teams = new Set(list.map(teamKey)).size;
       const dup = dupOthers(dupM, list);
-      title = `<span class="mn-grp-t">${esc(r0.name)}${churchBadgeHtml(r0.church)}${pos ? ` <em>${esc(pos)}</em>` : ""}<i>${esc(r0.who)}</i></span>` +
+      // 머리의 한 건(kr) — 번호가 남은 건(묶음 안 이름·소속은 모두 같다 · 결정이 난 건은 서버가 번호를 지웠다), 없으면 첫 건.
+      // ⚠️ 이름 단추의 열쇠와 교적 표시를 **같은 건**에서 꺼낸다(2026-09-30 검토 2) — 교적 표시는 그 건의 번호로 셈한 것이고
+      //    창도 그 건(번호 포함)으로 묻는다. 전처럼 표시는 r0(번호 지운 건 · 「같은 이름 N명」), 열쇠는 번호 건이면 창이 「소속 다름」을 연다.
+      //    머리의 번호(phone)도 같은 건의 것이다(list 에서 처음 찾은 번호).
+      const kr = list.find((r) => r.phone) || r0;
+      title = `<span class="mn-grp-t">${personLinkHtml(kr.id, r0.name)}${churchBadgeHtml(kr.church)}${pos ? ` <em>${esc(pos)}</em>` : ""}<i>${esc(r0.who)}</i></span>` +
         `<span class="mn-grp-n">${teams}개 사역</span>` +
         ((phone || dup.length) ? `<span class="mn-grp-sub mn-phone-line">${phone ? phoneHtml(phone) : ""}${dupBadgeHtml(dup)}</span>` : "") +
         rowsHtml(list, (r) => r.team, (r) => r.committee);

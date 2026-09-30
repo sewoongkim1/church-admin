@@ -1,6 +1,8 @@
 // 바꾼 기록 — 총괄 관리자(super)만. 최근 100건.
 // 「교인명부 기록」(people.*)은 따로 본다 — 찾기·보기가 많아 바꾼 일을 덮지 않게(서버 auditList 의 kind · 2026-09-29).
 // 성경필사(암송): event.* 는 「바꾼 기록」, people.lookup·people.fill 은 people.* 라 「교인명부 기록」으로 간다.
+// people.lookup 은 세 곳이 남긴다 — 성경필사 evPeopleLookup·evPerson(detail 에 from 없음) · 사역신청·담당자 ministryPerson
+// (from:"ministry" · 2026-09-30 검토 5). 이름은 labelOf 가 detail 을 보고 가른다(LABEL 만 보면 사역신청 열람이 「성경필사」로 찍힌다).
 import { esc, kstTime, errorText } from "../../core/ui.js";
 
 const TITLE = `<h2 class="page-title">📜 바꾼 기록</h2>`;
@@ -11,6 +13,7 @@ export const LABEL = {
   "ministry.status": "사역 상태 바꿈", "ministry.delete": "사역 신청 삭제",
   "ministry.catalog": "사역팀 정보 고침", "ministry.order": "사역팀 차례 바꿈",
   "ministry.paper": "종이 명단 넣음",
+  "ministry.tester": "사역 시험 참여자",
   "people.search": "명부 찾기", "people.view": "교인 보기", "people.export": "명부 내려받기", "people.import": "명부 올림",
   // 성경필사(암송) — detail 모양은 서버 index.ts 의 audit() 호출과 한 벌(tests/audit.test.mjs 가 못 박는다)
   "event.create": "성경필사 회차 만듦", "event.settings": "성경필사 회차 설정 바꿈",
@@ -18,6 +21,13 @@ export const LABEL = {
   "event.upload": "성경필사 명단 올림",
   "people.lookup": "명부 찾기(성경필사)", "people.fill": "명부로 빈칸 채움(성경필사)",
 };
+// detail 로 가르는 이름 — 같은 action 을 여러 화면이 남길 때(칸 이름·값은 서버 events-person.ts ministryLookupLog 와 한 벌)
+export const LOOKUP_MINISTRY = "명부 찾기(사역신청·담당자)";
+export function labelOf(r) {
+  const a = (r && r.action) || "";
+  if (a === "people.lookup" && r.detail && r.detail.from === "ministry") return LOOKUP_MINISTRY;
+  return LABEL[a] || a;
+}
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };
 const KINDS = [["", "바꾼 기록"], ["people", "교인명부 기록"]];
 
@@ -65,6 +75,7 @@ export function detailText(r) {
   if (r.action === "ministry.catalog") return `${d.team || ""} · ${(d.fields || []).join(", ")}`;
   if (r.action === "ministry.order") return `${(d.ids || []).length}팀`;
   if (r.action === "ministry.paper") return `저장 ${d.saved} · 새 계정 ${d.created} · 그대로 ${d.same} · 오류 ${d.errors}`;
+  if (r.action === "ministry.tester") return [d.op === "add" ? "더함" : "뺌", d.name, d.who].filter(Boolean).join(" · ");
   if (r.action === "people.search") {
     const f = filtersText(d.filters);
     return `${d.q ? `‘${d.q}’` : "(검색어 없음)"}${f ? " · " + f : ""} · ${d.total}명${d.page ? ` · ${d.page + 1}쪽` : ""}`;
@@ -102,7 +113,8 @@ export function detailText(r) {
       `틀림 ${d.bad ?? 0}`, d.fillOn ? `교인명부로 채움 ${d.fill ?? 0}` : "", d.sameName ? `동명이인 ${d.sameName}` : "",
       d.oddPosition ? `목록 밖 직분 ${d.oddPosition}` : "", d.failed ? `실패 ${d.failed}` : "");
   }
-  if (r.action === "people.lookup") return `‘${d.q || ""}’ · ${d.count ?? 0}명`;
+  // 사역신청·담당자 화면이 명부 번호로 한 분을 가렸으면 byPhone(번호 자체는 서버가 싣지 않는다)
+  if (r.action === "people.lookup") return `‘${d.q || ""}’ · ${d.count ?? 0}명${d.byPhone === true ? " · 번호로 고름" : ""}`;
   // people.fill — 2026-09-30 부터 명부에 물은 이름(asked·askedNames)도 남는다(SEC-2 · 채운 것이 없어도 한 줄). 그 전 기록은 옛 모양 그대로.
   if (r.action === "people.fill") {
     if (d.asked == null) return joinDot(`채운 줄 ${d.rows ?? 0}`, someNames(d.names));
@@ -124,7 +136,7 @@ export async function render(el, { call, query }) {
       const dt = detailText(x);
       const who = x.who || (x.action === "people.import" ? "(올리기 스크립트)" : "(지워진 분)");
       return `<div class="card">
-      <div><b>${esc(LABEL[x.action] || x.action)}</b>${x.target ? ` · ${esc(x.target)}` : ""}</div>
+      <div><b>${esc(labelOf(x))}</b>${x.target ? ` · ${esc(x.target)}` : ""}</div>
       <div class="muted">${esc(kstTime(x.at))} · ${esc(who)}</div>
       ${dt ? `<div style="margin-top:4px;font-size:14px">${esc(dt)}</div>` : ""}
     </div>`;

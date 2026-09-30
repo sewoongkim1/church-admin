@@ -15,6 +15,8 @@ export const MENUS = [
     role: "ministry", load: () => import("./ministry/paper.js") },
   { id: "appointed", group: "사역신청", icon: "🎉", label: "임명현황", desc: "임명된 분을 부서·교구·사람별로 · 내려받기",
     role: "ministry", load: () => import("./ministry/appointed.js") },
+  { id: "testers", group: "사역신청", icon: "🧪", label: "시험 참여자", desc: "신청 기간 전에 첫 화면 사역신청을 열어 줄 분 · 더하기·빼기",
+    role: "ministry", load: () => import("./ministry/testers.js") },
   { id: "be-roster", group: "성경필사(암송)", icon: "📋", label: "회차·명단", desc: "완서자 명단 보기 · 고치기 · 회차 설정",
     role: "bibleevent", load: () => import("./bibleevent/roster.js") },
   { id: "be-upload", group: "성경필사(암송)", icon: "📤", label: "명단 올리기", desc: "엑셀·붙여넣기로 한꺼번에 더하기",

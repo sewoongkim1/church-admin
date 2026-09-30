@@ -6,11 +6,13 @@
 //   ② 메뉴를 열 때마다 새로 불러온다(옛 mnLoaded 캐시를 없앰 — 여러 담당자가 서로 옛 화면을 보던 것).
 //   ③ 임명 알림 결과 넷(이미 보냄 / 보냄 N대 / 안 켜심 / 발송 실패)을 가른다. 발송 실패는 toast 가 아니라 창으로.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
-import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts }
+import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts, clearPhone }
   from "./status-logic.js";
 import { cardHtml, groupsHtml, dupBadgeHtml, tableHtml, askCancelReason, confirmAppoint, confirmDelete } from "./status-ui.js";
 import { CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
 import { pickDate, fmtDateLabel } from "../../core/picker.js";
+import { openChurchPerson } from "../bibleevent/person-popup.js";
+import { PERSON_ACTION, rowAsk } from "./person-link.js";
 
 const TITLE = `<h2 class="page-title">📋 신청 현황</h2>`;
 const VIEWS = [["row", "건별", "건"], ["person", "사람별", "명"], ["team", "사역별", "팀"]];
@@ -165,7 +167,8 @@ export async function render(el, { call }) {
       return;
     }
     if (d.status) r.status = d.status;
-    if (d.phoneCleared) r.phone = "";   // 결정이 나면 서버가 번호를 지운다 — 카드도 그 자리에서 지워야 사실과 맞다
+    // 결정이 나면 서버가 번호를 지운다 — 카드도 그 자리에서 지워야 사실과 맞다. 그 번호로 셈한 교적 표시도 함께 비운다(clearPhone)
+    if (d.phoneCleared) clearPhone(r);
     if (note !== undefined) r.note = note;
     if (status === "임명확정") {
       // 넷을 가른다. ⚠️ 「이미 보냄」을 「안 켜심」으로 적으면, 알림이 간 분께 담당자가 또 연락한다
@@ -228,6 +231,15 @@ export async function render(el, { call }) {
     if (tel) {
       const g = tel.closest("details"), was = g.open;
       setTimeout(() => { if (g.open !== was) g.open = was; }, 0);
+      return;
+    }
+    // 이름 → 교적 창(2026-09-30) — 단추엔 신청 id 만 있다. 보낼 것(이름·소속·번호)은 메모리의 줄에서 꺼낸다(번호를 DOM 에 싣지 않는다).
+    // 사람별 묶음 머리(<summary>) 안에서 눌러도 묶음이 여닫히지 않게 기본 동작을 막는다(열린 상태 메뉴는 아래 onDoc 이 닫는다).
+    const nb = e.target.closest("[data-person]");
+    if (nb) {
+      e.preventDefault();
+      const r = find(nb.dataset.person);
+      if (r) openChurchPerson({ call, action: PERSON_ACTION, ...rowAsk(r), anchor: nb });
       return;
     }
     const b = e.target.closest("button[data-act]");

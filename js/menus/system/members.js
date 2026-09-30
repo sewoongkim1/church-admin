@@ -2,7 +2,11 @@
 //   승인 대기 → 승인(역할 고르기) / 거절 · 사용 중 → 역할 바꾸기 / 정지 · 정지됨 → 다시 사용
 // 막는 것은 서버다(스스로 정지·스스로 super 빼기·마지막 super 는 서버가 거절한다). 화면은 그 단추를 미리 감출 뿐.
 // ⚠️ 기존 담당자 표시(known_ministry_staff)는 본인이 적은 이름·소속만 맞춘 것 — 권한의 근거가 아니다.
+// 이름을 누르면 교적 창(2026-09-30) — 본인이 적은 이름·소속으로 교인명부를 찾는다(총괄만 보는 화면이라 늘 「자세히」 창).
+//   단추엔 담당자 id 만 싣는다(ministry/person-link.js). 승인 전 본인 확인을 돕는 것일 뿐 — 이것도 권한의 근거가 아니다.
 import { esc, affiliation, kstTime, toast, dialog, busy, errorText } from "../../core/ui.js";
+import { openChurchPerson } from "../bibleevent/person-popup.js";
+import { PERSON_ACTION, personLinkHtml, memberAsk } from "../ministry/person-link.js";
 
 const TITLE = `<h2 class="page-title">🔑 담당자·역할</h2>`;
 
@@ -15,7 +19,7 @@ export async function render(el, { me, call }) {
 
 const labelsOf = (roles, ids) => roles.filter((ro) => ids.includes(ro.id)).map((ro) => ro.label).join(" · ");
 const picked = (card) => [...card.querySelectorAll(".checks input:checked")].map((i) => i.value);
-const who = (m) => `<b>${esc(m.name)}</b> <span class="muted">${esc(affiliation(m))}</span>`;
+const who = (m) => `${personLinkHtml(m.id, m.name)} <span class="muted">${esc(affiliation(m))}</span>`;
 
 function roleChecks(roles, checked, disabledIds = []) {
   return `<div class="checks">${roles.map((ro) => `<label title="${esc(ro.description)}">
@@ -76,6 +80,13 @@ function draw(el, r, me, call) {
 
   const reload = () => render(el, { me, call });
   el.onclick = async (e) => {
+    // 이름 → 교적 창 — 보낼 것(이름·교구·목장 또는 부서·학년)은 받은 담당자 줄에서 꺼낸다
+    const nb = e.target.closest("[data-person]");
+    if (nb) {
+      const pm = r.members.find((x) => String(x.id) === nb.dataset.person);
+      if (pm) openChurchPerson({ call, action: PERSON_ACTION, ...memberAsk(pm), anchor: nb });
+      return;
+    }
     const b = e.target.closest("button[data-act]");
     if (!b) return;
     const act = b.dataset.act;

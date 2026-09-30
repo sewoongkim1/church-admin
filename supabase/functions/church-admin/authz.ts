@@ -29,6 +29,9 @@ export const ACTION_ROLES: Record<string, string | null> = {
   // 안 바꾸고, 넣기(save)만 계정·신청을 만든다 — 둘 다 담당자만.
   ministryPaperCheck: "ministry",
   ministryPaperSave: "ministry",
+  // 사역신청(2026-09-30 친구 요청) — 이름을 누르면 교적 창 — 담당자·역할 화면(총괄)도 이것을 부른다.
+  // 모양은 index.ts ministryPerson 이 부른 분의 역할로 정한다(evPerson 과 같다 — 교인명부 역할·총괄이면 교인ID, 아니면 다섯 칸 + 교적 표시).
+  ministryPerson: "ministry",
   // 교인명부(2026-09-29) — 찾기·한 분 보기·현황·내려받기. 읽기만(원본은 dimode). 찾기·보기·내려받기는 열람 기록에 남는다.
   peopleSearch: "directory",
   peoplePerson: "directory",
@@ -58,6 +61,11 @@ export const ACTION_ROLES: Record<string, string | null> = {
   // 성경필사(암송) — 이름을 누르면 교적 창(계획 Task 16 · 2026-09-30). 모양은 index.ts evPerson 이 부른 분의 역할로 정한다:
   // 교인명부 역할·총괄이면 교인ID(「자세히」 창은 peoplePerson 이 역할을 다시 본다), 아니면 다섯 칸 + 교적 표시(people.lookup).
   evPerson: "bibleevent",
+  // 사역신청 시험 참여자(2026-09-30) — 기간 밖에도 성경암송 첫 화면에 🤝 사역신청이 보이는 앱 계정. 명단은 app_config.ministryTesters
+  // (성경암송 api 가 읽는다). 찾기는 앱 계정(users)을 이름으로 — user_id 는 싣지 않는다. 더하기·빼기는 바꾼 기록 ministry.tester.
+  ministryTesters: "ministry",
+  ministryTesterFind: "ministry",
+  ministryTesterSave: "ministry",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

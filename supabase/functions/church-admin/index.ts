@@ -29,6 +29,10 @@ import { applyFill, fillNames, filledNames, judgeUpload, lookupName, lookupOut, 
 
 // 성경필사(암송) 이름을 누르면 교적 창(Task 16) — 이 과제의 이름은 events-person.ts 에서만 가져온다(CONTRACT 5)
 import { personAsk, personOut, type PersonCand } from "./events-person.ts";
+// 사역신청·담당자 이름을 누르면 교적 창(ministryPerson · 2026-09-30) — ⚠️ 이미 들인 이름(applicantFromSignup·applicantFromWho·personAsk·readName)은 적지 않는다
+import { personOutFor } from "./events-person.ts";
+// ministryPerson 의 맞대 볼 줄·기록(2026-09-30 검토 3·5) — 받은 줄을 읽는 식과 기록 모양을 순수 함수로(시험이 명단 쪽 식과 맞댄다)
+import { ministryApplicant, ministryLookupLog } from "./events-person.ts";
 // 목장이 비었거나 99 인 교구 줄의 같은 분 판정(최종 검토 I1) — 위 import 에 없는 이름만
 import { looseKey, looseSame } from "./events-rows.ts";
 import { looseIndex } from "./events-upload.ts";
@@ -43,6 +47,8 @@ import { checkEventEdit, eventDbPatch } from "./events-rules.ts";
 // 친구 결정(2026-09-30) — 지난 회차에 넣는 줄의 낸 날(M2) · people.fill 에 물은 이름(SEC-2) · 위 import 에 없는 이름만
 import { pastEventCreatedAt } from "./events-rules.ts";
 import { fillRecord } from "./events-upload.ts";
+// 성경필사 명단 줄의 교적 표시 — 옮겨 적은 줄은 맞음(transcribedSame · 2026-09-30 친구 제보). evRoster·evRowChurch 가 쓴다.
+import { churchForSignup } from "./events-person.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -476,6 +482,92 @@ async function ministryDelete(ctx: Ctx, b: any) {
   return { ok: true, deleted };
 }
 
+// ---------- 사역신청 — 시험 참여자(2026-09-30) ----------
+// 명단에 오른 앱 계정은 기간 밖에도 성경암송 첫 화면에 🤝 사역신청이 보이고 신청·취소가 된다(그쪽 api ministryTester·ministryApply).
+// 명단은 app_config.ministryTesters = identity_key 배열(ministryAdmins 와 같은 모양). ⚠️ 성경암송 PUBLIC_CONFIG_KEYS 에 넣지 않는다(이름이 든다).
+// ⚠️ 키가 아니라 사람으로 맞댄다 — 등록 뒤 소속이 바뀐 분의 옛 키는 user_identity_aliases 로 간다(keysToUserIds).
+// ⚠️ 응답에 user_id 를 싣지 않는다. 손잡이는 identity_key(이름·소속으로 만든 값이라 비밀이 아니다).
+// ⚠️ 읽고-고쳐-쓰기다. 화면이 저장 중 단추를 잠그고, 저장 뒤 **다시 읽은** 명단을 돌려준다.
+const TESTERS_KEY = "ministryTesters";
+const appUserWho = (u: any) =>
+  (u.type === "교구" ? [u.gu, u.mok ? u.mok + "목장" : ""] : [u.bu, u.grade]).filter(Boolean).join(" ");
+
+async function testerKeys(): Promise<string[]> {
+  const { data, error } = await db.from("app_config").select("value").eq("key", TESTERS_KEY).maybeSingle();
+  if (error) throw error;
+  return Array.isArray(data?.value) ? (data!.value as unknown[]).map((x) => norm(x)).filter(Boolean) : [];
+}
+
+async function testersView(keys: string[]) {
+  const who = await keysToUserIds(keys);
+  const ids = [...new Set(who.values())];
+  const byId = new Map<string, any>();
+  if (ids.length) {
+    const { data, error } = await db.from("users")
+      .select("id,identity_key,type,gu,mok,bu,grade,name,last_seen_at").in("id", ids);
+    if (error) throw error;
+    for (const u of (data ?? []) as any[]) byId.set(u.id, u);
+  }
+  return keys.map((k) => {
+    const u = byId.get(who.get(k) ?? "");
+    // 계정이 지워졌거나 키에 쓸 수 없는 글자가 섞였다 — 들어올 수 없으니 화면이 「빼 주세요」로 알린다
+    if (!u) return { key: k, name: "", who: "", last_seen_at: null, moved: false, missing: true };
+    return { key: k, name: u.name ?? "", who: appUserWho(u), last_seen_at: u.last_seen_at ?? null,
+      moved: u.identity_key !== k, missing: false };
+  });
+}
+
+async function ministryTesters() {
+  return { ok: true, testers: await testersView(await testerKeys()) };
+}
+
+// 이름으로 앱 계정 찾기 — 앱에 한 번이라도 로그인한 분만 있다. 동명이인은 소속·마지막 접속으로 가른다.
+async function ministryTesterFind(b: any) {
+  const q = norm(b.name);
+  if (!q) return { ok: false, error: "no-name" };
+  if (q.length > 40) return { ok: false, error: "too-long" };
+  const pattern = q.replace(/[\\%_]/g, "\\$&");
+  const { data, error } = await db.from("users")
+    .select("id,identity_key,type,gu,mok,bu,grade,name,last_seen_at")
+    .ilike("name", `%${pattern}%`).order("name").order("id").limit(31);
+  if (error) throw error;
+  const rows = (data ?? []) as any[];
+  const mine = new Set((await keysToUserIds(await testerKeys())).values());
+  return { ok: true, more: rows.length > 30, users: rows.slice(0, 30).map((u) => ({
+    key: u.identity_key, name: u.name ?? "", who: appUserWho(u), last_seen_at: u.last_seen_at ?? null, tester: mine.has(u.id) })) };
+}
+
+// 한 분씩 더하기·빼기 — 목록을 통째로 받지 않는다(옛 화면·동시 편집이 다른 분을 조용히 지운다)
+async function ministryTesterSave(ctx: Ctx, b: any) {
+  const op = String(b.op ?? "");
+  const key = norm(b.key);
+  if ((op !== "add" && op !== "remove") || !key || key.length > 200) return { ok: false, error: "invalid" };
+  const keys = await testerKeys();
+  let name = "", who = "";
+  if (op === "add") {
+    // 더할 때는 users 에 있는 키만 — 화면은 찾기 결과에서 고른다
+    const { data: u, error } = await db.from("users").select("id,type,gu,mok,bu,grade,name").eq("identity_key", key).maybeSingle();
+    if (error) throw error;
+    if (!u) return { ok: false, error: "not-found" };
+    // 같은 분이 옛 키로 이미 있으면 더하지 않는다(사람으로 맞댄다)
+    const have = new Set((await keysToUserIds(keys)).values());
+    if (have.has(u.id)) return { ok: true, already: true, testers: await testersView(keys) };
+    keys.push(key);
+    name = u.name ?? ""; who = appUserWho(u);
+  } else {
+    const i = keys.indexOf(key);
+    if (i < 0) return { ok: true, already: true, testers: await testersView(keys) };   // 이미 빠졌다 — 쓰지도 기록하지도 않는다
+    const [v] = await testersView([key]);
+    name = v.name; who = v.who;
+    keys.splice(i, 1);
+  }
+  const { error } = await db.from("app_config").upsert(
+    { key: TESTERS_KEY, value: keys, updated_at: new Date().toISOString() }, { onConflict: "key" });
+  if (error) throw error;
+  await audit(ctx, "ministry.tester", "", { op, name, who });
+  return { ok: true, testers: await testersView(await testerKeys()) };
+}
+
 // ---------- 사역신청 — 사역팀 정보(4·5단계 · 2026-09-29) ----------
 // 원문: docs/port/ministry-catalog-legacy.md 1.2·1.4·1.7·1.8. 원문 ministryCatalog 는 성도 화면과
 // 공유해 게이트가 없었지만, 여기서는 관리자 전용(canCall)이라 ministryAdminError 를 두지 않는다.
@@ -869,12 +961,13 @@ async function peopleSource(): Promise<{ source_date: string; total: number } | 
 
 // 사역신청 줄을 교적과 맞댄다 — 명부가 한 번도 안 올라왔으면 null(화면이 표시를 아예 그리지 않는다).
 // 신청자 이름으로만 묻는다(200개씩) — 8,672명 전체를 읽지 않게.
+// kind2 — 성경필사 줄의 「옮겨 적은 줄」 판정(churchForSignup · transcribedSame)에만 쓴다. 응답엔 { state, reason } 두 칸만 간다.
 async function churchLookup(names: unknown[]): Promise<Map<string, Cand[]> | null> {
   if (!(await peopleSource())) return null;
   const keys = lookupKeys(names);
   const out = new Map<string, Cand[]>();
   for (let i = 0; i < keys.length; i += 200) {
-    const { data, error } = await db.from("church_people").select("name_key,mok1,mok3,school_dept,phone_digits")
+    const { data, error } = await db.from("church_people").select("name_key,mok1,mok3,school_dept,phone_digits,kind2")
       .in("name_key", keys.slice(i, i + 200));
     if (error) throw error;
     for (const r of (data ?? []) as any[]) {
@@ -1064,7 +1157,7 @@ async function evRoster(b: any) {
     ok: true,
     event: evOut(ev, counts.get(ev.id) ?? 0),
     source: src ? { date: src.source_date, total: src.total } : null,
-    rows: rows.map((r) => rowOut(r, churchFor(idx, applicantFromSignup(r)))),
+    rows: rows.map((r) => rowOut(r, churchForSignup(idx, r))),   // 옮겨 적은 줄은 맞음(transcribedSame) — 이름을 누르면 창(evPerson)과 같은 식
   };
 }
 
@@ -1280,8 +1373,9 @@ async function evRowRead(id: number): Promise<any | null> {
 }
 
 // 한 줄의 교적 표시 — 이름 하나만 묻는다. 쓰기 **전에** 부른다(쓴 뒤에 실패해 500 이 되지 않게).
+// 명단(evRoster)과 같은 식(churchForSignup — 옮겨 적은 줄은 맞음).
 async function evRowChurch(r: { who_type: string; group_name: string; sub_name: string; name: string }) {
-  return churchFor(await churchLookup([r.name]), applicantFromSignup(r));
+  return churchForSignup(await churchLookup([r.name]), r);
 }
 
 // 한 분 더하기 — source='import' · 메모 앞에 「담당자가 더함」 · 계정은 **하나일 때만** 잇는다(둘 이상이면 알리기만).
@@ -1554,6 +1648,38 @@ async function evPerson(ctx: Ctx, b: any) {
   return { ok: true, ...out };
 }
 
+// ---------- 사역신청·담당자 — 이름을 누르면 교적 창 (2026-09-30 · 친구 요청) ----------
+// 성경필사 evPerson 과 **같은 창·같은 규칙·같은 모양**(events-person.ts personOutFor) — 신청 현황·임명현황·종이 명단 올리기 결과,
+// 그리고 시스템 → 담당자·역할(총괄 — ministry 게이트를 super 로 지난다)이 부른다. evPerson 은 고치지 않았다(성경필사 역할이 부른다).
+// ⚠️ 모양은 **부른 분의 역할**로 여기서 정한다(ctx.roles — 화면이 보낸 것을 믿지 않는다): directory·super → full(교인ID →
+//    화면이 peoplePerson 「자세히」 창 · 그 액션이 directory 를 다시 본다), 그 밖(사역신청 역할만) → basic(다섯 칸 + 교적 표시).
+// ⚠️ 맞대 볼 줄 — ministryApplicant(events-person.ts) 하나로 읽는다: who(신청 현황·임명현황 줄의 「화평 20목장」·「유치부 …」)가
+//    오면 ministryList 의 교적 표시와 **같은 함수** applicantFromWho(그래야 창의 표시 = 명단의 표시), 없으면 구분·소속·세부(personAsk —
+//    종이 명단: 교구·교구·목장 / 담당자: 교구·교구·목장 또는 교회학교·부서·학년). 여기서 따로 읽지 말 것 — 시험이 그 함수를 명단 쪽 식과 맞댄다.
+// ⚠️ 전화를 받는 까닭 — 사역신청 줄엔 성도님이 적은 번호가 있고, 명단의 교적 표시(「소속 다름」)도 그 번호로 나온다.
+//    **번호로 고르는 것은 full(교인명부·총괄)뿐**(personOutFor — 검토 4): 같은 소속이 둘이거나 소속 다른 동명이인일 때 명부 번호가
+//    **정확히 한 분**과 맞으면 그분. 사역신청 역할만(basic)이면 번호는 교적 표시에만 쓰고 고르지 않는다 — 화면이 보낸 아무 번호로
+//    「이 번호는 어느 목장 누구」를 떠볼 수 없게.
+//    명부 번호(phone_digits)는 고르는 데만 읽고 **응답에 싣지 않는다**(personOutFor 의 명시적 칸 지도) · 받은 번호는 기록에도 안 남긴다.
+//    주소·생년월일·사진 칸은 읽지 않는다(EV_PERSON_COLS + 번호 하나).
+// ⚠️ 기록 people.lookup — ministryLookupLog: basic 이면 늘, full 이면 고르지 못했을 때(pick null)와 **번호로 골랐을 때**(byPhone:true).
+//    모양 {q, count, from:"ministry"(+ byPhone)} — 「교인명부 기록」이 「명부 찾기(사역신청·담당자)」로 가른다(evPerson 은 from 없음 → 성경필사).
+const MIN_PERSON_COLS = EV_PERSON_COLS + ",phone_digits";
+
+async function ministryPerson(ctx: Ctx, b: any) {
+  const q = readName(b.name);                                       // evPerson 과 같은 이름 검사(no-name · bad-char · too-long)
+  if (q.error) return { ok: false, error: q.error };
+  if (!(await peopleSource())) return { ok: true, mode: "none" };   // 명부가 한 번도 안 올라왔다 — 묻지도 기록하지도 않는다
+  const a = ministryApplicant(b, q.name);
+  const cands = await allRows(() => db.from("church_people").select(MIN_PERSON_COLS)
+    .eq("name_key", q.key).order("person_id", { ascending: true }));
+  const full = ctx.roles.includes("directory") || ctx.roles.includes("super");
+  const out = personOutFor(cands as PersonCand[], a, full);
+  const log = ministryLookupLog(cands as PersonCand[], a, out, q.name);
+  if (log) await audit(ctx, "people.lookup", "", log);
+  return { ok: true, ...out };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -1589,6 +1715,9 @@ Deno.serve(async (req) => {
       case "ministryCatalogOrder": return json(await ministryCatalogOrder(ctx, b));
       case "ministryPaperCheck": return json(await ministryPaper(ctx, b, false));
       case "ministryPaperSave":  return json(await ministryPaper(ctx, b, true));
+      case "ministryTesters":    return json(await ministryTesters());
+      case "ministryTesterFind": return json(await ministryTesterFind(b));
+      case "ministryTesterSave": return json(await ministryTesterSave(ctx, b));
       case "peopleSearch": return json(await peopleSearch(ctx, b));
       case "peoplePerson": return json(await peoplePerson(ctx, b));
       case "peopleStats":  return json(await peopleStats());
@@ -1606,6 +1735,7 @@ Deno.serve(async (req) => {
       case "evUploadSave":   return json(await evUpload(ctx, b, true));
       case "evPeopleLookup": return json(await evPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
+      case "ministryPerson": return json(await ministryPerson(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);
