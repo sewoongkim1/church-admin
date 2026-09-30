@@ -110,6 +110,8 @@ export async function openEventForm({ call, ev = null, onStale = null } = {}) {
       if (!r.ok && r.error === "needs-confirm") {
         // 서버는 아직 아무것도 쓰지 않았다 — 「보이게 하기」를 누를 때만 다시 보낸다
         const yes = await dialog({ title: "👁 성도님께 보이게 할까요?", text: CONFIRM_TEXT, ok: "보이게 하기", cancel: "그만두기" });
+        // 확인 창이 떠 있는 사이 창이 닫혔다(메뉴 옮김·다시 부팅) — 「보이게 하기」를 눌렀어도 보내지 않는다(FE-4)
+        if (!root.isConnected) return { ok: false };
         if (!yes) return { ok: false, message: "저장하지 않았어요 — 아무것도 바뀌지 않았어요" };
         r = await call("evEventSave", { ...body, confirmListed: true });
       }
