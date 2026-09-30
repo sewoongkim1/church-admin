@@ -47,7 +47,9 @@ import { checkEventEdit, eventDbPatch } from "./events-rules.ts";
 // 친구 결정(2026-09-30) — 지난 회차에 넣는 줄의 낸 날(M2) · people.fill 에 물은 이름(SEC-2) · 위 import 에 없는 이름만
 import { pastEventCreatedAt } from "./events-rules.ts";
 import { fillRecord } from "./events-upload.ts";
-// 성경필사 명단 줄의 교적 표시 — 옮겨 적은 줄은 맞음(transcribedSame · 2026-09-30 친구 제보). evRoster·evRowChurch 가 쓴다.
+// 성경필사 명단 줄의 교적 표시 — 옮겨 적은 줄은 맞음(signupSame · 2026-09-30 친구 제보). evRoster·evRowChurch 가 쓴다.
+//   ⚠️ 그래서 위 「성경필사(암송)(Task 5)」 줄의 applicantFromSignup 은 이제 이 파일에서 부르지 않는다 — 기존 import 줄이라 고치지 않고 두었다.
+//      명단 줄의 교적 표시를 applicantFromSignup + churchFor 로 되돌려 짜면 옮겨 적은 줄·아이 빼기가 빠진다 — churchForSignup 을 쓴다.
 import { churchForSignup } from "./events-person.ts";
 
 const cors = {
@@ -961,7 +963,8 @@ async function peopleSource(): Promise<{ source_date: string; total: number } | 
 
 // 사역신청 줄을 교적과 맞댄다 — 명부가 한 번도 안 올라왔으면 null(화면이 표시를 아예 그리지 않는다).
 // 신청자 이름으로만 묻는다(200개씩) — 8,672명 전체를 읽지 않게.
-// kind2 — 성경필사 줄의 「옮겨 적은 줄」 판정(churchForSignup · transcribedSame)에만 쓴다. 응답엔 { state, reason } 두 칸만 간다.
+// kind2 — 판정에만 쓴다: 명부의 아이 가리기(people-match.ts candKid — 「남성」 갈래는 사역 줄도) · 성경필사 줄의 「옮겨 적은 줄」(churchForSignup).
+//   ⚠️ 이 칸을 select 에서 빼면 아이를 못 가려 조용히 틀린다(오류가 아니다). 응답엔 { state, reason } 두 칸만 간다.
 async function churchLookup(names: unknown[]): Promise<Map<string, Cand[]> | null> {
   if (!(await peopleSource())) return null;
   const keys = lookupKeys(names);

@@ -19,7 +19,8 @@ export function mokNumber(s: unknown): number | null {
   return m ? Number(m[1]) : null;
 }
 
-// kind2(장년·교회학교·학생 …)는 성경필사 줄의 「옮겨 적은 줄」 판정(events-person.ts transcribedSame)에만 쓴다 — 맨 위 ⚠️ 그대로, 밖으로 내보내지 않는다.
+// kind2(장년·교회학교·학생 …)는 판정에만 쓴다 — 명부의 아이 가리기(candKid)와 성경필사 줄의 「옮겨 적은 줄」(events-person.ts transcribedSame).
+//   맨 위 ⚠️ 그대로, 밖으로 내보내지 않는다.
 export type Cand = { kind2: string; mok1: string; mok3: string; school_dept: string; phones: string[] };
 // men — 신청 쪽 목장 칸에 「남성」이 적혔다(「소망 남성」·「남성목장」). 교회학교 줄은 늘 false.
 export type Applicant = { type: "교구" | "교회학교"; gu: string; mok: number | null; men: boolean; bu: string; name: string; phone: string };
@@ -74,6 +75,13 @@ export const mokUnknown = (a: Applicant): boolean =>
 // 교적 목장 칸에 「남성」이 든 분 — 「소망-남성1」·「은혜-남성목장」 모두.
 export const candMen = (c: Cand): boolean => /남성/.test(c.mok3);
 
+// 명부의 아이(kind2 교회학교·학생) — events-people.ts KID_KIND2 와 **같은 목록**이다(그쪽은 이 파일을 import 하므로 거꾸로 들이지 않는다 ·
+//   tests/people-match.test.mjs 가 mapChurchPerson 의 규칙 1 과 맞대 본다).
+// ⚠️ 명부에는 아이도 가족의 교구·목장(mok1·mok3)이 있다(events-people.ts ⚠️ · 2026-09-29 135줄) — 「소망-남성1」 목장 칸의 아이는
+//    그 목장 아버지의 아이일 뿐 「소망 남성」 줄의 어른이 아니다. 저장소도 교구 줄과 명부의 아이를 다른 사람으로 본다(fillDecision kid-adult).
+export const KID_KIND2 = ["교회학교", "학생"];
+export const candKid = (c: Cand): boolean => KID_KIND2.includes(c.kind2);
+
 // 같은 소속이 없을 때 같은 교구 후보 수로 「목장 확인(같은 교구 N명)」을 낼 줄 — 목장을 모르거나(99·빈칸),
 // 「남성」이라 적었는데 교적 남성 목장에 같은 이름이 없는 분(교적은 숫자 목장 — 사실대로 「목장 확인」).
 // matchChurch 와 events-person.ts personPickFor(번호를 같은 교구 안에서만 보는 단계)가 **같은 함수**로 판정한다.
@@ -84,7 +92,11 @@ export function sameAffiliation(c: Cand, a: Applicant): boolean {
   if (a.type === "교구") {
     if (!a.gu || c.mok1 !== a.gu) return false;
     if (a.gu === "새가족") return true;              // 새가족의 명부 목장 칸은 연도·월이다 — 교구만 본다
-    if (a.men) return candMen(c) && (a.mok === null || mokNumber(c.mok3) === a.mok);
+    // 남성 목장의 아이(candKid)는 빼고 센다 — 가족 목장 칸이 「소망-남성1」인 아이가 「소망 남성」 줄과 「맞음」이 되던 틈(2026-09-30 옮겨 적기 검토 4).
+    //   이 갈래는 2026-09-30 에 새로 연 것이라 사역 줄에도 넣는다 — 아이뿐이면 이 갈래를 열기 전 결과(「목장 확인(같은 교구 N명)」)로 돌아간다.
+    // ⚠️ 숫자 목장·새가족 갈래는 아이를 빼지 **않는다** — 사역 줄(ministryList·ministryPaper·ministryPerson) 표시가 함께 바뀌는
+    //    오래된 동작이라 친구에게 묻기 전엔 그대로 둔다. 성경필사 줄은 events-person.ts signupSame 이 교구 갈래 모두에서 아이를 뺀다.
+    if (a.men) return !candKid(c) && candMen(c) && (a.mok === null || mokNumber(c.mok3) === a.mok);
     if (mokUnknown(a)) return false;
     // ⚠️ 숫자 목장은 교적 남성 목장과 맞대지 않는다 — mokNumber("소망-남성1") = 1 이라 「소망 1목장」 신청의 동명이인이
     //    남성1 목장 분이면 같은 소속으로 잘못 셌다(2026-09-30 바로잡음).
@@ -93,12 +105,14 @@ export function sameAffiliation(c: Cand, a: Applicant): boolean {
   return !!a.bu && (c.school_dept === a.bu || c.mok1 === a.bu);   // 청년부는 명부의 목장 첫 칸에 있다
 }
 
-// more — 부르는 쪽이 「이분도 같은 소속으로 친다」를 더할 때(성경필사 줄의 「옮겨 적은 줄」 · events-person.ts transcribedSame).
-//   사역신청 줄은 넘기지 않는다(옮겨 적기가 없는 줄이다). 넘기지 않으면 sameAffiliation 만 본다.
-export function matchChurch(cands: Cand[] | undefined, a: Applicant, more?: (c: Cand) => boolean): Church {
+// isSame — 부르는 쪽이 「같은 소속」 판정을 **통째로** 줄 때(성경필사 줄 · events-person.ts signupSame — 교구 줄에서 아이를 빼고
+//   「옮겨 적은 줄」을 더한다). 사역신청 줄은 넘기지 않는다. 넘기지 않으면 sameAffiliation 그대로.
+//   (2026-09-30 처음엔 「더할 분」 more 였다 — 아이를 **빼야** 해서(옮겨 적기 검토 2) 판정 전체를 받게 바꿨다.)
+// ⚠️ 뒤 단계(「목장 확인(같은 교구 N명)」·「소속 다름」·「같은 이름 N명」)는 isSame 과 상관없이 같은 식이다 — N 은 이 이름의 명부 전체에서 센다.
+export function matchChurch(cands: Cand[] | undefined, a: Applicant, isSame?: (c: Cand) => boolean): Church {
   const list = cands ?? [];
   if (!list.length) return { state: "없음", reason: "" };
-  const same = list.filter((c) => sameAffiliation(c, a) || (more ? more(c) : false));
+  const same = list.filter(isSame ?? ((c: Cand) => sameAffiliation(c, a)));
   if (same.length === 1) return { state: "맞음", reason: "" };
   if (same.length > 1) return { state: "확인 필요", reason: `같은 소속에 같은 이름 ${same.length}명` };
   // 목장을 모르는 신청(99·빈칸)·교적 남성 목장에 없는 「남성」 신청 — 전화가 같다고 「소속 다름」이라 하면 사실이 아니다.
@@ -118,10 +132,10 @@ export const lookupKeys = (names: unknown[]): string[] =>
   [...new Set(names.map(nameKey).filter((k) => k && !LOOKUP_BAD.test(k)))];
 
 // 명부가 없거나(null) 물을 수 없는 이름이면 null — 화면은 표시를 그리지 않는다(「교적 없음」은 사실이 아닐 수 있다)
-// more 는 matchChurch 로 그대로 흘린다(성경필사 줄 — events-person.ts churchForSignup).
-export function churchFor(idx: Map<string, Cand[]> | null, a: Applicant, more?: (c: Cand) => boolean): Church | null {
+// isSame 은 matchChurch 로 그대로 흘린다(성경필사 줄 — events-person.ts churchForSignup).
+export function churchFor(idx: Map<string, Cand[]> | null, a: Applicant, isSame?: (c: Cand) => boolean): Church | null {
   if (!idx) return null;
   const k = nameKey(a.name);
   if (!k || LOOKUP_BAD.test(k)) return null;
-  return matchChurch(idx.get(k), a, more);
+  return matchChurch(idx.get(k), a, isSame);
 }
