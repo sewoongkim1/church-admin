@@ -824,6 +824,8 @@ a.mn-tel.sm{padding:2px 8px}
 .be-bottom{flex:none;padding:10px var(--card-pad) 12px;border-top:1px solid var(--light)}
 .be-foot{display:flex;gap:8px}
 .be-foot .btn{flex:1 1 0;min-width:0}
+/* 입력 창의 주 단추(저장·더하기·빼기·「네, 뺍니다」)는 48px — .btn.danger 에 높이 규칙이 없어 44px 였다(danger-confirm-44px) */
+.be-foot .be-ok{min-height:var(--tap-lg);font-size:1rem}
 .be-err{margin:0 0 10px;padding:8px 12px;border:1px solid var(--danger-bd);border-radius:10px;background:var(--danger-bg);
   color:var(--error);font-size:14px;font-weight:700;line-height:1.5}
 .be-ask-t{margin:0 0 10px;font-size:15px;font-weight:800;color:var(--navy-dark)}

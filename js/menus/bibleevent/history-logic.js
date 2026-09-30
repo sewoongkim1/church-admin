@@ -72,6 +72,15 @@ export function repeatChoices(repeaters) {
   return out;
 }
 export const repeatersAt = (repeaters, min) => (repeaters || []).filter((x) => x.times >= min);
+// 새 통계에 맞춘 「N회 이상」(minrepeat-reset) — 칩이 없으면 3(옛 값이 빈 글·CSV 에 남지 않게) · 고른 칩이 있으면 그대로 ·
+// 가장 많은 횟수보다 크면 그 횟수(3으로 떨어지지 않게) · 그 밖(3 아래)은 첫 칩
+export function fitRepeat(choices, cur) {
+  const list = choices || [];
+  if (!list.length) return MIN_REPEAT;
+  if (list.some((c) => c.min === cur)) return cur;
+  const last = list[list.length - 1].min;
+  return cur > last ? last : list[0].min;
+}
 
 // 통계 내려받기 — 엑셀에서 바로 열리게 CSV(BOM · \r\n). 세 표를 빈 줄로 나눠 한 파일에.
 // 여러 번 참여한 분은 「이름」「소속」 두 칸(repeaters 의 name·label — label 은 소속만).
@@ -92,7 +101,7 @@ export function statsCsv(stats, labels, min) {
   for (const p of repeatersAt(stats?.repeaters, min)) {
     lines.push([p.name, p.label, p.times, (p.events || []).map((id) => lb(labels, id)).join(" · ")]);
   }
-  return "﻿" + lines.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return "\uFEFF" + lines.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 // 파일 이름 — 한국 날짜
 export function csvName(now = new Date()) {

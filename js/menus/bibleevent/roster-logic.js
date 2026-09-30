@@ -25,6 +25,8 @@ export const EV_TEXT_MAX = { title: 100, short_title: 40, subtitle: 100, season:
 export const ROW_KEYS = ["who_type", "group", "sub", "name", "position", "note"];
 // 담당자 메모 창의 글자 수 상한 — 서버는 머리 표기(「담당자가 더함 / 」 10자)를 붙인 **뒤** 500자로 센다(계약 §5)
 export const NOTE_FORM_MAX = 480;
+// 고치기 창 — 서버 BE_NOTE_MAX 그대로(고칠 땐 머리 표기를 붙이지 않는다 · 붙어 있던 490자 메모도 이어 쓸 수 있게 · note-maxlength-edit)
+export const NOTE_EDIT_MAX = 500;
 
 const byKo = (a, b) => String(a).localeCompare(String(b), "ko");
 const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -59,7 +61,8 @@ export function subText(r) {
   return r?.who_type === "교구" ? mokWord(s) : s;
 }
 
-export const groupKey = (r) => `${norm(r?.who_type)}|${norm(r?.group)}`;
+// 소속이 빈 줄은 구분(교구·교회학교·없음)과 상관없이 「소속 없음」 한 묶음 「|」 — 구분별로 둘셋으로 갈리지 않게(no-affil-group-split)
+export const groupKey = (r) => (norm(r?.group) ? `${norm(r?.who_type)}|${norm(r?.group)}` : "|");
 function groupRank(type, group) {
   const list = type === "교구" ? GU_ORDER : type === "교회학교" ? BU_ORDER : [];
   const i = list.indexOf(group);
@@ -81,7 +84,8 @@ export function groupRows(rows) {
   const bag = new Map();
   for (const r of rows || []) {
     const k = groupKey(r);
-    if (!bag.has(k)) bag.set(k, { key: k, label: norm(r.group) || "소속 없음", rank: groupRank(norm(r.who_type), norm(r.group)), rows: [] });
+    if (!bag.has(k)) bag.set(k, { key: k, label: norm(r.group) || "소속 없음",
+      rank: norm(r.group) ? groupRank(norm(r.who_type), norm(r.group)) : 2900, rows: [] });   // 소속 없음은 구분 없음 자리(맨 뒤)
     bag.get(k).rows.push(r);
   }
   return [...bag.values()]
@@ -157,7 +161,7 @@ export function csvText(rows) {
   const head = ["이름", "구분", "소속", "세부", "직분", "출처", "교적"];
   const body = (rows || []).map((r) => [r.name, r.who_type, r.group, r.sub, r.position, SRC_TEXT[r.source] || r.source || "",
     r.church ? [r.church.state, r.church.reason].filter(Boolean).join(" · ") : ""]);
-  return "﻿" + [head, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return "\uFEFF" + [head, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
 // 회차 칩 — 시작일 최근 먼저, 같으면 id 거꾸로

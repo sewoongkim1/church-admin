@@ -1,6 +1,6 @@
 // 직접 만든 입력 창 — 브라우저·시스템 팝업(alert·confirm·prompt·beforeunload) 대신(2026-09-29 친구 결정).
 //   폰(<1024px) = 화면 아래에서 올라오는 판 · PC = 가운데 창. 모양은 css/admin.css 의 「be- ① 입력 창」 블록.
-//   openForm(...) → Promise: 저장하면 onSubmit 이 준 value(없으면 true) · 닫으면 null.
+//   openForm(...) → Promise: 저장하면 onSubmit 이 준 value(없으면 true) · 닫으면 null(저장 중 메뉴를 옮겨 닫혀도 null — 쓰기는 됐을 수 있다).
 // 설계: v2 docs/superpowers/specs/2026-09-29-church-admin-bible-events-design.md §3 「팝업」.
 //   ① 닫기 요청 = 「닫기」·Esc·바깥(누를 때와 뗄 때 **둘 다** 바깥)·뒤로 가기. 입력이 바뀌었으면(isDirty)
 //      창을 닫지 않고 **창 안에** 「저장하지 않은 내용이 있어요 — 닫을까요?」 [계속 쓰기][닫기] 줄을 띄운다.
@@ -36,7 +36,7 @@ const waiters = [];   // 우리가 부른 history.back() 이 끝나면 부를 �
 let popBound = false;
 let seq = 0;
 
-const FOCUSABLE = 'button:not([disabled]),input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+export const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 const FIRST_FIELD = '.be-body input:not([type="hidden"]):not([disabled]):not([readonly]),.be-body textarea:not([disabled]),.be-body .pk-field:not([disabled])';
 const visible = (x) => x.offsetParent !== null;
 
@@ -189,7 +189,7 @@ export function openForm({ title = "", html = "", okLabel = "저장", cancelLabe
       try { r = await onSubmit(box); } catch (x) { console.error(x); r = { ok: false, error: "server" }; }
       sending = false;
       box.removeAttribute("aria-busy");
-      if (done) return;   // 그사이 메뉴를 옮겨 닫혔다(closeAllForms)
+      if (done) return;   // 그사이 메뉴를 옮겨 닫혔다(closeAllForms) — Promise 는 null 로 끝나지만 onSubmit 의 서버 쓰기는 이미 됐을 수 있다. 부르는 쪽은 null 을 「안 바뀜」으로 읽지 말 것(메뉴를 다시 열면 새로 불러온다)
       const o = submitOutcome(r);
       if (o.close) return close(o.value, false);
       locked.forEach((b) => { b.disabled = false; });

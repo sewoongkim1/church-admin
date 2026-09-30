@@ -34,3 +34,19 @@ test("Node 에서 불러와도 document·history 를 만지지 않는다 · 열�
   assert.equal(typeof openForm, "function");
   closeAllForms();
 });
+
+// ---------- 작은 지적 C(2026-09-30) ----------
+import * as modal from "../js/core/modal.js";
+
+test("FOCUSABLE — 창 안 초점 가두기(Tab)가 링크(a[href])도 센다 · 내보낸다(focusable-no-links)", () => {
+  assert.equal(typeof modal.FOCUSABLE, "string", "modal.js 가 FOCUSABLE 을 내보내야 한다");
+  const parts = modal.FOCUSABLE.split(",").map((s) => s.trim());
+  assert.ok(parts.includes("a[href]"), "a[href] 가 들어 있어야 한다");
+  assert.ok(parts.includes("button:not([disabled])"));
+});
+
+import { readFileSync } from "node:fs";
+test("입력 창의 주 단추(.be-ok)는 48px(--tap-lg) — 「빼기」·「네, 뺍니다」(.btn.danger)도(danger-confirm-44px)", () => {
+  const css = readFileSync(new URL("../css/admin.css", import.meta.url), "utf8");
+  assert.match(css, /\.be-foot \.be-ok\{min-height:var\(--tap-lg\);font-size:1rem\}/);
+});

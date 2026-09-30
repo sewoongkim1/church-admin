@@ -22,6 +22,7 @@ import { personPayload } from "./person-logic.js";
 let f = blankFilter();   // 거르기 — 같은 회차면 메뉴를 옮겨 다녀도 남는다
 let fFor = "";           // f 가 어느 회차의 거르기인가
 let setOpen = false;     // ⚙️ 회차 설정 — 처음엔 접어 둔다
+let unbindMq = null;     // 앞 화면이 건 matchMedia change 떼기 — 다음 그리기가 부른다(FE-3)
 
 const stamp = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -67,6 +68,9 @@ export async function render(el, ctx) {
     ros = await call("evRoster", { event_id: events[0].id });
     if (!el.isConnected) return;
     if (!ros.ok) { el.innerHTML = failHtml("명단을 불러오지 못했어요", ros); return; }
+    // 없는 회차 주소 → 보여 준 회차로(새로고침마다 같은 알림이 뜨지 않게 · upload.js 와 같다 · stale-ev-query)
+    // replaceState 라 hashchange 가 안 나고 route 가 다시 그리지 않는다
+    if (asked && el.isConnected) history.replaceState(null, "", "#/be-roster?ev=" + encodeURIComponent(ros.event.id));
   }
   const ev = ros.event;
   let rows = ros.rows || [];
@@ -221,8 +225,10 @@ export async function render(el, ctx) {
   el.addEventListener("toggle", (e) => {
     if (e.target instanceof Element && e.target.matches("details.be-set")) setOpen = e.target.open;
   }, true);
-  // 창 폭이 1024px 을 넘나들면 표↔카드 — 이 화면이 사라지면 스스로 떨어진다
-  const onMq = () => { if (!el.isConnected) { mqWide.removeEventListener("change", onMq); return; } draw(); };
-  mqWide.addEventListener("change", onMq);
+  // 창 폭이 1024px 을 넘나들면 표↔카드 — 다음 그리기(↻ 새로 불러오기·회차 바꾸기·메뉴 다시 열기)가 앞 화면의 것을 뗀다(FE-3).
+  // 이 화면이 사라진 뒤 다음 그리기 전에 change 가 오면 스스로도 떨어진다.
+  const unbind = () => { mqWide.removeEventListener("change", onMq); if (unbindMq === unbind) unbindMq = null; };
+  const onMq = () => { if (!el.isConnected) { unbind(); return; } draw(); };
+  unbindMq?.(); unbindMq = unbind; mqWide.addEventListener("change", onMq);
   draw();
 }

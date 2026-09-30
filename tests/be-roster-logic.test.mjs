@@ -116,7 +116,7 @@ test("csvText — BOM · \\r\\n · 일곱 칸 · 받은 차례 그대로 · 메�
     R({ id: 1, name: '=HYPERLINK("x")', who_type: "교회학교", group: "청년부", sub: "", church: { state: "확인 필요", reason: "소속 다름" } }),
     R({ id: 3, name: "성춘향", church: null }),
   ]);
-  assert.ok(csv.startsWith("﻿"));
+  assert.ok(csv.startsWith("\uFEFF"));
   const lines = csv.slice(1).split("\r\n");
   assert.equal(lines.length, 4);
   assert.equal(lines[0], '"이름","구분","소속","세부","직분","출처","교적"');
@@ -209,4 +209,48 @@ test("rowPatch — 바뀐 칸만 · 목장은 바꾼 때만 다듬는다(07 을 
   assert.deepEqual(rowPatch(R({ note: null }), { note: "" }, ["note"]), {});
   assert.deepEqual(rowPatch(R({ note: "전화로  확인" }), { note: "전화로 확인" }, ["note"]), {});   // 서버도 한 줄로 저장한다
   assert.deepEqual(rowPatch(R({ name: "홍  길동" }), { name: "홍 길동" }, ["name"]), {});
+});
+
+// ---------- 작은 지적 C(2026-09-30) ----------
+import { readdirSync, readFileSync } from "node:fs";
+
+test("NOTE_EDIT_MAX — 고치기 창의 메모 상한은 서버 BE_NOTE_MAX 그대로(머리 표기를 안 붙인다 · note-maxlength-edit)", () => {
+  assert.equal(rosterLogic.NOTE_EDIT_MAX, BE_NOTE_MAX);
+  assert.ok(NOTE_FORM_MAX < rosterLogic.NOTE_EDIT_MAX);   // 더하기 창은 여전히 480(머리 표기 몫)
+});
+
+test("소속이 빈 줄은 구분과 상관없이 「소속 없음」 한 묶음(맨 뒤) · 거르기 열쇠도 하나(no-affil-group-split)", () => {
+  assert.equal(groupKey(R({ who_type: "교구", group: "" })), "|");
+  assert.equal(groupKey(R({ who_type: "교회학교", group: "  " })), "|");
+  assert.equal(groupKey(R({ who_type: "", group: "" })), "|");
+  assert.equal(groupKey(R({ who_type: "교구", group: "화평" })), "교구|화평");
+  const rows = [
+    R({ id: 1, who_type: "교구", group: "", sub: "" }),
+    R({ id: 2, who_type: "교회학교", group: "", sub: "" }),
+    R({ id: 3, who_type: "교구", group: "화평", sub: "20" }),
+    R({ id: 4, who_type: "", group: "", sub: "" }),
+  ];
+  const g = groupRows(rows);
+  assert.deepEqual(g.map((x) => x.key), ["교구|화평", "|"]);
+  assert.equal(g[1].label, "소속 없음");
+  assert.deepEqual(g[1].rows.map((r) => r.id), [1, 2, 4]);
+  assert.deepEqual(filterRows(rows, { ...blankFilter(), groups: ["|"] }).map((r) => r.id), [1, 2, 4]);
+});
+
+test("bom-literal — 성경필사 화면 파일(js/menus/bibleevent/*.js)에 보이지 않는 U+FEFF 글자를 박아 두지 않는다 · csvText 는 여전히 BOM 으로 시작", () => {
+  const dir = new URL("../js/menus/bibleevent/", import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith(".js"));
+  assert.ok(files.length > 5);
+  const bad = files.filter((f) => readFileSync(new URL(f, dir), "utf8").includes("\uFEFF"));
+  assert.deepEqual(bad, []);
+  assert.equal(csvText([]).charCodeAt(0), 0xFEFF);
+});
+
+test("M3 문구 — 이어진 분의 「📋 이미 내신 것」은 회차가 성도님께 보이는 동안만(row-form 안내 · privacy §7 · v2 1498177)", () => {
+  const rf = readFileSync(new URL("../js/menus/bibleevent/row-form.js", import.meta.url), "utf8");
+  assert.ok(rf.includes("이어지면 이 회차가 성도님께 보이는 동안 앱 「📋 이미 내신 것」에도 보여요"));
+  assert.ok(!rf.includes("이어지면 성도님 앱 「📋 이미 내신 것」에도 보여요"));
+  const pv = readFileSync(new URL("../privacy.html", import.meta.url), "utf8");
+  assert.ok(pv.includes("이어진 분은 그 회차가 앱에 보이는 동안 「이미 내신 것」에서 보시고,"));
+  assert.ok(!pv.includes("이어진 분은 앱의 「이미 내신 것」에서 보시고,"));
 });

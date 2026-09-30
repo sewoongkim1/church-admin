@@ -103,7 +103,7 @@ test("여러 번 참여 — 「N회 이상」 칩은 3회부터 가장 많은 �
 
 test("statsCsv — BOM · \\r\\n · 세 표 · 따옴표 · 회차 id 는 짧은 이름으로 · 여러 번 참여는 「이름」「소속」 두 칸 · 근삿값 안내", () => {
   const csv = statsCsv(STATS, labelMap(EVS), 4);
-  assert.ok(csv.startsWith("﻿"));
+  assert.ok(csv.startsWith("\uFEFF"));
   assert.deepEqual(csv.slice(1).split("\r\n"), [
     '"회차별 인원"',
     '"회차","인원"',
@@ -174,4 +174,18 @@ test("메뉴 — 성경필사(암송) 세 메뉴가 사역신청 뒤·교인명�
 test("화면 모듈이 Node 에서 읽힌다 — import 한 이름이 모두 있다(틀리면 여기서 SyntaxError)", async () => {
   const m = await import("../js/menus/bibleevent/history.js");
   assert.equal(typeof m.render, "function");
+});
+
+// ---------- 작은 지적 C(2026-09-30) ----------
+import * as historyLogic from "../js/menus/bibleevent/history-logic.js";
+
+test("fitRepeat — 새 통계에 맞춘 「N회 이상」: 없으면 3 · 있으면 그대로 · 가장 많은 횟수보다 크면 그 횟수 · 작으면 처음(minrepeat-reset)", () => {
+  const { fitRepeat } = historyLogic;
+  assert.equal(typeof fitRepeat, "function", "history-logic.js 가 fitRepeat 를 내보내야 한다");
+  assert.equal(fitRepeat([], 5), MIN_REPEAT);
+  assert.equal(fitRepeat([], 5), 3);
+  assert.equal(fitRepeat([{ min: 3 }, { min: 4 }], 5), 4);
+  assert.equal(fitRepeat([{ min: 3 }, { min: 4 }, { min: 5 }], 4), 4);
+  assert.equal(fitRepeat([{ min: 3 }, { min: 4 }], 2), 3);
+  assert.equal(fitRepeat(repeatChoices([{ times: 3 }, { times: 6 }]), 9), 6);   // 칩 목록(repeatChoices) 그대로 받는다
 });
