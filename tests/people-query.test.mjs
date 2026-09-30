@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSearch, searchDetail, sortOrder, ageBand, statsOf, PAGE_SIZE, PHOTO_TTL, FILTER_MAX } from "../supabase/functions/church-admin/people-query.ts";
+import { parseSearch, searchDetail, sortOrder, ageBand, statsOf, PAGE_SIZE, PHOTO_TTL, FILTER_MAX, CARD_GU } from "../supabase/functions/church-admin/people-query.ts";
 
 test("parseSearch — 숫자 4자리 이상은 전화 뒷자리, 그 밖은 이름(글자·숫자·- 만)", () => {
   assert.equal(parseSearch({ q: " 김 철수 " }).s.name, "김철수");
@@ -130,6 +130,11 @@ test("statsOf — 교구 차례 · 목장 수 · 사진 없음 · 가구 수 · 
   assert.deepEqual(s.age.find((a) => a.band === "50대"), { band: "50대", m: 1, f: 1, x: 0 });
   assert.deepEqual(s.options.mok1, ["믿음", "기쁨"]);
   assert.ok(!s.options.position.includes("(없음)"));
+  // 맨 위 교구 카드 — 일곱 줄 늘 이 차례 · 없는 교구는 0 · 세대주가 명부에 없으면(person_id 없음) 식구가 많은 교구
+  assert.deepEqual(s.guCards.map((c) => c.gu), CARD_GU);
+  assert.deepEqual(s.guCards.find((c) => c.gu === "기쁨"), { gu: "기쁨", n: 2, households: 1 });
+  assert.deepEqual(s.guCards.find((c) => c.gu === "믿음"), { gu: "믿음", n: 1, households: 1 });
+  assert.deepEqual(s.guCards.find((c) => c.gu === "소망"), { gu: "소망", n: 0, households: 0 });
 });
 
 test("statsOf facts — 묶음 셋(교구·목장·출석 / 직분·출석 / 연령대·성별·출석·교구) · 값 사전", () => {
@@ -146,23 +151,29 @@ test("statsOf facts — 묶음 셋(교구·목장·출석 / 직분·출석 / 연
   const at = (list, v) => list.indexOf(v);
   const [기쁨, 없음] = [at(f.dict.gu, "기쁨"), at(f.dict.gu, "(목장 없음)")];
   const [출석, 결석, k없음] = [at(f.dict.kind3, "출석교인"), at(f.dict.kind3, "장기결석"), at(f.dict.kind3, "(없음)")];
-  const mok = (m) => at(f.dict.mok, m);
-  assert.deepEqual(f.gu, [[기쁨, mok("기쁨-01목장"), 출석, 2], [기쁨, mok(""), 결석, 1], [없음, mok(""), k없음, 1]]);
+  // 목장은 이름 없이 번호 — 0 = 목장 칸이 빈 분, 1 부터 목장(사전에 목장 이름이 없다 · 2026-09-30 검토)
+  assert.equal("mok" in f.dict, false);
+  assert.deepEqual(f.gu, [[기쁨, 1, 출석, 2], [기쁨, 0, 결석, 1], [없음, 0, k없음, 1]]);
   assert.deepEqual(f.position.map(([p, k, n]) => [f.dict.position[p], f.dict.kind3[k], n]),
     [["집사", "출석교인", 2], ["권사", "장기결석", 1], ["(없음)", "(없음)", 1]]);
   assert.deepEqual(f.age.map(([b, s, k, g, n]) => [f.dict.band[b], f.dict.sex[s], f.dict.kind3[k], f.dict.gu[g], n]),
     [["50대", "남", "출석교인", "기쁨", 2], ["70대", "여", "장기결석", "기쁨", 1], ["모름", "모름", "(없음)", "(목장 없음)", 1]]);
 });
 
-test("statsOf — 응답에 이름·연락처·교인ID·세대주 번호가 없다(숫자·분류 값만)", () => {
+test("statsOf — 응답에 이름·연락처·교인ID·세대주 번호·목장 이름이 없다(숫자·분류 값만)", () => {
   const rows = [
     { person_id: 990000001, name: "시험가람", phone1: "010-0000-0001", address: "시험시 비밀주소", household_id: 990000001,
-      mok1: "기쁨", mok3: "기쁨-01목장", kind2: "장년", kind3: "출석교인", position: "집사", school_dept: "", gender: "남", age: 40, has_photo: true },
+      mok1: "기쁨", mok3: "기쁨-시험목장01", kind2: "장년", kind3: "출석교인", position: "집사", school_dept: "", gender: "남", age: 40, has_photo: true },
     { person_id: 990000002, name: "시험나래", phone1: "010-0000-0002", address: "시험시 비밀주소", household_id: 990000001,
-      mok1: "기쁨", mok3: "기쁨-01목장", kind2: "장년", kind3: "출석교인", position: "", school_dept: "", gender: "여", age: 38, has_photo: false },
+      mok1: "소망", mok3: "소망-시험목장02", kind2: "장년", kind3: "출석교인", position: "", school_dept: "", gender: "여", age: 38, has_photo: false },
   ];
-  const json = JSON.stringify(statsOf(rows));
-  for (const bad of ["시험가람", "시험나래", "010-0000", "비밀주소", "990000001", "990000002", "person_id", "phone", "name"]) {
+  const s = statsOf(rows);
+  const json = JSON.stringify(s);
+  for (const bad of ["시험가람", "시험나래", "010-0000", "비밀주소", "990000001", "990000002", "person_id", "household_id", "phone", "name",
+    "시험목장", "기쁨-", "소망-"]) {
     assert.ok(!json.includes(bad), "응답에 들어갔다: " + bad);
   }
+  // 세대주(990000001)는 기쁨 — 소망에 사는 식구가 있어도 가구는 기쁨에서 한 번만
+  assert.deepEqual(s.guCards.filter((c) => c.households).map((c) => [c.gu, c.households]), [["기쁨", 1]]);
+  assert.equal(s.guCards.find((c) => c.gu === "소망").n, 1);
 });

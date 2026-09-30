@@ -1,7 +1,7 @@
 // 📊 교인 현황 — 거르기로 다시 세기(순수 함수 · 2026-09-30). tests/people-stats.test.mjs 가 같은 파일을 읽는다(DOM 을 쓰지 않는다).
 // 친구 요청(2026-09-30) 「교구별 출석 필터, 직분 출석 필터 · 연령별 성별 출석 및 교구 필터」 —
 //   서버 peopleStats 가 한 번 준 숫자 묶음(stats.facts · people-query.ts factsOf)으로 표를 다시 센다. 서버를 다시 부르지 않는다.
-//   facts.dict = 값 사전 · 줄 = [값 번호…, 인원] — 꼴은 factsOf 머리 주석.
+//   facts.dict = 값 사전 · 줄 = [값 번호…, 인원] — 꼴은 factsOf 머리 주석. 목장은 이름 없이 번호(0 = 목장 칸이 빈 분).
 // 고른 값(values)이 빈 배열이면 거르지 않는다(전체). 하나라도 고르면 그 값의 분들만 센다.
 // ⚠️ 거르기 없이 센 결과는 서버의 stats.gu·position·age 와 똑같아야 한다(시험이 대조한다) — 차례 규칙을 바꾸면 서버 statsOf 도.
 
@@ -22,7 +22,7 @@ export function guTable(facts, kind3 = []) {
   for (const [g, m, k, n] of facts.gu) {
     if (!hit(ks, k)) continue;
     per[g].n += n;
-    if (facts.dict.mok[m]) per[g].moks.add(m);   // 목장 빈 글자는 세지 않는다(서버와 같게)
+    if (m > 0) per[g].moks.add(m);   // 목장 번호 0(목장 칸이 빈 분)은 세지 않는다(서버와 같게)
   }
   const rows = facts.dict.gu.map((gu, i) => ({ gu, moks: per[i].moks.size, n: per[i].n })).filter((r) => r.n > 0);
   return { rows, total: { moks: rows.reduce((a, r) => a + r.moks, 0), n: rows.reduce((a, r) => a + r.n, 0) } };
@@ -50,6 +50,38 @@ export function ageTable(facts, kind3 = [], gu = []) {
   }
   const sum = (key) => rows.reduce((a, r) => a + r[key], 0);
   return { rows, total: { m: sum("m"), f: sum("f"), x: sum("x") } };
+}
+
+// 고를 목록 — { kind3, mok1 } 각 [값, 인원]. 차례는 서버 표 그대로(출석은 인원 많은 차례 · 교구는 앱 교구 차례).
+//   c) 한 표에 거르기가 둘이면(연령대·성별 — 출석·교구) 한 쪽 목록의 인원은 **다른 쪽 거르기 안에서** 센다
+//      (출석을 골랐으면 교구 목록의 인원은 그 출석 안에서 · 반대도). 제 거르기로는 좁히지 않는다(고른 것이 0명으로 보이지 않게).
+//      인원이 0 이 된 값도 목록에 남긴다 — 이미 고른 값이 목록에서 사라지면 풀 수가 없다.
+//   d) 출석 「(없음)」(출석 칸이 빈 분)도 고른다 — 맨 끝에. 다 고르면 합계가 전체와 같다.
+//      ⚠️ 🔎 교인 찾기(people-logic.js filterChoices)는 그대로 못 고른다 — 서버 .in() 이 빈 칸을 못 거른다. 여기는 화면이 센다.
+//   교구 「(목장 없음)」은 교구가 아니라 여기서도 고르지 않는다(교인 찾기와 같다).
+// sel = 그 표의 고른 것 { kind3?, mok1? } — 교구별·직분별 표는 거르기가 출석 하나라 sel.mok1 이 없다(= 전체 인원).
+const NONE = "(없음)", NO_GU = "(목장 없음)";
+export function statsChoices(facts, sel = {}) {
+  const ks = pickedIndex(facts.dict.kind3, sel.kind3), gs = pickedIndex(facts.dict.gu, sel.mok1);
+  const k3 = facts.dict.kind3.map(() => 0), gu = facts.dict.gu.map(() => 0);
+  for (const [, , k, g, n] of facts.age) {     // 연령대 줄이 출석×교구를 다 가진다(인원을 모두 더하면 전체)
+    if (hit(gs, g)) k3[k] += n;
+    if (hit(ks, k)) gu[g] += n;
+  }
+  const kind3 = facts.dict.kind3.map((v, i) => [v, k3[i]]);
+  return {
+    kind3: [...kind3.filter(([v]) => v !== NONE), ...kind3.filter(([v]) => v === NONE)],
+    mok1: facts.dict.gu.map((v, i) => [v, gu[i]]).filter(([v]) => v !== NO_GU),
+  };
+}
+
+// 맨 위 교구 카드(2026-09-30) — [{ gu, n, households }] 일곱 줄. 서버 stats.guCards 그대로.
+// 옛 서버(guCards 없음)면 교구별 표에서 인원만 옮기고 가구는 null(화면이 가구 줄을 안 그린다) — 차례는 서버 CARD_GU 와 같게.
+export const CARD_GU = ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨"];
+export function guCardRows(stats) {
+  if (Array.isArray(stats?.guCards)) return stats.guCards;
+  const byGu = new Map((stats?.gu || []).map((g) => [g.gu, g.n]));
+  return CARD_GU.map((gu) => ({ gu, n: byGu.get(gu) || 0, households: null }));
 }
 
 // 고르개(pickMany) 선택지 — [값, 인원] → { value, label, hint:「N명」 } (🔎 교인 찾기와 같은 모양)
