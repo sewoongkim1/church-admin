@@ -133,6 +133,65 @@ test("sortEvents — 시작일 최근 먼저 · 같으면 id 거꾸로 · 받은
   assert.equal(evs[0].id, "lent-2024");
 });
 
+// ---------- 회차 콤보(2026-09-30 · 친구 요구 「콤보로 고르게 · 연·월 · 제목」) ----------
+// 세 화면(📋 회차·명단 콤보 · 📤 올릴 회차 · 👤 통계에 넣을 회차)이 회차를 같은 글로 부른다 — evPickLabel·evPickHint 한 벌.
+test("evYm — opens_on 의 연·월(앞 0 없이) · 비었거나 꼴이 아니면 「날짜 없음」", () => {
+  const { evYm } = rosterLogic;
+  assert.equal(typeof evYm, "function", "roster-logic.js 가 evYm 을 내보내야 한다");
+  assert.equal(evYm({ opens_on: "2026-03-01" }), "2026년 3월");
+  assert.equal(evYm({ opens_on: "2026-10-27" }), "2026년 10월");
+  assert.equal(evYm({ opens_on: "2023-01-31" }), "2023년 1월");
+  assert.equal(evYm({ opens_on: " 2026-12-05 " }), "2026년 12월");   // 앞뒤 빈칸은 다듬는다(norm)
+  for (const bad of ["", "x", null, undefined, "2026-3-1", "2026-13-01", "2026-00-10", "2026/03/01", "20260301"]) {
+    assert.equal(evYm({ opens_on: bad }), "날짜 없음", String(bad));
+  }
+  assert.equal(evYm({}), "날짜 없음");
+  assert.equal(evYm(null), "날짜 없음");
+});
+
+test("evPickLabel — 「연·월 · 제목 전체」 · 제목이 없으면 짧은 이름 → id", () => {
+  const { evPickLabel } = rosterLogic;
+  assert.equal(typeof evPickLabel, "function");
+  const a = { id: "lent-2026", title: "사순절 마가복음 완서자", short_title: "사순절 26", opens_on: "2026-03-01" };
+  const b = { id: "lent-2023", title: "사순절 마가복음 완서자", short_title: "사순절 23", opens_on: "2023-02-22" };
+  assert.equal(evPickLabel(a), "2026년 3월 · 사순절 마가복음 완서자");
+  assert.equal(evPickLabel(b), "2023년 2월 · 사순절 마가복음 완서자");
+  assert.notEqual(evPickLabel(a), evPickLabel(b), "같은 제목의 두 회차가 해로 갈린다");
+  assert.equal(evPickLabel({ ...a, title: "" }), "2026년 3월 · 사순절 26");
+  assert.equal(evPickLabel({ ...a, title: "", short_title: "" }), "2026년 3월 · lent-2026");
+  assert.equal(evPickLabel({ id: "x-1", title: "  가을  말씀 동행 ", opens_on: "" }), "날짜 없음 · 가을 말씀 동행");
+});
+
+test("evPickHint — 「인원명 · 상태(STATUS_KO)」 · 성도님께 보이면 「 · 👁」", () => {
+  const { evPickHint } = rosterLogic;
+  assert.equal(typeof evPickHint, "function");
+  assert.equal(evPickHint({ count: 231, status: "closed", listedNow: false }), "231명 · 마감");
+  assert.equal(evPickHint({ count: 231, status: "closed", listedNow: true }), "231명 · 마감 · 👁");
+  assert.equal(evPickHint({ count: 1234, status: "open", listedNow: true }), "1,234명 · 열림 · 👁");
+  assert.equal(evPickHint({ status: "draft" }), "0명 · 준비 중");
+  for (const s of EV_STATUS) assert.ok(evPickHint({ count: 1, status: s }).endsWith(STATUS_KO[s]), s);
+  assert.equal(evPickHint({ count: 3, status: "" }), "3명", "상태가 비면 꼬리 「 · 」를 남기지 않는다");
+  assert.equal(evPickHint({ count: 3, status: "weird" }), "3명 · weird");
+});
+
+test("evPickOptions — 고르개 선택지 { value: id, label, hint } · 시작일 최근 먼저(sortEvents) · 받은 배열은 그대로", () => {
+  const { evPickOption, evPickOptions, evPickLabel, evPickHint } = rosterLogic;
+  assert.equal(typeof evPickOption, "function");
+  assert.equal(typeof evPickOptions, "function");
+  const evs = [
+    { id: "lent-2023", title: "사순절 마가복음 완서자", opens_on: "2023-02-22", count: 180, status: "archived", listedNow: false },
+    { id: "lent-2026", title: "사순절 마가복음 완서자", opens_on: "2026-03-01", count: 231, status: "closed", listedNow: true },
+    { id: "summer-2026", title: "2026 썸머 써 바이블", opens_on: "2026-07-01", count: 199, status: "closed", listedNow: false },
+  ];
+  assert.deepEqual(evPickOption(evs[1]), { value: "lent-2026", label: "2026년 3월 · 사순절 마가복음 완서자", hint: "231명 · 마감 · 👁" });
+  const o = evPickOptions(evs);
+  assert.deepEqual(o.map((x) => x.value), ["summer-2026", "lent-2026", "lent-2023"]);
+  assert.deepEqual(o.map((x) => x.label), evs.map((e) => e).sort((a, b) => (a.opens_on < b.opens_on ? 1 : -1)).map(evPickLabel));
+  assert.equal(o[2].hint, evPickHint(evs[0]));
+  assert.equal(evs[0].id, "lent-2023");
+  assert.deepEqual(evPickOptions(null), []);
+});
+
 test("tidyMok — 서버 tidyRow 의 목장 규칙과 같은 보기(Task 2 시험) · whoText · subText", () => {
   assert.equal(tidyMok("07"), "7");
   assert.equal(tidyMok("007목장"), "7");

@@ -8,6 +8,7 @@ import {
 } from "../js/menus/bibleevent/upload-logic.js";
 import { readFileSync } from "node:fs";
 import { whoText, STATUS_KO } from "../js/menus/bibleevent/roster-logic.js";
+import * as rosterLogic from "../js/menus/bibleevent/roster-logic.js";
 import { BE_MAX_UPLOAD } from "../supabase/functions/church-admin/events-rules.ts";
 import { errorText } from "../js/core/ui.js";
 import { MENUS } from "../js/menus/registry.js";
@@ -204,15 +205,33 @@ test("회차 고르개 — 자격 회차는 빼고 · 한 줄 설명(상태 글�
     { id: "summer-2025", title: "", opens_on: "2025-07-01", closes_on: "2025-08-31", status: "archived", count: 0, listedNow: false, hasEligibility: false },
   ];
   assert.deepEqual(eventOptions(evs).map((o) => o.value), ["lent-2026", "summer-2025"]);
-  assert.equal(eventOptions(evs)[1].label, "summer-2025");
-  assert.equal(eventOptions(evs)[0].hint, evHint(evs[1]));
-  assert.equal(evHint(evs[1]), `2026-03-01 ~ 2026-04-05 · 1,234명 · ${STATUS_KO.closed} · 성도님께 보임`);
-  assert.equal(evHint(evs[2]), `2025-07-01 ~ 2025-08-31 · 0명 · ${STATUS_KO.archived}`);
+  // 선택지 글은 📋 회차·명단 콤보와 같다(evPickLabel·evPickHint — 세 화면 한 벌 · 2026-09-30 콤보)
+  const { evPickLabel, evPickHint } = rosterLogic;
+  assert.equal(typeof evPickLabel, "function");
+  assert.equal(eventOptions(evs)[0].label, "2026년 3월 · 2026 사순절");
+  assert.equal(eventOptions(evs)[1].label, "2025년 7월 · summer-2025");
+  assert.equal(eventOptions(evs)[0].label, evPickLabel(evs[1]));
+  assert.equal(eventOptions(evs)[0].hint, "1,234명 · 마감 · 👁");
+  assert.equal(eventOptions(evs)[1].hint, evPickHint(evs[2]));
+  // 고른 회차의 머리 한 줄 — 앞에 연·월
+  assert.equal(evHint(evs[1]), `2026년 3월 · 2026-03-01 ~ 2026-04-05 · 1,234명 · ${STATUS_KO.closed} · 성도님께 보임`);
+  assert.equal(evHint(evs[2]), `2025년 7월 · 2025-07-01 ~ 2025-08-31 · 0명 · ${STATUS_KO.archived}`);
+  assert.ok(evHint({ ...evs[2], opens_on: "" }).startsWith("날짜 없음 · "));
   for (const s of ["draft", "open", "closed", "archived"]) assert.ok(evHint({ ...evs[2], status: s }).includes(STATUS_KO[s]), s);
   assert.deepEqual(pickFrom(evs, "lent-2026"), { ev: evs[1], blocked: false });
   assert.deepEqual(pickFrom(evs, "autumn-2026"), { ev: null, blocked: true });
   assert.deepEqual(pickFrom(evs, "없는-회차"), { ev: null, blocked: false });
   assert.deepEqual(pickFrom(evs, ""), { ev: null, blocked: false });
+});
+test("회차 고르개 차례 — 📋 회차·명단 콤보와 같게 시작일 최근 먼저(서버 차례와 달라도) · 자격 회차는 여전히 뺀다", () => {
+  const evs = [
+    { id: "b-late-close", title: "나중 마감", opens_on: "2026-02-15", closes_on: "2026-04-20", status: "closed", count: 1, hasEligibility: false },
+    { id: "a-early-close", title: "먼저 마감", opens_on: "2026-03-01", closes_on: "2026-04-05", status: "closed", count: 2, hasEligibility: false },
+    { id: "elig", title: "자격", opens_on: "2026-10-27", closes_on: "2026-11-28", status: "draft", count: 0, hasEligibility: true },
+  ];
+  assert.deepEqual(eventOptions(evs).map((o) => o.value), ["a-early-close", "b-late-close"]);
+  assert.deepEqual(eventOptions(evs).map((o) => o.label), ["2026년 3월 · 먼저 마감", "2026년 2월 · 나중 마감"]);
+  assert.equal(evs[0].id, "b-late-close", "받은 배열은 그대로");
 });
 
 test("confirmHtml — 줄바꿈 문자 없음(dialog 는 pre-line) · 이름을 esc · 건수 · 성도님께 보이는 회차면 한 줄 더", () => {

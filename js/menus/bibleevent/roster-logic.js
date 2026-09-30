@@ -164,10 +164,33 @@ export function csvText(rows) {
   return "\uFEFF" + [head, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
-// 회차 칩 — 시작일 최근 먼저, 같으면 id 거꾸로
+// 회차 차례(콤보·고르개) — 시작일 최근 먼저, 같으면 id 거꾸로
 export function sortEvents(list) {
   return [...(list || [])].sort((a, b) => byCode(norm(b.opens_on), norm(a.opens_on)) || byCode(norm(b.id), norm(a.id)));
 }
+
+// ── 회차를 부르는 글(2026-09-30 · 친구 요구 「콤보로 고르게 · 연·월 · 제목」) ──
+// ⚠️ 세 화면(📋 회차·명단 콤보 · 📤 올릴 회차 · 👤 통계에 넣을 회차)이 **이 한 벌**을 쓴다 — 화면마다 따로 지으면
+//    「사순절 마가복음 완서자」가 2023·2026 두 번 나오듯 메뉴마다 같은 회차를 다르게 부르게 된다.
+const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+// 시작일(opens_on · YYYY-MM-DD)의 연·월 — 「2026년 3월」(앞 0 없이). 비었거나 꼴이 아니면 「날짜 없음」
+export function evYm(ev) {
+  const m = YMD_RE.exec(norm(ev?.opens_on));
+  if (!m || +m[2] < 1 || +m[2] > 12 || +m[3] < 1 || +m[3] > 31) return "날짜 없음";
+  return `${+m[1]}년 ${+m[2]}월`;
+}
+// 회차 이름 전체 — 제목 → 짧은 이름 → id
+export const evName = (ev) => norm(ev?.title) || norm(ev?.short_title) || norm(ev?.id);
+// 고르개 한 줄 — 「2026년 3월 · 사순절 마가복음 완서자」
+export const evPickLabel = (ev) => `${evYm(ev)} · ${evName(ev)}`;
+// 고르개 작은 글 — 「231명 · 마감」(+ 「 · 👁」 성도님께 보이면). 상태 글자는 화면과 같은 STATUS_KO
+export function evPickHint(ev) {
+  const st = STATUS_KO[ev?.status] || norm(ev?.status);
+  return [`${Number(ev?.count || 0).toLocaleString("ko-KR")}명`, st].filter(Boolean).join(" · ") + (ev?.listedNow ? " · 👁" : "");
+}
+// 고르개(picker.js pickOne·pickMany) 선택지 하나 · 목록(시작일 최근 먼저 — 받은 배열은 그대로)
+export const evPickOption = (ev) => ({ value: ev.id, label: evPickLabel(ev), hint: evPickHint(ev) });
+export const evPickOptions = (list) => sortEvents(list).map(evPickOption);
 
 // 회차 설정 — 바뀐 칸만(서버 evEventSave 는 보낸 칸만 바꾼다). list_until 은 null 과 "" 가 같다(비움 — 서버가 null 로)
 // sort_order(회차 차례)는 0·「0」·빈칸이 같다(서버가 빈칸을 0 으로) — 옛 응답에 칸이 없어도 0 으로 본다.

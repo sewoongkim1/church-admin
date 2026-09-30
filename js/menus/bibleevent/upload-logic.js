@@ -7,7 +7,7 @@
 // ⚠️ 소속 한 줄(whoText)·상태 이름(STATUS_KO)은 📋 회차·명단(roster-logic.js)의 것을 그대로 쓴다 — 여기 따로 두면
 //    「받는 중」/「열림」처럼 메뉴마다 글자가 갈린다. 👤 사람별 이력·통계도 roster-logic.js 에서 가져간다.
 import { esc } from "../../core/ui.js";
-import { STATUS_KO, whoText } from "./roster-logic.js";
+import { STATUS_KO, whoText, evYm, evPickOptions } from "./roster-logic.js";
 
 export const MAX_ROWS = 600;       // = events-rules.ts BE_MAX_UPLOAD (회차당 가장 많은 명단이 515줄)
 // 성경암송 api eventRosterPublic 은 명단을 .limit(5000) 한 번으로 읽는다 — PostgREST 가 1,000행에서 **오류 없이** 자르므로
@@ -163,14 +163,15 @@ export function displayRow(o, sent) {
   return { name: raw.name || "", who: [raw.gu, raw.mok].filter(Boolean).join(" "), position: raw.pos || "" };
 }
 
-// 회차 고르개·머리의 한 줄 — 「2026-03-01 ~ 2026-04-05 · 515명 · 마감 · 성도님께 보임」(상태 글자는 📋 회차·명단과 같다)
+// 「올릴 회차」 머리의 한 줄 — 「2026년 3월 · 2026-03-01 ~ 2026-04-05 · 515명 · 마감 · 성도님께 보임」
+// (연·월은 📋 회차·명단 콤보와 같은 evYm · 상태 글자도 같은 STATUS_KO)
 export function evHint(e) {
-  return `${e.opens_on || ""} ~ ${e.closes_on || ""} · ${Number(e.count || 0).toLocaleString("ko-KR")}명 · ` +
+  return `${evYm(e)} · ${e.opens_on || ""} ~ ${e.closes_on || ""} · ${Number(e.count || 0).toLocaleString("ko-KR")}명 · ` +
     `${STATUS_KO[e.status] || e.status || ""}${e.listedNow ? " · 성도님께 보임" : ""}`;
 }
-// 고르개에 내놓는 회차 — 자격 회차(가을 말씀 동행처럼 needs.eligibility 가 있는 회차)는 뺀다(설계 0절 · 서버도 eligibility-event)
-export const eventOptions = (events) => (events || []).filter((e) => !e.hasEligibility)
-  .map((e) => ({ value: e.id, label: e.title || e.id, hint: evHint(e) }));
+// 고르개에 내놓는 회차 — 자격 회차(가을 말씀 동행처럼 needs.eligibility 가 있는 회차)는 뺀다(설계 0절 · 서버도 eligibility-event).
+// 선택지 글·차례는 📋 회차·명단 콤보와 한 벌(evPickOptions — 「2026년 3월 · 제목」 · 「231명 · 마감」 · 시작일 최근 먼저)
+export const eventOptions = (events) => evPickOptions((events || []).filter((e) => !e.hasEligibility));
 // 주소(?ev=)나 지난번에 고른 회차 — 없으면 null, 자격 회차면 고르지 않고 blocked
 export function pickFrom(events, id) {
   const e = (events || []).find((x) => x.id === id);

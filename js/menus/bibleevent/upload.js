@@ -16,6 +16,7 @@ import {
   sigOf, markCounts, countOf, displayRow, eventOptions, pickFrom, evHint, overLimit, confirmHtml,
   fileErrorText, EVENT_GONE, SAVE_UNSURE, saveUnsure,
 } from "./upload-logic.js";
+import { evName } from "./roster-logic.js";
 
 const TITLE = `<h2 class="page-title">📤 명단 올리기</h2>`;
 const XLSX_CDN = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";   // ministry/paper.js 와 같은 판
@@ -68,7 +69,7 @@ export async function render(el, { call, query }) {
   }
 
   el.innerHTML = TITLE + `
-    <button type="button" class="be-up-ev" data-act="ev"></button>
+    <button type="button" class="be-up-ev" data-act="ev" aria-haspopup="dialog" aria-expanded="false"></button>
     <div class="be-up-note" id="be-up-evnote" hidden></div>
     <div class="adm-acts">
       <button type="button" class="btn" data-act="check">살펴보기</button>
@@ -124,10 +125,12 @@ export async function render(el, { call, query }) {
   let mk = "all";        // 판정 거르기 칩
   fillBox.checked = fill;
 
+  // 고른 회차 — 제목 전체 + 「2026년 3월 · 기간 · 인원 · 상태」(연·월은 📋 회차·명단 콤보와 같은 evYm · 2026-09-30)
+  // 쉐브론은 고르개 단추와 같은 그림(.pk-field-x) — aria-expanded 는 고르개가 여닫을 때 고친다
   const drawEv = () => {
     $('[data-act="ev"]').innerHTML = `<span class="be-up-ev-t"><small>올릴 회차</small>` +
-      (ev ? `<b>${esc(ev.title || ev.id)}</b><small>${esc(evHint(ev))}</small>` : `<b>회차를 골라 주세요</b>`) +
-      `</span><span class="be-up-arrow" aria-hidden="true">▾</span>`;
+      (ev ? `<b>${esc(evName(ev))}</b><small>${esc(evHint(ev))}</small>` : `<b>회차를 골라 주세요</b>`) +
+      `</span><span class="pk-field-x" aria-hidden="true"></span>`;
     const note = $("#be-up-evnote");
     note.classList.toggle("info", !blocked);
     note.hidden = !blocked && !ev?.listedNow;

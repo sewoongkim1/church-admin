@@ -11,7 +11,7 @@ import { pickMany } from "../../core/picker.js";
 import { SRC_LABEL } from "./roster-logic.js";
 import {
   APPROX, MIN_REPEAT, quickChips, quickIds, chipOn, labelMap, barRows, crossTable, repeatChoices, repeatersAt, fitRepeat, statsCsv,
-  csvName, histSummary, histRowText,
+  csvName, histSummary, histRowText, statsPickOptions,
 } from "./history-logic.js";
 // 이름을 누르면 교적 창(Task 16)
 import { openChurchPerson } from "./person-popup.js";
@@ -192,8 +192,7 @@ export async function render(el, { call }) {
       const key = q.dataset.q;
       if (key === "all") return setSel(null);
       if (key !== "custom") return setSel(quickIds(events, key));
-      const v = await pickMany({ anchor: q, title: "통계에 넣을 회차",
-        options: events.map((ev) => ({ value: ev.id, label: ev.title || ev.id, hint: `${ev.closes_on} 마감 · ${n(ev.count)}명` })),
+      const v = await pickMany({ anchor: q, title: "통계에 넣을 회차", options: statsPickOptions(events),
         values: sel || events.map((ev) => ev.id) });
       if (v == null) return;                                        // 닫기 — 그대로
       if (!v.length) { toast("회차를 하나 이상 골라 주세요"); return; }
