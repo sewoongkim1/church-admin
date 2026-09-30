@@ -13,18 +13,21 @@ export const phoneDigits = (s: unknown): string => String(s ?? "").replace(/\D/g
 const txt = (s: unknown): string => String(s ?? "").normalize("NFC").trim();
 
 // 「기쁨-12목장」·「12」·「12목장」·「청년-03」 → 12·12·12·3 (끝에 붙은 수). 없으면 null.
+// ⚠️ 「소망-남성1」도 1 이 나온다 — 교적 남성 목장의 번호일 뿐 「소망 1목장」이 아니다. 목장을 견줄 때는 candMen 을 먼저 본다(sameAffiliation).
 export function mokNumber(s: unknown): number | null {
   const m = /(\d+)\s*(?:목장)?\s*$/.exec(String(s ?? "").trim());
   return m ? Number(m[1]) : null;
 }
 
-export type Cand = { mok1: string; mok3: string; school_dept: string; phones: string[] };
-export type Applicant = { type: "교구" | "교회학교"; gu: string; mok: number | null; bu: string; name: string; phone: string };
+// kind2(장년·교회학교·학생 …)는 성경필사 줄의 「옮겨 적은 줄」 판정(events-person.ts transcribedSame)에만 쓴다 — 맨 위 ⚠️ 그대로, 밖으로 내보내지 않는다.
+export type Cand = { kind2: string; mok1: string; mok3: string; school_dept: string; phones: string[] };
+// men — 신청 쪽 목장 칸에 「남성」이 적혔다(「소망 남성」·「남성목장」). 교회학교 줄은 늘 false.
+export type Applicant = { type: "교구" | "교회학교"; gu: string; mok: number | null; men: boolean; bu: string; name: string; phone: string };
 export type Church = { state: "맞음" | "확인 필요" | "없음"; reason: string };
 
 export function toCand(r: any): Cand {
   return {
-    mok1: txt(r?.mok1), mok3: txt(r?.mok3), school_dept: txt(r?.school_dept),
+    kind2: txt(r?.kind2), mok1: txt(r?.mok1), mok3: txt(r?.mok3), school_dept: txt(r?.school_dept),
     phones: String(r?.phone_digits ?? "").split(/\s+/).filter(Boolean),
   };
 }
@@ -35,49 +38,72 @@ export function applicantFromWho(name: unknown, who: unknown, phone: unknown): A
   const head = parts[0] ?? "";
   const n = String(name ?? ""), p = String(phone ?? "");
   if (MATCH_GU.includes(head) || /목장$/.test(parts[1] ?? "")) {
-    return { type: "교구", gu: head, mok: mokNumber(parts.slice(1).join("")), bu: "", name: n, phone: p };
+    const rest = parts.slice(1).join("");
+    return { type: "교구", gu: head, mok: mokNumber(rest), men: /남성/.test(rest), bu: "", name: n, phone: p };
   }
-  return { type: "교회학교", gu: "", mok: null, bu: head, name: n, phone: p };
+  return { type: "교회학교", gu: "", mok: null, men: false, bu: head, name: n, phone: p };
 }
 
 export function applicantFromPaper(r: any): Applicant {
-  return { type: "교구", gu: txt(r?.gu), mok: mokNumber(r?.mok), bu: "", name: String(r?.name ?? ""), phone: String(r?.phone ?? "") };
+  const mok = txt(r?.mok);
+  return { type: "교구", gu: txt(r?.gu), mok: mokNumber(mok), men: /남성/.test(mok), bu: "", name: String(r?.name ?? ""), phone: String(r?.phone ?? "") };
 }
 
 // 성경필사(암송) 명단 줄(event_signups · 2026-09-29) — 교구는 group_name·sub_name(목장 숫자 글자 · 「남성」), 교회학교는 부서.
 // 전화는 넣지 않는다(이 기능은 phone 칸을 쓰지 않는다) — 그래서 「소속 다름」 대신 「같은 이름 N명」으로 간다.
-// 「남성」·빈 목장·99 는 mok 이 null·99 라 mokUnknown 이 「목장 확인」으로 돌린다(새 규칙을 만들지 않는다).
+// 「남성」은 men(교적 남성 목장과 맞댄다 · 아래 sameAffiliation) · 빈 목장·99 는 mok 이 null·99 라 mokUnknown 이 「목장 확인」으로 돌린다.
 export function applicantFromSignup(r: { who_type: string; group_name: string; sub_name: string; name: string }): Applicant {
   const name = String(r?.name ?? "");
-  if (txt(r?.who_type) === "교회학교") return { type: "교회학교", gu: "", mok: null, bu: txt(r?.group_name), name, phone: "" };
-  return { type: "교구", gu: txt(r?.group_name), mok: mokNumber(r?.sub_name), bu: "", name, phone: "" };
+  if (txt(r?.who_type) === "교회학교") return { type: "교회학교", gu: "", mok: null, men: false, bu: txt(r?.group_name), name, phone: "" };
+  const sub = txt(r?.sub_name);
+  return { type: "교구", gu: txt(r?.group_name), mok: mokNumber(sub), men: /남성/.test(sub), bu: "", name, phone: "" };
 }
 
 // 앱 로그인은 목장으로 숫자나 「남성」만 받고, 목장이 없으면 99 를 쓴다(성경암송 app.js MOK_RE).
-// 「남성」은 mokNumber 가 null, 99 는 명부 목장 번호가 아니다 — 목장을 모르는 신청이다(새가족 제외).
+// 99·빈 목장은 명부 목장 번호가 아니다 — 목장을 모르는 신청이다(새가족 제외).
 // ⚠️ 교구만 맞다고 「맞음」으로 치지 않는다(같은 교구 다른 목장의 동명이인일 수 있다). matchChurch 가 「목장 확인」으로 돌린다.
+// 「남성」은 이제 「아는 목장」이다(2026-09-30 친구 제보 — 교적에 한 분뿐인 「소망-남성1」 분이 「목장 확인(같은 교구 1명)」으로 떴다).
+//   교적 목장 칸에 「남성」이 든 분(candMen)과 맞댄다. 운영 교적의 남성 목장 칸 표기(2026-09-30 친구 허락으로 센 것):
+//   「믿음-남성」·「사랑-남성」·「섬김-남성」·「소망-남성1」·「소망-남성2」·「은혜-남성목장」·「화평-남성」(기쁨엔 없다) —
+//   꼴이 제각각이라 글자로 견주지 않고 「남성」이 들었는지만 본다. 신청 쪽에 번호까지 있으면(「남성2」) 번호도 같아야.
+// ⚠️ 명단·앱 계정의 목장은 「남성」 그대로 적는다(앱 로그인·계정 잇기 열쇠가 「남성」이다) — 고친 것은 표시 규칙뿐이다.
 export const NO_MOK = 99;
 export const mokUnknown = (a: Applicant): boolean =>
-  a.type === "교구" && a.gu !== "새가족" && (a.mok === null || a.mok === NO_MOK);
+  a.type === "교구" && a.gu !== "새가족" && !a.men && (a.mok === null || a.mok === NO_MOK);
+
+// 교적 목장 칸에 「남성」이 든 분 — 「소망-남성1」·「은혜-남성목장」 모두.
+export const candMen = (c: Cand): boolean => /남성/.test(c.mok3);
+
+// 같은 소속이 없을 때 같은 교구 후보 수로 「목장 확인(같은 교구 N명)」을 낼 줄 — 목장을 모르거나(99·빈칸),
+// 「남성」이라 적었는데 교적 남성 목장에 같은 이름이 없는 분(교적은 숫자 목장 — 사실대로 「목장 확인」).
+// matchChurch 와 events-person.ts personPickFor(번호를 같은 교구 안에서만 보는 단계)가 **같은 함수**로 판정한다.
+export const mokToConfirm = (a: Applicant): boolean =>
+  mokUnknown(a) || (a.type === "교구" && a.gu !== "새가족" && !!a.men);
 
 export function sameAffiliation(c: Cand, a: Applicant): boolean {
   if (a.type === "교구") {
     if (!a.gu || c.mok1 !== a.gu) return false;
     if (a.gu === "새가족") return true;              // 새가족의 명부 목장 칸은 연도·월이다 — 교구만 본다
+    if (a.men) return candMen(c) && (a.mok === null || mokNumber(c.mok3) === a.mok);
     if (mokUnknown(a)) return false;
-    return mokNumber(c.mok3) === a.mok;
+    // ⚠️ 숫자 목장은 교적 남성 목장과 맞대지 않는다 — mokNumber("소망-남성1") = 1 이라 「소망 1목장」 신청의 동명이인이
+    //    남성1 목장 분이면 같은 소속으로 잘못 셌다(2026-09-30 바로잡음).
+    return !candMen(c) && mokNumber(c.mok3) === a.mok;
   }
   return !!a.bu && (c.school_dept === a.bu || c.mok1 === a.bu);   // 청년부는 명부의 목장 첫 칸에 있다
 }
 
-export function matchChurch(cands: Cand[] | undefined, a: Applicant): Church {
+// more — 부르는 쪽이 「이분도 같은 소속으로 친다」를 더할 때(성경필사 줄의 「옮겨 적은 줄」 · events-person.ts transcribedSame).
+//   사역신청 줄은 넘기지 않는다(옮겨 적기가 없는 줄이다). 넘기지 않으면 sameAffiliation 만 본다.
+export function matchChurch(cands: Cand[] | undefined, a: Applicant, more?: (c: Cand) => boolean): Church {
   const list = cands ?? [];
   if (!list.length) return { state: "없음", reason: "" };
-  const same = list.filter((c) => sameAffiliation(c, a));
+  const same = list.filter((c) => sameAffiliation(c, a) || (more ? more(c) : false));
   if (same.length === 1) return { state: "맞음", reason: "" };
   if (same.length > 1) return { state: "확인 필요", reason: `같은 소속에 같은 이름 ${same.length}명` };
-  // 목장을 모르는 신청(「남성」·99) — 전화가 같다고 「소속 다름」이라 하면 사실이 아니다. 같은 교구 후보를 먼저 센다.
-  if (mokUnknown(a) && a.gu) {
+  // 목장을 모르는 신청(99·빈칸)·교적 남성 목장에 없는 「남성」 신청 — 전화가 같다고 「소속 다름」이라 하면 사실이 아니다.
+  // 같은 교구 후보를 먼저 센다(mokToConfirm).
+  if (mokToConfirm(a) && a.gu) {
     const gu = list.filter((c) => c.mok1 === a.gu).length;
     if (gu > 0) return { state: "확인 필요", reason: `목장 확인(같은 교구 ${gu}명)` };
   }
@@ -92,9 +118,10 @@ export const lookupKeys = (names: unknown[]): string[] =>
   [...new Set(names.map(nameKey).filter((k) => k && !LOOKUP_BAD.test(k)))];
 
 // 명부가 없거나(null) 물을 수 없는 이름이면 null — 화면은 표시를 그리지 않는다(「교적 없음」은 사실이 아닐 수 있다)
-export function churchFor(idx: Map<string, Cand[]> | null, a: Applicant): Church | null {
+// more 는 matchChurch 로 그대로 흘린다(성경필사 줄 — events-person.ts churchForSignup).
+export function churchFor(idx: Map<string, Cand[]> | null, a: Applicant, more?: (c: Cand) => boolean): Church | null {
   if (!idx) return null;
   const k = nameKey(a.name);
   if (!k || LOOKUP_BAD.test(k)) return null;
-  return matchChurch(idx.get(k), a);
+  return matchChurch(idx.get(k), a, more);
 }

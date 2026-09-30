@@ -74,3 +74,12 @@ export function statusCounts(rows) {
   for (const r of rows) if (r.status in o) o[r.status]++;
   return o;
 }
+
+// 결정(임명·취소)으로 서버가 번호를 지웠다(phoneCleared) — 카드의 번호와 함께 **교적 표시도** 비운다(2026-09-30 검토 2).
+// 교적 표시(r.church)는 서버가 불러올 때 그 번호로 셈한 것이라(「소속 다름」) 번호가 없어진 뒤엔 이름을 눌러 뜨는 창
+// (번호 없이 다시 셈 → 「같은 이름 N명」)과 어긋난다. 새로 불러오기 전까지는 그리지 않는다 — 사실과 다른 표시를 남기지 않게.
+// ⚠️ 지운 번호를 메모리에 따로 두고 창에 계속 보내지 않는다 — 서버가 결정 뒤 번호를 지우는 까닭(더 갖고 있지 않기)에 어긋난다.
+export function clearPhone(r) {
+  r.phone = "";
+  r.church = null;
+}

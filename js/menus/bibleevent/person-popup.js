@@ -1,4 +1,6 @@
 // 이름을 누르면 교적 창 — 📋 회차·명단 · 👤 사람별 이력·통계의 이름 단추가 부른다(2026-09-30 · 친구 결정 · 계획 Task 16).
+// 사역신청(📋 신청 현황 · 🎉 임명현황 · 📋 종이 명단 올리기 결과)·🔑 담당자·역할 화면도 같은 창을 action:"ministryPerson" 으로 부른다
+// (2026-09-30 친구 요청 · 이름 단추·보낼 것은 js/menus/ministry/person-link.js). 서버 답의 모양이 evPerson 과 같아 아래 동작은 그대로다.
 // 설계: v2 docs/superpowers/specs/2026-09-29-church-admin-bible-events-design.md §0 「이름을 누르면 교적 창」·§2 evPerson·§3.
 // ⚠️ 무엇을 보여 줄지는 **서버**(evPerson)가 부른 분의 역할로 정한다 — 화면은 받은 모양(mode)대로 그리기만 한다.
 //    full(교인명부 역할·총괄) → 교인명부 「자세히」 창(people/search.js openPerson — 그쪽이 peoplePerson 을 불러 people.view 가 남는다).
@@ -169,7 +171,10 @@ function back() {
 }
 
 // name·who_type·group·sub = 명단 줄 그대로(person-logic.js personPayload) · anchor = 누른 단추(창이 닫히면 초점을 돌려준다)
-export async function openChurchPerson({ call, name = "", who_type = "", group = "", sub = "", anchor = null } = {}) {
+// action — 성경필사는 evPerson(기본), 사역신청·담당자는 ministryPerson. who·phone 은 ministryPerson 만 받는다(신청 줄의 소속 한 줄 ·
+// 성도님이 적은 번호 — 서버가 교적 표시와, 교인명부 담당자·총괄일 때만 동명이인 가리기에 쓰고 응답·기록에 싣지 않는다).
+export async function openChurchPerson({ call, action = "evPerson", name = "", who_type = "", group = "", sub = "", who = "", phone = "",
+  anchor = null } = {}) {
   if (session) {                                        // 묻는 중이거나 창이 떠 있다 — 두 번 눌러도 하나만
     if (session.popped || session.cancelled) toast(WAIT_NOTE);
     return;
@@ -182,7 +187,9 @@ export async function openChurchPerson({ call, name = "", who_type = "", group =
   const gone = () => s.cancelled || s.popped || (anchor != null && !anchor.isConnected);
   setWait(s, true);
   try {
-    const r = await call("evPerson", { name, who_type, group, sub });
+    // ⚠️ evPerson 에는 지금과 **똑같이** 넷만 보낸다(성경필사 서버가 받는 칸). 다른 액션은 넷에 who·phone 을 더한다(빈 값은 뺀다).
+    const r = await call(action, action === "evPerson" ? { name, who_type, group, sub }
+      : { name, who_type, group, sub, ...(who ? { who } : {}), ...(phone ? { phone } : {}) });
     if (gone()) return;
     const d = personDecision(r);
     if (d.kind === "error") { toast(errorText(r)); return; }
