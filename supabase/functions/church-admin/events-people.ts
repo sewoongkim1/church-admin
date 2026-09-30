@@ -52,7 +52,9 @@ export function positionFromChurch(p: ChurchPerson): string {
   return pre && !pos.startsWith(pre) ? pre + pos : pos;
 }
 
-// evPeopleLookup 한 줄 — **다섯 칸만**(이름·구분·소속·세부·직분). 소속을 못 정하면 세 칸이 빈 글자.
+// lookupView — **다섯 칸만**(이름·구분·소속·세부·직분 · lookupOut → evPerson basic·찾기 후보의 재료 · 빈칸 채우기 fillDecision 도 같은 다섯 칸만 채운다).
+//   evPeopleLookup 은 lookupCandOut(events-upload.ts)이 church_mok 을 하나 더 붙인다 — 여기를 넓히지 않는다.
+//   소속을 못 정하면 세 칸이 빈 글자.
 // ⚠️ 스프레드(...p)를 쓰지 않는다 — name_key·kind2·mok3·position_detail 같은 원래 칸이 따라 나가지 않게.
 // ⚠️ 응답 칸 이름은 group·sub 다(CONTRACT §2) — Task 8 이 칸 지도로 옮겨 적는다(스프레드 금지).
 export function lookupView(p: ChurchPerson, name: string):

@@ -97,7 +97,7 @@ test("personOut full — 교인ID·이름·소속 한 줄·직분 넷뿐 · 고�
   assert.equal(typeof personOut([P("12")], ask("", "", ""), true).candidates[0].person_id, "number");
 });
 
-test("personOut basic — 다섯 칸(evPeopleLookup 과 같은 칸 지도)과 교적 표시 · 교인ID 없음 · 고르면 그 한 분만 · total", () => {
+test("personOut basic — lookupOut 다섯 칸(evPeopleLookup 의 다섯 칸과 같다 · church_mok 은 없음)과 교적 표시 · 교인ID 없음 · 고르면 그 한 분만 · total", () => {
   const a = P(12), b = P(11, { mok1: "소망", mok3: "소망-3목장", position: "" });
   const o = personOut([b, a], ask("교구", "화평", "20"), false);
   assert.deepEqual(o, { mode: "basic", pick: 0, total: 2,

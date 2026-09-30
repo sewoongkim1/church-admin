@@ -13,7 +13,7 @@
 //    total 은 명부에서 이 이름인 분 수(스무 분으로 자르기 전) — 화면이 「같은 이름 21분(앞 20분)」처럼 사실대로 적게.
 // ⚠️ 모양은 부른 사람의 역할로 갈린다(역할 확인은 index.ts — ctx.roles):
 //    full(교인명부 역할·총괄) — 교인ID·이름·소속 한 줄·직분. 화면이 교인ID 로 교인명부 peoplePerson(「자세히」 창)을 연다.
-//    basic(성경필사 역할만) — 다섯 칸(lookupOut — evPeopleLookup 과 같은 칸 지도)과 교적 표시. 교인ID 는 싣지 않는다.
+//    basic(성경필사 역할만) — lookupOut 다섯 칸(evPeopleLookup 의 다섯 칸과 같다 · church_mok 은 없음)과 교적 표시. 교인ID 는 싣지 않는다.
 //    (evPeopleLookup 후보에만 붙는 교적 목장 칸 church_mok 은 여기 싣지 않는다 — lookupCandOut 은 찾기 전용 · 2026-09-30)
 //    연락처·주소·생년월일·사진은 어느 쪽에도 없다(서버도 그 칸을 읽지 않는다 · 스프레드 금지).
 //

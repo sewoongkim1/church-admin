@@ -979,8 +979,9 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
 .be-cand{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:100%;min-height:var(--tap);margin-top:6px;padding:8px 12px;
   border:1px solid var(--ghost-bd);border-radius:10px;background:var(--ghost-bg);color:var(--navy-dark);font-size:14px;text-align:left;cursor:pointer}
 .be-cand b{color:var(--navy)}
-/* 후보 아래 작은 줄 「교적: 소망-남성1」(교적 목장 칸 그대로 · church_mok) — 한 줄을 다 쓴다 */
-.be-cand-mok{flex-basis:100%;font-size:13px;line-height:1.3;color:var(--gray)}
+/* 후보 아래 작은 줄 「교적: 소망-남성1」(교적 목장 칸 그대로 · church_mok) — 한 줄을 다 쓴다.
+   글자색은 --ink-2 — --gray 는 이 푸른 바탕(--ghost-bg)에서 약 4.06:1 로 AA 에 못 미친다(--ink-2 는 약 5.35:1) */
+.be-cand-mok{flex-basis:100%;font-size:13px;line-height:1.3;color:var(--ink-2)}
 .be-ro{margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--light);font-size:15px}
 .be-ro b{color:var(--navy)}
 .be-2col{display:grid;gap:0 8px}

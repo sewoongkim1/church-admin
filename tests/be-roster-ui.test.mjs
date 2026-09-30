@@ -132,7 +132,7 @@ test("roster.js — 콤보로 고르면 표시(mark) 뒤 go · render 는 시작
 
 // ---------- 한 분 더하기 찾기 후보에 「교적: 소망-남성1」(church_mok · 2026-09-30 친구 요청) ----------
 // 소망 남성1·남성2 목장의 같은 이름 두 분은 옮겨 적으면 둘 다 「소망 남성」이다 — 교적 목장 칸 그대로를 작은 줄로 보인다.
-test("candsHtml — 후보마다 교적 목장 칸을 작은 줄로(「교적: 소망-남성1」) · 비었거나 없으면 안 그린다 · esc · 13px 이상 회색", async () => {
+test("candsHtml — 후보마다 교적 목장 칸을 작은 줄로(「교적: 소망-남성1」) · 비었거나 없으면 안 그린다 · esc · 13px 이상 --ink-2", async () => {
   const rf = await import("../js/menus/bibleevent/row-form.js");
   assert.equal(typeof rf.candsHtml, "function", "row-form.js 가 candsHtml 을 내보내야 한다");
   const res = { ok: true, source: { date: "2026-09-29", total: 8672 }, people: [
@@ -152,25 +152,40 @@ test("candsHtml — 후보마다 교적 목장 칸을 작은 줄로(「교적: �
   for (const i of [2, 4, 5]) assert.ok(!btns[i].includes("be-cand-mok") && !btns[i].includes("교적:"), "빈 칸이면 안 그린다 " + i);
   assert.ok(btns[3].includes("교적: &lt;i&gt;중등부") && !h.includes("<i>"), "esc");
   assert.equal((h.match(/교적:/g) || []).length, 3);
-  // 작은 줄 — 한 줄을 다 쓰고(flex-basis 100%) 13px 이상 · 회색(--gray)
+  // 작은 줄 — 한 줄을 다 쓰고(flex-basis 100%) 13px 이상 · 글자색 --ink-2(#5a6477)
+  //   --gray(#6b778c)는 흰 바탕 기준 — 후보 단추 바탕 --ghost-bg(#eef3fb) 위에서는 약 4.06:1 로 AA(4.5:1)에 못 미친다.
+  //   --ink-2 는 그 바탕에서 약 5.35:1. 두 분을 가려내라고 넣은 줄이라 읽혀야 한다.
   const css = readFileSync(new URL("../css/admin.css", import.meta.url), "utf8");
   const m = css.match(/\.be-cand-mok\{([^}]*)\}/);
   assert.ok(m, "css/admin.css 에 .be-cand-mok 규칙");
   const px = m[1].match(/font-size:(\d+)px/);
   assert.ok(px && Number(px[1]) >= 13, "13px 이상: " + m[1]);
-  assert.match(m[1], /color:var\(--gray\)/);
+  assert.match(m[1], /color:var\(--ink-2\)/);
+  assert.doesNotMatch(m[1], /--gray/);
   assert.match(m[1], /flex-basis:100%/);
 });
 
-test("개인정보 안내 — 6번(보는 사람)·7번(교인명부에서 가져오는 것) 두 곳에 「찾기 후보에는 교적의 목장 칸 그대로도」(church_mok · 2026-09-30)", () => {
+test("개인정보 안내 — 6번(보는 사람)·7번(교인명부에서 가져오는 것) 두 곳에 「찾기 후보에는 교적의 목장 칸도 그대로」(church_mok · 2026-09-30)", () => {
   const pv = readFileSync(new URL("../privacy.html", import.meta.url), "utf8");
-  const note = "찾기 후보에는 교적의 목장 칸 그대로도 — 같은 교구에 같은 이름이 있을 때 가려내려고";
+  const note = "찾기 후보에는 교적의 목장 칸도 그대로 보여";
   assert.equal(pv.split(note).length - 1, 2, "6번·7번 두 곳");
   const s6 = pv.indexOf("<h3>6. "), s7 = pv.indexOf("<h3>7. "), s8 = pv.indexOf("<h3>8. ");
   assert.ok(s6 > 0 && s7 > s6);
   const i6 = pv.indexOf(note, s6), i7 = pv.indexOf(note, s7);
   assert.ok(i6 > s6 && i6 < s7, "6번 안");
   assert.ok(i7 > s7 && (s8 < 0 || i7 < s8), "7번 안");
-  // 교구 밖의 분(아이·청년·새가족)은 무엇이 보이는지도 적는다 — 부서 칸, 없으면 교구 칸
-  for (const i of [i6, i7]) assert.ok(pv.slice(i, i + 120).includes("교구 밖의 분은 부서 칸, 없으면 교구 칸"), pv.slice(i, i + 120));
+  // 교구 목장에 속하지 않은 분에게 무엇이 보이는지 — 「교구 밖인데 교구 칸?」으로 읽히지 않게 풀어 쓴다(검토 CM-M3)
+  const why = "같은 교구에 같은 이름이 있을 때 가려내려고";
+  const others = "교구 목장에 속하지 않은 분(아이·청년·새가족 등)은 부서 칸, 부서가 없으면 교적의 교구 칸";
+  const kid = "부서 없는 아이는 가족의 교구 이름";
+  for (const i of [i6, i7]) {
+    const near = pv.slice(i, i + 200);
+    for (const t of [why, others, kid]) assert.ok(near.includes(t), t + " ← " + near);
+  }
+  assert.ok(!pv.includes("교구 밖의 분은"), "옛 문구(교구 밖의 분은 … 교구 칸)는 남기지 않는다");
+  // 6번 — 「7번 · 이름을 누를 때는 …」 참조는 새 설명과 다른 괄호다(새 설명의 일부처럼 읽히지 않게)
+  const ref = "(7번 · 이름을 누를 때는 아래 「이름을 누르면」)";
+  const r6 = pv.indexOf(ref, s6);
+  assert.ok(r6 > s6 && r6 < i6, "6번: 참조 괄호가 새 설명보다 앞에, 따로");
+  assert.ok(!pv.slice(i6, s7).includes("7번 ·"), "6번: 새 설명 안에 「7번 ·」 참조가 섞이지 않는다");
 });

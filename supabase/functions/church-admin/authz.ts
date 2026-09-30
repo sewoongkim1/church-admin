@@ -54,7 +54,7 @@ export const ACTION_ROLES: Record<string, string | null> = {
   evRowSave: "bibleevent",
   evRowDelete: "bibleevent",
   // 성경필사(암송) — 명단 올리기·교인명부 찾기(계획 Task 8). 살펴보기는 아무것도 안 바꾼다(채우기를 켜면 people.fill 기록),
-  // 넣기는 「넣음」 줄만 더한다(앱 계정은 조회만). 찾기는 이름·구분·소속·세부·직분 다섯 칸만, 부를 때마다 people.lookup.
+  // 넣기는 「넣음」 줄만 더한다(앱 계정은 조회만). 찾기는 이름·구분·소속·세부·직분 다섯 칸 + 교적 목장 칸(church_mok), 부를 때마다 people.lookup.
   evUploadCheck: "bibleevent",
   evUploadSave: "bibleevent",
   evPeopleLookup: "bibleevent",
