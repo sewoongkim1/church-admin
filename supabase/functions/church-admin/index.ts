@@ -44,6 +44,8 @@ import { readName } from "./events-upload.ts";
 import { inChunks } from "./events-rows.ts";
 // 회차 설정의 글자 길이·차례 검사 · DB 에 쓸 값(sort_order 는 수로) — 2026-09-30 E(SEC-6 · 회차 차례)
 import { checkEventEdit, eventDbPatch } from "./events-rules.ts";
+// 성경필사 명단 줄의 교적 표시 — 옮겨 적은 줄은 맞음(transcribedSame · 2026-09-30 친구 제보). evRoster·evRowChurch 가 쓴다.
+import { churchForSignup } from "./events-person.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -870,12 +872,13 @@ async function peopleSource(): Promise<{ source_date: string; total: number } | 
 
 // 사역신청 줄을 교적과 맞댄다 — 명부가 한 번도 안 올라왔으면 null(화면이 표시를 아예 그리지 않는다).
 // 신청자 이름으로만 묻는다(200개씩) — 8,672명 전체를 읽지 않게.
+// kind2 — 성경필사 줄의 「옮겨 적은 줄」 판정(churchForSignup · transcribedSame)에만 쓴다. 응답엔 { state, reason } 두 칸만 간다.
 async function churchLookup(names: unknown[]): Promise<Map<string, Cand[]> | null> {
   if (!(await peopleSource())) return null;
   const keys = lookupKeys(names);
   const out = new Map<string, Cand[]>();
   for (let i = 0; i < keys.length; i += 200) {
-    const { data, error } = await db.from("church_people").select("name_key,mok1,mok3,school_dept,phone_digits")
+    const { data, error } = await db.from("church_people").select("name_key,mok1,mok3,school_dept,phone_digits,kind2")
       .in("name_key", keys.slice(i, i + 200));
     if (error) throw error;
     for (const r of (data ?? []) as any[]) {
@@ -1065,7 +1068,7 @@ async function evRoster(b: any) {
     ok: true,
     event: evOut(ev, counts.get(ev.id) ?? 0),
     source: src ? { date: src.source_date, total: src.total } : null,
-    rows: rows.map((r) => rowOut(r, churchFor(idx, applicantFromSignup(r)))),
+    rows: rows.map((r) => rowOut(r, churchForSignup(idx, r))),   // 옮겨 적은 줄은 맞음(transcribedSame) — 이름을 누르면 창(evPerson)과 같은 식
   };
 }
 
@@ -1281,8 +1284,9 @@ async function evRowRead(id: number): Promise<any | null> {
 }
 
 // 한 줄의 교적 표시 — 이름 하나만 묻는다. 쓰기 **전에** 부른다(쓴 뒤에 실패해 500 이 되지 않게).
+// 명단(evRoster)과 같은 식(churchForSignup — 옮겨 적은 줄은 맞음).
 async function evRowChurch(r: { who_type: string; group_name: string; sub_name: string; name: string }) {
-  return churchFor(await churchLookup([r.name]), applicantFromSignup(r));
+  return churchForSignup(await churchLookup([r.name]), r);
 }
 
 // 한 분 더하기 — source='import' · 메모 앞에 「담당자가 더함」 · 계정은 **하나일 때만** 잇는다(둘 이상이면 알리기만).

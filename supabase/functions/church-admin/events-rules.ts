@@ -126,7 +126,8 @@ export function cleanPosition(v: unknown): string {
 
 // 목장 칸 — 「20목장」→20 · 「07」→7(앞자리 0) · 「남성목장」→남성. 그 밖의 글자는 그대로 두어 checkRow 가 bad-sub 로 잡는다.
 // ⚠️ Number() 로 바꾸지 않는다(긴 숫자가 반올림된다) — 앞의 0 만 뗀다.
-function tidyMok(s: string): string {
+// 내보내는 까닭 — 교적 표시의 「옮겨 적은 줄」 판정(events-person.ts transcribedSame)이 목장을 같은 꼴로 견준다(2026-09-30).
+export function tidyMok(s: string): string {
   const t = s.replace(/\s+/g, "");
   if (/^남성(목장)?$/.test(t)) return "남성";
   const m = /^(\d+)(목장)?$/.exec(t);

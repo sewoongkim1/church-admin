@@ -129,9 +129,11 @@ test("memberAsk — 담당자 줄 → 교구·목장 또는 교회학교·부서
   assert.deepEqual(memberAsk(gu), { name: "홍길동", who_type: "교구", group: "화평", sub: "20" });
   assert.deepEqual(memberAsk(sc), { name: "홍길동", who_type: "교회학교", group: "중등부", sub: "3학년" });
   const back = (m) => serverReads(memberAsk(m));
-  assert.deepEqual(back(gu), { type: "교구", gu: "화평", mok: 20, bu: "", name: "홍길동", phone: "" });
+  // men(「남성」) — 2026-09-30 people-match.ts 가 더한 칸(숫자 목장·교회학교는 false)
+  assert.deepEqual(back(gu), { type: "교구", gu: "화평", mok: 20, men: false, bu: "", name: "홍길동", phone: "" });
+  assert.equal(back({ ...gu, mok: "남성" }).men, true, "담당자 목장 「남성」");
   assert.deepEqual(back({ ...gu, mok: "20목장" }).mok, 20, "「20목장」으로 적은 분도 같은 목장");
-  assert.deepEqual(back(sc), { type: "교회학교", gu: "", mok: null, bu: "중등부", name: "홍길동", phone: "" });
+  assert.deepEqual(back(sc), { type: "교회학교", gu: "", mok: null, men: false, bu: "중등부", name: "홍길동", phone: "" });
 });
 
 test("📋 신청 현황 카드·표 — 이름이 단추(열쇠 = 신청 id) · 번호는 단추에 없다 · 사람별 카드는 머리에 이름이 있어 단추가 없다", () => {
