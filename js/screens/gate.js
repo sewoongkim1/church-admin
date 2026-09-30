@@ -16,7 +16,7 @@ const pickField = (k) => `<div class="field"><span id="lb-${k}">${PICKS[k].what}
 // 같은 계정으로 바로 들어가므로, 공용 PC 에서 다른 분이 들어오려면 카카오에 계정을 다시 묻게 해야 한다.
 export function renderLogin(el, { onKakao, onSwitch, notice = "" }) {
   el.innerHTML = `<div class="gate"><div class="card">
-    <h2>고척교회 사역관리</h2>
+    <h2>고척교회 관리</h2>
     <p>교회 담당자만 들어올 수 있어요.<br>카카오로 로그인한 뒤 승인을 받으면 메뉴가 열려요.</p>
     ${notice ? `<p class="err">${esc(notice)}</p>` : ""}
     <div class="stack">

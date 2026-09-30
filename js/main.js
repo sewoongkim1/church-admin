@@ -79,7 +79,7 @@ function renderShell() {
   app.innerHTML = `
     <header class="top">
       <button type="button" class="icon-btn menu" aria-label="메뉴 열기">☰</button>
-      <h1>고척교회 사역관리</h1>
+      <h1>고척교회 관리</h1>
       <span class="who">${esc(me.member.name)}</span>
       <button type="button" class="out">로그아웃</button>
     </header>
