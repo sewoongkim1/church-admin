@@ -138,9 +138,12 @@ export function groupsHtml(rows, view, openSet, dupM) {
       const phone = list.map((r) => r.phone).find(Boolean) || "";
       const teams = new Set(list.map(teamKey)).size;
       const dup = dupOthers(dupM, list);
-      // 이름 단추의 열쇠 — 번호가 남은 건(묶음 안 이름·소속은 모두 같다 · 결정이 난 건은 서버가 번호를 지웠다). 없으면 첫 건
-      const key = (list.find((r) => r.phone) || r0).id;
-      title = `<span class="mn-grp-t">${personLinkHtml(key, r0.name)}${churchBadgeHtml(r0.church)}${pos ? ` <em>${esc(pos)}</em>` : ""}<i>${esc(r0.who)}</i></span>` +
+      // 머리의 한 건(kr) — 번호가 남은 건(묶음 안 이름·소속은 모두 같다 · 결정이 난 건은 서버가 번호를 지웠다), 없으면 첫 건.
+      // ⚠️ 이름 단추의 열쇠와 교적 표시를 **같은 건**에서 꺼낸다(2026-09-30 검토 2) — 교적 표시는 그 건의 번호로 셈한 것이고
+      //    창도 그 건(번호 포함)으로 묻는다. 전처럼 표시는 r0(번호 지운 건 · 「같은 이름 N명」), 열쇠는 번호 건이면 창이 「소속 다름」을 연다.
+      //    머리의 번호(phone)도 같은 건의 것이다(list 에서 처음 찾은 번호).
+      const kr = list.find((r) => r.phone) || r0;
+      title = `<span class="mn-grp-t">${personLinkHtml(kr.id, r0.name)}${churchBadgeHtml(kr.church)}${pos ? ` <em>${esc(pos)}</em>` : ""}<i>${esc(r0.who)}</i></span>` +
         `<span class="mn-grp-n">${teams}개 사역</span>` +
         ((phone || dup.length) ? `<span class="mn-grp-sub mn-phone-line">${phone ? phoneHtml(phone) : ""}${dupBadgeHtml(dup)}</span>` : "") +
         rowsHtml(list, (r) => r.team, (r) => r.committee);

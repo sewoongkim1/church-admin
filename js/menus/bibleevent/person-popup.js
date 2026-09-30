@@ -172,7 +172,7 @@ function back() {
 
 // name·who_type·group·sub = 명단 줄 그대로(person-logic.js personPayload) · anchor = 누른 단추(창이 닫히면 초점을 돌려준다)
 // action — 성경필사는 evPerson(기본), 사역신청·담당자는 ministryPerson. who·phone 은 ministryPerson 만 받는다(신청 줄의 소속 한 줄 ·
-// 성도님이 적은 번호 — 서버가 동명이인을 가리는 데만 쓰고 응답·기록에 싣지 않는다).
+// 성도님이 적은 번호 — 서버가 교적 표시와, 교인명부 담당자·총괄일 때만 동명이인 가리기에 쓰고 응답·기록에 싣지 않는다).
 export async function openChurchPerson({ call, action = "evPerson", name = "", who_type = "", group = "", sub = "", who = "", phone = "",
   anchor = null } = {}) {
   if (session) {                                        // 묻는 중이거나 창이 떠 있다 — 두 번 눌러도 하나만

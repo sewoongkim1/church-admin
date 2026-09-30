@@ -2,7 +2,8 @@
 // 이름·교인ID 는 모두 지어낸 것(홍길동 · 11~). 교인명부 칸 모양은 서버가 읽는 EV_PERSON_COLS 그대로.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { personAsk, personPick, personPickFor, personLabel, personOut, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
+import { personAsk, personPick, personPickFor, personLabel, personOut, personOutFor, ministryApplicant, ministryLookupLog }
+  from "../supabase/functions/church-admin/events-person.ts";
 import { matchChurch, toCand, applicantFromSignup, applicantFromWho, sameAffiliation } from "../supabase/functions/church-admin/people-match.ts";
 import { LOOKUP_MAX } from "../supabase/functions/church-admin/events-upload.ts";
 
@@ -205,22 +206,62 @@ test("personPickFor — 같은 소속이 둘이면 번호도 그 안에서만 �
   assert.deepEqual(ids(personPickFor([P(61), cands[2]], a)), { pick: 0, list: [61, 63] });
 });
 
-test("personPickFor — 목장을 모르는 줄(「화평 남성」)도 번호가 한 분과 맞으면 그분 · 교적 표시는 명단과 같은 「목장 확인」", () => {
+test("personPickFor — 목장을 모르는 줄(「화평 남성」)도 같은 교구 안에서 번호가 한 분과 맞으면 그분 · 교적 표시는 명단과 같은 「목장 확인」", () => {
   const cands = [P(71, { phone_digits: PH(1) }), P(72, { mok3: "화평-5목장", phone_digits: PH(2) })];
-  const a = applicantFromWho("홍길동", "화평 남성", PH(2));
-  assert.deepEqual(ids(personPickFor(cands, a)), { pick: 0, list: [72, 71] });
-  const o = personOutFor(cands, a, false);
-  assert.deepEqual(o.church, matchChurch(cands.map(toCand), a), "창의 표시 = 명단의 표시(같은 함수·같은 후보·같은 줄)");
+  const row = { name: "홍길동", who: "화평 남성", phone: "010-0000-0002" };   // 신청 현황 줄(가짜)
+  // 창이 맞대는 줄 = 서버 ministryPerson 이 받은 줄을 읽는 식(ministryApplicant) · 명단이 맞대는 줄 = ministryList 의 applicantFromWho
+  const win = ministryApplicant(row, row.name);
+  const list = applicantFromWho(row.name, row.who, row.phone);
+  assert.deepEqual(ids(personPickFor(cands, win)), { pick: 0, list: [72, 71] });
+  const o = personOutFor(cands, win, false);
+  assert.deepEqual(o.church, matchChurch(cands.map(toCand), list), "창의 표시 = 명단의 표시(명단이 쓰는 식으로 만든 신청자와 맞댄다)");
   assert.deepEqual(o.church, { state: "확인 필요", reason: "목장 확인(같은 교구 2명)" });
+  // 번호로 고르는 것은 full 뿐 — basic 은 후보 둘(같은 교구 둘 다 창에 보인다)
+  assert.deepEqual([o.pick, o.people.length], [null, 2]);
+  assert.deepEqual(personOutFor(cands, win, true).candidates.map((c) => c.person_id), [72]);
 });
 
-test("personOutFor basic — 번호가 있으면 교적 표시가 명단처럼 「소속 다름」 · 고른 분 다섯 칸", () => {
+test("personPickFor — 목장을 모르는 줄은 번호가 **다른 교구** 한 분과만 맞으면 고르지 않는다 · 명단이 가리키는 같은 교구 분이 목록에 있다(검토 1)", () => {
+  // 명부: 홍길동 둘 — 화평-3목장(번호 1) · 소망-2목장(번호 2). 줄: 「화평 남성」 · 번호 2(소망 분의 번호)
+  const cands = [P(91, { mok3: "화평-3목장", phone_digits: PH(1) }), P(92, { mok1: "소망", mok3: "소망-2목장", phone_digits: PH(2) })];
+  const row = { name: "홍길동", who: "화평 남성", phone: "010-0000-0002" };
+  const a = ministryApplicant(row, row.name);
+  // 명단 표시는 「목장 확인(같은 교구 1명)」 — 번호보다 같은 교구를 먼저 본다(matchChurch 의 차례)
+  assert.deepEqual(matchChurch(cands.map(toCand), applicantFromWho(row.name, row.who, row.phone)),
+    { state: "확인 필요", reason: "목장 확인(같은 교구 1명)" });
+  // 창도 같은 차례 — 번호는 같은 교구(화평 91) 안에서만 보므로 소망 분을 고르지 않는다
+  assert.deepEqual(ids(personPickFor(cands, a)), { pick: null, list: [91, 92] });
+  const full = personOutFor(cands, a, true);
+  assert.equal(full.pick, null, "full 도 소망 분 「자세히」 창을 곧바로 열지 않는다");
+  assert.deepEqual(full.candidates.map((c) => [c.person_id, c.label]), [[91, "화평 3목장"], [92, "소망 2목장"]]);
+  const basic = personOutFor(cands, a, false);
+  assert.deepEqual([basic.pick, basic.church], [null, { state: "확인 필요", reason: "목장 확인(같은 교구 1명)" }]);
+  assert.ok(basic.people.some((p) => p.group === "화평" && p.sub === "3"), "명단 표시가 말하는 같은 교구 분이 창에 보인다");
+  // 번호가 같은 교구 분의 것이면 그분(좁힌 풀 안에서 한 분)
+  assert.deepEqual(ids(personPickFor(cands, { ...a, phone: PH(1) })), { pick: 0, list: [91, 92] });
+  // 같은 교구 후보가 아예 없으면(「기쁨 남성」) 명단도 번호 단계로 간다(「소속 다름」) — 창도 같은 이름 전부에서 번호로
+  const g = ministryApplicant({ ...row, who: "기쁨 남성" }, row.name);
+  assert.deepEqual(matchChurch(cands.map(toCand), g), { state: "확인 필요", reason: "소속 다름" });
+  assert.deepEqual(ids(personPickFor(cands, g)), { pick: 0, list: [92, 91] });
+  // 명부에 한 분뿐이면 목장을 몰라도 그분(옛 규칙 — 좁히는 것은 번호 단계뿐)
+  assert.equal(personPickFor([cands[1]], a).pick, 0);
+  // 목장 99 도 같다(앱 로그인이 목장을 모를 때 쓰는 값)
+  assert.equal(personPickFor(cands, ministryApplicant({ ...row, who: "화평 99목장" }, row.name)).pick, null);
+});
+
+test("personOutFor basic — 번호가 있으면 교적 표시가 명단처럼 「소속 다름」 · 그래도 번호로 고르지 않고 후보를 준다(검토 4)", () => {
   const cands = [P(81, { mok1: "소망", mok3: "소망-3목장", phone_digits: PH(1) }), P(82, { mok1: "믿음", mok3: "믿음-1목장", phone_digits: PH(2) })];
   const a = applicantFromWho("홍길동", "화평 20목장", "010-0000-0002");
   const o = personOutFor(cands, a, false);
-  assert.deepEqual(o, { mode: "basic", pick: 0, total: 2,
-    people: [{ name: "홍길동", who_type: "교구", group: "믿음", sub: "1", position: "집사" }],
+  // 사역신청 역할만인 분이 아무 번호로 「이 번호는 믿음 1목장 집사 홍길동」을 떠볼 수 없게 — 명단 표시(「소속 다름」)만큼만 알려 준다
+  assert.deepEqual(o, { mode: "basic", pick: null, total: 2,
+    people: [{ name: "홍길동", who_type: "교구", group: "소망", sub: "3", position: "집사" },
+      { name: "홍길동", who_type: "교구", group: "믿음", sub: "1", position: "집사" }],
     church: { state: "확인 필요", reason: "소속 다름" } });
+  // 번호가 틀려도 같은 후보(둘) — 번호에 따라 달라지는 것은 교적 표시뿐이고, 그것은 명단 표시와 같다
+  const wrong = personOutFor(cands, { ...a, phone: PH(9) }, false);
+  assert.deepEqual([wrong.pick, wrong.people], [null, o.people]);
+  assert.deepEqual(wrong.church, { state: "확인 필요", reason: "같은 이름 2명" });
   // 번호가 없으면 옛 표시 그대로(「같은 이름 2명」 · 고르지 않음)
   const n = personOutFor(cands, { ...a, phone: "" }, false);
   assert.deepEqual([n.pick, n.church], [null, { state: "확인 필요", reason: "같은 이름 2명" }]);
@@ -237,7 +278,7 @@ test("personOutFor — 명부 번호(phone_digits)·받은 번호가 basic·full
   const cands = [P(990011, { mok1: "소망", mok3: "소망-3목장", phone_digits: "01000000011 01000000012" }),
     P(990012, { mok1: "믿음", mok3: "믿음-1목장", phone_digits: "01000000013" }),
     P(990013, { phone1: "010-0000-0014", phone_digits: "01000000014", address: "비밀주소" })];
-  const asks = [applicantFromWho("홍길동", "기쁨 2목장", "01000000013"),     // 한 분과 맞음 → 고름
+  const asks = [applicantFromWho("홍길동", "기쁨 2목장", "01000000013"),     // 한 분과 맞음 → full 은 고름(basic 은 후보 셋)
     applicantFromWho("홍길동", "기쁨 2목장", "01000000099"),                  // 아무와도 안 맞음 → 후보 셋
     applicantFromWho("홍길동", "화평 20목장", "01000000014")];                // 같은 소속 한 분 → 고름
   for (const a of asks) {
@@ -248,4 +289,74 @@ test("personOutFor — 명부 번호(phone_digits)·받은 번호가 basic·full
       }
     }
   }
+});
+
+test("personOutFor — basic 은 어떤 줄·어떤 번호로도 번호로 고르지 않는다(번호를 뺀 고르기와 늘 같다) · full 은 번호로 고를 수 있다", () => {
+  const dir = [P(101, { phone_digits: PH(1) }), P(102, { phone_digits: PH(2) }), P(103, { mok1: "소망", mok3: "소망-3목장", phone_digits: PH(3) }),
+    P(104, { mok1: "믿음", mok3: "믿음-1목장", phone_digits: PH(4) + " " + PH(1) }), P(105, { mok3: "화평-5목장", phone_digits: PH(5) })];
+  const whos = ["화평 20목장", "화평 남성", "화평 99목장", "소망 3목장", "기쁨 2목장", "중등부 3학년", ""];
+  const sets = [dir, dir.slice(0, 2), dir.slice(2), [dir[2], dir[3]], [dir[0], dir[4]], [dir[1]], []];
+  let fullByPhone = 0;
+  for (const who of whos) for (const cands of sets) for (const n of [1, 2, 3, 4, 5, 9]) {
+    const a = ministryApplicant({ who, phone: PH(n) }, "홍길동");
+    const noPhone = personPickFor(cands, { ...a, phone: "" });
+    const basic = personOutFor(cands, a, false);
+    assert.equal(basic.pick, noPhone.pick, `basic ${who} ${n}`);
+    assert.equal(basic.total, cands.length);
+    assert.deepEqual(basic.church, matchChurch(cands.map(toCand), a), "교적 표시는 번호까지 넣어 명단과 같게");
+    const full = personOutFor(cands, a, true);
+    if (full.pick === 0 && noPhone.pick === null) fullByPhone++;
+  }
+  assert.ok(fullByPhone > 0, "full 이 번호로 고르는 경우가 시험 안에 있다");
+});
+
+test("ministryApplicant — who 가 오면 applicantFromWho · 없으면 구분·소속·세부(personAsk) · 번호는 숫자만 스무 자 · 몸이 아니면 빈 줄", () => {
+  assert.deepEqual(ministryApplicant({ name: "무시", who: " 화평  20목장 ", phone: "010-0000-0002" }, "홍길동"),
+    { type: "교구", gu: "화평", mok: 20, bu: "", name: "홍길동", phone: "01000000002" });
+  assert.deepEqual(ministryApplicant({ who: "중등부 3학년" }, "홍길동"),
+    { type: "교회학교", gu: "", mok: null, bu: "중등부", name: "홍길동", phone: "" });
+  // 자모분리(NFD)로 온 소속도 완성형으로(맥에서 온 글자 · 명단의 applicantFromWho 도 NFC 로 읽는다)
+  assert.equal(ministryApplicant({ who: "화평 20목장".normalize("NFD") }, "홍길동").gu, "화평");
+  // who 가 없으면 구분·소속·세부 — 종이 명단(교구·목장) · 담당자(교회학교·부서·학년)
+  assert.deepEqual(ministryApplicant({ who_type: "교구", group: "화평", sub: "07", phone: "010 0000 0002" }, "홍길동"),
+    { type: "교구", gu: "화평", mok: 7, bu: "", name: "홍길동", phone: "01000000002" });
+  assert.deepEqual(ministryApplicant({ who_type: "교회학교", group: "청년부", sub: "" }, "홍길동"),
+    { type: "교회학교", gu: "", mok: null, bu: "청년부", name: "홍길동", phone: "" });
+  assert.equal(ministryApplicant({ who: "", who_type: "교구", group: "소망", sub: "남성" }, "홍길동").mok, null, "빈 who 는 없는 것");
+  assert.equal(ministryApplicant({ who: 123, who_type: "교구", group: "소망", sub: "3" }, "홍길동").gu, "소망", "글자가 아닌 who 는 무시");
+  assert.equal(ministryApplicant({ phone: "0".repeat(30) }, "홍길동").phone.length, 20);
+  assert.equal(ministryApplicant({ phone: 1234 }, "홍길동").phone, "1234");
+  for (const b of [null, undefined, "x", [1, 2]]) {
+    assert.deepEqual(ministryApplicant(b, "홍길동"), { type: "교구", gu: "", mok: null, bu: "", name: "홍길동", phone: "" }, String(b));
+  }
+});
+
+test("ministryLookupLog — basic 이면 늘 · full 은 못 골랐거나 번호로 골랐을 때만 · from 「ministry」 · 번호 자체는 없다(검토 4·5)", () => {
+  const cands = [P(111, { phone_digits: PH(1) }), P(112, { phone_digits: PH(2) }), P(113, { mok1: "소망", mok3: "소망-3목장", phone_digits: PH(3) })];
+  const log = (who, phone, full) => {
+    const a = ministryApplicant({ who, ...(phone ? { phone } : {}) }, "홍길동");
+    return ministryLookupLog(cands, a, personOutFor(cands, a, full), "홍길동");
+  };
+  // basic — 늘(보여 준 분 수)
+  assert.deepEqual(log("소망 3목장", "", false), { q: "홍길동", count: 1, from: "ministry" });
+  assert.deepEqual(log("화평 20목장", "010-0000-0002", false), { q: "홍길동", count: 3, from: "ministry" }, "basic 은 번호로 고르지 않는다 — byPhone 없음");
+  // full — 소속으로 한 분 → 남기지 않는다(「자세히」 창의 people.view 가 남는다)
+  assert.equal(log("소망 3목장", "", true), null);
+  assert.equal(log("소망 3목장", "010-0000-0003", true), null, "번호가 있어도 소속으로 고른 것이면 byPhone 이 아니다");
+  // full — 못 고름 → 후보 수
+  assert.deepEqual(log("화평 20목장", "", true), { q: "홍길동", count: 3, from: "ministry" });
+  assert.deepEqual(log("화평 20목장", "010-0000-0009", true), { q: "홍길동", count: 3, from: "ministry" });
+  // full — 번호로 한 분 → 한 줄 더(번호로 가렸다는 사실만 · 번호는 없다)
+  const bp = log("화평 20목장", "010-0000-0002", true);
+  assert.deepEqual(bp, { q: "홍길동", count: 1, from: "ministry", byPhone: true });
+  assert.ok(!/\d{4}/.test(JSON.stringify(bp)), JSON.stringify(bp));
+  // 명부에 한 분뿐이라 고른 것은 번호와 상관없다 — byPhone 이 아니다
+  const lone = [cands[0]];
+  const la = ministryApplicant({ who: "기쁨 2목장", phone: PH(1) }, "홍길동");
+  assert.equal(ministryLookupLog(lone, la, personOutFor(lone, la, true), "홍길동"), null);
+  // 명부에 없는 이름 — full 도 못 고른 것(0명)
+  const na = ministryApplicant({ who: "화평 20목장", phone: PH(1) }, "홍길동");
+  assert.deepEqual(ministryLookupLog([], na, personOutFor([], na, true), "홍길동"), { q: "홍길동", count: 0, from: "ministry" });
+  // 모든 칸이 납작하다(기록 화면이 그대로 읽는다)
+  for (const v of Object.values(bp)) assert.notEqual(typeof v, "object");
 });

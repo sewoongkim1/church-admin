@@ -21,11 +21,16 @@
 //    ④ 위 ①② 로 못 골랐고 부르는 쪽이 번호를 줬으면 — 같은 소속 안에서(같은 소속이 없으면 같은 이름 전부에서) 명부 번호가
 //       **정확히 한 분**과 맞을 때만 그분. 두 분 이상과 맞거나 아무와도 안 맞으면 고르지 않는다.
 //    명부 번호(phone_digits)는 고르는 데만 쓴다 — 응답은 아래 명시적 칸 지도(full 넷 · basic 다섯 + 교적 표시)로만 나간다.
+//    목장을 모르는 줄(「화평 남성」·99)은 같은 교구 후보가 있으면 번호도 **그 안에서만** 본다 — 명단의 교적 표시(matchChurch)가
+//    「목장 확인(같은 교구 N명)」을 번호보다 먼저 보는 차례 그대로(2026-09-30 검토 1).
+// ⚠️ 번호로 고르는 것은 full(교인명부·총괄 — 이미 연락처로 찾을 수 있는 분)뿐이다(2026-09-30 검토 4). basic(사역신청 역할만)에서
+//    번호로 한 분을 가려 주면 화면이 보낸 아무 번호로 「이 번호는 믿음 1목장 권사 홍길동」을 떠볼 수 있다 — 명단의 교적 표시는
+//    「같은 이름 가운데 누군가의 번호(소속 다름)」까지만 알려 준다. basic 은 번호를 교적 표시(matchChurch)에만 쓴다.
 import { mapChurchPerson, positionFromChurch, type ChurchPerson } from "./events-people.ts";
 import { affLabel } from "./events-stats.ts";
 import { lookupOut, LOOKUP_MAX } from "./events-upload.ts";
 import { legacyNorm } from "./paper.ts";
-import { applicantFromSignup, matchChurch, phoneDigits, sameAffiliation, toCand, type Applicant, type Church } from "./people-match.ts";
+import { applicantFromSignup, applicantFromWho, matchChurch, mokUnknown, phoneDigits, sameAffiliation, toCand, type Applicant, type Church } from "./people-match.ts";
 import { BE_FIELD_MAX } from "./events-rules.ts";
 
 // phone_digits — ministryPerson 만 읽는다(명부 번호 · 띄어쓰기로 여럿 · toCand 가 나눈다). 고르는 데만 쓰고 응답엔 없다.
@@ -59,6 +64,9 @@ export function personAsk(b: unknown, name: string): PersonAsk {
 //    evPerson(성경필사)의 동작이 한 글자도 안 바뀌게. 시험(events-person.test.mjs)이 여러 경우를 맞대 본다.
 // ⚠️ 같은 소속이 있으면 번호도 **그 안에서만** 본다 — 같은 소속이 둘인데 번호가 소속 밖 한 분과 맞으면 고르지 않는다
 //    (명단의 교적 표시가 「같은 소속에 같은 이름 N명」인데 창이 소속 다른 분을 여는 일이 없게).
+// ⚠️ 목장을 모르는 줄(mokUnknown — 「화평 남성」·99)도 같다 — 같은 소속은 없지만 같은 교구 후보가 있으면 번호는 그분들 안에서만
+//    (명단 표시 「목장 확인(같은 교구 N명)」인데 번호가 다른 교구 한 분과 맞았다고 그분을 열면, 표시가 가리키는 같은 교구 분이 창에서 사라진다 · 검토 1).
+//    좁히는 것은 번호 단계뿐 — 「이름이 명부에 한 분뿐이면 그분」은 옛 규칙대로 같은 이름 전부로 본다(번호가 없을 때 옛 personPick 그대로).
 export function personPickFor(cands: PersonCand[], a: Applicant): { pick: 0 | null; list: PersonCand[] } {
   const all = [...(cands ?? [])].sort((x, y) => Number(x.person_id) - Number(y.person_id));
   const same = all.filter((c) => sameAffiliation(toCand(c), a));
@@ -67,7 +75,8 @@ export function personPickFor(cands: PersonCand[], a: Applicant): { pick: 0 | nu
   let chosen: PersonCand | null = pool.length === 1 ? pool[0] : null;
   const ph = phoneDigits(a?.phone);
   if (!chosen && ph) {
-    const hit = pool.filter((c) => toCand(c).phones.includes(ph));
+    const gu = !same.length && a && mokUnknown(a) && a.gu ? all.filter((c) => toCand(c).mok1 === a.gu) : [];
+    const hit = (gu.length ? gu : pool).filter((c) => toCand(c).phones.includes(ph));
     if (hit.length === 1) chosen = hit[0];
   }
   if (!chosen) return { pick: null, list: [...same, ...rest] };
@@ -90,8 +99,10 @@ export function personLabel(p: ChurchPerson): string {
 
 // 응답(ok 빼고) — 명시적 칸 지도로만. 고르지 못했으면 스무 분까지(evPeopleLookup 과 같은 상한) · total 은 자르기 전 수.
 // ⚠️ phone_digits 는 어느 모양에도 싣지 않는다 — full 은 아래 네 칸, basic 은 lookupOut 다섯 칸 + 교적 표시 { state, reason }.
+// ⚠️ basic 은 번호로 고르지 않는다(맨 위 「검토 4」) — 고르기엔 번호를 빼고 넘기고, 번호는 교적 표시(matchChurch)에만 쓴다.
+//    인자로 받지 않고 full 에 묶는다 — 부르는 쪽이 넘기기를 잊어 basic 이 번호로 고르는 일이 없게.
 export function personOutFor(cands: PersonCand[], a: Applicant, full: boolean): PersonOut {
-  const { pick, list } = personPickFor(cands, a);
+  const { pick, list } = personPickFor(cands, full ? a : { ...a, phone: "" });
   const shown = pick === null ? list.slice(0, LOOKUP_MAX) : [list[pick]];
   const total = list.length;
   if (full) {
@@ -113,4 +124,35 @@ export function personOutFor(cands: PersonCand[], a: Applicant, full: boolean): 
 // 성경필사 명단 줄로(evPerson) — 전화 없는 personOutFor.
 export function personOut(cands: PersonCand[], ask: PersonAsk, full: boolean): PersonOut {
   return personOutFor(cands, applicantFromSignup(ask), full);
+}
+
+// ---------- 사역신청·담당자 — ministryPerson 의 맞대 볼 줄 · 기록(2026-09-30 검토 3·5) ----------
+// ⚠️ index.ts ministryPerson 은 이 둘만 부른다 — 받은 줄을 읽는 식(글루)을 순수 함수로 두어, 명단의 교적 표시가 쓰는 식
+//    (ministryList: applicantFromWho(이름, who, 번호) · ministryPaperCheck: applicantFromPaper(줄))과 **같은 신청자**가 되는지
+//    오프라인 시험(tests/person-link.test.mjs)이 화면의 rowAsk·paperAsk → 여기 → 명단 쪽 식으로 맞대 본다.
+//    누가 who 판단이나 번호 다듬기를 바꾸면 그 시험이 잡는다(창의 표시와 명단의 표시가 조용히 갈라지지 않게).
+// who(신청 현황·임명현황 줄의 「화평 20목장」·「중등부 3학년」)가 오면 applicantFromWho(ministryList 와 같은 함수),
+// 없으면 구분·소속·세부(personAsk — 종이 명단: 교구·교구·목장 / 담당자: 교구·교구·목장 또는 교회학교·부서·학년).
+// 번호는 숫자만 스무 자까지(명부 phone_digits 와 같은 꼴 · matchChurch 도 숫자만 맞댄다). name = readName 으로 검사한 이름.
+export function ministryApplicant(b: unknown, name: string): Applicant {
+  const o = (b && typeof b === "object" && !Array.isArray(b) ? b : {}) as Record<string, unknown>;
+  const phone = phoneDigits(o.phone).slice(0, 20);
+  const w = o.who;
+  const who = typeof w === "string" ? w.normalize("NFC").trim().slice(0, 80) : "";
+  return who ? applicantFromWho(name, who, phone) : { ...applicantFromSignup(personAsk(o, name)), phone };
+}
+
+// ministryPerson 의 기록(people.lookup) — null 이면 남기지 않는다. evPerson 과 같은 규칙에 두 가지를 더한다.
+//   남기는 때: basic 이면 늘 · full 이면 고르지 못했을 때(pick null) · 그리고 full 이 **번호로** 한 분을 골랐을 때(byPhone).
+//     번호로 고른 것은 명부 번호로 신원을 가린 것이다 — 그 뒤 「자세히」 창의 people.view 에는 번호로 가렸다는 사실이 없으니
+//     여기 한 줄을 더 남긴다(두 줄이 되는 것은 이때뿐 · 소속으로 고른 한 분은 전처럼 people.view 한 줄).
+//   모양: { q, count, from: "ministry" } + 번호로 골랐으면 byPhone: true — 납작하게 · **번호 자체는 싣지 않는다**.
+//     from 은 「교인명부 기록」 화면(js/menus/system/audit.js)이 「명부 찾기(사역신청·담당자)」로 가르는 표(검토 5) — 없으면 성경필사.
+//   byPhone 판정: 번호를 빼고 고르면 못 고르는데(pick null) 번호로 골랐다(pick 0) — 번호 단계가 고른 것이다(앞 단계는 번호와 무관).
+export type MinistryLookupLog = { q: string; count: number; from: "ministry"; byPhone?: true };
+export function ministryLookupLog(cands: PersonCand[], a: Applicant, out: PersonOut, q: string): MinistryLookupLog | null {
+  const count = out.mode === "basic" ? out.people.length : out.candidates.length;
+  const byPhone = out.mode === "full" && out.pick === 0 && personPickFor(cands, { ...a, phone: "" }).pick === null;
+  if (out.mode === "full" && out.pick === 0 && !byPhone) return null;
+  return { q, count, from: "ministry", ...(byPhone ? { byPhone: true as const } : {}) };
 }

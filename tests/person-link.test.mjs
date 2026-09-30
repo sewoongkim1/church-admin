@@ -4,11 +4,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PERSON_ACTION, personLinkHtml, rowAsk, paperAsk, memberAsk } from "../js/menus/ministry/person-link.js";
 import { cardHtml, tableHtml, groupsHtml } from "../js/menus/ministry/status-ui.js";
+import { clearPhone } from "../js/menus/ministry/status-logic.js";
 import { label } from "../js/menus/ministry/appointed.js";
 import { ACTION_ROLES } from "../supabase/functions/church-admin/authz.ts";
 import { ministryPaperOne } from "../supabase/functions/church-admin/paper.ts";
-import { personAsk } from "../supabase/functions/church-admin/events-person.ts";
-import { applicantFromPaper, applicantFromSignup } from "../supabase/functions/church-admin/people-match.ts";
+import { ministryApplicant, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
+import { readName } from "../supabase/functions/church-admin/events-upload.ts";
+import { applicantFromPaper, applicantFromWho, matchChurch, phoneDigits, toCand } from "../supabase/functions/church-admin/people-match.ts";
 
 const PHONE = "010-0000-0000";
 // 신청 현황 줄(status.js normalize 모양)
@@ -17,6 +19,15 @@ const ROW = (o = {}) => ({ id: 7, at: "2026-10-01", who: "화평 20목장", name
 // 이름 단추의 여는 태그들 — 번호가 여기(data-*·aria-label)에 실리면 안 된다
 const nameTags = (h) => [...h.matchAll(/<button[^>]*data-person[^>]*>/g)].map((m) => m[0]);
 const attrsOf = (tag) => [...tag.matchAll(/\s(data-[a-z-]+)="/g)].map((m) => m[1]);
+// 서버 ministryPerson 이 화면이 보낸 몸(body)을 읽는 길 그대로 — readName(이름 검사) → ministryApplicant(맞대 볼 줄).
+// ⚠️ 여기서 서버 식을 손으로 다시 적지 않는다(검토 3) — index.ts 도 이 두 함수만 부른다. 누가 그쪽을 바꾸면 아래 맞대기가 잡는다.
+const serverReads = (body) => ministryApplicant(body, readName(body.name).name);
+// 교인명부 가짜 후보(칸은 서버가 읽는 것만) — 맞대 본 신청자로 교적 표시·고르기까지 같아지는지 본다
+const D = (person_id, o = {}) => ({ person_id, name: "홍길동", name_key: "홍길동", kind2: "장년", mok1: "화평", mok3: "화평-20목장",
+  school_dept: "", position: "집사", position_detail: "", phone_digits: "", ...o });
+const DIR = [D(1, { phone_digits: "01000000001" }), D(2, { mok3: "화평-5목장", phone_digits: "01000000002" }),
+  D(3, { mok1: "소망", mok3: "소망-3목장", phone_digits: "01000000003" }), D(4, { kind2: "교회학교", mok1: "", mok3: "", school_dept: "중등부" }),
+  D(5, { mok1: "청년부", mok3: "청년-3" })];
 
 test("PERSON_ACTION — ministryPerson · 서버 권한표에 사역신청 역할로 있다", () => {
   assert.equal(PERSON_ACTION, "ministryPerson");
@@ -58,12 +69,58 @@ test("paperAsk — 서버가 살펴 준 줄(ministryPaperOne) → 교구·목장
   const row = ministryPaperOne({ gu: "화평", mok: "20", name: "홍길동", position: "집사", phone: PHONE, team: "신앙운동" }, 0);
   const a = paperAsk(row);
   assert.deepEqual(a, { name: "홍길동", who_type: "교구", group: "화평", sub: "20", phone: row.phone });
-  // index.ts ministryPerson 이 who 없이 받은 줄을 읽는 식(applicantFromSignup(personAsk) + 번호) = ministryPaper 가 교적 표시에 쓴
-  // applicantFromPaper — 번호는 서버가 숫자만 남겨 따로 붙이므로 번호 칸은 빼고 맞댄다
-  const { phone: _p, ...paperSide } = applicantFromPaper(row);
-  assert.deepEqual(applicantFromSignup(personAsk(a, a.name)), { ...paperSide, phone: "" });
   assert.deepEqual(paperAsk({ gu: "소망", mok: "", name: "홍길동", phone: "" }),
     { name: "홍길동", who_type: "교구", group: "소망", sub: "" });
+  // 서버가 되읽은 신청자 = ministryPaperCheck 가 교적 표시에 쓴 applicantFromPaper(줄) — 번호는 숫자만(검토 3)
+  const raws = [
+    { gu: "화평", mok: "20", name: "홍길동", phone: PHONE },
+    { gu: " 화평 ", mok: "20목장", name: " 홍 길동 ", phone: "010 0000 0002" },
+    { gu: "소망", mok: "03", name: "홍길동", phone: "01000000003" },
+    { gu: "화평", mok: "남성", name: "홍길동", phone: "010-0000-0003" },
+    { gu: "화평", mok: "99", name: "홍길동", phone: "" },
+    { gu: "새가족", mok: "2026-09", name: "홍길동", phone: "010-0000-0001" },
+    { gu: "화평".normalize("NFD"), mok: "5", name: "홍길동".normalize("NFD"), phone: "010-0000-0002" },
+    { gu: "", mok: "", name: "홍길동", phone: "" },
+  ];
+  for (const raw of raws) {
+    const pr = ministryPaperOne({ ...raw, position: "집사", team: "신앙운동" }, 0);
+    const list = applicantFromPaper(pr);
+    const win = serverReads(paperAsk(pr));
+    assert.deepEqual({ ...win, name: "" }, { ...list, name: "", phone: phoneDigits(list.phone) }, JSON.stringify(raw));
+    assert.equal(win.name, readName(pr.name).name);
+    // 같은 신청자이니 교적 표시도 같다(명단: churchFor → matchChurch)
+    assert.deepEqual(personOutFor(DIR, win, false).church, matchChurch(DIR.map(toCand), list), JSON.stringify(raw));
+  }
+});
+
+test("rowAsk — 신청 현황 줄을 서버가 되읽으면 ministryList 가 교적 표시에 쓴 applicantFromWho(이름, who, 번호)와 같다(검토 3)", () => {
+  const rows = [
+    ROW(),
+    ROW({ who: "화평 남성", phone: "010-0000-0002" }),
+    ROW({ who: "화평 99목장", phone: "01000000003" }),
+    ROW({ who: "  소망   3목장 ", phone: "010 0000 0003" }),
+    ROW({ who: "새가족 2026-09", phone: "" }),
+    ROW({ who: "중등부 3학년", phone: "" }),
+    ROW({ who: "청년부", phone: "010-0000-0001" }),
+    ROW({ who: "시험 0목장", phone: PHONE }),                                  // 일곱 교구 밖이라도 「N목장」이면 교구
+    ROW({ who: "화평 20목장".normalize("NFD"), name: "홍길동".normalize("NFD") }),
+    ROW({ name: " 홍  길동 ", who: "화평 5목장" }),
+  ];
+  for (const r of rows) {
+    const list = applicantFromWho(r.name, r.who, r.phone);                   // ministryList(index.ts)가 쓰는 식
+    const win = serverReads(rowAsk(r));
+    assert.deepEqual({ ...win, name: "" }, { ...list, name: "", phone: phoneDigits(list.phone) }, JSON.stringify(r.who));
+    assert.deepEqual(personOutFor(DIR, win, false).church, matchChurch(DIR.map(toCand), list), "창의 표시 = 명단의 표시 " + JSON.stringify(r.who));
+  }
+  // 소속이 비어 온 줄(옛 행 · users 에도 없음)은 who 가 빈 채로 간다 — 서버는 구분·소속·세부 길로 읽는다.
+  // 신청자 모양은 다르지만(교회학교 빈 부서 ↔ 교구 빈 교구) 둘 다 같은 소속이 없어 교적 표시·고르기가 같다
+  for (const phone of ["", "010-0000-0001", "010-0000-0009"]) {
+    const r = ROW({ who: "", phone });
+    const list = applicantFromWho(r.name, r.who, r.phone);
+    const win = serverReads(rowAsk(r));
+    assert.deepEqual(personOutFor(DIR, win, false).church, matchChurch(DIR.map(toCand), list), "빈 소속 " + phone);
+    assert.deepEqual(personOutFor(DIR, win, true), personOutFor(DIR, { ...list, phone: phoneDigits(list.phone) }, true), "빈 소속 full " + phone);
+  }
 });
 
 test("memberAsk — 담당자 줄 → 교구·목장 또는 교회학교·부서·학년(번호 없음) · 서버가 되읽는 신청자", () => {
@@ -71,7 +128,7 @@ test("memberAsk — 담당자 줄 → 교구·목장 또는 교회학교·부서
   const sc = { id: "m2", type: "교회학교", gu: "", mok: "", bu: "중등부", grade: "3학년", name: "홍길동" };
   assert.deepEqual(memberAsk(gu), { name: "홍길동", who_type: "교구", group: "화평", sub: "20" });
   assert.deepEqual(memberAsk(sc), { name: "홍길동", who_type: "교회학교", group: "중등부", sub: "3학년" });
-  const back = (m) => { const a = memberAsk(m); return applicantFromSignup(personAsk(a, a.name)); };
+  const back = (m) => serverReads(memberAsk(m));
   assert.deepEqual(back(gu), { type: "교구", gu: "화평", mok: 20, bu: "", name: "홍길동", phone: "" });
   assert.deepEqual(back({ ...gu, mok: "20목장" }).mok, 20, "「20목장」으로 적은 분도 같은 목장");
   assert.deepEqual(back(sc), { type: "교회학교", gu: "", mok: null, bu: "중등부", name: "홍길동", phone: "" });
@@ -101,6 +158,28 @@ test("📋 사람별 묶음 머리 — 이름이 단추 · 열쇠는 번호가 �
   const team = groupsHtml([ROW({ id: 8 }), ROW({ id: 9, name: "홍길순", who: "믿음 3목장" })], "team", new Set(), new Map());
   assert.deepEqual(nameTags(team).map((t) => /data-person="([^"]*)"/.exec(t)[1]).sort(), ["8", "9"]);
   for (const t of [...nameTags(h), ...nameTags(team)]) assert.deepEqual(attrsOf(t), ["data-person"]);
+});
+
+test("📋 결정으로 번호가 지워지면(clearPhone) 교적 표시도 비운다 — 이름 옆 표시(번호로 셈)와 창(번호 없이 셈)이 어긋나지 않게(검토 2)", () => {
+  const r = ROW({ id: 3, church: { state: "확인 필요", reason: "소속 다름" } });
+  clearPhone(r);
+  assert.deepEqual([r.phone, r.church], ["", null]);
+  assert.deepEqual(rowAsk(r), { name: "홍길동", who: "화평 20목장" }, "창엔 번호가 가지 않는다");
+  for (const h of [cardHtml(r, "", ""), tableHtml([r], new Map())]) assert.ok(!h.includes("cb-"), "표시를 그리지 않는다");
+});
+
+test("📋 사람별 묶음 머리 — 교적 표시와 이름 단추의 열쇠가 같은 건(번호가 남은 건)에서 나온다(검토 2)", () => {
+  // 앞 건은 결정이 나 번호가 지워졌고(표시 「같은 이름 2명」) 뒤 건은 번호가 있다(표시 「소속 다름」) — 창은 뒤 건으로 묻는다
+  const decided = ROW({ id: 1, phone: "", status: "임명확정", team: "가", church: { state: "확인 필요", reason: "같은 이름 2명" } });
+  const open = ROW({ id: 2, team: "나", church: { state: "확인 필요", reason: "소속 다름" } });
+  const h = groupsHtml([decided, open], "person", new Set(), new Map());
+  const head = h.slice(h.indexOf("<summary>"), h.indexOf('<span class="mn-grp-n">'));
+  assert.ok(head.includes('data-person="2"'), head);
+  assert.ok(head.includes("소속 다름") && !head.includes("같은 이름 2명"), "머리 표시 = 열쇠 건의 표시: " + head);
+  // 번호가 남은 건이 없으면 둘 다 첫 건
+  const h2 = groupsHtml([{ ...decided }, { ...open, phone: "", church: null }], "person", new Set(), new Map());
+  const head2 = h2.slice(h2.indexOf("<summary>"), h2.indexOf('<span class="mn-grp-n">'));
+  assert.ok(head2.includes('data-person="1"') && head2.includes("같은 이름 2명"), head2);
 });
 
 test("화면 모듈이 Node 에서 읽힌다 — 네 화면이 교적 창을 들인다", async () => {
