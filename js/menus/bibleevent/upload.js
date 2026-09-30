@@ -14,6 +14,7 @@ import { pickOne } from "../../core/picker.js";
 import {
   ORDERS, COL_LABEL, MAX_ROWS, PUBLIC_MAX, MARKS, MARK_ORDER, orderOf, parseSheet, sampleLine, sheetText, decodeText,
   sigOf, markCounts, countOf, displayRow, eventOptions, pickFrom, evHint, overLimit, confirmHtml,
+  fileErrorText, EVENT_GONE, SAVE_UNSURE, saveUnsure,
 } from "./upload-logic.js";
 
 const TITLE = `<h2 class="page-title">📤 명단 올리기</h2>`;
@@ -24,9 +25,12 @@ const evHref = (id) => "#/be-upload?ev=" + encodeURIComponent(id);
 let lastEv = "";
 let order = ORDERS[0].id;
 let fill = false;
+let detachPrev = null;   // 앞 화면이 window·matchMedia 에 단 것을 떼는 함수(FE-3)
 
 // 서버 error 는 코드(ui.js MESSAGES)거나 한국어 문장이다 — 코드 꼴이 아니면 그 문장 그대로(ministry/paper.js errMsg 와 같다)
-const errMsg = (d) => (d?.error && !/^[a-z-]+$/.test(d.error) ? d.error : errorText(d));
+// not-found 는 여기서는 **회차**가 없다는 뜻이다(uploadEventError) — 공용 글 「그분을 찾지 못했어요」 대신 EVENT_GONE(FE-5)
+const errMsg = (d) => (d?.error === "not-found" ? EVENT_GONE
+  : d?.error && !/^[a-z-]+$/.test(d.error) ? d.error : errorText(d));
 
 // .xlsx 는 압축 파일이라 브라우저가 혼자 못 읽는다 — 고를 때만 CDN 에서 내려받는다(ministry/paper.js loadXlsx 를 베꼈다)
 function loadXlsx() {
@@ -47,7 +51,7 @@ export async function render(el, { call, query }) {
   const r = await call("evEvents");
   if (!r.ok) { el.innerHTML = TITLE + `<p class="empty">회차를 불러오지 못했어요 — ${esc(errorText(r))}</p>`; return; }
   const all = r.events || [];
-  const opts = eventOptions(all);
+  let opts = eventOptions(all);   // 넣은 뒤 인원을 고쳐 다시 만든다(회차 고르개는 누를 때 이 값을 읽는다)
   if (!opts.length) {
     el.innerHTML = TITLE + `<p class="empty">명단을 올릴 수 있는 회차가 없어요 — <a href="#/be-roster">📋 회차·명단</a>에서 새 회차를 먼저 만들어 주세요</p>`;
     return;
@@ -89,7 +93,7 @@ export async function render(el, { call, query }) {
           <li>이름 끝 숫자(「홍길동2」 — 시트의 동명이인 표시)는 떼고 알려 드려요.</li>
           <li>이 회차에 <b>이미 있는 분</b>(앱에서 낸 신청 포함)은 넣지 않아요 — 같은 명단을 두 번 올려도 안전합니다.
               교구 줄은 한쪽 목장이 비었거나 99 면 같은 교구·같은 이름을 같은 분으로 봐요.</li>
-          <li>앱 계정이 있는 분은 <b>이어 드려요</b>(계정을 새로 만들지는 않아요). 이어진 분은 성도님 앱 「📋 이미 내신 것」에 보이고,
+          <li>앱 계정이 있는 분은 <b>이어 드려요</b>(계정을 새로 만들지는 않아요). 이어진 분은 이 회차가 성도님께 보이는 동안 앱 「📋 이미 내신 것」에 보이고,
               등록 기간 중인 회차면 성도님이 앱에서 고치거나 취소할 수 있어요.</li>
           <li><b>빈칸은 교인명부로 채우기</b> — 교인명부에 그 이름이 한 분뿐일 때만, 비어 있는 칸만 채워요(적힌 교구·목장·직분은 덮지 않아요.
               교구 칸이 비어 교구를 채울 때만 목장도 교인명부 것으로 바꾸고 알려 드려요). 적힌 소속이 교인명부와 다르면 다른 분으로 보고 채우지 않아요.
@@ -254,16 +258,31 @@ export async function render(el, { call, query }) {
     const base = checked;
     const c = markCounts(base.out);
     if (!c.willAdd) return;
-    const yes = await dialog({ title: "📥 명단을 넣습니다", ok: `${c.willAdd}명 넣기`, cancel: "그만두기", html: confirmHtml(ev, rows.length, c) });
+    const yes = await dialog({ title: "📥 명단을 넣습니다", ok: `${c.willAdd}명 넣기`, cancel: "그만두기", html: confirmHtml(ev, rows.length, c, base.total) });
     if (!yes) return;
     // 확인 창이 떠 있는 사이에 바뀌었을 수도 있다 — 한 번 더 본다
     if (checked !== base || nowSig() !== base.sig) return staleNotice();
     const evId = ev.id, fillNow = fill;
     const d = await busy(el, () => call("evUploadSave", { event_id: evId, rows, fill: fillNow }));
-    if (!d.ok) { await dialog({ title: "⚠️ 넣지 못했어요", text: errMsg(d), cancel: null, danger: true }); return; }
+    if (!d.ok) {
+      // server·network — 서버가 이미 넣었을 수 있다(쓴 뒤 기록에서 실패 · 답이 오다 끊김). 「넣지 못했어요」라 하지 않는다(SEC-5)
+      if (saveUnsure(d)) {
+        await dialog({ title: "⚠️ 넣었는지 확인해 주세요", text: SAVE_UNSURE + (d.code ? ` (${d.code})` : ""), cancel: null, danger: true });
+      } else {
+        await dialog({ title: "⚠️ 넣지 못했어요", text: errMsg(d), cancel: null, danger: true });
+      }
+      return;
+    }
     // 넣는 사이 글을 고쳐 결과가 치워졌어도 「몇 명을 넣었는지」는 꼭 보인다(살펴본 판정 base 로 그린다)
     checked = base;
     savedRes = { saved: Number(d.saved) || 0, failed: d.failed || [], counts: d.counts || {} };
+    // 「올릴 회차」 머리·고르개의 인원도 넣은 만큼 — 넣은 회차(evId)의 같은 객체(all 안)를 고친다(header-count-after-save)
+    const target = all.find((x) => x.id === evId);
+    if (savedRes.saved && target) {
+      target.count = Number(target.count || 0) + savedRes.saved;
+      opts = eventOptions(all);
+      drawEv();
+    }
     drawResult();
     sumEl.scrollIntoView({ block: "center" });
   }
@@ -288,9 +307,10 @@ export async function render(el, { call, query }) {
       ta.value = text;
       resetAfterEdit();   // 파일에서 채운 글도 「글이 바뀐 것」과 같다 — 살펴보기부터 다시
       fname.textContent = `${f.name} · ${n}줄 읽음`;
-    } catch {
+    } catch (e) {
       fname.textContent = "";
-      await dialog({ title: "📂 파일을 읽지 못했어요", text: "엑셀(.xlsx)·CSV 파일만 읽어요 — 안 되면 엑셀에서 칸을 복사해 붙여넣어 주세요", cancel: null, danger: true });
+      // 까닭마다 다른 글 — kind(파일 종류) · empty(읽을 줄 없음) · no-cdn·no-xlsx(엑셀 읽는 도구를 못 받음) · 그 밖(file-error-collapsed)
+      await dialog({ title: "📂 파일을 읽지 못했어요", text: fileErrorText(e && e.message), cancel: null, danger: true });
     }
   }
 
@@ -355,6 +375,7 @@ export async function render(el, { call, query }) {
     window.removeEventListener("dragover", onWinDrag);
     window.removeEventListener("drop", onWinDrag);
     mqWide.removeEventListener("change", onMq);
+    if (detachPrev === detach) detachPrev = null;
   };
   const onWinDrag = (e) => {
     if (!el.isConnected) return detach();
@@ -363,6 +384,12 @@ export async function render(el, { call, query }) {
     if (e.type === "dragover") e.dataTransfer.dropEffect = "none";
   };
   const onMq = () => { if (!el.isConnected) return detach(); drawResult(); };
+  // 다음 render 가 앞 화면의 것을 뗀다 — 떠난 화면이 다음 이벤트를 기다리며 남지 않게(FE-3)
+  // ⚠️ evEvents 를 기다리는 사이 메뉴를 떠났으면(이 화면이 이미 없다) 달지도 떼지도 않는다 —
+  //    늦게 끝난 옛 render 가 지금 떠 있는 📤 화면의 것을 떼어 버리지 않게.
+  if (!el.isConnected) return;
+  detachPrev?.();
+  detachPrev = detach;
   window.addEventListener("dragover", onWinDrag);
   window.addEventListener("drop", onWinDrag);
   mqWide.addEventListener("change", onMq);

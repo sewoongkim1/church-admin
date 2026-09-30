@@ -36,16 +36,38 @@ const unquote = (c) => {
   return /^"[\s\S]*"$/.test(t) ? t.slice(1, -1).replace(/""/g, '"').trim() : t;
 };
 
+// CSV 한 줄 → 칸들. 큰따옴표 **밖의** 쉼표에서만 나눈다(「"집사, 권사"」가 한 칸). 따옴표는 남겨 둔다 — 겉 따옴표와
+// 「""」→「"」는 unquote 가 맡는다. 칸 첫머리(앞 빈칸은 괜찮다)의 따옴표만 칸을 연다 — 칸 가운데 따옴표는 보통 글자다.
+// (칸 안의 줄바꿈은 다루지 않는다 — 줄은 parseSheet 가 먼저 나눈다)
+export function splitCsv(line) {
+  const s = String(line ?? "");
+  const out = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quoted) {
+      if (ch !== '"') cur += ch;
+      else if (s[i + 1] === '"') { cur += '""'; i++; }
+      else { cur += ch; quoted = false; }
+    } else if (ch === '"' && !cur.trim()) { cur += ch; quoted = true; }
+    else if (ch === ",") { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
 // 붙여넣은 글 → 줄마다 { name, gu, mok, pos } (서버 evUploadCheck 의 rows = RawCells[]).
-// 탭(엑셀에서 복사)이 있는 줄은 탭으로, 없으면 쉼표(CSV)로 나눈다. 빈 줄·빈 칸만 있는 줄·양식 안내 줄(↑ ※)은 버린다.
+// 탭(엑셀에서 복사)이 있는 줄은 탭으로, 없으면 쉼표(CSV · splitCsv)로 나눈다. 빈 줄·빈 칸만 있는 줄·양식 안내 줄(↑ ※)은 버린다.
 // 제목 줄 — 첫 칸이나 이름 칸이 「성명」·「이름」(띄어 써도)인 줄은 어디에 있든 버린다(시트가 쪽마다 머리글을 되풀이한다).
 export function parseSheet(text, order) {
   const cols = orderOf(order).cols;
   const at = cols.indexOf("name");
   const out = [];
-  for (const line of String(text ?? "").replace(/^﻿/, "").split(/\r\n|\r|\n/)) {
+  for (const line of String(text ?? "").replace(/^\uFEFF/, "").split(/\r\n|\r|\n/)) {
     if (!line.trim()) continue;
-    const cells = (line.includes("\t") ? line.split("\t") : line.split(",")).map(unquote);
+    const cells = (line.includes("\t") ? line.split("\t") : splitCsv(line)).map(unquote);
     if (!cells.some(Boolean)) continue;
     if (/^[↑※]/.test(cells[0])) continue;
     if (TITLE_RE.test(bare(cells[0])) || TITLE_RE.test(bare(cells[at]))) continue;
@@ -74,10 +96,35 @@ export function sheetText(rows) {
 
 // CSV·텍스트 파일 → 글. 한국어 엑셀이 저장한 CSV 는 흔히 EUC-KR(CP949)이다 — UTF-8 로 못 읽으면 EUC-KR 로.
 // (UTF-8 앞의 BOM 은 TextDecoder 가 떼어 준다)
+// 엑셀 「유니코드 텍스트(.txt)」는 UTF-16LE + BOM — 앞 두 바이트(FF FE · FE FF)로 알아보고 UTF-16 으로 푼다(TextDecoder 가 BOM 을 뗀다).
 export function decodeText(bytes) {
+  if (bytes && bytes.length >= 2) {
+    if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder("utf-16le").decode(bytes);
+    if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder("utf-16be").decode(bytes);
+  }
   try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
   catch { return new TextDecoder("euc-kr").decode(bytes); }
 }
+
+// 파일을 못 읽은 까닭(upload.js readFile 이 던지는 Error 의 message) → 알림 창 글. 까닭마다 다르게 —
+// 교회 망이 CDN 을 막았는데 「파일 종류가 틀렸다」고 읽히면 엉뚱한 파일을 찾게 된다(file-error-collapsed).
+const PASTE_TIP = "엑셀에서 칸을 복사해 붙여넣어 주세요";
+export function fileErrorText(code) {
+  if (code === "no-cdn" || code === "no-xlsx") {
+    return `엑셀 파일을 읽는 도구를 내려받지 못했어요 — 인터넷 연결이나 교회 망(차단)을 확인해 주세요. 안 되면 ${PASTE_TIP}`;
+  }
+  if (code === "empty") return "파일에서 읽을 줄을 찾지 못했어요 — 엑셀이면 첫 시트나 「명단」 시트에 이름이 적혀 있는지 봐 주세요";
+  if (code === "kind") return `엑셀(.xlsx·.xls)·CSV·TXT 파일만 읽어요 — 다른 파일이면 ${PASTE_TIP}`;
+  return `파일을 읽지 못했어요 — ${PASTE_TIP}`;
+}
+
+// 올리기(evUploadCheck·evUploadSave)의 not-found 는 **회차**가 없다는 뜻이다 — ui.js 의 공용 글(「그분을 찾지 못했어요」)을 쓰지 않는다(FE-5)
+export const EVENT_GONE = "그 회차를 찾지 못했어요 — 새로고침해 주세요";
+
+// 넣기가 server·network 로 끝나면 서버가 이미 넣었을 수 있다(쓴 뒤 기록에서 실패했거나 답이 오다 끊겼다 · SEC-5).
+// 「넣지 못했어요」라고 하면 다시 올린 판정이 모두 「이미 있음」이라 「0명 넣었어요」로 오해한다 — 확인하러 가게 한다.
+export const SAVE_UNSURE = "서버 답을 받지 못했어요 — 일부나 전부가 이미 들어갔을 수 있어요. 📋 회차·명단에서 확인해 주세요. 같은 명단을 다시 올려도 이미 있는 분은 두 번 들어가지 않아요.";
+export const saveUnsure = (d) => !!d && (d.error === "server" || d.error === "network");
 
 // 살펴본 것과 넣을 것이 같은지 — 회차·채우기·보낼 줄이 하나라도 다르면 다른 값
 export const sigOf = (eventId, rows, fill) => JSON.stringify([String(eventId || ""), !!fill, rows || []]);
@@ -134,7 +181,9 @@ export function pickFrom(events, id) {
 export const overLimit = (total, willAdd) => Number(total || 0) + Number(willAdd || 0) > PUBLIC_MAX;
 
 // 넣기 확인 창의 본문 — ⚠️ ui.js dialog 본문은 white-space:pre-line 이라 줄바꿈 문자를 넣지 않는다(한 줄로 잇는다)
-export function confirmHtml(ev, lines, c) {
+// total = 살펴볼 때 이 회차에 있던 인원 — 넣으면 1,000명을 넘으면 요약 줄과 같은 경고를 창에도 한 줄(overlimit-not-in-confirm)
+export function confirmHtml(ev, lines, c, total = 0) {
+  const max = PUBLIC_MAX.toLocaleString("ko-KR");
   const skip = [
     c.same && `이미 있음 ${c.same}`,
     (c.blank + c.sameName) && `소속 빈칸 ${c.blank + c.sameName}`,
@@ -145,6 +194,9 @@ export function confirmHtml(ev, lines, c) {
     c.fill ? ` (교인명부로 빈칸을 채운 ${c.fill}명 포함)` : "",
     ` — 지금 적힌 ${lines}줄을 살펴본 판정으로 센 수예요.`,
     skip.length ? ` 넣지 않는 줄: ${skip.join(" · ")}.` : "",
+    overLimit(total, c.willAdd)
+      ? `<p class="muted" style="margin-top:8px">⚠️ 넣으면 이 회차가 ${max}명을 넘어요 — 성도님 앱 명단은 ${max}명까지만 보여요. 넣기 전에 관리자에게 알려 주세요.</p>`
+      : "",
     ev.listedNow ? `<p class="muted" style="margin-top:8px">⚠️ 이 회차는 지금 성도님께 보여요 — 넣은 분의 이름·소속·직분이 곧바로 앱 명단에 나와요.</p>` : "",
     `<p class="muted" style="margin-top:8px">넣는 순간 서버가 처음부터 다시 판정해요 — 그사이 다른 분이 더했으면 실제로 넣은 수가 조금 다를 수 있어요.</p>`,
   ].join("");
