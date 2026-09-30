@@ -129,3 +129,48 @@ test("roster.js — 콤보로 고르면 표시(mark) 뒤 go · render 는 시작
   // 다른 고르개(거르기·줄 메뉴)는 wrap 없이 그대로
   assert.equal((src.match(/\bwrap: true\b/g) || []).length, 1);
 });
+
+// ---------- 한 분 더하기 찾기 후보에 「교적: 소망-남성1」(church_mok · 2026-09-30 친구 요청) ----------
+// 소망 남성1·남성2 목장의 같은 이름 두 분은 옮겨 적으면 둘 다 「소망 남성」이다 — 교적 목장 칸 그대로를 작은 줄로 보인다.
+test("candsHtml — 후보마다 교적 목장 칸을 작은 줄로(「교적: 소망-남성1」) · 비었거나 없으면 안 그린다 · esc · 13px 이상 회색", async () => {
+  const rf = await import("../js/menus/bibleevent/row-form.js");
+  assert.equal(typeof rf.candsHtml, "function", "row-form.js 가 candsHtml 을 내보내야 한다");
+  const res = { ok: true, source: { date: "2026-09-29", total: 8672 }, people: [
+    { name: "홍길동", who_type: "교구", group: "소망", sub: "남성", position: "집사", church_mok: "소망-남성1" },
+    { name: "홍길동", who_type: "교구", group: "소망", sub: "남성", position: "집사", church_mok: "소망-남성2" },
+    { name: "홍길동", who_type: "", group: "", sub: "", position: "", church_mok: "" },
+    { name: "홍길동", who_type: "교회학교", group: "중등부", sub: "", position: "", church_mok: "<i>중등부" },
+    { name: "홍길동", who_type: "교구", group: "화평", sub: "3", position: "", church_mok: "   " },
+    { name: "홍길동", who_type: "교구", group: "화평", sub: "3", position: "" },   // 칸이 없는 응답
+  ] };
+  const h = rf.candsHtml(res, "홍길동");
+  const btns = h.split('<button type="button" class="be-cand"').slice(1);
+  assert.equal(btns.length, 6, h);
+  assert.ok(btns[0].includes('<small class="be-cand-mok">교적: 소망-남성1</small></button>'), btns[0]);
+  assert.ok(btns[1].includes('<small class="be-cand-mok">교적: 소망-남성2</small></button>'), btns[1]);
+  assert.ok(btns[0].includes("소망 남성") && btns[1].includes("소망 남성"), "옮겨 적은 소속 줄은 그대로");
+  for (const i of [2, 4, 5]) assert.ok(!btns[i].includes("be-cand-mok") && !btns[i].includes("교적:"), "빈 칸이면 안 그린다 " + i);
+  assert.ok(btns[3].includes("교적: &lt;i&gt;중등부") && !h.includes("<i>"), "esc");
+  assert.equal((h.match(/교적:/g) || []).length, 3);
+  // 작은 줄 — 한 줄을 다 쓰고(flex-basis 100%) 13px 이상 · 회색(--gray)
+  const css = readFileSync(new URL("../css/admin.css", import.meta.url), "utf8");
+  const m = css.match(/\.be-cand-mok\{([^}]*)\}/);
+  assert.ok(m, "css/admin.css 에 .be-cand-mok 규칙");
+  const px = m[1].match(/font-size:(\d+)px/);
+  assert.ok(px && Number(px[1]) >= 13, "13px 이상: " + m[1]);
+  assert.match(m[1], /color:var\(--gray\)/);
+  assert.match(m[1], /flex-basis:100%/);
+});
+
+test("개인정보 안내 — 6번(보는 사람)·7번(교인명부에서 가져오는 것) 두 곳에 「찾기 후보에는 교적의 목장 칸 그대로도」(church_mok · 2026-09-30)", () => {
+  const pv = readFileSync(new URL("../privacy.html", import.meta.url), "utf8");
+  const note = "찾기 후보에는 교적의 목장 칸 그대로도 — 같은 교구에 같은 이름이 있을 때 가려내려고";
+  assert.equal(pv.split(note).length - 1, 2, "6번·7번 두 곳");
+  const s6 = pv.indexOf("<h3>6. "), s7 = pv.indexOf("<h3>7. "), s8 = pv.indexOf("<h3>8. ");
+  assert.ok(s6 > 0 && s7 > s6);
+  const i6 = pv.indexOf(note, s6), i7 = pv.indexOf(note, s7);
+  assert.ok(i6 > s6 && i6 < s7, "6번 안");
+  assert.ok(i7 > s7 && (s8 < 0 || i7 < s8), "7번 안");
+  // 교구 밖의 분(아이·청년·새가족)은 무엇이 보이는지도 적는다 — 부서 칸, 없으면 교구 칸
+  for (const i of [i6, i7]) assert.ok(pv.slice(i, i + 120).includes("교구 밖의 분은 부서 칸, 없으면 교구 칸"), pv.slice(i, i + 120));
+});

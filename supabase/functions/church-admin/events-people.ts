@@ -4,7 +4,8 @@
 //   서버(Deno, index.ts)와 시험(Node, tests/events-people.test.mjs)이 **같은 파일**을 읽는다(authz.ts 와 같은 제약).
 //
 // ⚠️ people-match.ts 는 「교적 값은 모듈 밖으로 내보내지 않는다」가 원칙이다. 이 모듈은 친구 결정(설계 §0 「교인명부 쓰기」)으로
-//    그 원칙을 **다섯 칸에 한해** 넓힌 자리다 — 이름·구분·소속·세부·직분. 연락처·주소·생년월일·사진·가족·교인ID 는
+//    그 원칙을 **다섯 칸에 한해** 넓힌 자리다 — 이름·구분·소속·세부·직분(한 분 더하기 찾기 후보에만 교적 목장 칸 하나 더 —
+//    churchMok · 2026-09-30 친구 요청). 연락처·주소·생년월일·사진·가족·교인ID 는
 //    ChurchPerson 에 아예 없다(서버도 이 칸들만 select 한다).
 import { BE_GU } from "./events-rules.ts";
 import { legacyNorm } from "./paper.ts";
@@ -64,6 +65,17 @@ export function lookupView(p: ChurchPerson, name: string):
     sub_name: a ? a.sub_name : "",
     position: positionFromChurch(p),
   };
+}
+
+// 교적 목장 칸 그대로(2026-09-30 친구 요청) — **한 분 더하기 찾기 후보(evPeopleLookup)에만** 싣는다(events-upload.ts lookupCandOut).
+//   소망은 남성1·남성2 목장이 있는데 옮겨 적으면(규칙 2) 둘 다 「남성」이라 같은 이름 두 분을 후보에서 가려내지 못한다.
+//   교구 분(mapChurchPerson 이 교구로 보내는 분 — 같은 판정을 쓰려고 그 함수를 부른다)은 mok3 그대로(「소망-남성1」 · 숫자로 바꾸지 않는다).
+//   그 밖(아이·청년·새가족·임시교구)은 school_dept, 없으면 mok1 — 아이의 가족 교구 목장(mok3)은 싣지 않는다(규칙 1).
+//   없으면 "". 다듬기는 다른 칸과 같다(완성형 · 앞뒤 빈칸).
+export function churchMok(p: ChurchPerson): string {
+  const a = mapChurchPerson(p);
+  if (a && a.who_type === "교구") return txt(p?.mok3);
+  return txt(p?.school_dept) || txt(p?.mok1);
 }
 
 // ============================================================================

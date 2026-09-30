@@ -44,9 +44,13 @@ let rxReady = null;
 //   ⚠️ 이름 끝이 숫자면 올리기 다듬기가 떼어 버린다 — 시험 이름은 한글 한 글자로 끝낸다(upName).
 const UP = { ev: "ca-test-up-" + STAMP, uid: {} };
 const upName = (k) => `ca-test-up-${STAMP}-${k}`;
-const UP_DIR_IDS = [990000011, 990000012, 990000013, 990000014, ...Array.from({ length: 21 }, (_, k) => 990000021 + k)];
+//   교적 목장 칸(church_mok · 2026-09-30 친구 요청) 시험 네 분은 990000015~18 — 남(두 분 · 소망-남성1·소망-남성2) · 학(아이 · 중등부) · 청(청년부).
+const UP_CM_IDS = [990000015, 990000016, 990000017, 990000018];
+const UP_DIR_IDS = [990000011, 990000012, 990000013, 990000014, ...UP_CM_IDS, ...Array.from({ length: 21 }, (_, k) => 990000021 + k)];
 const UP_OUT_KEYS = ["error", "i", "mark", "notes", "row"];
 const UP_ROW_KEYS = ["group", "name", "position", "sub", "who_type"];
+// 한 분 더하기 찾기(evPeopleLookup) 후보만 — 다섯 칸 + 교적 목장 칸 그대로(church_mok). evPerson·빈칸 채우기는 UP_ROW_KEYS 그대로.
+const UP_CAND_KEYS = ["church_mok", ...UP_ROW_KEYS].sort();
 let upReady = null;
 // 사역신청·담당자 이름을 누르면(ministryPerson · 2026-09-30 검토 6) — 교인명부 같은 이름 세 분(교인ID 990000051~3 고정 ·
 //   이름 ca-test-mp-<STAMP>-가 · 번호·주소는 지어낸 것). 첫 시험이 한 번 만든다(mpFixtures) · after() 가 지운다.
@@ -1678,6 +1682,15 @@ function upFixtures() {
       dir(990000014, "기", "사랑", "사랑-2목장", "집사"),
       ...Array.from({ length: 21 }, (_, k) => dir(990000021 + k, "다", "은혜", "은혜-1목장", "")),
     ]);
+    // 교적 목장 칸(church_mok) — 부서 칸까지 적는 모양이 달라 따로 한 번(PGRST102). 학은 아이인데 가족 교구·목장이 있다(나가면 안 된다).
+    const dirCm = (person_id, k, kind2, mok1, mok3, school_dept, position) =>
+      ({ person_id, name: upName(k), name_key: upName(k), kind2, mok1, mok3, school_dept, position });
+    await rest("church_people", "POST", [
+      dirCm(990000015, "남", "장년", "소망", "소망-남성1", "", "집사"),
+      dirCm(990000016, "남", "장년", "소망", "소망-남성2", "", "집사"),
+      dirCm(990000017, "학", "교회학교", "화평", "화평-3목장", "중등부", ""),
+      dirCm(990000018, "청", "청년", "청년부", "", "", ""),
+    ]);
   })();
   return upReady;
 }
@@ -1838,7 +1851,7 @@ test("성경필사 명단 올리기 막기: 자격 회차 eligibility-event · 6
   assert.equal(await dbCount(UP.ev), upBefore);
 });
 
-test("성경필사 교인명부 찾기: 이름이 정확히 같은 분만 · 20명까지 · 다섯 칸만 · 기준일 · people.lookup 에 검색어·결과 수", async () => {
+test("성경필사 교인명부 찾기: 이름이 정확히 같은 분만 · 20명까지 · 다섯 칸 + 교적 목장 칸만 · 기준일 · people.lookup 에 검색어·결과 수", async () => {
   await upFixtures();
   const t = people.bibleevent.token;
   const one = await call(t, "evPeopleLookup", { name: upName("정") });
@@ -1846,16 +1859,17 @@ test("성경필사 교인명부 찾기: 이름이 정확히 같은 분만 · 20�
   assert.deepEqual(Object.keys(one.body).sort(), ["ok", "people", "source"]);
   assert.equal(one.body.source.date, "2000-01-01");      // before() 가 올린 시험 명부 기록이 가장 최근이다
   assert.equal(typeof one.body.source.total, "number");
-  assert.deepEqual(one.body.people, [{ name: upName("정"), who_type: "교구", group: "소망", sub: "12", position: "권사" }]);
+  assert.deepEqual(one.body.people,
+    [{ name: upName("정"), who_type: "교구", group: "소망", sub: "12", position: "권사", church_mok: "소망-12목장" }]);
   const two = await call(t, "evPeopleLookup", { name: upName("기") });
   assert.equal(two.body.people.length, 2);
-  for (const p of [...one.body.people, ...two.body.people]) assert.deepEqual(Object.keys(p).sort(), UP_ROW_KEYS);
+  for (const p of [...one.body.people, ...two.body.people]) assert.deepEqual(Object.keys(p).sort(), UP_CAND_KEYS);
   // 띄어쓰기가 달라도 같은 이름(이름 키) · 21분이어도 20명까지
   assert.equal((await call(t, "evPeopleLookup", { name: " " + upName("다") + " " })).body.people.length, 20, "상한 20명");
   assert.deepEqual((await call(t, "evPeopleLookup", { name: "ca-test-up-" + STAMP })).body.people, [],
     "앞부분만 같은 이름은 찾지 않는다(정확히 같은 이름만)");
   const text = JSON.stringify([one.body, two.body]);
-  for (const k of ["person_id", "name_key", "mok1", "mok3", "kind2", "소망-12목장"]) assert.ok(!text.includes(k), "새어 나감: " + k);
+  for (const k of ["person_id", "name_key", "mok1", "mok3", "kind2", "position_detail", "school_dept"]) assert.ok(!text.includes(k), "새어 나감: " + k);
   assert.equal((await call(t, "evPeopleLookup", { name: "" })).body.error, "no-name");
   assert.equal((await call(t, "evPeopleLookup", { name: "홍,길동" })).body.error, "bad-char");
   assert.equal((await call(t, "evPeopleLookup", { name: "가".repeat(41) })).body.error, "too-long");
@@ -1868,6 +1882,54 @@ test("성경필사 교인명부 찾기: 이름이 정확히 같은 분만 · 20�
   assert.equal(logs.find((r) => r.detail.q === upName("다")).detail.count, 20);
   const changes = (await call(people.super.token, "auditList", { limit: 100 })).body.rows.map((r) => r.action);
   assert.ok(!changes.includes("people.lookup") && !changes.includes("people.fill"), "교인명부 열람이 「바꾼 기록」 기본 보기에 섞였다");
+});
+
+// 친구 요청(2026-09-30) — 소망은 남성1·남성2 목장이 있는데 옮겨 적으면 둘 다 「남성」이라 같은 이름 두 분을 가려내지 못한다.
+// 찾기 후보에만 교적 목장 칸 그대로(church_mok)를 싣는다 — 교구 분은 mok3, 그 밖은 부서(없으면 mok1). evPerson·빈칸 채우기는 다섯 칸 그대로.
+test("성경필사 교인명부 찾기 후보의 교적 목장(church_mok): 소망-남성1·남성2 를 가려낸다 · 아이는 부서(가족 목장 아님) · 청년부 · evPerson·빈칸 채우기엔 없다", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const men = await call(t, "evPeopleLookup", { name: upName("남") });
+  assert.equal(men.body.ok, true, JSON.stringify(men.body));
+  assert.deepEqual(men.body.people, [
+    { name: upName("남"), who_type: "교구", group: "소망", sub: "남성", position: "집사", church_mok: "소망-남성1" },
+    { name: upName("남"), who_type: "교구", group: "소망", sub: "남성", position: "집사", church_mok: "소망-남성2" },
+  ], "옮겨 적은 다섯 칸은 같고 교적 목장 칸으로 갈린다(교인ID 차례)");
+  const kid = await call(t, "evPeopleLookup", { name: upName("학") });
+  assert.deepEqual(kid.body.people,
+    [{ name: upName("학"), who_type: "교회학교", group: "중등부", sub: "", position: "", church_mok: "중등부" }]);
+  const youth = await call(t, "evPeopleLookup", { name: upName("청") });
+  assert.deepEqual(youth.body.people,
+    [{ name: upName("청"), who_type: "교회학교", group: "청년부", sub: "", position: "", church_mok: "청년부" }]);
+  for (const b of [men.body, kid.body, youth.body]) for (const p of b.people) assert.deepEqual(Object.keys(p).sort(), UP_CAND_KEYS);
+  const text = JSON.stringify([men.body, kid.body, youth.body]);
+  assert.ok(!text.includes("화평"), "아이의 가족 교구·목장이 나갔다");
+  assert.ok(!UUID_RE.test(text), "UUID 꼴 값이 실렸다");
+  for (const id of UP_CM_IDS) assert.ok(!text.includes(String(id)), "교인ID 가 실렸다: " + id);
+  for (const k of ["person_id", "name_key", "mok1", "mok3", "kind2", "position_detail", "school_dept", "phone", "address", "birth", "photo"]) {
+    assert.ok(!text.includes(k), "새어 나감: " + k);
+  }
+  // evPerson(성경필사 역할만 · basic) — 다섯 칸 그대로(교적 목장 칸 없음)
+  const ep = await call(t, "evPerson", { name: upName("남"), who_type: "교구", group: "소망", sub: "남성" });
+  assert.equal(ep.body.ok, true, JSON.stringify(ep.body));
+  assert.equal(ep.body.mode, "basic");
+  assert.ok(ep.body.people.length >= 1, JSON.stringify(ep.body));
+  for (const p of ep.body.people) assert.deepEqual(Object.keys(p).sort(), UP_ROW_KEYS);
+  const epText = JSON.stringify(ep.body);
+  assert.ok(!epText.includes("church_mok") && !epText.includes("남성1") && !epText.includes("남성2"), "evPerson 이 넓어졌다: " + epText);
+  // 빈칸 채우기(살펴보기) — 채운 줄도 다섯 칸 그대로 · 이 시험만의 회차(after() 가 ca-test-*<STAMP>* 로 지운다)
+  const ev = "ca-test-upcm-" + STAMP;
+  await rest("events", "POST", { id: ev, title: "ca-test 교적 목장 " + STAMP, opens_on: "2000-08-01", closes_on: "2000-08-31",
+    status: "draft", kind: "signup", needs: { position: true, phone: false, memo: false, extra: [] } });
+  const chk = await call(t, "evUploadCheck", { event_id: ev, fill: true, rows: [
+    { name: upName("학"), gu: "", mok: "", pos: "" },       // 아이 한 분 → 중등부로 채움
+    { name: upName("청"), gu: "", mok: "", pos: "" },       // 청년 한 분 → 청년부로 채움
+  ] });
+  assert.equal(chk.body.ok, true, JSON.stringify(chk.body));
+  assert.deepEqual(chk.body.rows.map((r) => r.mark), ["fill", "fill"], JSON.stringify(chk.body.rows));
+  assert.deepEqual(chk.body.rows.map((r) => r.row.group), ["중등부", "청년부"]);
+  for (const r of chk.body.rows) assert.deepEqual(Object.keys(r.row).sort(), UP_ROW_KEYS);
+  assert.ok(!JSON.stringify(chk.body).includes("church_mok"), "빈칸 채우기가 넓어졌다");
 });
 
 // ---------- 성경필사(암송) — 이름을 누르면 교적 창 evPerson (계획 Task 16) ----------

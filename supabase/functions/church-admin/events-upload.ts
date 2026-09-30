@@ -13,9 +13,9 @@
 //   ⚠️ 「넣음」은 add·fill 둘뿐이다. same-name 은 소속을 못 정한 줄(빈칸)에만 붙는다 — 소속이 적힌 줄은 채우지 못해도 그대로 넣는다.
 //   ⚠️ 채울지·무엇을 채울지는 fillDecision(Task 3 · CONTRACT 5 보강판) 하나가 정한다 — 여기서는 얹고 알리기만 한다.
 //   ⚠️ index.ts 는 이 과제의 이름을 **이 모듈에서만** 가져온다(CONTRACT 5 — 다른 과제의 import 와 이름이 겹치지 않게).
-//      그래서 찾기의 이름 다듬기(lookupName)·다섯 칸(lookupOut)·올리기 막기(tooManyRows·uploadEventError)도 여기 있다.
+//      그래서 찾기의 이름 다듬기(lookupName)·다섯 칸(lookupOut)·찾기 후보 한 줄(lookupCandOut)·올리기 막기(tooManyRows·uploadEventError)도 여기 있다.
 import { BE_BAD_CHARS, BE_FIELD_MAX, BE_MAX_UPLOAD, checkRow, identKey, isEligEvent, tidyRaw, type EvRow, type RawCells } from "./events-rules.ts";
-import { fillDecision, lookupView, type ChurchPerson } from "./events-people.ts";
+import { churchMok, fillDecision, lookupView, type ChurchPerson } from "./events-people.ts";
 import { oddPosition, sameKeys, tagNote } from "./events-rows.ts";
 import { legacyNorm } from "./paper.ts";
 import { nameKey } from "./people-match.ts";
@@ -347,4 +347,14 @@ export function readName(v: unknown): { name: string; key: string; error: string
 export function lookupOut(p: ChurchPerson & { name?: unknown }): { name: string; who_type: string; group: string; sub: string; position: string } {
   const v = lookupView(p, legacyNorm(p.name));
   return { name: v.name, who_type: v.who_type, group: v.group_name, sub: v.sub_name, position: v.position };
+}
+
+// 한 분 더하기 찾기(evPeopleLookup) 후보 한 줄 — 다섯 칸 + 교적 목장 칸 그대로(church_mok · events-people.ts churchMok · 2026-09-30 친구 요청).
+//   소망 남성1·남성2 목장의 같은 이름 두 분은 다섯 칸이 같다(둘 다 「소망 남성」) — 화면이 「교적: 소망-남성1」로 가려내게.
+// ⚠️ **찾기 후보에만.** lookupOut 을 넓히지 않는다 — evPerson basic(events-person.ts)·빈칸 채우기는 다섯 칸 그대로(시험이 맞댄다).
+// ⚠️ 칸 지도로만(스프레드 금지) — 읽는 칸은 index.ts EV_LOOKUP_COLS 그대로(churchMok 재료 kind2·mok1·mok3·school_dept 는 이미 읽는다).
+export function lookupCandOut(p: ChurchPerson & { name?: unknown }):
+  { name: string; who_type: string; group: string; sub: string; position: string; church_mok: string } {
+  const o = lookupOut(p);
+  return { name: o.name, who_type: o.who_type, group: o.group, sub: o.sub, position: o.position, church_mok: churchMok(p) };
 }

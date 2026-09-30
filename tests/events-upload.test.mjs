@@ -423,3 +423,46 @@ test("uploadRecords — 낸 날(created_at)을 받으면 모든 줄에 같은 �
     for (const x of open) assert.equal("created_at" in x.rec, false, "열린 회차는 DB 기본값(now())");
   }
 });
+
+// ---------- 한 분 더하기 찾기 후보 — 다섯 칸 + 교적 목장 칸 그대로(church_mok · 2026-09-30 친구 요청) ----------
+// 소망은 남성1·남성2 목장이 있는데 옮겨 적으면 둘 다 「남성」 — 같은 이름 두 분을 후보에서 가려내려고 찾기(evPeopleLookup)에만 한 칸 더한다.
+// lookupOut(evPerson basic 이 쓰는 다섯 칸)과 빈칸 채우기는 넓히지 않는다.
+import * as eventsUpload from "../supabase/functions/church-admin/events-upload.ts";
+import { personOut } from "../supabase/functions/church-admin/events-person.ts";
+
+test("lookupCandOut — 찾기 후보 한 줄은 다섯 칸 + church_mok 여섯뿐 · lookupOut·evPerson basic·빈칸 채우기는 다섯 칸 그대로", () => {
+  const { lookupCandOut } = eventsUpload;
+  assert.equal(typeof lookupCandOut, "function", "events-upload.ts 가 lookupCandOut 을 내보내야 한다");
+  const men1 = { ...P({ name_key: "홍길동", mok1: "소망", mok3: "소망-남성1", position: "집사", position_detail: "서리집사" }),
+    name: " 홍길동 ", person_id: 11, phone1: "010-0000-1111", address: "비밀주소" };
+  const men2 = { ...men1, mok3: "소망-남성2", person_id: 12 };
+  const o1 = lookupCandOut(men1), o2 = lookupCandOut(men2);
+  assert.deepEqual(o1, { name: "홍길동", who_type: "교구", group: "소망", sub: "남성", position: "집사", church_mok: "소망-남성1" });
+  assert.deepEqual(o2, { ...o1, church_mok: "소망-남성2" }, "옮겨 적은 다섯 칸은 같고 교적 목장 칸만 다르다");
+  assert.deepEqual(Object.keys(o1).sort(), ["church_mok", "group", "name", "position", "sub", "who_type"]);
+  const kid = lookupCandOut({ ...P({ name_key: "홍길동", kind2: "교회학교", mok1: "화평", mok3: "화평-20목장", school_dept: "중등부" }), name: "홍길동" });
+  assert.deepEqual(kid, { name: "홍길동", who_type: "교회학교", group: "중등부", sub: "", position: "", church_mok: "중등부" });
+  assert.ok(!JSON.stringify(kid).includes("화평"), "아이의 가족 교구·목장은 나가지 않는다");
+  const youth = lookupCandOut({ ...P({ kind2: "청년", mok1: "청년부", mok3: "청년-03" }), name: "홍길동" });
+  assert.equal(youth.church_mok, "청년부");
+  assert.equal(lookupCandOut({ ...P({ mok1: "", mok3: "" }), name: "홍길동" }).church_mok, "");
+  // 원래 칸 이름·교인ID·연락처·주소·직분 상세는 따라 나가지 않는다(스프레드 금지)
+  const s = JSON.stringify([o1, o2, kid, youth]);
+  for (const bad of ["name_key", "kind2", "mok1", "mok3", "position_detail", "school_dept", "person_id", "phone1", "010-0000-1111", "비밀주소", "서리", "청년-03"]) {
+    assert.ok(!s.includes(bad), "새어 나감: " + bad);
+  }
+  // lookupOut 은 다섯 칸 그대로 — evPerson basic 이 이것을 쓴다
+  assert.deepEqual(Object.keys(lookupOut(men1)).sort(), ["group", "name", "position", "sub", "who_type"]);
+  const basic = personOut([men1, men2], { who_type: "교구", group_name: "소망", sub_name: "남성", name: "홍길동" }, false);
+  assert.equal(basic.people.length, 2);
+  for (const p of basic.people) assert.deepEqual(Object.keys(p).sort(), ["group", "name", "position", "sub", "who_type"]);
+  assert.ok(!JSON.stringify(basic).includes("church_mok") && !JSON.stringify(basic).includes("남성1"), "evPerson basic 은 넓히지 않는다");
+  // 빈칸 채우기 — 채운 줄도 다섯 칸 그대로(교적 목장 칸은 싣지 않는다)
+  const it = tidyUpload([R("가나", "소망", "", "")]);
+  applyFill(it, new Map([["가나", [{ ...men1, name_key: "가나" }]]]));
+  judgeUpload(it, NO_IDX);
+  const out = uploadOut(it);
+  assert.equal(out[0].mark, "fill", JSON.stringify(out));
+  assert.deepEqual(Object.keys(out[0].row).sort(), ["group", "name", "position", "sub", "who_type"]);
+  assert.ok(!JSON.stringify(out).includes("church_mok") && !JSON.stringify(out).includes("남성1"));
+});

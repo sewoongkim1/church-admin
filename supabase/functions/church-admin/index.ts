@@ -25,7 +25,7 @@ import { BE_NEEDS_DEFAULT, checkEvent, eligibilityStart, EV_CREATE_KEYS, EV_EDIT
 import { checkNote, checkRow, identKey, type EvRow } from "./events-rules.ts";
 import { ADD_TAG, askableKeys, checkChanged, formRow, oddPosition, rowPatch, sameKeys, tagNote, touchesRow } from "./events-rows.ts";
 // 성경필사(암송) 명단 올리기·교인명부 찾기(Task 8) — 이 과제의 이름은 events-upload.ts 에서만 가져온다(CONTRACT 5)
-import { applyFill, fillNames, filledNames, judgeUpload, lookupName, lookupOut, LOOKUP_MAX, tidyUpload, tooManyRows, uploadCounts, uploadEventError, uploadKeys, uploadOut, uploadRecords } from "./events-upload.ts";
+import { applyFill, fillNames, filledNames, judgeUpload, lookupCandOut, lookupName, LOOKUP_MAX, tidyUpload, tooManyRows, uploadCounts, uploadEventError, uploadKeys, uploadOut, uploadRecords } from "./events-upload.ts";
 
 // 성경필사(암송) 이름을 누르면 교적 창(Task 16) — 이 과제의 이름은 events-person.ts 에서만 가져온다(CONTRACT 5)
 import { personAsk, personOut, type PersonCand } from "./events-person.ts";
@@ -1500,7 +1500,7 @@ async function evRowDelete(ctx: Ctx, b: any) {
 // ⚠️ 살펴보기와 넣기가 판정을 **처음부터 다시** 돈다 — 화면이 보낸 살펴보기 결과를 믿지 않는다(그 사이 누가 더했을 수 있다).
 // ⚠️ 자격 회차(needs.eligibility — isEligEvent 하나로 판정)에는 올리지 않는다 — 가을 설계 §12 「대리 등록은 보정 창구로만」.
 // ⚠️ 앱 계정은 찾기만 한다(member_login 을 부르지 않는다). user_id·ident_key 는 응답에 싣지 않는다.
-// ⚠️ 교인명부 값은 다섯 칸(이름·구분·소속·세부·직분)으로만 나간다 — 찾기는 people.lookup(검색어·결과 수),
+// ⚠️ 교인명부 값은 다섯 칸(이름·구분·소속·세부·직분)으로만 나간다(찾기 후보에만 교적 목장 칸 그대로 하나 더 — church_mok) — 찾기는 people.lookup(검색어·결과 수),
 //    채우기를 켠 살펴보기가 명부에 물었으면 people.fill(물은 이름·채운 이름 — 채운 것이 없어도 · SEC-2)로 남긴다. 둘 다 「교인명부 기록」 보기로 간다.
 // ⚠️ 같은 분 판정을 줄마다 sameInEvent 로 부르지 않는다 — 600줄이면 요청이 2천 번을 넘는다.
 //    회차 명단을 한 번(allRows), 앱 계정을 한 번(evAccountIndex) 읽고 judgeUpload 가 같은 규칙으로 맞댄다.
@@ -1604,8 +1604,10 @@ async function evUpload(ctx: Ctx, b: any, save: boolean) {
   return { ok: true, counts, saved, failed };
 }
 
-// 교인명부에서 이름으로 찾기 — 이름 키가 **정확히 같은** 분만, 20명까지, 다섯 칸만.
+// 교인명부에서 이름으로 찾기 — 이름 키가 **정확히 같은** 분만, 20명까지, 다섯 칸 + 교적 목장 칸 그대로(church_mok).
 // 화면은 「찾기」 단추·Enter 로만 부른다(글자마다 부르지 않는다). 부를 때마다 검색어·결과 수를 기록한다(people.search 와 같게).
+// ⚠️ church_mok 은 **이 액션에만**(lookupCandOut · 2026-09-30 친구 요청 — 소망 남성1·남성2 의 같은 이름 두 분을 가려내려고).
+//    evPerson basic·빈칸 채우기는 다섯 칸 그대로다. 읽는 칸은 EV_LOOKUP_COLS 그대로(새로 읽는 칸 없음).
 async function evPeopleLookup(ctx: Ctx, b: any) {
   const q = lookupName(b.name);                          // no-name · bad-char · too-long
   if (q.error) return { ok: false, error: q.error };
@@ -1614,7 +1616,7 @@ async function evPeopleLookup(ctx: Ctx, b: any) {
   const { data, error } = await db.from("church_people").select(EV_LOOKUP_COLS)
     .eq("name_key", q.key).order("person_id", { ascending: true }).limit(LOOKUP_MAX);
   if (error) throw error;
-  const people = ((data ?? []) as any[]).map((p) => lookupOut(p));
+  const people = ((data ?? []) as any[]).map((p) => lookupCandOut(p));
   await audit(ctx, "people.lookup", "", { q: q.name, count: people.length });
   return { ok: true, source: { date: src.source_date, total: src.total }, people };
 }

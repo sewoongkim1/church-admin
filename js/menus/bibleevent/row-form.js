@@ -3,7 +3,7 @@
 // ⚠️ 줄 검사·다듬기(「화평교구」·「20목장」·「07」·「유년」·직분 「님」)는 서버가 한다(events-rules.ts tidyRow·checkRow) —
 //    창은 적은 그대로 보내고, 틀리면 서버 코드를 창 안 빨간 줄로 보인다(판정표를 두 벌 두지 않는다).
 // ⚠️ 교인명부 찾기는 「찾기」 단추·Enter 로만 부른다(글자마다 부르지 않는다) — 부를 때마다 서버가 people.lookup 기록(찾은 이름)을
-//    남긴다. 돌아오는 것은 이름·구분·소속·세부·직분 다섯뿐이다.
+//    남긴다. 돌아오는 것은 이름·구분·소속·세부·직분 다섯과, 후보를 가려낼 교적 목장 칸 그대로(church_mok — 「교적: 소망-남성1」) 하나뿐이다.
 // ⚠️ 앱에서 낸 줄(source='app')과 자격 회차의 줄은 **메모만** — 성도님이 앱에서 「고치기」를 누르면 소속·직분이 통째로 덮이고,
 //    자격 회차 명단은 「꾸준히 했다는 판정 결과」다(가을 설계 §10·§12). 서버도 막는다(app-row-note-only) — 그래서 메모만 보낸다.
 // ⚠️ 고치기 창은 지금 메모를 그대로 채운다 — 「원래: 화평 30 · 집사」 같은 옛 기록이 지워지지 않게.
@@ -67,13 +67,18 @@ function readForm(root) {
     name: g("name"), position: g("position"), note: g("note") };
 }
 
-function candsHtml(r, name) {
+// 후보 아래 작은 줄 「교적: 소망-남성1」 — 교적 목장 칸 그대로(서버 church_mok · 2026-09-30 친구 요청).
+// 소망 남성1·남성2 목장의 같은 이름 두 분은 옮겨 적으면 둘 다 「소망 남성」이라, 이 줄로 가려낸다. 비었으면 그리지 않는다.
+// 채우기(fill)는 이 칸을 쓰지 않는다 — 명단에 적는 값은 그대로 「남성」(앱 로그인·계정 잇기 열쇠).
+const mokHtml = (m) => { const v = norm(m); return v ? `<small class="be-cand-mok">교적: ${esc(v)}</small>` : ""; };
+
+export function candsHtml(r, name) {
   if (!r.source) return `<p class="be-hint">교인명부가 아직 없어요 — 손으로 적어 주세요</p>`;
   const list = r.people || [];
   const head = `<p class="be-hint">교인명부 ${esc(r.source.date)} 기준 · ‘${esc(name)}’ ` +
     (list.length ? `${list.length}분 — 고르면 아래 칸이 채워져요(손으로 고칠 수 있어요)</p>` : `— 같은 이름이 없어요, 손으로 적어 주세요</p>`);
   return head + list.map((p, i) => `<button type="button" class="be-cand" data-cand="${i}"><b>${esc(p.name)}</b>` +
-    `<span>${esc(p.who_type ? whoText(p) || p.who_type : "소속을 정할 수 없어요")}</span>${posHtml(p.position)}</button>`).join("");
+    `<span>${esc(p.who_type ? whoText(p) || p.who_type : "소속을 정할 수 없어요")}</span>${posHtml(p.position)}${mokHtml(p.church_mok)}</button>`).join("");
 }
 
 // 교구/교회학교 전환 · 교구 고르기 · 교인명부 찾기 · 후보 고르기

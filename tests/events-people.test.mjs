@@ -183,3 +183,34 @@ test("fillDecision — 직분이 자모분리(NFD) 「학생」이어도 아이 
   const row = { who_type: "", group_name: "", sub_name: "", name: "가나", position: "학생".normalize("NFD") };
   assert.deepEqual(fillDecision(row, [P({ name_key: "가나", kind2: "장년", mok1: "화평", mok3: "화평-5목장" })]), NONE("kid-adult"));
 });
+
+// ── 교적 목장 칸 그대로(churchMok · 2026-09-30 친구 요청) ─────────────────────
+// 한 분 더하기 찾기 후보에 「교적: 소망-남성1」 — 소망은 남성1·남성2 목장이 있는데 옮겨 적으면 둘 다 「남성」이라
+// 같은 이름 두 분을 가려내지 못한다. 교구 분(mapChurchPerson 이 교구로 보내는 분)은 mok3 그대로, 그 밖은 school_dept(없으면 mok1).
+// 새 이름은 네임스페이스로 들여온다 — 내보내지 않았을 때 파일 전체가 아니라 이 시험 하나만 실패하게.
+import * as eventsPeople from "../supabase/functions/church-admin/events-people.ts";
+
+test("churchMok — 교구 분은 mok3 그대로(숫자로 바꾸지 않는다) · 그 밖은 school_dept, 없으면 mok1 · 없으면 빈 글자", () => {
+  const { churchMok } = eventsPeople;
+  assert.equal(typeof churchMok, "function", "events-people.ts 가 churchMok 을 내보내야 한다");
+  // 교구 분 — 옮겨 적으면 둘 다 「남성」인 소망 남성1·남성2 가 여기서 갈린다
+  assert.equal(mapChurchPerson(P({ mok1: "소망", mok3: "소망-남성1" })).sub_name, mapChurchPerson(P({ mok1: "소망", mok3: "소망-남성2" })).sub_name);
+  assert.equal(churchMok(P({ mok1: "소망", mok3: "소망-남성1" })), "소망-남성1");
+  assert.equal(churchMok(P({ mok1: "소망", mok3: "소망-남성2" })), "소망-남성2");
+  assert.equal(churchMok(P({ mok1: "화평", mok3: "화평-03목장", school_dept: "청년1부" })), "화평-03목장", "교구 분은 부서 칸이 있어도 mok3");
+  assert.equal(churchMok(P({ kind2: "청년", mok1: "화평", mok3: "화평-20목장" })), "화평-20목장", "청년이라도 명부 mok1 이 교구면 교구 분(규칙 2)");
+  assert.equal(churchMok(P({ mok1: " 은혜 ", mok3: "  은혜-01목장 " })), "은혜-01목장", "앞뒤 빈칸만 다듬는다");
+  assert.equal(churchMok(P({ mok1: "소망", mok3: "소망-남성1".normalize("NFD") })), "소망-남성1", "완성형(NFC)으로");
+  assert.equal(churchMok(P({ mok1: "은혜", mok3: "" })), "", "교구 분인데 목장 칸이 비면 빈 글자(교구 이름으로 채우지 않는다)");
+  // 교회학교 — 아이는 가족의 교구·목장이 있어도 교구 분이 아니다(규칙 1) → 부서, 없으면 mok1
+  assert.equal(churchMok(P({ kind2: "교회학교", mok1: "화평", mok3: "화평-20목장", school_dept: "중등부" })), "중등부");
+  assert.equal(churchMok(P({ kind2: "학생", mok1: "기쁨", mok3: "기쁨-03목장", school_dept: "" })), "기쁨", "부서 없는 아이는 mok1(목장 칸은 싣지 않는다)");
+  // 청년·새가족·임시교구·빈 분
+  assert.equal(churchMok(P({ kind2: "청년", mok1: "청년부", mok3: "청년-03" })), "청년부");
+  assert.equal(churchMok(P({ kind2: "청년", mok1: "청년공동체", mok3: "", school_dept: "청년2부" })), "청년2부");
+  assert.equal(churchMok(P({ mok1: "새가족", mok3: "2026-09" })), "새가족", "새가족의 목장 칸(연도·월)은 싣지 않는다");
+  assert.equal(churchMok(P({ mok1: "임시교구", mok3: "임시-1" })), "임시교구");
+  assert.equal(churchMok(P({ mok1: "", mok3: "고아-1", school_dept: "" })), "", "교구 분이 아니면 mok3 은 보지 않는다");
+  assert.equal(churchMok(P()), "");
+  assert.equal(churchMok({}), "");
+});
