@@ -24,7 +24,7 @@ export const BE_BAD_CHARS = /["\\,()|]/;
 
 export type EvRow = { who_type: "교구" | "교회학교"; group_name: string; sub_name: string; name: string; position: string };
 export type EvEvent = { id: string; title: string; short_title: string; subtitle: string; season: string;
-  opens_on: string; closes_on: string; status: string; list_until: string | null };
+  opens_on: string; closes_on: string; status: string; list_until: string | null; sort_order: string };
 export type RawCells = { name: string; gu: string; mok: string; pos: string };
 
 // 한국 날짜(YYYY-MM-DD). new Date().toISOString() 은 UTC 라 자정~오전 9시에 하루가 어긋난다.
@@ -87,18 +87,20 @@ export function checkEvent(ev: EvEvent, eligibilityStart: string | null): string
   return null;
 }
 
-// 회차 설정에서 담당자가 바꿀 수 있는 칸 — needs·copy·kind·sort_order·id 는 **받지 않는다**
+// 회차 설정에서 담당자가 바꿀 수 있는 칸 — needs·copy·kind·id 는 받지 않는다 · sort_order 는 2026-09-30 부터 받는다(정수 글자 · DB 에 쓸 때 eventDbPatch 가 수로)
 // (자격 규칙·문구가 조용히 지워지지 않게 · 성경암송 eventSave 가 겪은 「화면에 없는 칸이 기본값으로」 사고).
-// ⚠️ Task 6 이 이 파일 끝에 더하는 EV_EDIT_KEYS 와 **같은 여덟 칸**이어야 한다(Task 6 시험이 맞대 본다).
-const EVT_EDITABLE = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until"];
+// ⚠️ 이 파일 끝의 EV_EDIT_KEYS 와 **같은 아홉 칸**이어야 한다(시험이 두 방향으로 맞대 본다).
+const EVT_EDITABLE = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until", "sort_order"];
 
 // **보낸 칸만** 바꾼다(hasOwnProperty) · 글자는 앞뒤 빈칸을 떼고 가운데 빈칸을 하나로 · list_until 빈칸 = null(기한 없음).
+// sort_order — 빈칸은 "0" · 정수 꼴이면 앞자리 0·「-0」을 다듬은 글자 · 그 밖(「+5」·「1.5」·「abc」)은 그대로 두어 checkEventEdit 가 막는다.
 export function mergeEventPatch(cur: EvEvent, patch: Record<string, unknown>): EvEvent {
   const out: EvEvent = { ...cur };
   const p = patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {};
   for (const k of EVT_EDITABLE) {
     if (!Object.prototype.hasOwnProperty.call(p, k)) continue;
     const v = legacyNorm(p[k]);
+    if (k === "sort_order") { out.sort_order = v === "" ? "0" : /^-?\d+$/.test(v) ? String(parseInt(v, 10)) : v; continue; }
     if (k === "list_until") out.list_until = v || null;
     else (out as Record<string, unknown>)[k] = v;
   }
@@ -116,8 +118,10 @@ const aff = (s: unknown): string => legacyNorm(String(s ?? "").normalize("NFC"))
 // 직분 다듬기 — 성경암송 api evtImportPosition: 괄호 속 떼기 · 끝 「님」 떼기.
 // 원문은 「님」을 뗀 뒤 다시 다듬지 않아 「집사 님」이 「집사 」(끝 빈칸)가 됐다 — 여기서는 마지막에 한 번 더 다듬는다.
 // ⚠️ 앱 직분 목록(MIN_POSITIONS · 9개)으로 **막지 않는다** — 명예권사·은퇴장로 같은 값이 수백 줄 있다(목록 밖은 경고만).
+// 직분은 완성형(NFC)으로 — 신원 키(appIdentityKey)에 들어가지 않아 계정 매칭에 해가 없다 · 이름은 여전히 NFC 금지(최종 검토 M1)
 export function cleanPosition(v: unknown): string {
-  return legacyNorm(legacyNorm(legacyNorm(v).replace(/\(.*?\)/g, "")).replace(/님$/, ""));
+  const s = legacyNorm(String(v ?? "").normalize("NFC"));
+  return legacyNorm(legacyNorm(s.replace(/\(.*?\)/g, "")).replace(/님$/, ""));
 }
 
 // 목장 칸 — 「20목장」→20 · 「07」→7(앞자리 0) · 「남성목장」→남성. 그 밖의 글자는 그대로 두어 checkRow 가 bad-sub 로 잡는다.
@@ -177,7 +181,8 @@ export function checkRow(row: EvRow): string | null {
 }
 
 // 담당자 메모 길이 — ⚠️ 서버는 붙임말(「담당자가 더함 / 」·「명단 올리기」 등)을 **붙인 뒤의** 글을 넣기 직전에 이것으로 본다.
-// 창(Task 10)의 글자 수 상한은 480 — 「담당자가 더함 / 」(10자)을 붙여도 500 을 넘지 않게(CONTRACT §5).
+// 창의 글자 수 상한은 더하기 480(NOTE_FORM_MAX — 「담당자가 더함 / 」(10자)을 붙여도 500 을 넘지 않게 · CONTRACT §5) ·
+// 고치기·메모만 고치기 500(NOTE_EDIT_MAX — evRowSave 는 붙임말을 안 붙이고 이것으로 500 그대로 센다).
 export function checkNote(note: unknown): string | null {
   return String(note ?? "").length > BE_NOTE_MAX ? "note-too-long" : null;
 }
@@ -271,10 +276,11 @@ export function candidateKeys(row: EvRow): string[] {
 }
 
 // ---------- 회차 만들기·설정(Task 6) — 서버 evEventCreate·evEventSave 가 쓴다 ----------
-// 담당자가 회차 설정에서 바꿀 수 있는 칸. needs·copy·kind·sort_order·id 는 **없다** —
+// 담당자가 회차 설정에서 바꿀 수 있는 칸. needs·copy·kind·id 는 받지 않는다 · sort_order 는 2026-09-30 부터 받는다(정수 글자 · DB 에 쓸 때 eventDbPatch 가 수로) —
 // 가을 말씀 동행의 자격 규칙(needs.eligibility)·문구(copy)가 저장 한 번에 조용히 지워지지 않게(설계 §2).
-// ⚠️ mergeEventPatch 안의 EVT_EDITABLE 과 **같은 여덟 칸**이어야 한다(시험이 맞대 본다).
-export const EV_EDIT_KEYS = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until"];
+// sort_order = 성도님 앱 eventOpenList 의 셋째 잣대(① 등록할 수 있고 안 낸 것 ② 마감일 ③ 차례 ④ id) — 마감일이 같은 회차끼리만 앞뒤를 가른다.
+// ⚠️ mergeEventPatch 안의 EVT_EDITABLE 과 **같은 아홉 칸**이어야 한다(시험이 맞대 본다).
+export const EV_EDIT_KEYS = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until", "sort_order"];
 // 새 회차에 받는 칸 — status 도 없다(새 회차는 draft 로만 · 공개는 만든 뒤 설정에서 공개 확인을 거쳐).
 export const EV_CREATE_KEYS = EV_EDIT_KEYS.filter((k) => k !== "status");
 
@@ -292,16 +298,44 @@ export function pickEventPatch(src: unknown, keys: string[]): Record<string, str
   return out;
 }
 
-// events 표의 한 줄 → 규칙이 보는 아홉 칸(EvEvent). 날짜는 PostgREST 가 "YYYY-MM-DD" 글자로 준다.
-// needs·copy·kind·sort_order·updated_at 같은 나머지 칸은 버린다.
+// events 표의 한 줄 → 규칙이 보는 열 칸(EvEvent · id + 고칠 수 있는 아홉 칸). 날짜는 PostgREST 가 "YYYY-MM-DD" 글자로 준다.
+// sort_order 는 글자로(없음·null·빈 것은 DB 기본값 "0") — ⚠️ 부르는 쪽이 sort_order 칸을 읽어 와야 한다(index.ts EV_COLS).
+//   안 읽으면 "0" 으로 보여 저장할 때마다 차례가 0 으로 바뀐다.
+// needs·copy·kind·updated_at 같은 나머지 칸은 버린다.
 export function eventFields(r: Record<string, unknown>): EvEvent {
   const s = (v: unknown) => (v === null || v === undefined ? "" : String(v));
-  const lu = r.list_until;
+  const lu = r.list_until, so = r.sort_order;
   return {
     id: s(r.id), title: s(r.title), short_title: s(r.short_title), subtitle: s(r.subtitle), season: s(r.season),
     opens_on: s(r.opens_on), closes_on: s(r.closes_on), status: s(r.status),
     list_until: lu === null || lu === undefined || lu === "" ? null : String(lu),
+    sort_order: so === null || so === undefined || so === "" ? "0" : String(so),
   };
+}
+
+// 회차 글자 칸의 상한 — 창(event-form.js)의 maxlength 와 같은 값(화면 roster-logic.js EV_TEXT_MAX 와 시험이 맞대 본다).
+// 짧은 이름·이름은 성도님 앱 첫 화면 단추·회차 카드에 그대로 뜬다 — 붙여 넣은 한 문단이 모든 분의 단추를 깨지 않게(SEC-6).
+export const EV_TEXT_MAX: Record<string, number> = { title: 100, short_title: 40, subtitle: 100, season: 20 };
+
+// 회차 설정의 길이·차례 검사 — checkEvent(기간·상태·공개 종료일) 뒤에 부른다. **바꾼 칸만** 본다
+// (before 가 null 이면 모두 = 만들기) — 옛 값이 길거나 차례가 범위 밖이어도 다른 칸 저장은 막지 않는다.
+//   글자 칸이 EV_TEXT_MAX 보다 길면 event-too-long · sort_order 가 -999~999 정수 글자가 아니면 bad-sort-order
+export function checkEventEdit(before: EvEvent | null, next: EvEvent): string | null {
+  const b = before as unknown as Record<string, unknown> | null;
+  const n = next as unknown as Record<string, unknown>;
+  const changed = (k: string) => !b || b[k] !== n[k];
+  for (const k of Object.keys(EV_TEXT_MAX)) {
+    if (changed(k) && String(n[k] ?? "").length > EV_TEXT_MAX[k]) return "event-too-long";
+  }
+  if (changed("sort_order") && !/^-?\d{1,3}$/.test(String(n.sort_order ?? ""))) return "bad-sort-order";
+  return null;
+}
+
+// eventDiff 의 after(글자) → DB 에 쓸 값. sort_order 만 수로(int 칸) · 나머지는 그대로 · 받은 것을 고치지 않는다(사본).
+export function eventDbPatch(after: Record<string, string | null>): Record<string, string | number | null> {
+  const out: Record<string, string | number | null> = { ...after };
+  if (Object.prototype.hasOwnProperty.call(after, "sort_order")) out.sort_order = Number(after.sort_order) || 0;
+  return out;
 }
 
 // 바뀐 칸만 전·후로 — 서버가 update 할 칸이자 event.settings 기록의 detail. 같으면 둘 다 빈 것. id 는 보지 않는다.

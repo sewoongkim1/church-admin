@@ -831,6 +831,8 @@ a.mn-tel.sm{padding:2px 8px}
 .be-bottom{flex:none;padding:10px var(--card-pad) 12px;border-top:1px solid var(--light)}
 .be-foot{display:flex;gap:8px}
 .be-foot .btn{flex:1 1 0;min-width:0}
+/* 입력 창의 주 단추(저장·더하기·빼기·「네, 뺍니다」)는 48px — .btn.danger 에 높이 규칙이 없어 44px 였다(danger-confirm-44px) */
+.be-foot .be-ok{min-height:var(--tap-lg);font-size:1rem}
 .be-err{margin:0 0 10px;padding:8px 12px;border:1px solid var(--danger-bd);border-radius:10px;background:var(--danger-bg);
   color:var(--error);font-size:14px;font-weight:700;line-height:1.5}
 .be-ask-t{margin:0 0 10px;font-size:15px;font-weight:800;color:var(--navy-dark)}
@@ -856,14 +858,24 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
    표준 v1: 주 단추 48 · 둘째 44 · 칩 36 · 글씨 13 이상 · 폰 카드 / PC(≥1024px) 표. 크기·색은 토큰만.
    줄 메뉴는 고르개(pickOne)라 표를 overflow-x 로 감싸도 잘리지 않는다. */
 .be-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.be-evs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
-.be-ev{display:inline-flex;align-items:center;gap:6px;min-height:var(--chip);max-width:100%;padding:0 12px;border:1px solid var(--border);
-  border-radius:999px;background:var(--paper);color:var(--navy-dark);font-size:13px;font-weight:700;cursor:pointer}
-.be-ev em{font-style:normal;font-weight:800;color:var(--navy)}
-.be-ev small{font-size:13px;font-weight:600;color:var(--gray)}
-.be-ev.on{background:var(--navy);border-color:var(--navy);color:#fff}
-.be-ev.on em,.be-ev.on small{color:#fff}
-.be-ev.new{background:var(--ghost-bg);border:1px dashed var(--ghost-bd);color:var(--navy)}
+/* 회차 콤보(2026-09-30 · 칩 줄 대신 · 친구 요구 「콤보로 고르게 · 연·월 · 제목」) — 단추 하나 + 「＋ 새 회차」.
+   누르면 우리 고르개 pickOne(⚠️ <select> 금지). 주 동작이라 48 이상 · 제목 전체와 작은 줄은 **줄바꿈**(말줄임 없음).
+   폰: 콤보가 한 줄 가득, 「＋ 새 회차」는 그 아래 · 넓으면(≥720px) 옆에(콤보 flex 1 · 너비 상한 720px). 쉐브론은 고르개 단추와 같은 .pk-field-x */
+.be-evbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:0 0 12px}
+.be-combo{display:flex;align-items:center;gap:10px;flex:1 1 100%;min-width:0;max-width:100%;min-height:var(--tap-lg);padding:8px 14px;
+  border:1px solid var(--border);border-radius:12px;background:var(--paper);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.be-combo-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+/* 한글은 띄어쓰기 자리에서 끊는다(keep-all) — 띄어쓰기 없는 긴 글만 anywhere 로 */
+.be-combo-v{font-size:16px;font-weight:800;line-height:1.35;color:var(--navy);word-break:keep-all;overflow-wrap:anywhere}
+.be-combo-s{font-size:13px;font-weight:600;line-height:1.45;color:var(--gray);word-break:keep-all;overflow-wrap:anywhere}
+.be-combo[aria-expanded="true"]{border-color:var(--navy)}
+.be-combo[aria-expanded="true"] .pk-field-x{transform:rotate(180deg)}
+.be-combo:focus-visible,.be-evnew:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:2px}
+.be-evnew{flex:none;border-style:dashed}
+@media (min-width:720px){
+  .be-combo{flex:1 1 0;max-width:720px}
+  .be-evnew{min-height:var(--tap-lg)}
+}
 /* 붙는 머리 — 우리 머리줄 아래, 카드 여백까지 덮게 음수 여백(.mn-head 와 같은 꼴) */
 .be-head{position:sticky;top:var(--head-h);z-index:20;background:var(--paper);margin:calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) var(--gap);
   padding:10px var(--card-pad) 8px;border-radius:14px 14px 0 0;border-bottom:1px solid var(--light)}
@@ -953,9 +965,12 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
 .be-up-ev{display:flex;align-items:center;gap:8px;width:100%;min-height:var(--tap-lg);padding:8px 14px;margin:0 0 10px;
   border:1px solid var(--ghost-bd);border-radius:12px;background:#fff;text-align:left;cursor:pointer}
 .be-up-ev-t{flex:1;min-width:0;display:flex;flex-direction:column}
-.be-up-ev-t b{font-size:15px;color:var(--navy)}
-.be-up-ev-t small{font-size:13px;color:var(--gray)}
-.be-up-arrow{flex:none;color:var(--gray)}
+.be-up-ev-t b{font-size:15px;line-height:1.35;color:var(--navy);word-break:keep-all;overflow-wrap:anywhere}
+.be-up-ev-t small{font-size:13px;color:var(--gray);word-break:keep-all;overflow-wrap:anywhere}
+/* 쉐브론 — 📋 회차·명단 콤보와 같은 .pk-field-x · 열리면 뒤집힌다(2026-09-30) */
+.be-up-ev[aria-expanded="true"]{border-color:var(--navy)}
+.be-up-ev[aria-expanded="true"] .pk-field-x{transform:rotate(180deg)}
+.be-up-ev:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:2px}
 .be-up-note{font-size:13px;line-height:1.6;border-radius:10px;padding:8px 12px;margin:0 0 12px;background:#fff8e6;color:#7a5f16}
 .be-up-note.info{background:var(--ghost-bg);color:var(--navy)}
 .be-up-how{display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.7;color:#41506b;background:#f3f6fb;
@@ -1070,6 +1085,10 @@ body.be-lock .adm-toast,body:has(.pk-dim.sheet) .adm-toast{bottom:auto;top:calc(
 .be-name:hover b,.be-name:focus-visible b{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
 .be-name:focus-visible{outline:2px solid var(--navy);outline-offset:-2px}
 .be-name:disabled{cursor:default}
+/* 교적을 기다리는 동안(person-popup.js setWait · FE1-M1) — 늦춘 흐림이라 빨리 오면 깜빡이지 않는다 · 풀 때는 바로 돌아온다.
+   aria-busy 를 거는 section 은 person-popup 뿐이다(700ms 넘으면 알림 한 줄도 그쪽이 띄운다). */
+#view > section[aria-busy="true"]{opacity:.6;transition:opacity .15s ease .35s}
+body:has(#view > section[aria-busy="true"]){cursor:progress}
 /* PC 표 — 좁은 칸에서 이름이 한 글자씩 꺾이지 않게 */
 .be-table .be-name{white-space:nowrap}
 /* 👤 여러 번 참여한 분 — 이름(교적 창) · 소속 · 횟수 · 「📜 이력」(줄 오른쪽 끝) · 참여 회차(다음 줄) */

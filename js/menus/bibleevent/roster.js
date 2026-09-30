@@ -3,16 +3,18 @@
 // 순수 논리 roster-logic.js · HTML 조각 roster-ui.js · 입력 창 event-form.js·row-form.js(모두 js/core/modal.js 위).
 // ⚠️ 브라우저·시스템 창을 띄우지 않는다 — 고르기는 picker.js(pickOne·pickMany), 확인은 ui.js dialog, 입력은 openForm.
 // ⚠️ 고른 회차는 주소 ?ev=<id> — 새로고침·뒤로 가기에도 같은 회차. (code·error·type 같은 이름은 로그인 값과 겹쳐 쓰지 않는다)
+// ⚠️ 회차는 콤보 단추 하나(roster-ui.js evBarHtml) → 우리 고르개 pickOne 으로 고른다(2026-09-30 · 칩 줄을 걷었다).
+//    선택지 글(「2026년 3월 · 제목」 · 「231명 · 마감」)은 roster-logic.js evPickOptions — 📤 올리기·👤 통계와 한 벌.
 // ⚠️ 명단은 열 때마다 새로 받는다(여러 담당자가 서로 옛 화면을 보지 않게). 거르기만 같은 회차 안에서 남는다.
 // ⚠️ 쓰기는 모두 입력 창 안에서 — 창이 스스로 단추를 잠근다(busy() 는 body 에 붙은 창을 잠그지 않는다).
 // ⚠️ 내려받기는 **화면에 보이는 줄 그대로**(거르기·찾기·묶음 차례) — 메모는 싣지 않는다.
 import { esc, toast, dialog, errorText } from "../../core/ui.js";
 import { pickOne, pickMany } from "../../core/picker.js";
 import { CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
-import { CHURCH_STATES, SRC_LABEL, blankFilter, groupRows, filterRows, dupFlags, positionCounts, csvText, sortEvents }
+import { CHURCH_STATES, SRC_LABEL, blankFilter, groupRows, filterRows, dupFlags, positionCounts, csvText, sortEvents, evPickOptions }
   from "./roster-logic.js";
-import { TITLE, ELIG_LINE, CHURCH_LABEL, chipsHtml, headHtml, settingsHtml, sourceHtml, filtersHtml, sumHtml, listHtml, rowMenuOptions }
-  from "./roster-ui.js";
+import { TITLE, ELIG_LINE, CHURCH_LABEL, evBarHtml, comboSub, headHtml, settingsHtml, sourceHtml, filtersHtml, sumHtml, listHtml,
+  rowMenuOptions } from "./roster-ui.js";
 import { openEventForm } from "./event-form.js";
 import { openRowForm, openRowDelete } from "./row-form.js";
 // 이름을 누르면 교적 창(Task 16)
@@ -22,6 +24,7 @@ import { personPayload } from "./person-logic.js";
 let f = blankFilter();   // 거르기 — 같은 회차면 메뉴를 옮겨 다녀도 남는다
 let fFor = "";           // f 가 어느 회차의 거르기인가
 let setOpen = false;     // ⚙️ 회차 설정 — 처음엔 접어 둔다
+let unbindMq = null;     // 앞 화면이 건 matchMedia change 떼기 — 다음 그리기가 부른다(FE-3)
 
 const stamp = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -67,14 +70,17 @@ export async function render(el, ctx) {
     ros = await call("evRoster", { event_id: events[0].id });
     if (!el.isConnected) return;
     if (!ros.ok) { el.innerHTML = failHtml("명단을 불러오지 못했어요", ros); return; }
+    // 없는 회차 주소 → 보여 준 회차로(새로고침마다 같은 알림이 뜨지 않게 · upload.js 와 같다 · stale-ev-query)
+    // replaceState 라 hashchange 가 안 나고 route 가 다시 그리지 않는다
+    if (asked && el.isConnected) history.replaceState(null, "", "#/be-roster?ev=" + encodeURIComponent(ros.event.id));
   }
   const ev = ros.event;
   let rows = ros.rows || [];
   if (fFor !== ev.id) { f = blankFilter(); fFor = ev.id; }
-  const chips = events.map((e) => (e.id === ev.id ? ev : e));   // 칩의 숫자·상태는 방금 받은 회차 것으로
+  const evList = events.map((e) => (e.id === ev.id ? ev : e));   // 고르개의 숫자·상태는 방금 받은 회차 것으로
 
   el.innerHTML = `${TITLE}
-    <div class="be-evs" role="group" aria-label="회차 고르기"></div>
+    ${evBarHtml(ev)}
     <div class="card be-panel">
       <div class="be-head">${headHtml(ev)}</div>
       ${settingsHtml(ev, setOpen)}
@@ -97,7 +103,8 @@ export async function render(el, ctx) {
 
   const draw = () => {
     ev.count = rows.length;
-    el.querySelector(".be-evs").innerHTML = chipsHtml(chips, ev.id);
+    // 콤보는 글자만 고친다(단추를 다시 그리지 않는다 — 초점·aria-expanded 가 남게) · 인원은 더하고 뺀 뒤의 수
+    el.querySelector(".be-combo-s").textContent = comboSub(ev);
     const groups = groupRows(filterRows(rows, f));
     const dups = dupFlags(rows);   // ⚠️ 명단 **전체**로 — 거르기로 한쪽이 가려져도 표시는 남는다
     const labels = new Map(groupRows(rows).map((g) => [g.key, g.label]));
@@ -129,6 +136,13 @@ export async function render(el, ctx) {
     toast(!ev.listedNow && saved.listedNow ? "👁 이 회차가 이제 성도님께 보여요"
       : ev.listedNow && !saved.listedNow ? "이 회차는 이제 성도님께 안 보여요" : "회차 설정을 저장했어요");
     reload();
+  }
+  // 회차 고르기 — 우리 고르개(폰은 아래 판). 닫기(Esc·뒤 막·「닫기」)면 그대로 · 초점은 고르개가 콤보로 돌려준다.
+  // 다른 회차를 고르면 주소 ?ev= 로(칩을 누를 때와 같다 — route 가 다시 그린다)
+  async function pickEvent(b) {
+    const v = await pickOne({ anchor: b, title: "회차 고르기", options: evPickOptions(evList), value: ev.id });
+    if (v == null || v === ev.id || !el.isConnected) return;
+    go(`be-roster?ev=${encodeURIComponent(v)}`);
   }
   async function newEvent() {
     const made = await openEventForm({ call, ev: null });
@@ -197,17 +211,13 @@ export async function render(el, ctx) {
   }
 
   el.addEventListener("click", (e) => {
-    const chip = e.target.closest("[data-ev]");
-    if (chip) {
-      if (chip.dataset.ev !== ev.id) go(`be-roster?ev=${encodeURIComponent(chip.dataset.ev)}`);
-      return;
-    }
     const fb = e.target.closest("[data-filter]");
     if (fb) { pickFilter(fb); return; }
     const b = e.target.closest("button[data-act]");
     if (!b) return;
     const act = b.dataset.act;
-    if (act === "new") newEvent();
+    if (act === "ev") pickEvent(b);
+    else if (act === "new") newEvent();
     else if (act === "set") editEvent();
     else if (act === "add") addRow();
     else if (act === "row") rowMenu(b);
@@ -221,8 +231,10 @@ export async function render(el, ctx) {
   el.addEventListener("toggle", (e) => {
     if (e.target instanceof Element && e.target.matches("details.be-set")) setOpen = e.target.open;
   }, true);
-  // 창 폭이 1024px 을 넘나들면 표↔카드 — 이 화면이 사라지면 스스로 떨어진다
-  const onMq = () => { if (!el.isConnected) { mqWide.removeEventListener("change", onMq); return; } draw(); };
-  mqWide.addEventListener("change", onMq);
+  // 창 폭이 1024px 을 넘나들면 표↔카드 — 다음 그리기(↻ 새로 불러오기·회차 바꾸기·메뉴 다시 열기)가 앞 화면의 것을 뗀다(FE-3).
+  // 이 화면이 사라진 뒤 다음 그리기 전에 change 가 오면 스스로도 떨어진다.
+  const unbind = () => { mqWide.removeEventListener("change", onMq); if (unbindMq === unbind) unbindMq = null; };
+  const onMq = () => { if (!el.isConnected) { unbind(); return; } draw(); };
+  unbindMq?.(); unbindMq = unbind; mqWide.addEventListener("change", onMq);
   draw();
 }

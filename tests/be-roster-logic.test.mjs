@@ -116,7 +116,7 @@ test("csvText — BOM · \\r\\n · 일곱 칸 · 받은 차례 그대로 · 메�
     R({ id: 1, name: '=HYPERLINK("x")', who_type: "교회학교", group: "청년부", sub: "", church: { state: "확인 필요", reason: "소속 다름" } }),
     R({ id: 3, name: "성춘향", church: null }),
   ]);
-  assert.ok(csv.startsWith("﻿"));
+  assert.ok(csv.startsWith("\uFEFF"));
   const lines = csv.slice(1).split("\r\n");
   assert.equal(lines.length, 4);
   assert.equal(lines[0], '"이름","구분","소속","세부","직분","출처","교적"');
@@ -131,6 +131,65 @@ test("sortEvents — 시작일 최근 먼저 · 같으면 id 거꾸로 · 받은
     { id: "lent-2026", opens_on: "2026-02-18" }, { id: "lent-booklet-2026", opens_on: "2026-02-18" }];
   assert.deepEqual(sortEvents(evs).map((e) => e.id), ["summer-2026", "lent-booklet-2026", "lent-2026", "lent-2024"]);
   assert.equal(evs[0].id, "lent-2024");
+});
+
+// ---------- 회차 콤보(2026-09-30 · 친구 요구 「콤보로 고르게 · 연·월 · 제목」) ----------
+// 세 화면(📋 회차·명단 콤보 · 📤 올릴 회차 · 👤 통계에 넣을 회차)이 회차를 같은 글로 부른다 — evPickLabel·evPickHint 한 벌.
+test("evYm — opens_on 의 연·월(앞 0 없이) · 비었거나 꼴이 아니면 「날짜 없음」", () => {
+  const { evYm } = rosterLogic;
+  assert.equal(typeof evYm, "function", "roster-logic.js 가 evYm 을 내보내야 한다");
+  assert.equal(evYm({ opens_on: "2026-03-01" }), "2026년 3월");
+  assert.equal(evYm({ opens_on: "2026-10-27" }), "2026년 10월");
+  assert.equal(evYm({ opens_on: "2023-01-31" }), "2023년 1월");
+  assert.equal(evYm({ opens_on: " 2026-12-05 " }), "2026년 12월");   // 앞뒤 빈칸은 다듬는다(norm)
+  for (const bad of ["", "x", null, undefined, "2026-3-1", "2026-13-01", "2026-00-10", "2026/03/01", "20260301"]) {
+    assert.equal(evYm({ opens_on: bad }), "날짜 없음", String(bad));
+  }
+  assert.equal(evYm({}), "날짜 없음");
+  assert.equal(evYm(null), "날짜 없음");
+});
+
+test("evPickLabel — 「연·월 · 제목 전체」 · 제목이 없으면 짧은 이름 → id", () => {
+  const { evPickLabel } = rosterLogic;
+  assert.equal(typeof evPickLabel, "function");
+  const a = { id: "lent-2026", title: "사순절 마가복음 완서자", short_title: "사순절 26", opens_on: "2026-03-01" };
+  const b = { id: "lent-2023", title: "사순절 마가복음 완서자", short_title: "사순절 23", opens_on: "2023-02-22" };
+  assert.equal(evPickLabel(a), "2026년 3월 · 사순절 마가복음 완서자");
+  assert.equal(evPickLabel(b), "2023년 2월 · 사순절 마가복음 완서자");
+  assert.notEqual(evPickLabel(a), evPickLabel(b), "같은 제목의 두 회차가 해로 갈린다");
+  assert.equal(evPickLabel({ ...a, title: "" }), "2026년 3월 · 사순절 26");
+  assert.equal(evPickLabel({ ...a, title: "", short_title: "" }), "2026년 3월 · lent-2026");
+  assert.equal(evPickLabel({ id: "x-1", title: "  가을  말씀 동행 ", opens_on: "" }), "날짜 없음 · 가을 말씀 동행");
+});
+
+test("evPickHint — 「인원명 · 상태(STATUS_KO)」 · 성도님께 보이면 「 · 👁」", () => {
+  const { evPickHint } = rosterLogic;
+  assert.equal(typeof evPickHint, "function");
+  assert.equal(evPickHint({ count: 231, status: "closed", listedNow: false }), "231명 · 마감");
+  assert.equal(evPickHint({ count: 231, status: "closed", listedNow: true }), "231명 · 마감 · 👁");
+  assert.equal(evPickHint({ count: 1234, status: "open", listedNow: true }), "1,234명 · 열림 · 👁");
+  assert.equal(evPickHint({ status: "draft" }), "0명 · 준비 중");
+  for (const s of EV_STATUS) assert.ok(evPickHint({ count: 1, status: s }).endsWith(STATUS_KO[s]), s);
+  assert.equal(evPickHint({ count: 3, status: "" }), "3명", "상태가 비면 꼬리 「 · 」를 남기지 않는다");
+  assert.equal(evPickHint({ count: 3, status: "weird" }), "3명 · weird");
+});
+
+test("evPickOptions — 고르개 선택지 { value: id, label, hint } · 시작일 최근 먼저(sortEvents) · 받은 배열은 그대로", () => {
+  const { evPickOption, evPickOptions, evPickLabel, evPickHint } = rosterLogic;
+  assert.equal(typeof evPickOption, "function");
+  assert.equal(typeof evPickOptions, "function");
+  const evs = [
+    { id: "lent-2023", title: "사순절 마가복음 완서자", opens_on: "2023-02-22", count: 180, status: "archived", listedNow: false },
+    { id: "lent-2026", title: "사순절 마가복음 완서자", opens_on: "2026-03-01", count: 231, status: "closed", listedNow: true },
+    { id: "summer-2026", title: "2026 썸머 써 바이블", opens_on: "2026-07-01", count: 199, status: "closed", listedNow: false },
+  ];
+  assert.deepEqual(evPickOption(evs[1]), { value: "lent-2026", label: "2026년 3월 · 사순절 마가복음 완서자", hint: "231명 · 마감 · 👁" });
+  const o = evPickOptions(evs);
+  assert.deepEqual(o.map((x) => x.value), ["summer-2026", "lent-2026", "lent-2023"]);
+  assert.deepEqual(o.map((x) => x.label), evs.map((e) => e).sort((a, b) => (a.opens_on < b.opens_on ? 1 : -1)).map(evPickLabel));
+  assert.equal(o[2].hint, evPickHint(evs[0]));
+  assert.equal(evs[0].id, "lent-2023");
+  assert.deepEqual(evPickOptions(null), []);
 });
 
 test("tidyMok — 서버 tidyRow 의 목장 규칙과 같은 보기(Task 2 시험) · whoText · subText", () => {
@@ -172,6 +231,29 @@ test("eventPatch — 바뀐 칸만 · 앞뒤·가운데 빈칸 무시 · list_un
   assert.deepEqual(eventPatch(ev, { title: "썸머  2026" }), { title: "썸머 2026" });   // 보낸 칸만 · 서버처럼 다듬어
 });
 
+// ---------- 회차 차례(sort_order) · 글자 칸 상한(2026-09-30 · SEC-6) ----------
+import * as rosterLogic from "../js/menus/bibleevent/roster-logic.js";
+import * as serverRules from "../supabase/functions/church-admin/events-rules.ts";
+
+test("EV_TEXT_MAX — 서버(events-rules.ts)와 같은 상한(창의 maxlength 가 이 값을 쓴다)", () => {
+  assert.ok(serverRules.EV_TEXT_MAX, "서버에 EV_TEXT_MAX 가 있어야 한다");
+  assert.deepEqual(rosterLogic.EV_TEXT_MAX, serverRules.EV_TEXT_MAX);
+  assert.deepEqual(rosterLogic.EV_TEXT_MAX, { title: 100, short_title: 40, subtitle: 100, season: 20 });
+});
+
+test("eventPatch — 회차 차례는 0·「0」·빈칸이 같다(보내지 않는다) · 바꾸면 글자로", () => {
+  const ev = { id: "summer-2026", title: "썸머", short_title: "", subtitle: "", season: "", opens_on: "2026-07-01",
+    closes_on: "2026-08-31", status: "closed", list_until: null, sort_order: 0 };
+  const v = { title: "썸머", short_title: "", subtitle: "", season: "", opens_on: "2026-07-01",
+    closes_on: "2026-08-31", status: "closed", list_until: "" };
+  assert.deepEqual(eventPatch(ev, { ...v, sort_order: "0" }), {});
+  assert.deepEqual(eventPatch(ev, { ...v, sort_order: "" }), {});
+  assert.deepEqual(eventPatch(ev, { ...v, sort_order: "3" }), { sort_order: "3" });
+  const { sort_order: _drop, ...noOrder } = ev;                               // 옛 응답(sort_order 없음)
+  assert.deepEqual(eventPatch(noOrder, { ...v, sort_order: "0" }), {});
+  assert.deepEqual(eventPatch({ ...ev, sort_order: 10 }, { ...v, sort_order: "10" }), {});
+});
+
 test("rowPatch — 바뀐 칸만 · 목장은 바꾼 때만 다듬는다(07 을 그대로 두면 안 보낸다) · 겹빈칸은 같은 값 · keys 로 좁힌다", () => {
   const row = R({ id: 9, group: "화평", sub: "07", name: "홍길동", position: "집사", note: "원래: 화평 30 · 집사" });
   const same = { who_type: "교구", group: "화평", sub: "07", name: " 홍길동 ", position: "집사", note: "원래: 화평 30 · 집사" };
@@ -186,4 +268,75 @@ test("rowPatch — 바뀐 칸만 · 목장은 바꾼 때만 다듬는다(07 을 
   assert.deepEqual(rowPatch(R({ note: null }), { note: "" }, ["note"]), {});
   assert.deepEqual(rowPatch(R({ note: "전화로  확인" }), { note: "전화로 확인" }, ["note"]), {});   // 서버도 한 줄로 저장한다
   assert.deepEqual(rowPatch(R({ name: "홍  길동" }), { name: "홍 길동" }, ["name"]), {});
+});
+
+// ---------- 작은 지적 C(2026-09-30) ----------
+import { readdirSync, readFileSync } from "node:fs";
+
+test("NOTE_EDIT_MAX — 고치기 창의 메모 상한은 서버 BE_NOTE_MAX 그대로(머리 표기를 안 붙인다 · note-maxlength-edit)", () => {
+  assert.equal(rosterLogic.NOTE_EDIT_MAX, BE_NOTE_MAX);
+  assert.ok(NOTE_FORM_MAX < rosterLogic.NOTE_EDIT_MAX);   // 더하기 창은 여전히 480(머리 표기 몫)
+});
+
+test("소속이 빈 줄은 구분과 상관없이 「소속 없음」 한 묶음(맨 뒤) · 거르기 열쇠도 하나(no-affil-group-split)", () => {
+  assert.equal(groupKey(R({ who_type: "교구", group: "" })), "|");
+  assert.equal(groupKey(R({ who_type: "교회학교", group: "  " })), "|");
+  assert.equal(groupKey(R({ who_type: "", group: "" })), "|");
+  assert.equal(groupKey(R({ who_type: "교구", group: "화평" })), "교구|화평");
+  const rows = [
+    R({ id: 1, who_type: "교구", group: "", sub: "" }),
+    R({ id: 2, who_type: "교회학교", group: "", sub: "" }),
+    R({ id: 3, who_type: "교구", group: "화평", sub: "20" }),
+    R({ id: 4, who_type: "", group: "", sub: "" }),
+  ];
+  const g = groupRows(rows);
+  assert.deepEqual(g.map((x) => x.key), ["교구|화평", "|"]);
+  assert.equal(g[1].label, "소속 없음");
+  assert.deepEqual(g[1].rows.map((r) => r.id), [1, 2, 4]);
+  assert.deepEqual(filterRows(rows, { ...blankFilter(), groups: ["|"] }).map((r) => r.id), [1, 2, 4]);
+});
+
+test("bom-literal — 성경필사 화면 파일(js/menus/bibleevent/*.js)에 보이지 않는 U+FEFF 글자를 박아 두지 않는다 · csvText 는 여전히 BOM 으로 시작", () => {
+  const dir = new URL("../js/menus/bibleevent/", import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith(".js"));
+  assert.ok(files.length > 5);
+  const bad = files.filter((f) => readFileSync(new URL(f, dir), "utf8").includes("\uFEFF"));
+  assert.deepEqual(bad, []);
+  assert.equal(csvText([]).charCodeAt(0), 0xFEFF);
+});
+
+test("M3 문구 — 이어진 분의 「📋 이미 내신 것」은 회차가 성도님께 보이는 동안만(row-form 안내 · privacy §7 · v2 1498177)", () => {
+  const rf = readFileSync(new URL("../js/menus/bibleevent/row-form.js", import.meta.url), "utf8");
+  assert.ok(rf.includes("이어지면 이 회차가 성도님께 보이는 동안 앱 「📋 이미 내신 것」에도 보여요"));
+  assert.ok(!rf.includes("이어지면 성도님 앱 「📋 이미 내신 것」에도 보여요"));
+  const pv = readFileSync(new URL("../privacy.html", import.meta.url), "utf8");
+  assert.ok(pv.includes("이어진 분은 그 회차가 앱에 보이는 동안 「이미 내신 것」에서 보시고,"));
+  assert.ok(!pv.includes("이어진 분은 앱의 「이미 내신 것」에서 보시고,"));
+});
+
+// ---------- 시험 손질 D(2026-09-30) — 화면의 다듬기와 서버의 다듬기를 같은 입력표로 맞댄다 ----------
+import { legacyNorm } from "../supabase/functions/church-admin/paper.ts";
+import { tidyRow } from "../supabase/functions/church-admin/events-rules.ts";
+
+test("norm·tidyMok — 서버 legacyNorm·tidyRow(교구 줄의 목장 칸)와 같은 입력표에서 같은 값(client-norm-no-parity-test)", () => {
+  for (const x of ["  홍  길동 ", "전화로\n\n확인", "\t가\t나 ", "", null, undefined]) {
+    assert.equal(norm(x), legacyNorm(x), "norm " + JSON.stringify(x));
+  }
+  const moks = ["07", "007목장", " 20목장 ", "20 목장", "남성목장", "남성 목장", "0", "00", "99", "099", "이십", "20-1", "",
+    "남성목장".normalize("NFD"), "20목장".normalize("NFD")];
+  for (const x of moks) {
+    const server = tidyRow({ who_type: "교구", group_name: "화평", sub_name: x, name: "홍길동", position: "" }).sub_name;
+    assert.equal(tidyMok(x), server, "tidyMok " + JSON.stringify(x));
+  }
+});
+
+// ---------- 다시 고침(2026-09-30) — CLAUDE.md 「성경필사(암송)」 의 메모 상한이 창의 값과 같게 ----------
+test("CLAUDE.md 메모 상한 — 더하기 480(NOTE_FORM_MAX)·고치기·메모만 고치기 500(NOTE_EDIT_MAX)을 코드 값 그대로 적는다(doc-note-max)", () => {
+  const md = readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
+  const lines = md.split(/\r?\n/).filter((l) => l.includes("note-too-long"));
+  assert.equal(lines.length, 1, "CLAUDE.md 에 note-too-long 줄이 하나여야 한다");
+  const line = lines[0];
+  assert.ok(line.includes(`더하기 ${NOTE_FORM_MAX}(NOTE_FORM_MAX`), "더하기 창 상한이 NOTE_FORM_MAX 값으로 적혀 있지 않다");
+  assert.ok(line.includes(`고치기·메모만 고치기 ${rosterLogic.NOTE_EDIT_MAX}(NOTE_EDIT_MAX`), "고치기 창 상한이 NOTE_EDIT_MAX 값으로 적혀 있지 않다");
+  assert.ok(!/창의 글자 수 상한은 480\.\s*$/.test(line), "창 상한을 480 하나로만 적고 있다(고치기 창은 500)");
 });

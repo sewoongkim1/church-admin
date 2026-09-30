@@ -103,7 +103,7 @@ test("여러 번 참여 — 「N회 이상」 칩은 3회부터 가장 많은 �
 
 test("statsCsv — BOM · \\r\\n · 세 표 · 따옴표 · 회차 id 는 짧은 이름으로 · 여러 번 참여는 「이름」「소속」 두 칸 · 근삿값 안내", () => {
   const csv = statsCsv(STATS, labelMap(EVS), 4);
-  assert.ok(csv.startsWith("﻿"));
+  assert.ok(csv.startsWith("\uFEFF"));
   assert.deepEqual(csv.slice(1).split("\r\n"), [
     '"회차별 인원"',
     '"회차","인원"',
@@ -175,4 +175,42 @@ test("메뉴 — 성경필사(암송) 세 메뉴가 사역신청 뒤·시스템 
 test("화면 모듈이 Node 에서 읽힌다 — import 한 이름이 모두 있다(틀리면 여기서 SyntaxError)", async () => {
   const m = await import("../js/menus/bibleevent/history.js");
   assert.equal(typeof m.render, "function");
+});
+
+// ---------- 작은 지적 C(2026-09-30) ----------
+import * as historyLogic from "../js/menus/bibleevent/history-logic.js";
+
+test("fitRepeat — 새 통계에 맞춘 「N회 이상」: 없으면 3 · 있으면 그대로 · 가장 많은 횟수보다 크면 그 횟수 · 작으면 처음(minrepeat-reset)", () => {
+  const { fitRepeat } = historyLogic;
+  assert.equal(typeof fitRepeat, "function", "history-logic.js 가 fitRepeat 를 내보내야 한다");
+  assert.equal(fitRepeat([], 5), MIN_REPEAT);
+  assert.equal(fitRepeat([], 5), 3);
+  assert.equal(fitRepeat([{ min: 3 }, { min: 4 }], 5), 4);
+  assert.equal(fitRepeat([{ min: 3 }, { min: 4 }, { min: 5 }], 4), 4);
+  assert.equal(fitRepeat([{ min: 3 }, { min: 4 }], 2), 3);
+  assert.equal(fitRepeat(repeatChoices([{ times: 3 }, { times: 6 }]), 9), 6);   // 칩 목록(repeatChoices) 그대로 받는다
+});
+
+// ---------- 회차 콤보(2026-09-30) — 「통계에 넣을 회차」 고르개도 📋 회차·명단 콤보와 같은 글 ----------
+import * as rosterLogicH from "../js/menus/bibleevent/roster-logic.js";
+
+test("statsPickOptions — 「통계에 넣을 회차」 선택지: 「연·월 · 제목 전체」 · 「인원명 · 상태」(+ 👁) · 시작일 최근 먼저", () => {
+  const { statsPickOptions } = historyLogic;
+  assert.equal(typeof statsPickOptions, "function", "history-logic.js 가 statsPickOptions 를 내보내야 한다");
+  const evs = [
+    { id: "lent-2023", title: "사순절 마가복음 완서자", short_title: "완서자", opens_on: "2023-02-22", closes_on: "2023-04-09", status: "archived", count: 180, listedNow: false },
+    { id: "lent-2026", title: "사순절 마가복음 완서자", short_title: "완서자", opens_on: "2026-03-01", closes_on: "2026-04-05", status: "closed", count: 231, listedNow: true },
+    { id: "autumn-2026", title: "가을 말씀 동행", opens_on: "2026-10-27", closes_on: "2026-11-28", status: "draft", count: 0, listedNow: false, hasEligibility: true },
+  ];
+  const o = statsPickOptions(evs);
+  assert.deepEqual(o.map((x) => x.value), ["autumn-2026", "lent-2026", "lent-2023"], "자격 회차도 통계에는 넣는다");
+  assert.deepEqual(o[1], { value: "lent-2026", label: "2026년 3월 · 사순절 마가복음 완서자", hint: "231명 · 마감 · 👁" });
+  assert.equal(o[2].label, "2023년 2월 · 사순절 마가복음 완서자");
+  assert.equal(o[2].hint, "180명 · 보관");
+  for (const x of o) {
+    const e = evs.find((y) => y.id === x.value);
+    assert.equal(x.label, rosterLogicH.evPickLabel(e));
+    assert.equal(x.hint, rosterLogicH.evPickHint(e));
+  }
+  assert.deepEqual(statsPickOptions(null), []);
 });

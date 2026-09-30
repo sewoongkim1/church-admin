@@ -107,8 +107,10 @@ export function tidyUpload(raws: unknown[]): UploadItem[] {
 }
 
 // 채울 빈칸이 있나 — 교회학교 줄의 학년은 원래 비어 있어 묻지 않는다(아이 교적을 쓸데없이 읽지 않게)
+// 교회학교 부서 줄(청년부 빼고)은 학년·직분이 원래 비어 있어 묻지 않는다 — 아이 교적을 쓸데없이 읽지 않게 · 소속이 빈 줄은 묻는다
+const kidRow = (r: UpRow): boolean => r.who_type === "교회학교" && !!r.group_name && r.group_name !== "청년부";
 const needsFill = (r: UpRow): boolean =>
-  !r.who_type || !r.group_name || !r.position || (r.who_type === "교구" && !r.sub_name);
+  !r.who_type || !r.group_name || (!r.position && !kidRow(r)) || (r.who_type === "교구" && !r.sub_name);
 
 // 명부에 물어볼 이름 키 — 빈칸이 있는 줄만(빈칸이 없는 줄의 교적은 읽지 않는다)
 export function fillNames(items: UploadItem[]): string[] {
@@ -290,6 +292,16 @@ export const filledNames = (items: UploadItem[]): string[] =>
 export function lookupName(v: unknown): { name: string; key: string; error: string | null } {
   const name = legacyNorm(v);
   const error = !name ? "no-name" : BE_BAD_CHARS.test(name) ? "bad-char" : name.length > BE_FIELD_MAX ? "too-long" : null;
+  return { name, key: error ? "" : nameKey(name), error };
+}
+
+// 읽기만 하는 길(👤 이력 · 이름을 누르면 evPerson) — 이름은 .eq()·메모리로만 쓰인다. 괄호·쉼표가 든 옛 이름(「홍길동(구)」)도
+// 누를 수 있게(SEC-7). .in() 으로 가는 길(checkRow·askableKeys·lookupKeys)과 새 이름을 적는 찾기(lookupName)는 그대로 막는다.
+// 막는 글자는 셋 — 큰따옴표·역슬래시(주소·따옴표 이스케이프) · 세로줄(신원 키 구분자). BE_BAD_CHARS 에서 쉼표·괄호를 뺀 것.
+const READ_BAD_CHARS = /["\\|]/;
+export function readName(v: unknown): { name: string; key: string; error: string | null } {
+  const name = legacyNorm(v);
+  const error = !name ? "no-name" : READ_BAD_CHARS.test(name) ? "bad-char" : name.length > BE_FIELD_MAX ? "too-long" : null;
   return { name, key: error ? "" : nameKey(name), error };
 }
 

@@ -19,10 +19,14 @@ export const STATUS_HINT = {
 export const SRC_LABEL = { app: "📱 앱", import: "📋 이관" };
 const SRC_TEXT = { app: "앱", import: "이관" };
 export const CHURCH_STATES = ["맞음", "확인 필요", "없음"];
-export const EV_EDIT_KEYS = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until"];
+export const EV_EDIT_KEYS = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until", "sort_order"];
+// 회차 글자 칸의 상한 — 창(event-form.js)의 maxlength 가 이 값을 쓴다. 서버 events-rules.ts EV_TEXT_MAX 와 같다(시험이 맞대 본다 · SEC-6)
+export const EV_TEXT_MAX = { title: 100, short_title: 40, subtitle: 100, season: 20 };
 export const ROW_KEYS = ["who_type", "group", "sub", "name", "position", "note"];
 // 담당자 메모 창의 글자 수 상한 — 서버는 머리 표기(「담당자가 더함 / 」 10자)를 붙인 **뒤** 500자로 센다(계약 §5)
 export const NOTE_FORM_MAX = 480;
+// 고치기 창 — 서버 BE_NOTE_MAX 그대로(고칠 땐 머리 표기를 붙이지 않는다 · 붙어 있던 490자 메모도 이어 쓸 수 있게 · note-maxlength-edit)
+export const NOTE_EDIT_MAX = 500;
 
 const byKo = (a, b) => String(a).localeCompare(String(b), "ko");
 const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -57,7 +61,8 @@ export function subText(r) {
   return r?.who_type === "교구" ? mokWord(s) : s;
 }
 
-export const groupKey = (r) => `${norm(r?.who_type)}|${norm(r?.group)}`;
+// 소속이 빈 줄은 구분(교구·교회학교·없음)과 상관없이 「소속 없음」 한 묶음 「|」 — 구분별로 둘셋으로 갈리지 않게(no-affil-group-split)
+export const groupKey = (r) => (norm(r?.group) ? `${norm(r?.who_type)}|${norm(r?.group)}` : "|");
 function groupRank(type, group) {
   const list = type === "교구" ? GU_ORDER : type === "교회학교" ? BU_ORDER : [];
   const i = list.indexOf(group);
@@ -79,7 +84,8 @@ export function groupRows(rows) {
   const bag = new Map();
   for (const r of rows || []) {
     const k = groupKey(r);
-    if (!bag.has(k)) bag.set(k, { key: k, label: norm(r.group) || "소속 없음", rank: groupRank(norm(r.who_type), norm(r.group)), rows: [] });
+    if (!bag.has(k)) bag.set(k, { key: k, label: norm(r.group) || "소속 없음",
+      rank: norm(r.group) ? groupRank(norm(r.who_type), norm(r.group)) : 2900, rows: [] });   // 소속 없음은 구분 없음 자리(맨 뒤)
     bag.get(k).rows.push(r);
   }
   return [...bag.values()]
@@ -155,21 +161,46 @@ export function csvText(rows) {
   const head = ["이름", "구분", "소속", "세부", "직분", "출처", "교적"];
   const body = (rows || []).map((r) => [r.name, r.who_type, r.group, r.sub, r.position, SRC_TEXT[r.source] || r.source || "",
     r.church ? [r.church.state, r.church.reason].filter(Boolean).join(" · ") : ""]);
-  return "﻿" + [head, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return "\uFEFF" + [head, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
-// 회차 칩 — 시작일 최근 먼저, 같으면 id 거꾸로
+// 회차 차례(콤보·고르개) — 시작일 최근 먼저, 같으면 id 거꾸로
 export function sortEvents(list) {
   return [...(list || [])].sort((a, b) => byCode(norm(b.opens_on), norm(a.opens_on)) || byCode(norm(b.id), norm(a.id)));
 }
 
+// ── 회차를 부르는 글(2026-09-30 · 친구 요구 「콤보로 고르게 · 연·월 · 제목」) ──
+// ⚠️ 세 화면(📋 회차·명단 콤보 · 📤 올릴 회차 · 👤 통계에 넣을 회차)이 **이 한 벌**을 쓴다 — 화면마다 따로 지으면
+//    「사순절 마가복음 완서자」가 2023·2026 두 번 나오듯 메뉴마다 같은 회차를 다르게 부르게 된다.
+const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+// 시작일(opens_on · YYYY-MM-DD)의 연·월 — 「2026년 3월」(앞 0 없이). 비었거나 꼴이 아니면 「날짜 없음」
+export function evYm(ev) {
+  const m = YMD_RE.exec(norm(ev?.opens_on));
+  if (!m || +m[2] < 1 || +m[2] > 12 || +m[3] < 1 || +m[3] > 31) return "날짜 없음";
+  return `${+m[1]}년 ${+m[2]}월`;
+}
+// 회차 이름 전체 — 제목 → 짧은 이름 → id
+export const evName = (ev) => norm(ev?.title) || norm(ev?.short_title) || norm(ev?.id);
+// 고르개 한 줄 — 「2026년 3월 · 사순절 마가복음 완서자」
+export const evPickLabel = (ev) => `${evYm(ev)} · ${evName(ev)}`;
+// 고르개 작은 글 — 「231명 · 마감」(+ 「 · 👁」 성도님께 보이면). 상태 글자는 화면과 같은 STATUS_KO
+export function evPickHint(ev) {
+  const st = STATUS_KO[ev?.status] || norm(ev?.status);
+  return [`${Number(ev?.count || 0).toLocaleString("ko-KR")}명`, st].filter(Boolean).join(" · ") + (ev?.listedNow ? " · 👁" : "");
+}
+// 고르개(picker.js pickOne·pickMany) 선택지 하나 · 목록(시작일 최근 먼저 — 받은 배열은 그대로)
+export const evPickOption = (ev) => ({ value: ev.id, label: evPickLabel(ev), hint: evPickHint(ev) });
+export const evPickOptions = (list) => sortEvents(list).map(evPickOption);
+
 // 회차 설정 — 바뀐 칸만(서버 evEventSave 는 보낸 칸만 바꾼다). list_until 은 null 과 "" 가 같다(비움 — 서버가 null 로)
+// sort_order(회차 차례)는 0·「0」·빈칸이 같다(서버가 빈칸을 0 으로) — 옛 응답에 칸이 없어도 0 으로 본다.
 // needs·copy·kind·id 같은 칸은 EV_EDIT_KEYS 에 없어 보내지 않는다 — 자격 규칙·문구가 조용히 지워지지 않게.
 export function eventPatch(before, v) {
   const out = {};
   for (const k of EV_EDIT_KEYS) {
     if (!own(v, k)) continue;
-    const a = norm(before?.[k]), b = norm(v[k]);
+    const fix = k === "sort_order" ? (x) => norm(x) || "0" : norm;
+    const a = fix(before?.[k]), b = fix(v[k]);
     if (a !== b) out[k] = b;
   }
   return out;

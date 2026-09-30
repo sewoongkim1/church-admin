@@ -3,7 +3,7 @@
 // ⚠️ 줄 메뉴는 드롭다운을 직접 그리지 않고 picker.js pickOne 으로 연다(폰은 아래 판) — PC 표를 overflow-x 로 감싸도 잘리지 않는다.
 import { esc } from "../../core/ui.js";
 import { churchBadgeHtml } from "../people/church-badge.js";
-import { STATUS_KO, SRC_LABEL, subText, filterActive } from "./roster-logic.js";
+import { STATUS_KO, SRC_LABEL, subText, filterActive, evYm, evName } from "./roster-logic.js";
 // 이름을 누르면 교적 창(Task 16) — 이름 단추 모양
 import { nameButtonHtml } from "./person-logic.js";
 
@@ -19,14 +19,18 @@ const dot = (d) => String(d || "").replace(/-/g, ".");
 export const periodText = (ev) => `${dot(ev.opens_on)} ~ ${dot(ev.closes_on)}`;
 const stText = (s) => STATUS_KO[s] || s || "";
 
-// 회차 칩 — 최근 먼저(부르는 쪽이 sortEvents) · 짧은 이름 · 인원 · 상태 · 성도님께 보임(👁) · 끝에 「＋ 새 회차」
-export function chipsHtml(events, curId) {
-  return events.map((e) => {
-    const on = e.id === curId;
-    return `<button type="button" class="be-ev${on ? " on" : ""}" data-ev="${esc(e.id)}" aria-pressed="${on}" title="${esc(e.title)}">` +
-      (e.listedNow ? `<span aria-hidden="true">👁</span><span class="be-sr">성도님께 보임,</span>` : "") +
-      `${esc(e.short_title || e.title)} <em>${num(e.count)}</em><span class="be-sr">명,</span><small>${esc(stText(e.status))}</small></button>`;
-  }).join("") + `<button type="button" class="be-ev new" data-act="new">＋ 새 회차</button>`;
+// 회차 콤보 — 칩 줄(2026-09-29) 대신 단추 하나(2026-09-30 친구 요구 「콤보로 고르게 · 연·월 · 제목」).
+// 누르면 우리 고르개 pickOne(roster.js · 선택지는 roster-logic.js evPickOptions) — ⚠️ <select> 로 바꾸지 말 것(시스템 창 금지).
+// 큰 줄 = 제목 전체(짧은 이름 아님 · 줄바꿈으로 다 보인다) · 작은 줄 = 「2026년 3월 · 마감 · 231명」(+ 「 · 👁 성도님께 보임」)
+export const comboSub = (ev) => [evYm(ev), stText(ev.status), `${num(ev.count)}명`].filter(Boolean).join(" · ") +
+  (ev.listedNow ? " · 👁 성도님께 보임" : "");
+export function evBarHtml(ev) {
+  return `<div class="be-evbar">` +
+    `<button type="button" class="be-combo" data-act="ev" aria-haspopup="dialog" aria-expanded="false">` +
+    `<span class="be-combo-t"><span class="be-sr">회차 고르기 — 지금 회차: </span>` +
+    `<b class="be-combo-v">${esc(evName(ev))}</b><small class="be-combo-s">${esc(comboSub(ev))}</small></span>` +
+    `<span class="pk-field-x" aria-hidden="true"></span></button>` +
+    `<button type="button" class="btn be-evnew" data-act="new">＋ 새 회차</button></div>`;
 }
 
 // 붙는 머리 — 「지금 무엇을 보고 있나」만
@@ -49,7 +53,9 @@ function listedLine(ev) {
 // ⚙️ 회차 설정 — 접힌 칸. 지금 값을 보여 주고, 고치기는 창(event-form.js)으로
 export function settingsHtml(ev, open) {
   const kv = [["회차 ID", ev.id], ["이름", ev.title], ["짧은 이름", ev.short_title || "비움 — 이름을 그대로 써요"],
-    ["부제", ev.subtitle || "—"], ["묶음", ev.season || "—"], ["기간", periodText(ev)], ["상태", stText(ev.status)],
+    ["부제", ev.subtitle || "—"], ["묶음", ev.season || "—"],
+    ["같은 날 마감 회차끼리 차례", `${Number(ev.sort_order ?? 0) || 0} (작을수록 위)`],   // 성도님 앱 목록·첫 화면 단추 차례
+    ["기간", periodText(ev)], ["상태", stText(ev.status)],
     ["명단 공개 종료일", ev.list_until ? dot(ev.list_until) : "비움 — 기한 없이 보여요"]];
   return `<details class="be-set"${open ? " open" : ""}><summary>⚙️ 회차 설정</summary><div class="be-set-b">` +
     `<dl class="be-kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +

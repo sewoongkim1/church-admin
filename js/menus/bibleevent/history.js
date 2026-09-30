@@ -10,8 +10,8 @@ import { esc, toast, busy, errorText } from "../../core/ui.js";
 import { pickMany } from "../../core/picker.js";
 import { SRC_LABEL } from "./roster-logic.js";
 import {
-  APPROX, MIN_REPEAT, quickChips, quickIds, chipOn, labelMap, barRows, crossTable, repeatChoices, repeatersAt, statsCsv,
-  csvName, histSummary, histRowText,
+  APPROX, MIN_REPEAT, quickChips, quickIds, chipOn, labelMap, barRows, crossTable, repeatChoices, repeatersAt, fitRepeat, statsCsv,
+  csvName, histSummary, histRowText, statsPickOptions,
 } from "./history-logic.js";
 // 이름을 누르면 교적 창(Task 16)
 import { openChurchPerson } from "./person-popup.js";
@@ -166,7 +166,7 @@ export async function render(el, { call }) {
     if (!d.ok) { stats = null; outEl.innerHTML = `<p class="empty">통계를 내지 못했어요 — ${esc(errorText(d))}</p>`; return; }
     stats = { perEvent: d.perEvent || [], byGroup: d.byGroup || [], repeaters: d.repeaters || [] };
     const choices = repeatChoices(stats.repeaters);
-    if (choices.length && !choices.some((c) => c.min === minRepeat)) minRepeat = choices[0].min;
+    minRepeat = fitRepeat(choices, minRepeat);
     drawStats();
   }
 
@@ -183,7 +183,8 @@ export async function render(el, { call }) {
       tab = t.dataset.tab;
       drawTabs();
       if (tab === "stats" && !stats) loadStats();
-      if (tab === "person") input.focus();
+      // 통계 탭으로 떠났다 돌아온 뒤(메뉴를 다시 열면 hist 는 비어 있다) 칸의 이름으로 이력을 다시 받는다(stats-tab-return-no-history)
+      if (tab === "person") { input.focus(); if (!hist && lastName) search(lastName); }
       return;
     }
     const q = e.target.closest("[data-q]");
@@ -191,8 +192,7 @@ export async function render(el, { call }) {
       const key = q.dataset.q;
       if (key === "all") return setSel(null);
       if (key !== "custom") return setSel(quickIds(events, key));
-      const v = await pickMany({ anchor: q, title: "통계에 넣을 회차",
-        options: events.map((ev) => ({ value: ev.id, label: ev.title || ev.id, hint: `${ev.closes_on} 마감 · ${n(ev.count)}명` })),
+      const v = await pickMany({ anchor: q, title: "통계에 넣을 회차", options: statsPickOptions(events),
         values: sel || events.map((ev) => ev.id) });
       if (v == null) return;                                        // 닫기 — 그대로
       if (!v.length) { toast("회차를 하나 이상 골라 주세요"); return; }

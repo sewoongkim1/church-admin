@@ -7,12 +7,14 @@
 // ⚠️ 앱에서 낸 줄(source='app')과 자격 회차의 줄은 **메모만** — 성도님이 앱에서 「고치기」를 누르면 소속·직분이 통째로 덮이고,
 //    자격 회차 명단은 「꾸준히 했다는 판정 결과」다(가을 설계 §10·§12). 서버도 막는다(app-row-note-only) — 그래서 메모만 보낸다.
 // ⚠️ 고치기 창은 지금 메모를 그대로 채운다 — 「원래: 화평 30 · 집사」 같은 옛 기록이 지워지지 않게.
-// ⚠️ 메모 창의 글자 수 상한은 480(NOTE_FORM_MAX) — 서버는 「담당자가 더함 / 」를 붙인 **뒤** 500자로 센다. 메모는 한 줄로 저장된다.
+// ⚠️ 메모 창의 글자 수 상한 — 더하기 창은 480(NOTE_FORM_MAX · 서버는 「담당자가 더함 / 」를 붙인 **뒤** 500자로 센다),
+//    고치기·메모만 고치기 창은 500(NOTE_EDIT_MAX · 고칠 땐 머리 표기를 붙이지 않는다 — 붙어 있던 490자 메모도 이어 쓸 수 있게).
+//    메모는 한 줄로 저장된다.
 // ⚠️ 다른 분이 먼저 바꿨으면(conflict·not-found) 창 안에 알리고, 창이 닫히면 onStale(code).
 import { esc, toast, dialog, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne } from "../../core/picker.js";
-import { GU_ORDER, ROW_KEYS, NOTE_FORM_MAX, norm, whoText, rowPatch } from "./roster-logic.js";
+import { GU_ORDER, ROW_KEYS, NOTE_FORM_MAX, NOTE_EDIT_MAX, norm, whoText, rowPatch } from "./roster-logic.js";
 
 const STALE = {
   conflict: "다른 분이 먼저 이 줄을 바꿨어요 — 적으신 것을 적어 두고 「닫기」를 누르면 새로 불러올게요",
@@ -23,8 +25,9 @@ const STALE = {
 
 const posHtml = (p) => (p ? `<em class="be-pos">${esc(p)}</em>` : "");
 const roHtml = (r) => `<div class="be-ro"><b>${esc(r.name)}</b> <span>${esc(whoText(r))}</span>${posHtml(r.position)}</div>`;
-const noteField = (note) => `<label class="field"><span>담당자 메모 <small>(성도님께는 안 보여요 · 한 줄로 저장돼요 · ${NOTE_FORM_MAX}자까지)</small></span>` +
-  `<textarea data-f="note" maxlength="${NOTE_FORM_MAX}" rows="3">${esc(note)}</textarea></label>`;
+// max — 더하기 창 NOTE_FORM_MAX(480) · 고치기 창 NOTE_EDIT_MAX(500)
+const noteField = (note, max = NOTE_FORM_MAX) => `<label class="field"><span>담당자 메모 <small>(성도님께는 안 보여요 · 한 줄로 저장돼요 · ${max}자까지)</small></span>` +
+  `<textarea data-f="note" maxlength="${max}" rows="3">${esc(note)}</textarea></label>`;
 
 // 이름·구분·소속·세부·직분·메모 — 교구 칸과 교회학교 칸을 따로 두고 구분 단추(.seg)로 하나만 보인다
 function fullHtml(v, { adding, linked }) {
@@ -48,9 +51,9 @@ function fullHtml(v, { adding, linked }) {
       `<input data-f="grade" value="${esc(isGu ? "" : v.sub)}" maxlength="40" autocomplete="off"></label></div>` +
     `<label class="field"><span>직분 <small>(예: 집사 · 권사 · 성도)</small></span>` +
       `<input data-f="position" value="${esc(v.position)}" maxlength="40" autocomplete="off"></label>` +
-    noteField(v.note) +
+    noteField(v.note, adding ? NOTE_FORM_MAX : NOTE_EDIT_MAX) +
     (adding ? `<p class="be-hint">저장하면 메모 앞에 「담당자가 더함」이 붙어요 · 이름·소속이 같은 앱 계정이 있으면 이어요(새로 만들지 않아요) — ` +
-      `이어지면 성도님 앱 「📋 이미 내신 것」에도 보여요</p>` : "") +
+      `이어지면 이 회차가 성도님께 보이는 동안 앱 「📋 이미 내신 것」에도 보여요</p>` : "") +
     (linked ? `<p class="be-warn" data-warn="linked" hidden>🔗 앱 계정과 이어진 줄이에요 — 이름·소속을 바꿔도 계정 연결은 그대로 남아요</p>` : "");
 }
 
@@ -97,6 +100,7 @@ function wireFull(root, { call, onChange }) {
   let people = [], seqNo = 0;
   const find = async () => {
     const input = $('[data-f="name"]'), btn = $('[data-act="find"]');
+    if (btn.disabled) return;   // 찾는 중 — Enter 를 거듭 눌러도 한 번만(교인명부 기록이 두 줄이 되지 않게 · FE-2)
     const name = norm(input.value);
     cands.hidden = false;
     if (!name) { cands.innerHTML = `<p class="be-hint">이름을 먼저 적어 주세요</p>`; input.focus(); return; }
@@ -170,7 +174,7 @@ export async function openRowForm({ call, ev, row = null, onStale = null } = {})
   const out = await openForm({
     title: !row ? "＋ 한 분 더하기" : noteOnly ? "📝 메모 고치기" : "✏️ 줄 고치기",
     okLabel: !row ? "더하기" : "저장",
-    html: noteOnly ? roHtml(row) + `<p class="be-note">${esc(why)}</p>` + noteField(init.note)
+    html: noteOnly ? roHtml(row) + `<p class="be-note">${esc(why)}</p>` + noteField(init.note, NOTE_EDIT_MAX)
       : fullHtml(init, { adding: !row, linked: !!(row && row.hasUser) }),
     onOpen: (root) => {
       if (!noteOnly) wireFull(root, { call, onChange: () => { if (row) syncLinked(root, row); } });

@@ -29,7 +29,7 @@ export function formRow(x: unknown): EvRow {
 }
 
 // 고치기 — **보낸 칸만** 다듬어 얹는다. 안 보낸 칸은 DB 값 그대로(옛 값을 다시 다듬어 몰래 바꾸지 않게).
-// 교구 칸·목장 칸은 (보냈든 안 보냈든) **바뀐 뒤의 구분**의 규칙으로 다듬는다.
+// 보낸 교구·목장 칸은 **바뀐 뒤의 구분**의 규칙으로 다듬는다. 안 보낸 칸은 DB 값 그대로 — 구분이 바뀌면 checkChanged 가 그 칸을 새 구분의 규칙으로 다시 보고, 소속을 안 보냈으면 no-group.
 export function rowPatch(cur: EvRow, patch: unknown): { next: EvRow; changed: RowField[] } {
   const p = obj(patch);
   const who = has(p, "who_type") ? legacyNorm(p.who_type) : cur.who_type;
@@ -63,7 +63,13 @@ export function checkChanged(next: EvRow, changed: readonly string[]): string | 
     name: changed.includes("name") ? next.name : "홍길동",
     position: changed.includes("position") ? next.position : "",
   };
-  return checkRow(probe);
+  const bad = checkRow(probe);
+  if (bad) return bad;
+  // 구분만 바꾸고 소속을 안 보냄 — 옛 구분의 교구·부서가 새 구분에 남지 않게(최종 검토 M4).
+  // checkRow 뒤에 둔다 — 모르는 구분(bad-type)·새 구분에 맞지 않는 옛 소속(bad-group)은 그 코드가 먼저다.
+  // 학년·목장 칸은 막지 않는다(화면은 같은 값을 다시 보내지 않는다 — 막으면 「교회학교 3학년 → 교구 3목장」이 막힌다).
+  if (typeChanged && !changed.includes("group_name")) return "no-group";
+  return null;
 }
 
 // 같은 분 후보 키 — events-rules.ts candidateKeys 그대로(한 자리 목장의 「0N」까지 거기서 만든다).
@@ -100,6 +106,29 @@ export function looseSame(a: EvRow, b: EvRow): boolean {
 const IN_BAD = /["\\,()]/;
 export function askableKeys(keys: readonly unknown[]): string[] {
   return [...new Set(keys.filter((k): k is string => typeof k === "string" && k !== "" && !IN_BAD.test(k)))];
+}
+
+// .in() 묶음 — 개수(maxCount)와 주소 길이(maxBytes · 키마다 encodeURIComponent 길이 + 3 — 따옴표 둘과 쉼표)로 함께 자른다.
+//   한글 한 자 = 9바이트(%XX 셋)라 40자 이름 100개면 36KB — 게이트웨이 주소 한도(약 16KB)를 넘어 500 이 났다
+//   (최종 검토 SEC-4 · 성경암송 eventImport 는 164개에서 조용히 0명이 됐다).
+//   차례대로 담고, 다음 키를 더하면 개수나 바이트 합이 넘을 때 묶음을 닫는다.
+//   한 키가 혼자 넘으면 그 키만 한 묶음 — 판정을 조용히 건너뛰지 않게(그 묶음이 실패하면 오류가 그대로 드러난다).
+export function inChunks(keys: readonly string[], maxBytes = 6000, maxCount = 100): string[][] {
+  const out: string[][] = [];
+  let cur: string[] = [];
+  let bytes = 0;
+  for (const k of keys) {
+    const n = encodeURIComponent(k).length + 3;
+    if (cur.length && (cur.length + 1 > maxCount || bytes + n > maxBytes)) {
+      out.push(cur);
+      cur = [];
+      bytes = 0;
+    }
+    cur.push(k);
+    bytes += n;
+  }
+  if (cur.length) out.push(cur);
+  return out;
 }
 
 // 메모 앞에 표기를 붙인다 — 겹치면 「 / 」로 잇고, 이미 붙어 있으면 다시 붙이지 않는다. 메모는 한 줄로(줄바꿈은 빈칸 하나).

@@ -29,6 +29,10 @@ test("event.settings — 바꾼 칸만 「전 → 후」 · 상태는 한국말 
   assert.equal(detailText(R("event.settings", { title: "2026 사순절 필사",
     before: { opens_on: "2026-02-18", subtitle: "" }, after: { opens_on: "2026-02-19", subtitle: "한 줄" } })),
     "‘2026 사순절 필사’ · 시작일 2026-02-18 → 2026-02-19 · 부제 (없음) → 한 줄");
+  // 회차 차례(sort_order · 2026-09-30) — 서버는 글자로 남긴다
+  const so = detailText(R("event.settings", { title: "2026 사순절 필사", before: { sort_order: "0" }, after: { sort_order: "5" } }));
+  assert.ok(so.includes("차례 0 → 5"), so);
+  assert.equal(so, "‘2026 사순절 필사’ · 차례 0 → 5");
 });
 
 test("event.add — 이름 · 소속(교구 줄의 숫자 목장에만 「목장」) · 직분 · 회차 · 앱 계정 이음", () => {

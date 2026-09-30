@@ -4,7 +4,7 @@
 //    여기 한 번 더 적고, 시험이 두 함수를 같은 id 들로 맞대 본다(한쪽만 고치면 시험이 실패한다).
 // ⚠️ 사람 묶음은 근삿값이다(같은 이름·같은 소속 또는 같은 앱 계정) — 화면과 내려받기에 늘 그렇게 적는다.
 // ⚠️ 여러 번 참여한 분(repeaters)의 label 은 **소속만**이다(CONTRACT 5절) — 이름은 name 칸. 화면은 「이름 · 소속」, CSV 는 두 칸.
-import { whoText, csvCell } from "./roster-logic.js";
+import { whoText, csvCell, evPickOptions } from "./roster-logic.js";
 
 export const APPROX = "같은 이름·같은 소속(또는 같은 앱 계정)을 한 분으로 셌어요 — 근삿값이에요. 목장을 옮기신 해는 따로 나올 수 있어요.";
 export const MIN_REPEAT = 3;   // 서버 statsOf 의 minRepeat 기본값 — 서버는 3회 이상만 보낸다
@@ -34,6 +34,10 @@ export function chipOn(events, sel) {
   }
   return "custom";
 }
+
+// 「통계에 넣을 회차」 고르개(pickMany) 선택지 — 📋 회차·명단 콤보·📤 올릴 회차와 한 벌(evPickOptions · 2026-09-30):
+// 「2026년 3월 · 제목 전체」 · 「231명 · 마감」(+ 👁) · 시작일 최근 먼저. 자격 회차도 통계에는 넣는다.
+export const statsPickOptions = (events) => evPickOptions(events);
 
 // 회차 id → 짧은 이름(없으면 제목, 그것도 없으면 id) — 표 머리·막대 이름
 export const labelMap = (events) => new Map((events || []).map((e) => [e.id, e.short_title || e.title || e.id]));
@@ -72,6 +76,15 @@ export function repeatChoices(repeaters) {
   return out;
 }
 export const repeatersAt = (repeaters, min) => (repeaters || []).filter((x) => x.times >= min);
+// 새 통계에 맞춘 「N회 이상」(minrepeat-reset) — 칩이 없으면 3(옛 값이 빈 글·CSV 에 남지 않게) · 고른 칩이 있으면 그대로 ·
+// 가장 많은 횟수보다 크면 그 횟수(3으로 떨어지지 않게) · 그 밖(3 아래)은 첫 칩
+export function fitRepeat(choices, cur) {
+  const list = choices || [];
+  if (!list.length) return MIN_REPEAT;
+  if (list.some((c) => c.min === cur)) return cur;
+  const last = list[list.length - 1].min;
+  return cur > last ? last : list[0].min;
+}
 
 // 통계 내려받기 — 엑셀에서 바로 열리게 CSV(BOM · \r\n). 세 표를 빈 줄로 나눠 한 파일에.
 // 여러 번 참여한 분은 「이름」「소속」 두 칸(repeaters 의 name·label — label 은 소속만).
@@ -92,7 +105,7 @@ export function statsCsv(stats, labels, min) {
   for (const p of repeatersAt(stats?.repeaters, min)) {
     lines.push([p.name, p.label, p.times, (p.events || []).map((id) => lb(labels, id)).join(" · ")]);
   }
-  return "﻿" + lines.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return "\uFEFF" + lines.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 // 파일 이름 — 한국 날짜
 export function csvName(now = new Date()) {

@@ -80,7 +80,9 @@ export function quickPick(eventId: string): "소책자" | "사순절" | "썸머"
 }
 
 // 글자 차례(코드 포인트) — 한글 완성형은 이 차례가 곧 가나다 차례다. localeCompare 는 Deno·Node 의 ICU 에 따라 달라질 수 있어 쓰지 않는다.
-const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+// index.ts evHistory 도 이것으로 정렬한다 — 이력의 「가장 최근 줄」과 통계의 「가장 최근 줄」이 같은 차례여야 이름표가 같다.
+export const codeCmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const cmp = codeCmp;
 
 // 고른 회차들의 통계 — 모두 **숫자와 이름·소속**만(user_id·ident_key 는 내보내지 않는다 · StatIn 의 user_id 는 묶기에만).
 //   perEvent  : 회차별 인원(줄 수) — 기간 차례(closes_on 오름차순, 같으면 id)

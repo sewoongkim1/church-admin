@@ -106,7 +106,7 @@ export function fillDecision(
   const c = cands[0];
   const a = mapChurchPerson(c);
   const pos = positionFromChurch(c);
-  const who = legacyNorm(row.who_type), group = txt(row.group_name), sub = txt(row.sub_name), rpos = legacyNorm(row.position);
+  const who = legacyNorm(row.who_type), group = txt(row.group_name), sub = txt(row.sub_name), rpos = txt(row.position);
 
   const dirKid = KID_KIND2.includes(txt(c?.kind2));
   const rowKid = (who === "교회학교" && group !== "" && group !== "청년부") || KID_POSITIONS.includes(rpos);

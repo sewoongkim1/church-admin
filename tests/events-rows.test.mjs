@@ -162,3 +162,52 @@ test("looseSame — 같은 교구·같은 이름이고 한쪽 목장이 비었�
   assert.equal(looseSame(row({ who_type: "교회학교", group_name: "중등부", sub_name: "" }),
     row({ who_type: "교회학교", group_name: "중등부", sub_name: "2" })), false, "교회학교(학년)는 느슨하게 보지 않는다");
 });
+
+// ---------- 구분만 바꾸고 소속을 안 보내면 no-group(최종 검토 M4 · 2026-09-30) ----------
+// 옛 구분의 교구·부서가 새 구분에 그대로 남지 않게 — 「교구 화평 20」 줄을 구분만 교회학교로 바꾸면 「교회학교 화평 20」이 됐다.
+test("checkChanged — 구분만 바꾸고 소속(교구·부서)을 안 보내면 no-group · 소속을 함께 보내면 통과(학년·목장 칸은 막지 않는다 · M4)", () => {
+  const cur = { who_type: "교구", group_name: "화평", sub_name: "20", name: "홍길동", position: "" };
+  const a = rowPatch(cur, { who_type: "교회학교" });
+  assert.equal(checkChanged(a.next, a.changed), "no-group");
+  // 소속을 보냈으면 통과 — 학년 칸 20 은 막지 않는다(화면은 같은 값을 다시 보내지 않는다 ·
+  // 막으면 「교회학교 3학년 → 교구 3목장」 같은 정상 고치기가 막힌다)
+  const b = rowPatch(cur, { who_type: "교회학교", group: "중등부" });
+  assert.equal(checkChanged(b.next, b.changed), null);
+  const kid = { who_type: "교회학교", group_name: "중등부", sub_name: "3", name: "홍길동", position: "" };
+  const c = rowPatch(kid, { who_type: "교구", group: "화평" });
+  assert.equal(checkChanged(c.next, c.changed), null);
+  // 구분이 안 바뀌면 그대로(보낸 칸이 없어도)
+  const d = rowPatch(cur, { who_type: "교구" });
+  assert.equal(checkChanged(d.next, d.changed), null);
+});
+
+// ---------- .in() 묶음 — 개수(100)와 주소 길이(6KB)로 함께 자른다(최종 검토 SEC-4 · churchcands-url-length) ----------
+import { inChunks } from "../supabase/functions/church-admin/events-rows.ts";
+
+const encLen = (part) => part.reduce((s, k) => s + encodeURIComponent(k).length + 3, 0);
+const SYL = "가나다라마바사아자차카타파하";
+const shortKey = (i) => SYL[i % 14] + SYL[Math.floor(i / 14) % 14];   // 두 글자 이름 키(명부 name_key 꼴) — 100개면 2.1KB
+
+test("inChunks — 빈 목록 · 짧은 키는 100개씩 · 긴 한글 키는 6KB 안쪽으로 · 차례·개수 그대로 · 혼자 넘는 키는 혼자 한 묶음 · maxCount", () => {
+  assert.deepEqual(inChunks([]), []);
+  const k100 = Array.from({ length: 100 }, (_, i) => shortKey(i));
+  assert.deepEqual(inChunks(k100).map((p) => p.length), [100]);
+  const k101 = Array.from({ length: 101 }, (_, i) => shortKey(i));
+  assert.deepEqual(inChunks(k101).map((p) => p.length), [100, 1]);
+  // 40자 한글 이름 키 150개 — 한 자 = 9바이트(%XX 셋)라 100개면 36KB. 묶음마다 6,000 이하
+  const long = Array.from({ length: 150 }, (_, i) => "험".repeat(38) + SYL[i % 14] + SYL[Math.floor(i / 14) % 14]);
+  const parts = inChunks(long);
+  assert.ok(parts.length > 1, "여러 묶음");
+  for (const p of parts) {
+    assert.ok(p.length >= 1 && p.length <= 100, "개수 " + p.length);
+    assert.ok(encLen(p) <= 6000, "주소 길이 " + encLen(p));
+  }
+  assert.deepEqual(parts.flat(), long, "차례·개수 그대로");
+  // 한 키가 혼자 6KB 를 넘으면 그 키만 한 묶음 — 판정을 조용히 건너뛰지 않는다
+  const huge = "가".repeat(700);
+  assert.deepEqual(inChunks(["가", huge, "나"]), [["가"], [huge], ["나"]]);
+  assert.deepEqual(inChunks([huge]), [[huge]]);
+  // maxCount·maxBytes 인자를 따른다
+  assert.deepEqual(inChunks(["a", "b", "c", "d", "e"], 6000, 2), [["a", "b"], ["c", "d"], ["e"]]);
+  assert.deepEqual(inChunks(["ab", "cd", "ef"], 10), [["ab", "cd"], ["ef"]]);   // (2+3)+(2+3) = 10 까지
+});

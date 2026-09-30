@@ -4,8 +4,11 @@ import assert from "node:assert/strict";
 import {
   ORDERS, COL_LABEL, MAX_ROWS, PUBLIC_MAX, MARKS, MARK_ORDER, WILL_ADD, orderOf, parseSheet, sampleLine, cellText,
   sheetText, decodeText, sigOf, markCounts, countOf, displayRow, evHint, eventOptions, pickFrom, overLimit, confirmHtml,
+  splitCsv, fileErrorText, EVENT_GONE, SAVE_UNSURE, saveUnsure,
 } from "../js/menus/bibleevent/upload-logic.js";
+import { readFileSync } from "node:fs";
 import { whoText, STATUS_KO } from "../js/menus/bibleevent/roster-logic.js";
+import * as rosterLogic from "../js/menus/bibleevent/roster-logic.js";
 import { BE_MAX_UPLOAD } from "../supabase/functions/church-admin/events-rules.ts";
 import { errorText } from "../js/core/ui.js";
 import { MENUS } from "../js/menus/registry.js";
@@ -32,10 +35,34 @@ test("parseSheet — 탭(엑셀) · 앞뒤 빈칸만 떼고 원문 그대로(다
 });
 
 test("parseSheet — 쉼표(CSV) · 겉 따옴표 · BOM · \\r\\n · 모자란 칸은 빈 글자 · 남는 칸은 버림", () => {
-  const t = "﻿\"홍길동\",화평,07,\"집사\"\r\nca-test-일,교회학교,유년\r\nca-test-삼,청년,,,메모칸,또\r\n";
+  const t = "\uFEFF\"홍길동\",화평,07,\"집사\"\r\nca-test-일,교회학교,유년\r\nca-test-삼,청년,,,메모칸,또\r\n";
   assert.deepEqual(parseSheet(t, "ngmp"), [R("홍길동", "화평", "07", "집사"), R("ca-test-일", "교회학교", "유년", ""), R("ca-test-삼", "청년", "", "")]);
   // 한 줄에 탭이 있으면 쉼표는 칸을 나누지 않는다
   assert.deepEqual(parseSheet("홍길동\t화평\t20\t집사,권사", "ngmp"), [R("홍길동", "화평", "20", "집사,권사")]);
+});
+
+test("parseSheet — 이스케이프로 적은 BOM(\\uFEFF)도 뗀다 · 파일에 보이지 않는 U+FEFF 글자를 박아 두지 않는다(bom-literal)", () => {
+  assert.equal(parseSheet("\uFEFF홍길동\t화평\t20\t집사", "ngmp")[0].name, "홍길동");
+  // 편집기·정리 도구가 보이지 않는 글자를 지우면 BOM 떼기가 조용히 멈춘다 — 이스케이프(\uFEFF)로만 적는다
+  const src = readFileSync(new URL("../js/menus/bibleevent/upload-logic.js", import.meta.url), "utf8");
+  assert.equal(src.includes("\uFEFF"), false, "upload-logic.js 에 U+FEFF 글자가 그대로 있다");
+  assert.equal(readFileSync(new URL(import.meta.url), "utf8").includes("\uFEFF"), false, "이 시험 파일에 U+FEFF 글자가 그대로 있다");
+});
+
+test("splitCsv · parseSheet — 큰따옴표 안의 쉼표에서는 나누지 않는다 · 「\"\"」는 「\"」 · 칸 가운데 따옴표는 보통 글자(csv-quoted-comma)", () => {
+  assert.deepEqual(parseSheet('홍길동,화평,20,"집사, 권사"', "ngmp"), [R("홍길동", "화평", "20", "집사, 권사")]);
+  assert.equal(parseSheet('"홍""길동",화평,20,집사', "ngmp")[0].name, '홍"길동');
+  // 따옴표는 남겨 둔다(겉 따옴표는 unquote 가 벗긴다)
+  assert.deepEqual(splitCsv('a,"b,c",d'), ["a", '"b,c"', "d"]);
+  assert.deepEqual(splitCsv('"홍""길동",x'), ['"홍""길동"', "x"]);
+  assert.deepEqual(splitCsv(""), [""]);
+  assert.deepEqual(splitCsv("a,,b,"), ["a", "", "b", ""]);
+  // 쉼표 뒤 빈칸이 있어도 따옴표 칸으로 본다(손으로 적은 CSV)
+  assert.deepEqual(parseSheet('홍길동, 화평, 20, "집사, 권사"', "ngmp"), [R("홍길동", "화평", "20", "집사, 권사")]);
+  // 칸 가운데의 따옴표는 칸을 열지 않는다 — 뒤 칸이 밀리지 않는다(이름의 「"」는 서버가 bad-char 로 막는다)
+  assert.deepEqual(parseSheet('홍"길동,화평,20,집사', "ngmp"), [R('홍"길동', "화평", "20", "집사")]);
+  // 탭 줄은 그대로 탭으로(따옴표 안 쉼표도 칸을 나누지 않는다)
+  assert.deepEqual(parseSheet('홍길동\t화평\t20\t"집사, 권사"', "ngmp"), [R("홍길동", "화평", "20", "집사, 권사")]);
 });
 
 test("parseSheet — 제목 줄(첫 칸이나 이름 칸이 「성명」·「이름」)은 어디에 있든 건너뜀", () => {
@@ -79,6 +106,52 @@ test("decodeText — UTF-8(BOM 떼기) · 못 읽으면 EUC-KR(한국어 엑셀 
   assert.equal(decodeText(utf8), "홍길동,화평");
   const euckr = new Uint8Array([0xC8, 0xAB, 0xB1, 0xE6, 0xB5, 0xBF, 0x2C, 0x32, 0x30]);   // 「홍길동,20」 EUC-KR
   assert.equal(decodeText(euckr), "홍길동,20");
+});
+
+test("decodeText — UTF-16LE·BE(엑셀 「유니코드 텍스트(.txt)」) · 앞 BOM 으로 알아보고 떼어 낸다(txt-utf16)", () => {
+  const s = "홍길동\t화평\t20\t집사";
+  const le = Uint8Array.from([0xFF, 0xFE, ...Buffer.from(s, "utf16le")]);
+  assert.equal(decodeText(le), s);
+  const body = Buffer.from(s, "utf16le");
+  const swapped = [];
+  for (let i = 0; i < body.length; i += 2) swapped.push(body[i + 1], body[i]);
+  const be = Uint8Array.from([0xFE, 0xFF, ...swapped]);
+  assert.equal(decodeText(be), s);
+  // 풀린 글이 곧바로 칸으로 나뉜다(여러 줄 · \r\n)
+  const two = Uint8Array.from([0xFF, 0xFE, ...Buffer.from(s + "\r\nca-test-이\t소망\t남성\t권사\r\n", "utf16le")]);
+  assert.deepEqual(parseSheet(decodeText(two), "ngmp"), [R("홍길동", "화평", "20", "집사"), R("ca-test-이", "소망", "남성", "권사")]);
+});
+
+test("fileErrorText — 파일을 못 읽은 까닭마다 다른 한국말(no-cdn·no-xlsx 는 같은 글 · empty · kind · 그 밖)(file-error-collapsed)", () => {
+  const t = fileErrorText;
+  assert.equal(typeof t, "function");
+  assert.equal(t("no-cdn"), t("no-xlsx"));
+  const four = [t("no-cdn"), t("empty"), t("kind"), t(undefined)];
+  assert.equal(new Set(four).size, 4, JSON.stringify(four));
+  assert.ok(t("no-cdn").includes("내려받지 못했") && t("no-cdn").includes("인터넷") && t("no-cdn").includes("교회 망") && t("no-cdn").includes("붙여넣"));
+  assert.ok(t("empty").includes("읽을 줄") && t("empty").includes("「명단」 시트"));
+  assert.ok(t("kind").includes(".xlsx") && t("kind").includes(".xls") && t("kind").includes("CSV") && t("kind").includes("TXT"));
+  assert.ok(t(undefined).includes("붙여넣"));
+  assert.equal(t("무엇인지 모를 오류"), t(undefined));
+  assert.equal(t(""), t(undefined));
+});
+
+test("EVENT_GONE — 회차가 사라졌을 때(not-found)의 글은 회차 이야기다(「그분」이 아니다 · FE-5)", () => {
+  assert.equal(typeof EVENT_GONE, "string");
+  assert.ok(EVENT_GONE.includes("회차"));
+  assert.ok(!EVENT_GONE.includes("그분"));
+});
+
+test("saveUnsure · SAVE_UNSURE — 넣기가 server·network 로 끝나면 「넣었을 수 있음」 · 넣기 전에 막힌 코드는 아니다(SEC-5 화면)", () => {
+  assert.equal(typeof saveUnsure, "function");
+  assert.equal(saveUnsure({ ok: false, error: "server", code: "HTTP 500" }), true);
+  assert.equal(saveUnsure({ ok: false, error: "network" }), true);
+  for (const d of [{ ok: false, error: "too-many" }, { ok: false, error: "not-found" }, { ok: false, error: "eligibility-event" }, { ok: false }, null, undefined]) {
+    assert.equal(saveUnsure(d), false, JSON.stringify(d));
+  }
+  assert.ok(SAVE_UNSURE.includes("들어갔을 수 있어요"));
+  assert.ok(SAVE_UNSURE.includes("📋 회차·명단"));
+  assert.ok(SAVE_UNSURE.includes("두 번 들어가지 않아요"));
 });
 
 test("한도 — 한 번에 600줄(서버 BE_MAX_UPLOAD 와 같다) · 성도님 명단 1,000명", () => {
@@ -132,15 +205,33 @@ test("회차 고르개 — 자격 회차는 빼고 · 한 줄 설명(상태 글�
     { id: "summer-2025", title: "", opens_on: "2025-07-01", closes_on: "2025-08-31", status: "archived", count: 0, listedNow: false, hasEligibility: false },
   ];
   assert.deepEqual(eventOptions(evs).map((o) => o.value), ["lent-2026", "summer-2025"]);
-  assert.equal(eventOptions(evs)[1].label, "summer-2025");
-  assert.equal(eventOptions(evs)[0].hint, evHint(evs[1]));
-  assert.equal(evHint(evs[1]), `2026-03-01 ~ 2026-04-05 · 1,234명 · ${STATUS_KO.closed} · 성도님께 보임`);
-  assert.equal(evHint(evs[2]), `2025-07-01 ~ 2025-08-31 · 0명 · ${STATUS_KO.archived}`);
+  // 선택지 글은 📋 회차·명단 콤보와 같다(evPickLabel·evPickHint — 세 화면 한 벌 · 2026-09-30 콤보)
+  const { evPickLabel, evPickHint } = rosterLogic;
+  assert.equal(typeof evPickLabel, "function");
+  assert.equal(eventOptions(evs)[0].label, "2026년 3월 · 2026 사순절");
+  assert.equal(eventOptions(evs)[1].label, "2025년 7월 · summer-2025");
+  assert.equal(eventOptions(evs)[0].label, evPickLabel(evs[1]));
+  assert.equal(eventOptions(evs)[0].hint, "1,234명 · 마감 · 👁");
+  assert.equal(eventOptions(evs)[1].hint, evPickHint(evs[2]));
+  // 고른 회차의 머리 한 줄 — 앞에 연·월
+  assert.equal(evHint(evs[1]), `2026년 3월 · 2026-03-01 ~ 2026-04-05 · 1,234명 · ${STATUS_KO.closed} · 성도님께 보임`);
+  assert.equal(evHint(evs[2]), `2025년 7월 · 2025-07-01 ~ 2025-08-31 · 0명 · ${STATUS_KO.archived}`);
+  assert.ok(evHint({ ...evs[2], opens_on: "" }).startsWith("날짜 없음 · "));
   for (const s of ["draft", "open", "closed", "archived"]) assert.ok(evHint({ ...evs[2], status: s }).includes(STATUS_KO[s]), s);
   assert.deepEqual(pickFrom(evs, "lent-2026"), { ev: evs[1], blocked: false });
   assert.deepEqual(pickFrom(evs, "autumn-2026"), { ev: null, blocked: true });
   assert.deepEqual(pickFrom(evs, "없는-회차"), { ev: null, blocked: false });
   assert.deepEqual(pickFrom(evs, ""), { ev: null, blocked: false });
+});
+test("회차 고르개 차례 — 📋 회차·명단 콤보와 같게 시작일 최근 먼저(서버 차례와 달라도) · 자격 회차는 여전히 뺀다", () => {
+  const evs = [
+    { id: "b-late-close", title: "나중 마감", opens_on: "2026-02-15", closes_on: "2026-04-20", status: "closed", count: 1, hasEligibility: false },
+    { id: "a-early-close", title: "먼저 마감", opens_on: "2026-03-01", closes_on: "2026-04-05", status: "closed", count: 2, hasEligibility: false },
+    { id: "elig", title: "자격", opens_on: "2026-10-27", closes_on: "2026-11-28", status: "draft", count: 0, hasEligibility: true },
+  ];
+  assert.deepEqual(eventOptions(evs).map((o) => o.value), ["a-early-close", "b-late-close"]);
+  assert.deepEqual(eventOptions(evs).map((o) => o.label), ["2026년 3월 · 먼저 마감", "2026년 2월 · 나중 마감"]);
+  assert.equal(evs[0].id, "b-late-close", "받은 배열은 그대로");
 });
 
 test("confirmHtml — 줄바꿈 문자 없음(dialog 는 pre-line) · 이름을 esc · 건수 · 성도님께 보이는 회차면 한 줄 더", () => {
@@ -157,6 +248,28 @@ test("confirmHtml — 줄바꿈 문자 없음(dialog 는 pre-line) · 이름을 
   assert.ok(!quiet.includes("성도님께 보여요"));
   assert.ok(!quiet.includes("넣지 않는 줄"));
   assert.ok(!quiet.includes("채운"));
+});
+
+test("confirmHtml — 넣으면 1,000명을 넘는 회차는 확인 창에도 경고 한 줄(넷째 인자 total) · 안 주면 없다 · 줄바꿈 문자 없음(overlimit-not-in-confirm)", () => {
+  const ten = markCounts(Array.from({ length: 10 }, (_, i) => ({ i, mark: "add" })));
+  const ev = { id: "ca-test-over", title: "ca-test 회차", listedNow: false };
+  const over = confirmHtml(ev, 10, ten, 995);
+  assert.ok(over.includes("1,000명을 넘어요"), over);
+  assert.ok(over.includes("관리자에게 알려 주세요"));
+  assert.ok(!over.includes("\n"));
+  assert.ok(!confirmHtml(ev, 10, ten).includes("1,000명을 넘어요"));
+  assert.ok(!confirmHtml(ev, 10, ten, 990).includes("1,000명을 넘어요"), "딱 1,000명은 넘지 않는다");
+  assert.ok(!confirmHtml(ev, 10, ten).includes("\n"));
+  // 경고는 「넣지 않는 줄」 문장 뒤에 온다
+  const mixed = markCounts([...Array.from({ length: 10 }, (_, i) => ({ i, mark: "add" })), { i: 10, mark: "same" }]);
+  const h = confirmHtml(ev, 11, mixed, 999);
+  assert.ok(h.indexOf("넣지 않는 줄") < h.indexOf("1,000명을 넘어요"));
+});
+
+test("올리기 안내 — 이어진 분의 「📋 이미 내신 것」은 회차가 성도님께 보이는 동안만(v2 1498177 · M3)", () => {
+  const src = readFileSync(new URL("../js/menus/bibleevent/upload.js", import.meta.url), "utf8");
+  assert.ok(src.includes("이어진 분은 이 회차가 성도님께 보이는 동안 앱 「📋 이미 내신 것」에 보이고,"));
+  assert.ok(!src.includes("이어진 분은 성도님 앱 「📋 이미 내신 것」에 보이고,"));
 });
 
 test("이 화면이 보일 오류 코드는 모두 한국말이 있다(ui.js MESSAGES · Task 10)", () => {
