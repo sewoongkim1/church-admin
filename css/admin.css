@@ -368,6 +368,25 @@ a.mn-tel.sm{padding:2px 8px}
 .mn-table td.mn-date::before{content:none}
 .mn-modal-foot .yes:disabled{opacity:.45;cursor:default}
 
+/* ── 사역신청·담당자 이름 → 교적 창 (2026-09-30) ──────────────────────────────────────────────
+   js/menus/ministry/person-link.js. 이름은 성경필사와 같은 .be-name 단추(누르는 자리 44px · 줄 높이는 그대로 · 밑줄) —
+   그 규칙(be- 블록)은 고치지 않고, 사역 화면에서 모자란 것만 여기서 더한다.
+   임명현황의 사람 칩은 칩 모양(.ap-p) 그대로 단추(.mn-pl-chip) — 폰(굵은 손가락)에서만 표준 v1 칩 높이(--chip 36)로 키운다. */
+/* PC 건별 표 — 좁은 이름 칸에서 이름이 한 글자씩 꺾이지 않게(성경필사 .be-table 과 같게) */
+.mn-table .be-name{white-space:nowrap}
+/* 사람별 묶음 머리 — 이름은 머리 글씨(800) 그대로(<b> 가 한 단계 더 굵어지지 않게) · 펼친 머리(남색 바탕)에선 초점 테두리를 희게 */
+.mn-grp-t .be-name b{font-weight:inherit}
+.mn-grp[open] > summary .be-name:focus-visible{outline-color:#fff}
+/* 임명현황 사람 칩 */
+.ap-p.mn-pl-chip{display:inline-flex;align-items:center;border:0;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ap-p.mn-pl-chip b{font-weight:inherit}
+.ap-p.mn-pl-chip:hover b,.ap-p.mn-pl-chip:focus-visible b{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.ap-p.mn-pl-chip:focus-visible{outline:2px solid var(--navy);outline-offset:1px}
+.ap-p.mn-pl-chip:active{background:#e4ebf7}
+@media (pointer:coarse){
+  .ap-p.mn-pl-chip{min-height:var(--chip)}
+}
+
 /* ── 🗂️ 사역팀 정보(성경암송 admin-stats.html 의 .mc-* 를 옮김 · 2026-09-29) ──────────────────
    원문: docs/port/ministry-catalog-legacy.md 2.12~2.14. 크기는 토큰으로, 11~12px 글씨는 13px 이상으로 올렸다.
    ⚠️ 좁은 폰 규칙(마지막 @media 블록의 .mc-in label)은 반드시 아래 기본 .mc-in label 규칙보다 **뒤**에 둔다

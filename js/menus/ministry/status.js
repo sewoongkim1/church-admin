@@ -11,6 +11,8 @@ import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap,
 import { cardHtml, groupsHtml, dupBadgeHtml, tableHtml, askCancelReason, confirmAppoint, confirmDelete } from "./status-ui.js";
 import { CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
 import { pickDate, fmtDateLabel } from "../../core/picker.js";
+import { openChurchPerson } from "../bibleevent/person-popup.js";
+import { PERSON_ACTION, rowAsk } from "./person-link.js";
 
 const TITLE = `<h2 class="page-title">📋 신청 현황</h2>`;
 const VIEWS = [["row", "건별", "건"], ["person", "사람별", "명"], ["team", "사역별", "팀"]];
@@ -228,6 +230,15 @@ export async function render(el, { call }) {
     if (tel) {
       const g = tel.closest("details"), was = g.open;
       setTimeout(() => { if (g.open !== was) g.open = was; }, 0);
+      return;
+    }
+    // 이름 → 교적 창(2026-09-30) — 단추엔 신청 id 만 있다. 보낼 것(이름·소속·번호)은 메모리의 줄에서 꺼낸다(번호를 DOM 에 싣지 않는다).
+    // 사람별 묶음 머리(<summary>) 안에서 눌러도 묶음이 여닫히지 않게 기본 동작을 막는다(열린 상태 메뉴는 아래 onDoc 이 닫는다).
+    const nb = e.target.closest("[data-person]");
+    if (nb) {
+      e.preventDefault();
+      const r = find(nb.dataset.person);
+      if (r) openChurchPerson({ call, action: PERSON_ACTION, ...rowAsk(r), anchor: nb });
       return;
     }
     const b = e.target.closest("button[data-act]");

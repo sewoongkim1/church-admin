@@ -22,6 +22,9 @@
 //      "복사해 붙여넣어 주세요"로 돌아가는 안내라 가짓수를 늘릴 실익이 적다.
 import { esc, dialog, busy, errorText } from "../../core/ui.js";
 import { churchBadgeHtml, CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
+// 살펴본 결과 줄의 이름을 누르면 교적 창(2026-09-30) — 단추엔 줄의 자리(mpRows)만 싣는다(번호를 DOM 에 올리지 않는다)
+import { openChurchPerson } from "../bibleevent/person-popup.js";
+import { PERSON_ACTION, personLinkHtml, paperAsk } from "./person-link.js";
 
 const TITLE = `<h2 class="page-title">📋 종이 명단 올리기</h2>`;
 
@@ -104,11 +107,12 @@ export function rowMark(r) {
   return { cls: "bad", mark: "⚠️" };
 }
 
-function rowHtml(r) {
+// i = mpRows 의 자리(이름 단추의 열쇠). 이름이 없는 줄은 단추로 만들지 않는다(「(이름 없음)」 글자 그대로).
+function rowHtml(r, i) {
   const { cls, mark } = rowMark(r);
   return `<div class="mp-item ${cls}">
     <div class="mp-i-top"><span class="mp-i-ic">${mark}</span>
-      <b>${esc(r.name || "(이름 없음)")}</b><small>${esc([r.gu, r.mok].filter(Boolean).join(" "))}</small>${churchBadgeHtml(r.church)}
+      ${personLinkHtml(i, r.name, { text: r.name || "(이름 없음)" })}<small>${esc([r.gu, r.mok].filter(Boolean).join(" "))}</small>${churchBadgeHtml(r.church)}
       ${r.status ? `<span class="mp-i-st${r.status === "취소" ? " off" : ""}">${esc(paperShort(r.status))}</span>` : ""}
       <span class="mp-i-team">${esc(r.team || "")}${r.committee ? ` <i>${esc(r.committee)}</i>` : ""}</span></div>
     ${r.error ? `<div class="mp-i-msg bad">${esc(r.error)}</div>` : ""}
@@ -178,7 +182,7 @@ export async function render(el, { call }) {
       : `살펴본 줄 <b>${mpRows.length}</b> · 넣을 것 <b>${okN}</b>` +
         `${sameN ? ` · 그대로 둘 것 <b>${sameN}</b>` : ""}${badN ? ` · 고칠 것 <b>${badN}</b>` : ""}`;
     saveBtn.hidden = !saveVisible(mpRows, saved);
-    listEl.innerHTML = (hasChurch(mpRows) ? CHURCH_LEGEND : "") + mpRows.map(rowHtml).join("");
+    listEl.innerHTML = (hasChurch(mpRows) ? CHURCH_LEGEND : "") + mpRows.map((r, i) => rowHtml(r, i)).join("");
   };
 
   async function run(save) {
@@ -245,6 +249,13 @@ export async function render(el, { call }) {
 
   // 델리게이트 클릭 한 벌 — 살펴보기·명단 넣기·양식 올리기(파일 선택창 열기)
   el.addEventListener("click", (e) => {
+    // 결과 줄의 이름 → 교적 창 — 보낼 것(교구·목장·이름·번호)은 서버가 살펴 준 그 줄(mpRows)에서 꺼낸다
+    const nb = e.target.closest("[data-person]");
+    if (nb) {
+      const r = mpRows[Number(nb.dataset.person)];
+      if (r) openChurchPerson({ call, action: PERSON_ACTION, ...paperAsk(r), anchor: nb });
+      return;
+    }
     const b = e.target.closest("button[data-act]");
     if (!b) return;
     if (b.dataset.act === "pick") return fileInput.click();
