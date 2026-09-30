@@ -1,6 +1,12 @@
 // 메뉴 목록 — 메뉴 하나 = 한 줄. role 은 서버 authz.ts 가 아는 역할이어야 한다(tests/registry.test.mjs).
 // ⚠️ 여기서 숨기는 것은 편의일 뿐, 막는 것은 서버다.
+// 줄 차례 = 왼쪽 메뉴·처음 화면의 차례. 묶음(group)이 대분류, 줄이 중분류다 — 한 묶음의 줄은 붙여 둔다.
+// 교인명부가 맨 위(친구 2026-09-30).
 export const MENUS = [
+  { id: "people", group: "교인명부", icon: "🔎", label: "교인 찾기", desc: "이름·전화 뒷자리로 찾기 · 사진 · 내려받기",
+    role: "directory", load: () => import("./people/search.js") },
+  { id: "people-stats", group: "교인명부", icon: "📊", label: "교인 현황", desc: "교구·부서·직분·연령대별 인원 · 사진 없는 분",
+    role: "directory", load: () => import("./people/stats.js") },
   { id: "status", group: "사역신청", icon: "📋", label: "신청 현황", desc: "접수·임명·취소 · 같은 번호 확인 · 삭제",
     role: "ministry", load: () => import("./ministry/status.js") },
   { id: "catalog", group: "사역신청", icon: "🗂️", label: "사역팀 정보", desc: "팀 설명 · 언제 · 담당 · 지금 섬기는 분 · 차례",
@@ -15,17 +21,27 @@ export const MENUS = [
     role: "bibleevent", load: () => import("./bibleevent/upload.js") },
   { id: "be-history", group: "성경필사(암송)", icon: "👤", label: "사람별 이력·통계", desc: "이름으로 찾기 · 회차별·교구별 · 여러 번 참여",
     role: "bibleevent", load: () => import("./bibleevent/history.js") },
-  { id: "people", group: "교인명부", icon: "🔎", label: "교인 찾기", desc: "이름·전화 뒷자리로 찾기 · 사진 · 내려받기",
-    role: "directory", load: () => import("./people/search.js") },
-  { id: "people-stats", group: "교인명부", icon: "📊", label: "교인 현황", desc: "교구·부서·직분·연령대별 인원 · 사진 없는 분",
-    role: "directory", load: () => import("./people/stats.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
   { id: "audit", group: "시스템", icon: "📜", label: "바꾼 기록", desc: "누가 언제 무엇을 바꿨나",
     role: "super", load: () => import("./system/audit.js") },
 ];
 
+// 묶음(대분류) 머리의 아이콘 — 메뉴 줄(중분류)의 아이콘과 겹치지 않게 고른다
+export const GROUP_ICON = { "교인명부": "👥", "사역신청": "🤝", "성경필사(암송)": "✍️", "시스템": "⚙️" };
+
 export function menusFor(roles) {
   const r = new Set(roles || []);
   return MENUS.filter((m) => r.has("super") || r.has(m.role));
+}
+
+// 받은 메뉴를 묶음 차례(MENUS 에 처음 나온 차례)대로 — [{ group, icon, menus }] · 메뉴가 없는 묶음은 뺀다
+export function menuGroups(menus) {
+  const out = [];
+  for (const m of menus || []) {
+    let g = out.find((x) => x.group === m.group);
+    if (!g) out.push(g = { group: m.group, icon: GROUP_ICON[m.group] || "", menus: [] });
+    g.menus.push(m);
+  }
+  return out;
 }

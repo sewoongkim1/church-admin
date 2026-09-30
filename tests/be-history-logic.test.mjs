@@ -155,20 +155,21 @@ test("이 화면이 보일 오류 코드는 모두 한국말이 있다(ui.js MES
   }
 });
 
-test("메뉴 — 성경필사(암송) 세 메뉴가 사역신청 뒤·교인명부 앞에 차례대로 · CONTRACT 줄 그대로 · 역할 bibleevent", () => {
+test("메뉴 — 성경필사(암송) 세 메뉴가 사역신청 뒤·시스템 앞에 차례대로 · CONTRACT 줄 그대로 · 역할 bibleevent", () => {
+  // 2026-09-30 친구: 교인명부를 맨 위로 — 그래서 성경필사(암송) 뒤는 교인명부가 아니라 시스템이다(tests/registry.test.mjs 묶음 차례)
   const ids = MENUS.map((m) => m.id);
   const i = ids.indexOf("be-roster");
   assert.deepEqual(ids.slice(i, i + 3), ["be-roster", "be-upload", "be-history"]);
   assert.equal(MENUS.filter((m) => m.group === "성경필사(암송)").length, 3);
   // 다른 세션이 사역신청·교인명부에 메뉴를 더해도 깨지지 않게 — 옆 메뉴의 id 가 아니라 묶음으로 본다
   assert.equal(MENUS[i - 1].group, "사역신청");
-  assert.equal(MENUS[i + 3].group, "교인명부");
+  assert.equal(MENUS[i + 3].group, "시스템");
   const m = MENUS.find((x) => x.id === "be-history");
   assert.deepEqual([m.group, m.icon, m.label, m.desc, m.role],
     ["성경필사(암송)", "👤", "사람별 이력·통계", "이름으로 찾기 · 회차별·교구별 · 여러 번 참여", "bibleevent"]);
   const groups = [...new Set(MENUS.map((x) => x.group))];
   assert.equal(groups.indexOf("성경필사(암송)"), groups.indexOf("사역신청") + 1);
-  assert.equal(groups.indexOf("교인명부"), groups.indexOf("성경필사(암송)") + 1);
+  assert.equal(groups.indexOf("시스템"), groups.indexOf("성경필사(암송)") + 1);
 });
 
 test("화면 모듈이 Node 에서 읽힌다 — import 한 이름이 모두 있다(틀리면 여기서 SyntaxError)", async () => {
