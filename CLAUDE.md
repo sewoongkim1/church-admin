@@ -82,7 +82,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
   자격 회차엔 더하기·올리기·빼기가 막힌다(`eligibility-event` · 가을 설계 §12). 회차 설정의 시작일은 `eligibilityStart(needs)` 보다 앞설 수 없다(`before-eligibility`).
 - 빈칸 채우기(`fillDecision`)는 교인명부 전체에서 이름이 한 분일 때만, 빈 칸만 채운다. 줄에 적힌 소속이 명부 소속과 다르면 아무것도 채우지 않는다(`different-affiliation`).
 - 회차를 성도님께 보이게 하는 저장은 `needs-confirm`(아무것도 안 쓴 상태) → 화면 확인 창 → `confirmListed:true`. 공개 확인은 쓰기 **전**이다.
-  회차 차례(`sort_order`)는 설정에 없다 — 새 회차는 0(바꾸려면 개발 먼저 SQL).
+  회차 차례(`sort_order`)는 회차 설정의 「같은 날 마감하는 회차끼리 차례」(정수 -999~999 · 작을수록 위 · 새 회차 0). 성도님 앱 eventOpenList 는 ① 등록할 수 있고 안 낸 것 ② 마감일 ③ 차례 ④ id 로 세운다 — 차례는 마감일이 같은 회차끼리만 앞뒤를 가르고, 그때 첫 화면 단추(맨 앞 회차)도 정한다. 회차 글자 칸(이름 100 · 짧은 이름 40 · 부제 100 · 묶음 20자)은 서버도 막는다(`event-too-long` · 바꾼 칸만 — 옛 값이 길어도 다른 칸 저장은 된다).
 - 교인명부에서 주는 값은 **이름·구분·소속·세부·직분 다섯**뿐(예외 하나 — 아래 `evPerson` 의 `full`). 기록: `event.*` 는 「바꾼 기록」 · `people.lookup`(`{q, count}` · `evPeopleLookup`·`evPerson` 두 곳)·`people.fill`(`{rows, names}`)은 「교인명부 기록」 ·
   `event.upload` 는 건수만 **납작하게**. 칸 이름을 바꾸면 `js/menus/system/audit.js`·`tests/audit.test.mjs` 도 함께(안 고치면 기록 줄이 0·빈칸으로 보인다).
 - 이름을 누르면 교적 창(`evPerson` · `events-person.ts` · 화면 `person-popup.js`): **부른 분의 역할로 서버가 모양을 정한다**(`ctx.roles` — 화면이 보낸 것을 믿지 않는다) — `directory`·`super` 면 `full`(교인ID·이름·소속·직분 → 화면이 교인명부 `openPerson` → `peoplePerson` 「자세히」 창 · 기록은 그쪽 `people.view`, 한 분으로 못 골라 후보를 줄 때만 여기서 `people.lookup`), 성경필사만이면 `basic`(다섯 칸 + 교적 표시 · 늘 `people.lookup`). **교인ID 를 `basic` 에 싣지 말 것** — 위 「다섯뿐」의 유일한 예외가 `full` 이다.
