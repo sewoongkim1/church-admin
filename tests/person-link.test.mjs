@@ -162,12 +162,21 @@ test("📋 사람별 묶음 머리 — 이름이 단추 · 열쇠는 번호가 �
   for (const t of [...nameTags(h), ...nameTags(team)]) assert.deepEqual(attrsOf(t), ["data-person"]);
 });
 
-test("📋 결정으로 번호가 지워지면(clearPhone) 교적 표시도 비운다 — 이름 옆 표시(번호로 셈)와 창(번호 없이 셈)이 어긋나지 않게(검토 2)", () => {
+test("📋 결정으로 번호가 지워지면(clearPhone) 교적 표시를 서버가 번호 없이 다시 센 값으로 — 비우지 않는다(2026-09-30 친구 제보)", () => {
   const r = ROW({ id: 3, church: { state: "확인 필요", reason: "소속 다름" } });
-  clearPhone(r);
-  assert.deepEqual([r.phone, r.church], ["", null]);
+  clearPhone(r, { state: "맞음", reason: "" });
+  assert.deepEqual([r.phone, r.church], ["", { state: "맞음", reason: "" }]);
   assert.deepEqual(rowAsk(r), { name: "홍길동", who: "화평 20목장" }, "창엔 번호가 가지 않는다");
-  for (const h of [cardHtml(r, "", ""), tableHtml([r], new Map())]) assert.ok(!h.includes("cb-"), "표시를 그리지 않는다");
+  for (const h of [cardHtml(r, "", ""), tableHtml([r], new Map())]) assert.ok(h.includes("cb-ok"), "다시 센 표시를 그린다");
+  // 임명한 분만 남은 사람별 묶음 머리에도 표시가 있다(번호 남은 건이 없으면 첫 건의 표시)
+  const g = ROW({ id: 4, church: { state: "확인 필요", reason: "소속 다름" } });
+  clearPhone(g, { state: "맞음", reason: "" });
+  assert.ok(groupsHtml([g], "person", new Set(), new Map()).includes("cb-ok"), "묶음 머리에도 「교적 ✓」");
+  // 옛 서버(church 없음)면 비운다 — 번호로 센 옛 표시를 남기지 않는다
+  const o = ROW({ id: 5, church: { state: "확인 필요", reason: "소속 다름" } });
+  clearPhone(o);
+  assert.deepEqual([o.phone, o.church], ["", null]);
+  for (const h of [cardHtml(o, "", ""), tableHtml([o], new Map())]) assert.ok(!h.includes("cb-"), "표시를 그리지 않는다");
 });
 
 test("📋 사람별 묶음 머리 — 교적 표시와 이름 단추의 열쇠가 같은 건(번호가 남은 건)에서 나온다(검토 2)", () => {

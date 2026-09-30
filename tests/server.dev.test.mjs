@@ -493,6 +493,9 @@ test("신청 현황: 목록 모양 · 동시 수정 · 취소 사유 · 임명 �
   assert.equal(ap.body.pushed, 0);
   assert.equal(ap.body.pushError, "not-subscribed");
   assert.equal(ap.body.phoneCleared, true);
+  // 번호를 지웠으면 교적 표시를 번호 없이 다시 세어 돌려준다(명부가 있으면 {state,reason}, 없으면 null) — 화면이 비우지 않게(2026-09-30)
+  assert.ok("church" in ap.body, "church 칸이 있다");
+  assert.ok(ap.body.church === null || typeof ap.body.church.state === "string", JSON.stringify(ap.body.church));
   // 취소 — 사유 없이는 안 됨
   assert.equal((await call(m, "ministrySetStatus", { id: bRow.id, status: "취소", expect: "신청완료" })).body.error, "cancel-note-required");
   assert.equal((await call(m, "ministrySetStatus", { id: bRow.id, status: "취소", expect: "신청완료", note: "시험 취소" })).body.ok, true);

@@ -167,8 +167,8 @@ export async function render(el, { call }) {
       return;
     }
     if (d.status) r.status = d.status;
-    // 결정이 나면 서버가 번호를 지운다 — 카드도 그 자리에서 지워야 사실과 맞다. 그 번호로 셈한 교적 표시도 함께 비운다(clearPhone)
-    if (d.phoneCleared) clearPhone(r);
+    // 결정이 나면 서버가 번호를 지운다 — 카드도 그 자리에서 지워야 사실과 맞다. 교적 표시는 서버가 번호 없이 다시 센 값(d.church)으로(clearPhone)
+    if (d.phoneCleared) clearPhone(r, d.church);
     if (note !== undefined) r.note = note;
     if (status === "임명확정") {
       // 넷을 가른다. ⚠️ 「이미 보냄」을 「안 켜심」으로 적으면, 알림이 간 분께 담당자가 또 연락한다

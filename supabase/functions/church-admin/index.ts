@@ -445,7 +445,7 @@ async function ministrySetStatus(ctx: Ctx, b: any) {
   const id = Number(b.id) || 0;
   if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "not-found" };
   const { data: row, error } = await db.from("ministry_orders")
-    .select("id,status,name,who,committee,team").eq("id", id).maybeSingle();
+    .select("id,status,name,who,committee,team,user_id").eq("id", id).maybeSingle();
   if (error) throw error;
   if (!row) return { ok: false, error: "not-found" };
   // 화면이 본 상태와 지금 상태가 다르면 — 다른 담당자가 먼저 바꿨다
@@ -464,8 +464,23 @@ async function ministrySetStatus(ctx: Ctx, b: any) {
     ...(typeof p.patch.note === "string" ? { note: p.patch.note } : {}),
   });
   const n = p.notify ? await notifyAppointed(id) : { pushed: 0, pushError: null, already: false };
+  const phoneCleared = p.patch.phone === null;
   return { ok: true, status: p.patch.status, pushed: n.pushed, pushError: n.pushError, already: n.already,
-    phoneCleared: p.patch.phone === null };
+    phoneCleared, ...(phoneCleared ? { church: await orderChurchNoPhone(row) } : {}) };
+}
+
+// 결정(임명·취소)으로 번호를 지운 건의 교적 표시를 **번호 없이** 다시 센다 — ministryList 가 다음에 불러올 때와 같은 값.
+// ⚠️ 화면이 표시를 그냥 비우면(2026-09-30 첫 판) 임명한 분의 「교적 ✓」가 새로 불러오기 전까지 사라졌다(친구 제보).
+//    번호로 센 옛 표시(「소속 다름」)를 남기면 이름을 눌러 뜨는 창(번호 없이 셈)과 어긋난다 — 그래서 다시 센 값으로 갈아 끼운다.
+//    이름·소속이 빈 옛 줄은 ministryList 처럼 앱 계정(users)에서 채운다.
+async function orderChurchNoPhone(row: { name?: string | null; who?: string | null; user_id?: string | null }) {
+  let name = row.name || "", who = row.who || "";
+  if ((!name || !who) && row.user_id) {
+    const { data: u, error } = await db.from("users").select("type,gu,mok,bu,grade,name").eq("id", row.user_id).maybeSingle();
+    if (error) throw error;
+    if (u) { name = name || u.name || ""; who = who || appUserWho(u); }
+  }
+  return churchFor(await churchLookup([name]), applicantFromWho(name, who, ""));
 }
 
 // 신청 한 건을 아주 지운다(되돌릴 수 없다 — 화면이 두 번 묻는다). 3개 상한의 자리도 도로 빈다.
