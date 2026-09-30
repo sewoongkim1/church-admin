@@ -340,3 +340,44 @@ test("CLAUDE.md 메모 상한 — 더하기 480(NOTE_FORM_MAX)·고치기·메�
   assert.ok(line.includes(`고치기·메모만 고치기 ${rosterLogic.NOTE_EDIT_MAX}(NOTE_EDIT_MAX`), "고치기 창 상한이 NOTE_EDIT_MAX 값으로 적혀 있지 않다");
   assert.ok(!/창의 글자 수 상한은 480\.\s*$/.test(line), "창 상한을 480 하나로만 적고 있다(고치기 창은 500)");
 });
+
+// ---------- 친구 결정 M7(2026-09-30 · 문서만) — 이어 둔 줄과 성경암송 계정 지우기·합치기 ----------
+// 표는 성경암송 것이라(events.sql:61 user_id on delete cascade · member_merge.sql merge-signup-conflict) 바꾸지 않고 두 문서에 두 줄로 알린다.
+// 「담당자 줄을 뺀다」의 한계(앱 줄 app-row · 자격 회차 eligibility-event)는 evRowDelete 코드와 같게 적는다.
+const M7_CASCADE = "앱 계정에 이어 둔 줄은 성경암송에서 그 계정을 지우면 함께 지워진다";
+const M7_MERGE = "같은 분의 두 계정이 한 회차에 줄을 하나씩 가져 성경암송 기록 합치기가 막히면";
+const M7_FIX = "교회 어드민에서 담당자 줄을 뺀 뒤 다시 합친다";
+
+function m7Lines(text, where) {
+  const lines = text.split(/\r?\n/);
+  const cascade = lines.filter((l) => l.includes(M7_CASCADE));
+  const merge = lines.filter((l) => l.includes(M7_MERGE));
+  assert.equal(cascade.length, 1, where + " — 계정 지우기(cascade) 줄이 하나여야 한다");
+  assert.equal(merge.length, 1, where + " — 합치기 막힘 줄이 하나여야 한다");
+  assert.ok(cascade[0].includes("on delete cascade"), where + " — cascade 근거(user_id on delete cascade)가 없다");
+  assert.ok(cascade[0].includes("교회 어드민 기록에는 안 남는다"), where + " — 「교회 어드민 기록에는 안 남는다」가 없다");
+  assert.ok(merge[0].includes(M7_FIX), where + " — 「" + M7_FIX + "」가 없다");
+  assert.ok(merge[0].includes("merge-signup-conflict"), where + " — 합치기가 멈추는 코드(merge-signup-conflict)가 없다");
+  assert.ok(merge[0].includes("`app-row`") && merge[0].includes("`eligibility-event`"),
+    where + " — 여기서 못 빼는 두 경우(app-row · eligibility-event)를 적지 않았다");
+}
+
+test("M7 문서 — CLAUDE.md 「성경필사(암송)」·event-roster-legacy.md 에 계정 지우기(cascade)·합치기 막힘 두 줄 · 못 빼는 경우가 evRowDelete 와 같다(doc-m7)", () => {
+  const md = readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
+  const sec = md.split(/\r?\n## /).find((s) => s.startsWith("성경필사(암송)"));
+  assert.ok(sec, "CLAUDE.md 에 「## 성경필사(암송)」 절이 없다");
+  m7Lines(sec, "CLAUDE.md 「성경필사(암송)」");
+
+  const legacy = readFileSync(new URL("../docs/port/event-roster-legacy.md", import.meta.url), "utf8");
+  m7Lines(legacy, "event-roster-legacy.md");
+  // 근거 원문이 그대로 있는지(events.sql:61 을 옮겨 적은 줄)
+  assert.ok(legacy.includes("user_id     uuid        references public.users (id) on delete cascade,"));
+
+  // 문구의 한계가 코드와 같은지 — 줄 빼기는 담당자 줄(import)만 · 자격 회차는 막는다
+  const src = readFileSync(new URL("../supabase/functions/church-admin/index.ts", import.meta.url), "utf8");
+  const at = src.indexOf("async function evRowDelete(");
+  assert.ok(at > 0, "index.ts 에 evRowDelete 가 없다");
+  const body = src.slice(at, src.indexOf("\n}\n", at) > 0 ? src.indexOf("\n}\n", at) : src.indexOf("\n}\r\n", at));
+  assert.ok(body.includes('if (cur.source !== "import") return { ok: false, error: "app-row" };'));
+  assert.ok(body.includes('if (isEligEvent(ev.needs)) return { ok: false, error: "eligibility-event" };'));
+});

@@ -4,6 +4,7 @@ import {
   EVT_ID_RE, EVT_STATUS, BE_GU, BE_MAX_UPLOAD, BE_NOTE_MAX, BE_FIELD_MAX, BE_NEEDS_DEFAULT, BE_BAD_CHARS,
   kstToday, evtListable, isDay, isEligEvent, eligibilityStart, checkEvent, mergeEventPatch,
 } from "../supabase/functions/church-admin/events-rules.ts";
+import { pastEventCreatedAt } from "../supabase/functions/church-admin/events-rules.ts";
 import { MATCH_GU } from "../supabase/functions/church-admin/people-match.ts";
 
 // 시험용 회차 — 다 맞는 모양. 칸 하나씩 틀려 본다.
@@ -36,6 +37,21 @@ test("kstToday — 한국 자정에 날이 바뀐다", () => {
   assert.equal(kstToday(new Date("2026-09-29T14:59:59Z")), "2026-09-29");
   assert.equal(kstToday(new Date("2026-09-29T15:00:00Z")), "2026-09-30");
   assert.match(kstToday(), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+// M2(2026-09-30 친구 결정) — 지난 회차에 넣는 줄의 낸 날(created_at)은 그 회차 마감일 한국 자정.
+//   성경암송 evtPositionHint·「이미 내신 것」이 created_at 이 가장 늦은 줄을 「가장 최근」으로 본다.
+test("pastEventCreatedAt — 마감일이 오늘보다 앞선 회차만 「마감일 KST 자정」 · 오늘·앞날·틀린 날짜는 null(DB 기본값 now())", () => {
+  const T = "2026-09-30";
+  assert.equal(pastEventCreatedAt("2022-04-16", T), "2022-04-16T00:00:00+09:00");
+  assert.equal(pastEventCreatedAt("2026-09-29", T), "2026-09-29T00:00:00+09:00", "어제 마감");
+  assert.equal(new Date(pastEventCreatedAt("2022-04-16", T)).toISOString(), "2022-04-15T15:00:00.000Z");
+  assert.equal(pastEventCreatedAt("2026-09-30", T), null, "오늘 마감 — 아직 열린 회차");
+  assert.equal(pastEventCreatedAt("2026-11-28", T), null, "앞날 회차");
+  for (const bad of ["", null, undefined, "2022-4-16", "2022-02-30", "2022-04-16T00:00:00Z", 20220416]) {
+    assert.equal(pastEventCreatedAt(bad, T), null, String(bad));
+  }
+  assert.equal(pastEventCreatedAt("2022-04-16", "bad"), null, "오늘을 모르면 넣지 않는다");
 });
 
 test("evtListable — 성경암송 evtListable 그대로(draft·archived 안 보임 · list_until 까지)", () => {

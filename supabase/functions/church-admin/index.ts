@@ -40,6 +40,9 @@ import { readName } from "./events-upload.ts";
 import { inChunks } from "./events-rows.ts";
 // 회차 설정의 글자 길이·차례 검사 · DB 에 쓸 값(sort_order 는 수로) — 2026-09-30 E(SEC-6 · 회차 차례)
 import { checkEventEdit, eventDbPatch } from "./events-rules.ts";
+// 친구 결정(2026-09-30) — 지난 회차에 넣는 줄의 낸 날(M2) · people.fill 에 물은 이름(SEC-2) · 위 import 에 없는 이름만
+import { pastEventCreatedAt } from "./events-rules.ts";
+import { fillRecord } from "./events-upload.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1389,11 +1392,14 @@ async function evRowAdd(ctx: Ctx, b: any) {
   if (accounts.length > 1) warnings.push(`같은 이름·소속의 앱 계정이 ${accounts.length}개라 잇지 않았어요`);
   if (oddPosition(row.position)) warnings.push(`직분 「${row.position}」 — 앱 직분 목록에 없어요(적은 그대로 넣었어요)`);
   const church = await evRowChurch(row);
+  // 지난 회차(마감일 < 오늘 KST)면 낸 날을 그 마감일 한국 자정으로 — 열린·앞날 회차는 DB 기본값 now()(M2 · 2026-09-30 친구 결정)
+  const createdAt = pastEventCreatedAt(ev.closes_on, kstToday());
 
   const { data: saved, error } = await db.from("event_signups").insert({
     event_id: ev.id, user_id: userId, ident_key: identKey(row),
     who_type: row.who_type, group_name: row.group_name, sub_name: row.sub_name, name: row.name, position: row.position,
     note, source: "import", updated_at: new Date().toISOString(),
+    ...(createdAt ? { created_at: createdAt } : {}),
   }).select(EV_ROW_COLS).single();
   if (error) {
     // (event_id, user_id) unique — 같은 계정을 동시에 둘이 넣었다. 500 이 아니라 「이미 있음」.
@@ -1487,7 +1493,7 @@ async function evRowDelete(ctx: Ctx, b: any) {
 // ⚠️ 자격 회차(needs.eligibility — isEligEvent 하나로 판정)에는 올리지 않는다 — 가을 설계 §12 「대리 등록은 보정 창구로만」.
 // ⚠️ 앱 계정은 찾기만 한다(member_login 을 부르지 않는다). user_id·ident_key 는 응답에 싣지 않는다.
 // ⚠️ 교인명부 값은 다섯 칸(이름·구분·소속·세부·직분)으로만 나간다 — 찾기는 people.lookup(검색어·결과 수),
-//    살펴보기에서 채운 값을 돌려줄 때는 people.fill(채운 이름)로 남긴다. 둘 다 「교인명부 기록」 보기로 간다.
+//    채우기를 켠 살펴보기가 명부에 물었으면 people.fill(물은 이름·채운 이름 — 채운 것이 없어도 · SEC-2)로 남긴다. 둘 다 「교인명부 기록」 보기로 간다.
 // ⚠️ 같은 분 판정을 줄마다 sameInEvent 로 부르지 않는다 — 600줄이면 요청이 2천 번을 넘는다.
 //    회차 명단을 한 번(allRows), 앱 계정을 한 번(evAccountIndex) 읽고 judgeUpload 가 같은 규칙으로 맞댄다.
 const EV_FILL_COLS = "name_key,kind2,mok1,mok3,school_dept,position,position_detail";   // ChurchPerson — 연락처·주소·생년월일은 읽지 않는다
@@ -1557,14 +1563,16 @@ async function evUpload(ctx: Ctx, b: any, save: boolean) {
   const counts = uploadCounts(items);
 
   if (!save) {
-    // 채운 교적 값이 화면으로 나간다 — 넣기와 상관없이 남긴다(설계 §2 기록 표)
-    const filled = filledNames(items);
-    if (filled.length) await audit(ctx, "people.fill", eventId, { rows: filled.length, names: filled });
+    // 명부에 물었으면(채우기 켬 · 명부 있음 · 물은 이름 > 0) 채운 것이 없어도 한 줄 — 채운 값뿐 아니라 「명부에 없는 이름」·
+    // 「같은 이름이 여러 분」·「소속이 달라」 같은 알림도 명부의 답이다(SEC-2 · 2026-09-30 친구 결정). 넣기와 상관없이 남긴다(설계 §2 기록 표).
+    const rec = fillRecord(items);
+    if (rec) await audit(ctx, "people.fill", eventId, rec);
     return { ok: true, total: signups.length, rows: uploadOut(items), counts };
   }
 
   // ── 넣기 ── 500줄 묶음. 묶음이 실패하면 그 묶음만 한 줄씩 다시(한 줄 때문에 나머지가 막히지 않게).
-  const recs = uploadRecords(items, eventId, new Date().toISOString());
+  //   지난 회차(마감일 < 오늘 KST)면 낸 날(created_at)을 그 마감일 한국 자정으로 — 모든 줄에 같은 값(M2 · 2026-09-30 친구 결정)
+  const recs = uploadRecords(items, eventId, new Date().toISOString(), pastEventCreatedAt(ev.closes_on, kstToday()));
   let saved = 0;
   const failed: { i: number; error: string }[] = [];
   for (let s = 0; s < recs.length; s += 500) {

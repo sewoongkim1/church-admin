@@ -29,7 +29,8 @@ const filtersText = (f) => Object.entries(f || {})
 
 // ---- 성경필사(암송) 기록 줄 ----
 // 칸 이름은 서버 index.ts 의 audit() 호출 그대로다 — event.create·settings(Task 6) · event.add·edit·delete(Task 7) ·
-// event.upload·people.lookup·people.fill(Task 8 · CONTRACT 5 「기록 모양」: upload 는 납작하게, lookup 은 {q, count}).
+// event.upload·people.lookup·people.fill(Task 8 · CONTRACT 5 「기록 모양」: upload 는 납작하게, lookup 은 {q, count} ·
+// fill 은 {rows, names, asked, askedNames} — asked·askedNames 는 2026-09-30 SEC-2 부터).
 // ⚠️ 칸 이름을 바꾸면 여기와 tests/audit.test.mjs 를 함께 — 안 고치면 기록 줄이 오류 없이 0·빈칸으로 보인다.
 const EV_STATUS = { draft: "준비 중", open: "열림", closed: "마감", archived: "보관" };   // 📋 회차·명단의 상태 이름과 같다
 const EV_FIELD = { title: "이름", short_title: "짧은 이름", subtitle: "부제", season: "묶음",
@@ -48,7 +49,7 @@ function rowWho(w) {
 }
 const evChanges = (b, a) => Object.keys(a || {})
   .map((k) => `${EV_FIELD[k] || k} ${evVal(k, (b || {})[k])} → ${evVal(k, a[k])}`);
-// 채운 분 이름 — 스무 분까지 적고 나머지는 수로(한 번에 600줄까지 올릴 수 있다)
+// 물은·채운 분 이름 — 스무 분까지 적고 나머지는 수로(한 번에 600줄까지 올릴 수 있다)
 const someNames = (names, max = 20) => {
   const n = Array.isArray(names) ? names : [];
   return n.slice(0, max).join(", ") + (n.length > max ? ` 외 ${n.length - max}명` : "");
@@ -104,7 +105,12 @@ export function detailText(r) {
       d.oddPosition ? `목록 밖 직분 ${d.oddPosition}` : "", d.failed ? `실패 ${d.failed}` : "");
   }
   if (r.action === "people.lookup") return `‘${d.q || ""}’ · ${d.count ?? 0}명`;
-  if (r.action === "people.fill") return joinDot(`채운 줄 ${d.rows ?? 0}`, someNames(d.names));
+  // people.fill — 2026-09-30 부터 명부에 물은 이름(asked·askedNames)도 남는다(SEC-2 · 채운 것이 없어도 한 줄). 그 전 기록은 옛 모양 그대로.
+  if (r.action === "people.fill") {
+    if (d.asked == null) return joinDot(`채운 줄 ${d.rows ?? 0}`, someNames(d.names));
+    const filled = someNames(d.names);
+    return joinDot(`물은 이름 ${d.asked}(${someNames(d.askedNames)})`, `채운 줄 ${d.rows ?? 0}${filled ? `(${filled})` : ""}`);
+  }
   return "";
 }
 

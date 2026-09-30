@@ -101,6 +101,19 @@ test("people.lookup · people.fill — 찾은 이름 · 결과 수 · 채운 분
   assert.ok(!t.includes("홍길동20"), t);
 });
 
+// SEC-2(2026-09-30 친구 결정) — 채우기를 켠 살펴보기는 명부에 물었으면 채운 것이 없어도 한 줄. 물은 이름을 먼저 적는다.
+test("people.fill — 물은 이름 N(이름들) · 채운 줄 M(이름들) · 채운 것이 없어도 · 옛 모양(asked 없음)은 그대로", () => {
+  assert.equal(detailText(R("people.fill", { rows: 0, names: [], asked: 2, askedNames: ["홍길동", "홍길순"] }, "lent-2026")),
+    "물은 이름 2(홍길동, 홍길순) · 채운 줄 0");
+  assert.equal(detailText(R("people.fill", { rows: 1, names: ["홍길동"], asked: 3, askedNames: ["홍길동", "홍길순", "홍길남"] })),
+    "물은 이름 3(홍길동, 홍길순, 홍길남) · 채운 줄 1(홍길동)");
+  const many = Array.from({ length: 25 }, (_, i) => "홍길동" + i);
+  const t = detailText(R("people.fill", { rows: 0, names: [], asked: 25, askedNames: many }));
+  assert.equal(t, `물은 이름 25(${many.slice(0, 20).join(", ")} 외 5명) · 채운 줄 0`);
+  // 2026-09-30 전 기록(asked 칸 없음)은 지금 모양 그대로
+  assert.equal(detailText(R("people.fill", { rows: 2, names: ["홍길동", "홍길순"] })), "채운 줄 2 · 홍길동, 홍길순");
+});
+
 test("옛 기록은 그대로 — people.search · 모르는 기록은 빈 줄", () => {
   assert.equal(detailText(R("people.search", { q: "홍", filters: {}, total: 3 })), "‘홍’ · 3명");
   assert.equal(detailText(R("something.else", { a: 1 })), "");

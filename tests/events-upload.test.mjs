@@ -7,6 +7,8 @@ import {
   lookupName, lookupOut, UPLOAD_TAG, FILL_TAG, LOOKUP_MAX,
 } from "../supabase/functions/church-admin/events-upload.ts";
 import { sameKeys } from "../supabase/functions/church-admin/events-rows.ts";
+// 친구 결정(2026-09-30) — SEC-2 people.fill 에 물은 이름 · M5 직분만 채운 줄의 표기
+import { fillRecord, POSITION_FILL_TAG } from "../supabase/functions/church-admin/events-upload.ts";
 
 // 시험 이름은 모두 지어낸 글자다(진짜 명단은 저장소에 넣지 않는다)
 const R = (name, gu = "", mok = "", pos = "") => ({ name, gu, mok, pos });
@@ -333,4 +335,91 @@ test("applyFill — 명부 값이 명단 모양에 맞지 않으면(부서 「�
   assert.equal(it[0].filled, false);
   assert.deepEqual(it[0].row, before);
   assert.ok(it[0].notes.some((n) => n.includes("교인명부 값이 명단 모양에 맞지 않아 채우지 않았어요")), JSON.stringify(it[0].notes));
+});
+
+// ---------- 친구 결정(2026-09-30) — SEC-2 · M2 · M5 ----------
+// SEC-2: 채우기를 켠 살펴보기는 채운 것이 없어도 명부에 이름을 묻는다(없는 이름·동명이인·소속이 달라 알림이 그 답이다).
+//   명부에 물었으면(명부 있음 · 물은 이름 > 0) people.fill 한 줄 — 물은 이름·채운 이름.
+test("fillRecord — 명부에 물었으면 채운 것이 없어도 한 줄 {rows, names, asked, askedNames} · 물은 이름은 이름 키마다 하나 · 빈칸 없는 줄은 묻지 않는다", () => {
+  const it = tidyUpload([
+    R("가나"),                     // 0 물음 · 명부에 없음
+    R("마바"),                     // 1 물음 · 동명이인
+    R("가 나"),                    // 2 0번과 같은 이름 키(띄어쓰기) — 한 번만 물었다
+    R("카타", "화평", "3", "집사"), // 3 빈칸 없음 — 묻지 않는다
+    R("x,y"),                      // 4 모양 틀림 — 묻지 않는다
+  ]);
+  applyFill(it, new Map([
+    ["마바", [P({ name_key: "마바", mok1: "믿음", mok3: "믿음-1목장" }), P({ name_key: "마바", mok1: "사랑", mok3: "사랑-2목장" })]],
+  ]));
+  assert.deepEqual(fillRecord(it), { rows: 0, names: [], asked: 2, askedNames: ["가나", "마바"] });
+  assert.deepEqual(Object.keys(fillRecord(it)), ["rows", "names", "asked", "askedNames"]);
+});
+
+test("fillRecord — 채운 줄이 있으면 채운 이름도(지금 모양에 asked·askedNames 를 더한다) · 명부가 없으면(null) · 물은 것이 없으면 null", () => {
+  const it = tidyUpload([R("가나"), R("사아")]);
+  applyFill(it, new Map([["가나", [P({ name_key: "가나", mok1: "소망", mok3: "소망-12목장", position: "권사" })]]]));
+  assert.deepEqual(fillRecord(it), { rows: 1, names: ["가나"], asked: 2, askedNames: ["가나", "사아"] });
+  // 명부가 한 번도 안 올라왔다 — 묻지 않았다
+  assert.equal(fillRecord(applyFill(tidyUpload([R("가나")]), null)), null);
+  // 채우기를 안 불렀다(끔) · 빈칸이 없어 물을 것이 없다
+  assert.equal(fillRecord(tidyUpload([R("가나")])), null);
+  assert.equal(fillRecord(applyFill(tidyUpload([R("카타", "화평", "3", "집사")]), new Map())), null);
+  // 채웠다가 judgeUpload 가 「이미 있음」으로 바꾼 줄도 채운 값은 화면에 나갔다 — 채운 이름에 든다(filledNames 와 같다)
+  const again = tidyUpload([R("가나")]);
+  applyFill(again, new Map([["가나", [P({ name_key: "가나", mok1: "소망", mok3: "소망-12목장" })]]]));
+  judgeUpload(again, { ...NO_IDX, eventKeys: new Set(["교구|소망|12|||가나"]) });
+  assert.equal(again[0].mark, "same");
+  assert.deepEqual(fillRecord(again), { rows: 1, names: ["가나"], asked: 1, askedNames: ["가나"] });
+});
+
+test("applyFill · uploadOut — 물었다는 표시와 채운 칸은 화면에 싣지 않는다", () => {
+  const it = tidyUpload([R("가나", "소망", "12", "")]);
+  applyFill(it, new Map([["가나", [P({ name_key: "가나", mok1: "소망", mok3: "소망-12목장", position: "권사" })]]]));
+  for (const o of uploadOut(it)) assert.deepEqual(Object.keys(o).sort(), ["error", "i", "mark", "notes", "row"]);
+});
+
+// M5: 직분만 채운 줄(구분·교구·목장은 명단 그대로)은 「직분: 교인명부로 채움」. 소속(구분·교구·목장)을 하나라도 채웠으면
+//   운영에 이미 쓰인 「소속: 교인명부로 채움」 그대로.
+test("uploadRecords — 메모 표기: 직분만 채움 → 「직분: 교인명부로 채움」 · 소속을 채움(목장만이라도·직분과 함께도) → 「소속: 교인명부로 채움」", () => {
+  const it = tidyUpload([
+    R("가나", "소망", "12", ""),   // 0 직분만(명부 권사)
+    R("다라", "화평", "", "집사"), // 1 목장만
+    R("마바", "화평", "", ""),     // 2 목장·직분
+    R("사아"),                     // 3 소속 한 벌·직분
+  ]);
+  applyFill(it, new Map([
+    ["가나", [P({ name_key: "가나", mok1: "소망", mok3: "소망-12목장", position: "권사" })]],
+    ["다라", [P({ name_key: "다라", mok1: "화평", mok3: "화평-5목장", position: "권사" })]],
+    ["마바", [P({ name_key: "마바", mok1: "화평", mok3: "화평-6목장", position: "권사" })]],
+    ["사아", [P({ name_key: "사아", mok1: "기쁨", mok3: "기쁨-1목장", position: "집사" })]],
+  ]));
+  assert.deepEqual(it.map((x) => x.mark), ["fill", "fill", "fill", "fill"]);
+  assert.deepEqual(it[0].row, { who_type: "교구", group_name: "소망", sub_name: "12", name: "가나", position: "권사" });
+  judgeUpload(it, NO_IDX);
+  const recs = uploadRecords(it, "ev-1", "2026-09-30T00:00:00.000Z");
+  assert.equal(POSITION_FILL_TAG, "직분: 교인명부로 채움");
+  assert.deepEqual(recs.map((x) => x.rec.note), [
+    "명단 올리기 / 직분: 교인명부로 채움",
+    "명단 올리기 / 소속: 교인명부로 채움",
+    "명단 올리기 / 소속: 교인명부로 채움",
+    "명단 올리기 / 소속: 교인명부로 채움",
+  ]);
+});
+
+// M2: 지난 회차(마감일 < 오늘)에 넣는 줄은 created_at 을 그 회차 마감일 KST 자정으로(부르는 쪽이 pastEventCreatedAt 으로 정해 넘긴다).
+test("uploadRecords — 낸 날(created_at)을 받으면 모든 줄에 같은 값 · 안 받으면 칸 자체가 없다(DB 기본값 now()) · 묶음 insert 칸이 같다", () => {
+  const it = tidyUpload([R("홍길동", "화평", "3", "집사"), R("가나")]);
+  applyFill(it, new Map([["가나", [P({ name_key: "가나", mok1: "소망", mok3: "소망-12목장", position: "권사" })]]]));
+  judgeUpload(it, NO_IDX);
+  const past = uploadRecords(it, "lent-2022", "2026-09-30T01:00:00.000Z", "2022-04-16T00:00:00+09:00");
+  assert.equal(past.length, 2);
+  for (const x of past) {
+    assert.equal(x.rec.created_at, "2022-04-16T00:00:00+09:00");
+    assert.equal(x.rec.updated_at, "2026-09-30T01:00:00.000Z", "고친 때(updated_at)는 지금 그대로");
+  }
+  assert.equal(new Set(past.map((x) => Object.keys(x.rec).sort().join(","))).size, 1, "묶음 insert 는 칸이 같아야 한다(PGRST102)");
+  for (const open of [uploadRecords(it, "autumn-2026", "2026-09-30T01:00:00.000Z", null),
+    uploadRecords(it, "autumn-2026", "2026-09-30T01:00:00.000Z")]) {
+    for (const x of open) assert.equal("created_at" in x.rec, false, "열린 회차는 DB 기본값(now())");
+  }
 });

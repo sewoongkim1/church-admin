@@ -2089,7 +2089,7 @@ if(getPw()) load(); else renderLogin();
 46. 이관 계정 잇기는 `users` 통째 읽기(1,000행에서 잘림)로 글자 그대로 같은 `identity_key` 만 본다 — `user_identity_aliases` 는 안 본다 —
     index.ts:5861-5875. **[바뀜]** `usersByKeys`(users + aliases, 100개씩).
 47. 그 회차에 앱으로 낸 계정은 이관 줄에 잇지 않는다 · 한 계정은 한 줄에만 잇는다 — index.ts:5877-5893.
-48. 이관 `note` 는 `norm` 만(길이 상한 없음) · `phone`·`memo` 는 빈 값 — index.ts:5853-5855. **[바뀜]** 새 쪽 `note` 는 붙임말(`담당자가 더함`·`명단 올리기`·`소속: 교인명부로 채움`, ` / ` 로 이음)을 붙인 **뒤** 500자가 넘으면 `note-too-long`(창의 글자 수 상한은 480) · `phone`·`memo` 는 쓰지 않는다.
+48. 이관 `note` 는 `norm` 만(길이 상한 없음) · `phone`·`memo` 는 빈 값 — index.ts:5853-5855. **[바뀜]** 새 쪽 `note` 는 붙임말(`담당자가 더함`·`명단 올리기`·`소속: 교인명부로 채움`·`직분: 교인명부로 채움`(직분만 채운 줄 · 2026-09-30), ` / ` 로 이음)을 붙인 **뒤** 500자가 넘으면 `note-too-long`(창의 글자 수 상한은 480) · `phone`·`memo` 는 쓰지 않는다.
 49. 공개 명단(`eventRosterPublic`)은 로그인 없이 다섯 칸만, `evtListable` 인 회차만 준다 — index.ts:5725-5742. **[안 옮김]** 그대로 둔다.
 50. 첫 화면 목록(`eventOpenList`)은 관리자 비밀번호가 없으면 `evtListable` 인 회차만 준다 — index.ts:5291-5294, 5311-5314. **[안 옮김]** 그대로 둔다.
 51. 성도님이 앱에서 내면 `(event_id, user_id)` upsert 가 소속·직분·phone·memo·answers 를 덮고 `source='app'` 으로 만든다 · `note` 는 남는다 ·
@@ -2151,6 +2151,9 @@ chk "eventExcuse 거부" "$(jqn 'd.get("error") in ("unauthorized","no-password-
 - **얼리는 줄의 자리**: 4-1 — `adminError` 검사 바로 뒤.
 - **CSV·인쇄**: 옛 CSV 의 메모 두 칸·인정·주·등록일과 인쇄는 옮기지 않는다(설계 3절·7절). 자격 회차의 인정·주가 필요하면 남겨 둔 옛 화면에서 내려받는다.
 - **관리 허브 타일(3.14 · 동작 58)**: 이번에는 옛 주소 그대로 — 자격 인정이 교회 어드민으로 옮겨진 다음 단계에서 갈아탄다.
+- **이어 둔 줄과 성경암송 계정(동작 54·57 · 2.1 · 2.4 · M7 — 2026-09-30 친구 결정: 표는 성경암송 것이라 그대로 두고 문서로만 알린다)**:
+  - 앱 계정에 이어 둔 줄은 성경암송에서 그 계정을 지우면 함께 지워진다(`event_signups.user_id` on delete cascade · events.sql:61 · 담당자 줄도 · 교회 어드민 기록에는 안 남는다 — DB 가 지워 `event.delete` 가 없다). 계정 합치기로는 안 사라진다(`admin_merge_members` 가 줄을 새 계정으로 옮긴 **뒤** 옛 계정을 지운다).
+  - 같은 분의 두 계정이 한 회차에 줄을 하나씩 가져 성경암송 기록 합치기가 막히면(`merge-signup-conflict` · member_merge.sql:125-130 · 성경암송 `admin-members.html` 「같은 이벤트의 상세 신청이 양쪽에 있습니다」), 교회 어드민에서 담당자 줄을 뺀 뒤 다시 합친다. 뺄 수 있는 것은 담당자 줄(`source='import'`)뿐 — 두 줄 다 앱에서 낸 줄(`app-row` · 성도님이 등록 기간 안에 앱에서 취소 · 동작 52)이거나 자격 회차(`eligibility-event`)면 교회 어드민에서는 못 뺀다.
 
 ---
 

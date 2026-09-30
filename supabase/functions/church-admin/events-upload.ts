@@ -6,7 +6,7 @@
 //
 //   흐름: tooManyRows → [서버: 회차] → uploadEventError → tidyUpload(다듬기·모양) → [서버: 교인명부 후보] → applyFill(빈칸 채우기)
 //        → [서버: 이 회차 명단·앱 계정] → judgeUpload(이미 있음·파일 안 접기·계정 잇기)
-//        → uploadCounts · uploadOut(화면) · uploadRecords(넣기) · filledNames(people.fill)
+//        → uploadCounts · uploadOut(화면) · uploadRecords(넣기) · fillRecord(people.fill — 물은 이름·채운 이름)
 //   ⚠️ 살펴보기(evUploadCheck)와 넣기(evUploadSave)가 이 흐름을 **처음부터 똑같이** 돈다 — 화면이 보낸 판정을 믿지 않는다.
 //   ⚠️ 같은 분 후보 키는 한 분 더하기·고치기와 **같은 함수**(events-rows.ts sameKeys — 「07」 꼴 포함)를 쓴다.
 //   ⚠️ 계정은 찾기만 한다(만들지 않는다). uid 는 서버 안에서만 쓰고 uploadOut 에 싣지 않는다.
@@ -33,6 +33,8 @@ export type UploadItem = {
   filled: boolean;        // 교인명부 값이 들어갔나(people.fill 기록 대상)
   uid: string | null;     // 이을 앱 계정 — 찾은 계정이 하나일 때만
   orig?: UpRow;           // 채우기 **전** 줄 — 채우기 없이도 넣을 수 있던 줄(add)을 채웠을 때만(applyFill · 최종 검토 I1)
+  asked?: boolean;        // 이 줄 이름을 교인명부에 물었나(applyFill · 명부가 있을 때만) — people.fill 의 물은 이름(SEC-2)
+  fillKeys?: string[];    // 교인명부로 채운 칸(who_type·group_name·sub_name·position) — 메모 표기를 가른다(M5)
 };
 export type UploadCounts = { add: number; same: number; blank: number; bad: number; fill: number; sameName: number; oddPosition: number };
 export type UploadOut = {
@@ -48,6 +50,10 @@ export type JudgeIdx = { eventKeys: Set<string>; eventUids: Set<string>; users: 
 // 올리기의 메모는 이 표기뿐이라 500자(BE_NOTE_MAX)에 닿지 않는다.
 export const UPLOAD_TAG = "명단 올리기";
 export const FILL_TAG = "소속: 교인명부로 채움";
+// 직분만 채운 줄(구분·교구·목장은 명단 그대로) — M5(2026-09-30 친구 결정). 소속을 하나라도 채웠으면 위 FILL_TAG 그대로
+// (운영에 이미 그 표기로 들어간 줄이 있다 — 바꾸지 않는다).
+export const POSITION_FILL_TAG = "직분: 교인명부로 채움";
+const AFFIL_KEYS = ["who_type", "group_name", "sub_name"];
 // 교인명부 찾기 상한(설계 §2 evPeopleLookup)
 export const LOOKUP_MAX = 20;
 
@@ -136,7 +142,9 @@ export function applyFill(items: UploadItem[], cands: Map<string, ChurchPerson[]
     if ((it.mark !== "add" && it.mark !== "blank") || !it.row || !needsFill(it.row)) continue;
     if (!cands) { it.notes.push(NO_DIRECTORY_NOTE); continue; }
     const row = it.row;
-    const d = fillDecision(row, cands.get(nameKey(row.name)) ?? []);
+    const key = nameKey(row.name);
+    if (key) it.asked = true;                  // fillNames 가 명부에 물은 이름 키(빈 키는 묻지 않았다)
+    const d = fillDecision(row, cands.get(key) ?? []);
     if (d.reason !== "filled" || !d.patch) {
       // 동명이인 — 소속을 못 정한 줄만 「교인명부 동명이인」. 소속이 적힌 줄은 add 그대로(빈 직분은 빈 채로 넣는다).
       if (it.mark === "blank" && d.reason === "same-name") it.mark = "same-name";
@@ -166,6 +174,7 @@ export function applyFill(items: UploadItem[], cands: Map<string, ChurchPerson[]
     // 채우기 전 줄을 남긴다 — 채우기 없이도 넣을 수 있던 줄(add)만. 채우기를 끄고 먼저 올렸으면 그 줄은
     // 목장이 빈 채로 들어가 있어 채운 목장의 키로는 못 찾는다 → judgeUpload 가 이 줄의 키로도 본다(I1).
     if (it.mark === "add") it.orig = { ...row };
+    it.fillKeys = FILL_KEYS.filter((k) => next[k] !== row[k]);
     it.row = next;
     it.mark = "fill";
     it.filled = true;
@@ -267,8 +276,16 @@ export function uploadOut(items: UploadItem[]): UploadOut[] {
   }));
 }
 
+// 채운 줄의 메모 표기 — 소속(구분·교구·목장)을 하나라도 채웠으면 「소속: …」, 직분만 채웠으면 「직분: …」(M5).
+//   무엇을 채웠는지 모르면(fillKeys 없음) 운영에 쓰여 온 「소속: …」.
+const fillTagOf = (it: UploadItem): string =>
+  it.fillKeys && it.fillKeys.length && !it.fillKeys.some((k) => AFFIL_KEYS.includes(k)) ? POSITION_FILL_TAG : FILL_TAG;
+
 // 넣을 줄 — 모든 줄의 칸이 같다(PostgREST 묶음 insert 는 칸이 다르면 PGRST102). phone·memo·answers 는 넣지 않는다(기본값).
-export function uploadRecords(items: UploadItem[], eventId: string, now: string): { i: number; rec: Record<string, unknown> }[] {
+//   createdAt — 지난 회차면 그 마감일 KST 자정(events-rules.ts pastEventCreatedAt · M2). 없으면 칸을 싣지 않는다(DB 기본값 now()).
+//   한 번 올리기는 한 회차라 모든 줄이 같은 값이다(묶음 칸이 같게).
+export function uploadRecords(items: UploadItem[], eventId: string, now: string, createdAt: string | null = null):
+  { i: number; rec: Record<string, unknown> }[] {
   return items.filter(live).map((it) => {
     const r = it.row as EvRow;
     return {
@@ -276,8 +293,9 @@ export function uploadRecords(items: UploadItem[], eventId: string, now: string)
       rec: {
         event_id: eventId, user_id: it.uid, ident_key: identKey(r),
         who_type: r.who_type, group_name: r.group_name, sub_name: r.sub_name, name: r.name, position: r.position,
-        note: it.mark === "fill" ? tagNote(UPLOAD_TAG, FILL_TAG) : UPLOAD_TAG,
+        note: it.mark === "fill" ? tagNote(UPLOAD_TAG, fillTagOf(it)) : UPLOAD_TAG,
         source: "import", updated_at: now,
+        ...(createdAt ? { created_at: createdAt } : {}),
       },
     };
   });
@@ -286,6 +304,25 @@ export function uploadRecords(items: UploadItem[], eventId: string, now: string)
 // people.fill 기록에 남길 이름 — 교인명부 값이 들어간 줄(이미 있음으로 끝난 줄도 채운 값은 화면에 나간다)
 export const filledNames = (items: UploadItem[]): string[] =>
   items.filter((it) => it.filled && it.row).map((it) => it.row!.name);
+
+// people.fill 한 줄 — 명부에 물었으면(채우기 켬 · 명부 있음 · 물은 이름 > 0) 채운 것이 없어도 남긴다(SEC-2 · 2026-09-30 친구 결정).
+//   채우지 못한 까닭 알림(「교인명부에 없는 이름」·「같은 이름이 여러 분」·「아이·어른이 달라」·「소속이 달라」)도 명부의 답이라서다.
+//   물은 이름은 이름 키마다 하나(fillNames 가 키마다 한 번 묻는다 · 먼저 나온 줄의 이름) · asked = 그 수. 물은 것이 없으면 null(기록 없음).
+//   ⚠️ 칸 이름을 바꾸면 js/menus/system/audit.js · tests/audit.test.mjs 도 함께.
+export function fillRecord(items: UploadItem[]): { rows: number; names: string[]; asked: number; askedNames: string[] } | null {
+  const seen = new Set<string>();
+  const askedNames: string[] = [];
+  for (const it of items) {
+    if (!it.asked || !it.row) continue;
+    const k = nameKey(it.row.name);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    askedNames.push(it.row.name);
+  }
+  if (!askedNames.length) return null;
+  const names = filledNames(items);
+  return { rows: names.length, names, asked: askedNames.length, askedNames };
+}
 
 // ④ 교인명부 찾기 — 이름 다듬기·판정표(no-name → bad-char → too-long, checkRow 와 같은 차례)·이름 키(완성형·띄어쓰기 없음).
 //   틀린 이름이면 key 는 "" — 명부에 묻지 않는다.

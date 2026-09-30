@@ -1729,6 +1729,10 @@ test("성경필사 명단 올리기 살펴보기: 줄마다 판정 · 빈칸만 
   assert.equal(fills.length, 1, JSON.stringify(fills));
   assert.equal(fills[0].detail.rows, 2);
   assert.deepEqual([...fills[0].detail.names].sort(), [upName("무"), upName("정")].sort());
+  // 물은 이름(SEC-2) — 빈칸이 있는 줄(을·정·무·기·경)만, 줄 차례대로 · 빈칸이 없는 줄(갑·병·신)과 모양 틀린 줄은 묻지 않았다
+  assert.deepEqual(Object.keys(fills[0].detail).sort(), ["asked", "askedNames", "names", "rows"]);   // jsonb 는 칸 차례를 안 지킨다
+  assert.equal(fills[0].detail.asked, 5);
+  assert.deepEqual(fills[0].detail.askedNames, ["을", "정", "무", "기", "경"].map(upName));
 });
 
 test("성경필사 명단 올리기 넣기: 넣을 줄만 · 계정은 찾기만 해서 잇는다 · 메모 표기 · 두 번째는 0건 · event.upload 는 건수만(납작하게)", async () => {
@@ -2095,4 +2099,63 @@ test("시험 참여자: 찾기 → 더하기 → 명단 → 다시 더하기(alr
     await rest("app_config?key=eq.ministryTesters", "DELETE");
     if (orig !== null) await rest("app_config", "POST", { key: "ministryTesters", value: orig });
   }
+});
+
+// ---------- 친구 결정(2026-09-30) — SEC-2 · M2 · M5 ----------
+// 회차 둘을 스스로 만든다(앞 시험 순서에 기대지 않게) — 지난 회차(2000-08 마감) · 앞날 회차(2099 마감). 둘 다 draft 라 성도님께 안 보인다.
+//   after() 가 ca-test-*<STAMP>* 로 지운다(줄은 CASCADE). 이름은 올리기 시험의 교인명부(정 = 한 분 소망 12 권사 · 기 = 동명이인)를 빌린다.
+test("성경필사 친구 결정: 명부에 물었으면 채운 것이 없어도 people.fill(물은 이름) · 직분만 채운 줄은 「직분: 교인명부로 채움」 · 지난 회차에 넣은 줄의 낸 날은 마감일 KST 자정(올리기·더하기) · 열린 회차는 지금", async () => {
+  await upFixtures();
+  const t = people.bibleevent.token;
+  const past = "ca-test-upd-" + STAMP, future = "ca-test-upn-" + STAMP;
+  const needs = { position: true, phone: false, memo: false, extra: [] };
+  await rest("events", "POST", [
+    { id: past, title: "ca-test 지난 회차 " + STAMP, opens_on: "2000-08-01", closes_on: "2000-08-31", status: "draft", kind: "signup", needs },
+    { id: future, title: "ca-test 앞날 회차 " + STAMP, opens_on: "2099-12-01", closes_on: "2099-12-31", status: "draft", kind: "signup", needs },
+  ]);
+  const fillsOf = async (ev) => (await call(people.super.token, "auditList", { limit: 200, kind: "people" })).body.rows
+    .filter((r) => r.action === "people.fill" && r.target === ev);
+
+  // SEC-2 ① 채운 것이 없어도 — 명부에 없는 이름(경) · 동명이인(기) 두 이름을 물었다 → 한 줄 {rows 0, names [], asked 2}
+  const c1 = await call(t, "evUploadCheck", { event_id: past, fill: true,
+    rows: [{ name: upName("경"), gu: "", mok: "", pos: "" }, { name: upName("기"), gu: "", mok: "", pos: "" }] });
+  assert.equal(c1.body.ok, true, JSON.stringify(c1.body));
+  assert.deepEqual(c1.body.rows.map((r) => r.mark), ["blank", "same-name"], JSON.stringify(c1.body.rows));
+  let fills = await fillsOf(past);
+  assert.equal(fills.length, 1, JSON.stringify(fills));
+  assert.deepEqual(fills[0].detail, { rows: 0, names: [], asked: 2, askedNames: [upName("경"), upName("기")] });
+  // ② 물을 것이 없으면(빈칸 없는 줄뿐) · 채우기를 끄면 — 남기지 않는다
+  const c2 = await call(t, "evUploadCheck", { event_id: past, fill: true, rows: [{ name: upName("신"), gu: "화평", mok: "3", pos: "집사" }] });
+  assert.equal(c2.body.ok, true, JSON.stringify(c2.body));
+  const c3 = await call(t, "evUploadCheck", { event_id: past, fill: false, rows: [{ name: upName("경"), gu: "", mok: "", pos: "" }] });
+  assert.equal(c3.body.ok, true, JSON.stringify(c3.body));
+  assert.equal((await fillsOf(past)).length, 1, "물을 것이 없거나 채우기를 끈 살펴보기가 people.fill 을 남겼다");
+
+  // M5 · M2 — 소속(소망 12)이 적힌 줄의 빈 직분만 교인명부(권사)로 · 지난 회차라 낸 날은 2000-08-31 한국 자정
+  const s1 = await call(t, "evUploadSave", { event_id: past, fill: true, rows: [{ name: upName("정"), gu: "소망", mok: "12", pos: "" }] });
+  assert.equal(s1.body.ok, true, JSON.stringify(s1.body));
+  assert.equal(s1.body.saved, 1, JSON.stringify(s1.body));
+  const [pr] = await rest(`event_signups?select=group_name,sub_name,position,note,created_at,updated_at&event_id=eq.${past}`
+    + `&name=eq.${encodeURIComponent(upName("정"))}`, "GET");
+  assert.deepEqual([pr.group_name, pr.sub_name, pr.position], ["소망", "12", "권사"]);
+  assert.equal(pr.note, "명단 올리기 / 직분: 교인명부로 채움");
+  const PAST_AT = Date.parse("2000-08-31T00:00:00+09:00");
+  assert.equal(Date.parse(pr.created_at), PAST_AT, "지난 회차 올리기 — 낸 날은 마감일 KST 자정: " + pr.created_at);
+  assert.ok(Math.abs(Date.parse(pr.updated_at) - Date.now()) < 10 * 60 * 1000, "고친 때는 지금: " + pr.updated_at);
+  // 한 분 더하기도 같다 — 화면의 「낸 날」(at)은 마감일
+  const a1 = await call(t, "evRowAdd", { event_id: past, row: { who_type: "교구", group: "화평", sub: "4", name: upName("임"), position: "", note: "" } });
+  assert.equal(a1.body.ok, true, JSON.stringify(a1.body));
+  assert.equal(a1.body.row.at, "2000-08-31");
+  const [ar] = await rest(`event_signups?select=created_at&id=eq.${a1.body.row.id}`, "GET");
+  assert.equal(Date.parse(ar.created_at), PAST_AT, "지난 회차 더하기 — 낸 날은 마감일 KST 자정: " + ar.created_at);
+
+  // 열린·앞날 회차 — 낸 날은 지금(DB 기본값)
+  const s2 = await call(t, "evUploadSave", { event_id: future, fill: false, rows: [{ name: upName("신"), gu: "화평", mok: "3", pos: "집사" }] });
+  assert.equal(s2.body.saved, 1, JSON.stringify(s2.body));
+  const a2 = await call(t, "evRowAdd", { event_id: future, row: { who_type: "교구", group: "화평", sub: "4", name: upName("임"), position: "", note: "" } });
+  assert.equal(a2.body.ok, true, JSON.stringify(a2.body));
+  const nowRows = await rest(`event_signups?select=name,created_at,note&event_id=eq.${future}&order=id`, "GET");
+  assert.equal(nowRows.length, 2);
+  for (const r of nowRows) assert.ok(Math.abs(Date.parse(r.created_at) - Date.now()) < 10 * 60 * 1000, "열린 회차는 지금: " + JSON.stringify(r));
+  assert.deepEqual(nowRows.map((r) => r.note), ["명단 올리기", "담당자가 더함"]);
 });

@@ -21,6 +21,7 @@
 //   ③ 엑셀 읽기 실패는 원문의 세 갈래 안내 대신 한 가지로 통일했다(사역신청 4·5단계 결정) — 결국
 //      "복사해 붙여넣어 주세요"로 돌아가는 안내라 가짓수를 늘릴 실익이 적다.
 import { esc, dialog, busy, errorText } from "../../core/ui.js";
+import { loadXlsx } from "../../core/xlsx.js";   // SheetJS — 📤 명단 올리기와 같은 한 곳(FE-6 · 2026-09-30)
 import { churchBadgeHtml, CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
 
 const TITLE = `<h2 class="page-title">📋 종이 명단 올리기</h2>`;
@@ -28,7 +29,6 @@ const TITLE = `<h2 class="page-title">📋 종이 명단 올리기</h2>`;
 // ⚠️ 칸 이름이 아니라 **자리(순서)**로 읽는다 — 양식의 칸 차례를 바꾸면 조용히 어긋난다.
 const MP_COLS = ["교구", "목장", "이름", "직분", "휴대폰", "사역팀", "부서(선택)", "하위 선택(선택)",
   "신청일(선택)", "임명일(선택)", "상태(선택)", "사유(취소일 때)"];
-const XLSX_CDN = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
 
 // 줄에 적은 상태 — 서버 PAPER_ALIAS(paper.ts)와 같은 표. 여기서는 확인 창 미리보기에만 쓴다 —
 // 실제 판정(사역 목록에 있는지·상한·중복 등)은 언제나 서버(ministryPaper)가 처음부터 다시 한다.
@@ -79,18 +79,6 @@ export function mpCell(v) {
     return v.getFullYear() + "-" + p(v.getMonth() + 1) + "-" + p(v.getDate());
   }
   return String(v).trim();
-}
-
-// .xlsx 는 압축 파일이라 브라우저가 혼자 못 읽는다 — 고를 때만 CDN 에서 내려받는다(번들에 없음).
-function loadXlsx() {
-  if (window.XLSX) return Promise.resolve(window.XLSX);
-  return new Promise((res, rej) => {
-    const s = document.createElement("script");
-    s.src = XLSX_CDN;
-    s.onload = () => (window.XLSX ? res(window.XLSX) : rej(new Error("no-xlsx")));
-    s.onerror = () => rej(new Error("no-cdn"));
-    document.head.appendChild(s);
-  });
 }
 
 // 「명단 넣기」 단추는 살펴본 뒤(saved 가 아니고) 넣을 것이 하나라도 있을 때만 보인다.

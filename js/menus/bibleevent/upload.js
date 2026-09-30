@@ -4,13 +4,15 @@
 // 서버 evUploadCheck(살펴보기)·evUploadSave(넣기)가 둘 다 **처음부터 다시** 다듬고 판정한다 — 이 화면은 칸을 나눠 보내고
 // 받은 판정을 보여 줄 뿐이다. 넣은 줄은 source='import', 메모 「명단 올리기」(서버가 붙인다).
 // ⚠️ 자격 회차(needs.eligibility 가 있는 회차 — 가을 말씀 동행)는 고르개에 나오지 않는다(서버도 eligibility-event 로 막는다).
-// ⚠️ 「빈칸은 교인명부로 채우기」를 켜고 살펴보면 교인명부 값(소속·직분)이 화면에 나온다 — 서버가 people.fill 기록(채운 분 이름)을 남긴다.
+// ⚠️ 「빈칸은 교인명부로 채우기」를 켜고 살펴보면 교인명부 값(소속·직분)이 화면에 나온다 — 서버가 people.fill 기록(물은 이름·채운 분 이름 ·
+//    명부에 물었으면 채운 것이 없어도 · SEC-2 2026-09-30)을 남긴다.
 // ⚠️ 시스템 창을 띄우지 않는다 — 확인·알림은 ui.js dialog, 고르기는 picker.js pickOne. 엑셀 **파일 고르기**만 운영체제 창이라
 //    붙여넣기 칸과 끌어다 놓기를 함께 둔다.
 // ⚠️ 회차를 고르면 주소를 #/be-upload?ev=<id> 로 바꾼다 — replaceState 라 hashchange 가 안 나고(route 가 다시 안 그린다),
 //    붙여넣은 글이 그대로 남는다.
 import { esc, dialog, busy, errorText } from "../../core/ui.js";
 import { pickOne } from "../../core/picker.js";
+import { loadXlsx } from "../../core/xlsx.js";
 import {
   ORDERS, COL_LABEL, MAX_ROWS, PUBLIC_MAX, MARKS, MARK_ORDER, orderOf, parseSheet, sampleLine, sheetText, decodeText,
   sigOf, markCounts, countOf, displayRow, eventOptions, pickFrom, evHint, overLimit, confirmHtml,
@@ -19,7 +21,6 @@ import {
 import { evName } from "./roster-logic.js";
 
 const TITLE = `<h2 class="page-title">📤 명단 올리기</h2>`;
-const XLSX_CDN = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";   // ministry/paper.js 와 같은 판
 const evHref = (id) => "#/be-upload?ev=" + encodeURIComponent(id);
 
 // 메뉴를 옮겨 다녀도 남는 것 — 고른 회차·칸 차례·채우기. 붙여넣은 글과 판정은 남기지 않는다(다시 살펴보게).
@@ -32,18 +33,6 @@ let detachPrev = null;   // 앞 화면이 window·matchMedia 에 단 것을 떼�
 // not-found 는 여기서는 **회차**가 없다는 뜻이다(uploadEventError) — 공용 글 「그분을 찾지 못했어요」 대신 EVENT_GONE(FE-5)
 const errMsg = (d) => (d?.error === "not-found" ? EVENT_GONE
   : d?.error && !/^[a-z-]+$/.test(d.error) ? d.error : errorText(d));
-
-// .xlsx 는 압축 파일이라 브라우저가 혼자 못 읽는다 — 고를 때만 CDN 에서 내려받는다(ministry/paper.js loadXlsx 를 베꼈다)
-function loadXlsx() {
-  if (window.XLSX) return Promise.resolve(window.XLSX);
-  return new Promise((res, rej) => {
-    const s = document.createElement("script");
-    s.src = XLSX_CDN;
-    s.onload = () => (window.XLSX ? res(window.XLSX) : rej(new Error("no-xlsx")));
-    s.onerror = () => rej(new Error("no-cdn"));
-    document.head.appendChild(s);
-  });
-}
 
 const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
 
@@ -109,7 +98,7 @@ export async function render(el, { call, query }) {
       <label class="be-up-fill"><input type="checkbox" id="be-up-fill">
         <span><b>빈칸은 교인명부로 채우기</b>
           <small>교인명부에 그 이름이 한 분뿐일 때만 비어 있는 교구·목장·직분을 채워요 — 적힌 칸은 덮지 않고, 적힌 소속이 교인명부와 다르면 채우지 않아요.
-            살펴보기만 해도 채운 분 이름이 열람 기록에 남아요.</small></span></label>
+            살펴보기만 해도 교인명부에 물어본 이름(빈칸이 있는 줄)과 채운 분 이름이 열람 기록에 남아요.</small></span></label>
       <div id="be-up-sum" class="be-up-sum"></div>
       <div id="be-up-marks" class="tabs be-up-marks" role="group" aria-label="판정으로 거르기" hidden></div>
       <div id="be-up-list"></div>
