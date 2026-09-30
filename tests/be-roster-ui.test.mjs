@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { chipsHtml, headHtml, settingsHtml, sourceHtml, filtersHtml, sumHtml, cardHtml, tableHtml, listHtml, rowMenuOptions,
   ELIG_LINE } from "../js/menus/bibleevent/roster-ui.js";
 import { blankFilter } from "../js/menus/bibleevent/roster-logic.js";
+import { errorText } from "../js/core/ui.js";
 
 const EV = { id: "ca-test-x", title: "시험 <회차>", short_title: "", subtitle: "", season: "", status: "draft", opens_on: "2026-10-01",
   closes_on: "2026-10-31", list_until: null, count: 1234, listedNow: false, hasEligibility: false, updated_at: "u" };
@@ -33,6 +34,22 @@ test("headHtml · settingsHtml — 공개 여부 · 자격 회차 표 · 공개 
   assert.ok(!settingsHtml({ ...EV, list_until: "2026-12-31" }, true).includes("be-warn"));
   assert.ok(settingsHtml(EV, true).includes('<details class="be-set" open>'));
   assert.ok(ELIG_LINE.includes("자격 규칙은 여기서 바꾸지 않습니다 · 이 회차는 한 분 더하기·올리기를 하지 않습니다(가을 설계 §12)"));
+});
+
+test("settingsHtml — 같은 날 마감 회차끼리 차례(작을수록 위) · 없으면 0", () => {
+  const s = settingsHtml({ ...EV, sort_order: 3 }, false);
+  assert.ok(s.includes("같은 날 마감 회차끼리 차례"), s);
+  assert.ok(s.includes("3 (작을수록 위)"), s);
+  assert.ok(settingsHtml(EV, false).includes("0 (작을수록 위)"));             // 옛 응답(sort_order 없음)
+  assert.ok(settingsHtml({ ...EV, sort_order: -2 }, false).includes("-2 (작을수록 위)"));
+});
+
+test("errorText — 회차 차례·글자 길이 코드도 한국말 문장이 있다(없으면 「처리하지 못했어요」)", () => {
+  for (const error of ["bad-sort-order", "event-too-long"]) {
+    assert.notEqual(errorText({ error }), "처리하지 못했어요", error);
+  }
+  assert.ok(errorText({ error: "bad-sort-order" }).includes("-999~999"));
+  assert.ok(errorText({ error: "event-too-long" }).includes("100자"));
 });
 
 test("sourceHtml · sumHtml · filtersHtml", () => {

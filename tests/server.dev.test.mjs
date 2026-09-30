@@ -61,7 +61,7 @@ const EV_MEMO = "ca-test-memo-" + STAMP;
 const EV_ANSWER = "ca-test-answer-" + STAMP;
 // 화면이 기대하는 칸(CONTRACT 2절) — 하나라도 더해지거나 빠지면 시험이 잡는다
 const EV_OUT_KEYS = ["id", "title", "short_title", "subtitle", "season", "kind", "status", "opens_on", "closes_on",
-  "list_until", "updated_at", "count", "listedNow", "hasEligibility"].sort();
+  "list_until", "updated_at", "count", "listedNow", "hasEligibility", "sort_order"].sort();
 const ROW_OUT_KEYS = ["id", "who_type", "group", "sub", "name", "position", "note", "source", "hasUser", "at",
   "updated_at", "church"].sort();
 const HIST_ROW_KEYS = ["event_id", "title", "closes_on", "who_type", "group", "sub", "position", "source", "hasUser"].sort();
@@ -1030,15 +1030,16 @@ test("성경필사(암송) 누출: 응답 어디에도 UUID 꼴 값·user_id·�
 // 시험 회차 — EVT_ID_RE 에 맞는 꼴. 지우기는 Task 5 의 before()·after() 가 events?id=like.ca-test-* 로 한다(줄은 CASCADE).
 const EVC_NEW = `ca-test-${STAMP}-new`;
 // 회차 응답에 새면 안 되는 것 — UUID 꼴 값(user_id 등)과 줄·설정 쪽 칸 이름
+// (sort_order 는 2026-09-30 부터 싣는다 — 회차 설정 창이 쓰는 성도님 앱 차례 · 비밀이 아니다)
 function evcNoLeak(body, label) {
   const text = JSON.stringify(body);
   assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text), label + ": UUID 꼴 값이 실렸다");
-  for (const k of ["user_id", "auth_user_id", "ident_key", "answers", "phone", "memo", "person_id", "needs", "copy", "sort_order"]) {
+  for (const k of ["user_id", "auth_user_id", "ident_key", "answers", "phone", "memo", "person_id", "needs", "copy"]) {
     assert.ok(!text.includes(`"${k}"`), label + ": " + k + " 칸이 실렸다");
   }
 }
 
-test("evEventCreate — 회차 만들기: 검사 코드마다 아무것도 안 만든다 · draft 고정 · needs 기본값 · kind signup · sort_order 0 · exists · 기록", async () => {
+test("evEventCreate — 회차 만들기: 검사 코드마다 아무것도 안 만든다 · draft 고정 · needs 기본값 · kind signup · sort_order 는 받는다 · exists · 기록", async () => {
   const t = people.bibleevent.token;
   const base = { id: EVC_NEW, title: "ca-test 회차", short_title: "시험", subtitle: "", season: "2026-4Q",
     opens_on: "2026-10-20", closes_on: "2026-11-30", list_until: "" };
@@ -1053,6 +1054,11 @@ test("evEventCreate — 회차 만들기: 검사 코드마다 아무것도 안 �
     [{ ...base, closes_on: "2026-10-01" }, "period-reversed"],
     [{ ...base, list_until: "언젠가" }, "bad-list-until"],
     [{ ...base, list_until: "2026-11-01" }, "list-until-before-close"],
+    // 회차 차례(-999~999 정수) · 글자 칸 길이(창의 maxlength 와 같은 값) — 2026-09-30 SEC-6
+    [{ ...base, sort_order: "1000" }, "bad-sort-order"],
+    [{ ...base, sort_order: "1.5" }, "bad-sort-order"],
+    [{ ...base, title: "가".repeat(101) }, "event-too-long"],
+    [{ ...base, short_title: "가".repeat(41) }, "event-too-long"],
   ];
   for (const [event, code] of bad) {
     const r = await call(t, "evEventCreate", { event });
@@ -1062,7 +1068,7 @@ test("evEventCreate — 회차 만들기: 검사 코드마다 아무것도 안 �
   assert.deepEqual(await rest(`events?select=id&id=eq.${EVC_NEW}`, "GET"), [], "검사에 걸린 만들기가 회차를 남겼다");
   assert.deepEqual(await rest(`events?select=id&id=eq.12345`, "GET"), [], "글자가 아닌 id 로 회차가 생겼다");
 
-  // 만들기 — 상태·종류·needs·copy·sort_order 를 보내도 서버가 정한다(draft · signup · 직분만 받는 기본 needs · 빈 copy · 0)
+  // 만들기 — 상태·종류·needs·copy 를 보내도 서버가 정한다(draft · signup · 직분만 받는 기본 needs · 빈 copy) · sort_order 는 받는다
   const c = await call(t, "evEventCreate", { event: { ...base, status: "open", kind: "quiz", sort_order: 7,
     needs: { eligibility: { start: "2026-01-01" } }, copy: { intro: "x" } } });
   assert.equal(c.body.ok, true, JSON.stringify(c.body));
@@ -1077,10 +1083,11 @@ test("evEventCreate — 회차 만들기: 검사 코드마다 아무것도 안 �
   assert.equal(c.body.event.count, 0);
   assert.equal(c.body.event.listedNow, false);
   assert.equal(c.body.event.hasEligibility, false);
+  assert.equal(c.body.event.sort_order, 7);
   const [row] = await rest(`events?select=status,kind,needs,copy,list_until,sort_order,updated_at&id=eq.${EVC_NEW}`, "GET");
   const { updated_at: dbUpdatedAt, ...stored } = row;
   assert.deepEqual(stored, { status: "draft", kind: "signup", needs: { position: true, phone: false, memo: false, extra: [] },
-    copy: {}, list_until: null, sort_order: 0 });
+    copy: {}, list_until: null, sort_order: 7 });
   assert.equal(c.body.event.updated_at, dbUpdatedAt, "화면이 expect 로 쓸 updated_at 이 DB 와 같아야 한다");
 
   // 같은 id 다시 → exists · 덮어쓰지 않는다
@@ -1095,7 +1102,7 @@ test("evEventCreate — 회차 만들기: 검사 코드마다 아무것도 안 �
   assert.equal(logs[0].detail.title, "ca-test 회차");
   assert.deepEqual(logs[0].detail.before, {});
   assert.deepEqual(logs[0].detail.after, { title: "ca-test 회차", short_title: "시험", subtitle: "", season: "2026-4Q",
-    opens_on: "2026-10-20", closes_on: "2026-11-30", status: "draft", list_until: null });
+    opens_on: "2026-10-20", closes_on: "2026-11-30", status: "draft", list_until: null, sort_order: "7" });
 });
 
 test("evEventSave — 회차 설정: 없는 회차 · expect(conflict) · 검사 코드 · 보낸 칸만 · 공개 확인은 쓰기 전에(needs-confirm 이면 그대로) · 지난 공개 종료일 · 자격 시작일 · 기록", async () => {
@@ -1143,9 +1150,9 @@ test("evEventSave — 회차 설정: 없는 회차 · expect(conflict) · 검사
   }
   assert.deepEqual(await read(), cur, "검사에 걸린 저장이 줄을 바꿨다");
 
-  // 보낸 칸만 — needs·kind·copy·id·sort_order 는 보내도 버린다
+  // 보낸 칸만 — needs·kind·copy·id 는 보내도 버린다(sort_order 는 받는 칸이라 아래 「회차 차례」 시험이 따로 본다)
   const s1 = await save(cur.updated_at, { subtitle: "  시험 부제  ", needs: {}, kind: "quiz", copy: { intro: "x" },
-    id: `ca-test-${STAMP}-hijack`, sort_order: 99 });
+    id: `ca-test-${STAMP}-hijack` });
   okShape(s1, "보낸 칸만");
   assert.equal(s1.body.listedBefore, false);
   assert.equal(s1.body.listedNow, false);
@@ -1254,6 +1261,57 @@ test("evEventSave — 회차 설정: 없는 회차 · expect(conflict) · 검사
   assert.ok(sub, "부제 기록이 없다");
   assert.deepEqual(sub.detail.before, { subtitle: "" });
   assert.deepEqual(sub.detail.after, { subtitle: "시험 부제" });            // needs·kind·copy 는 기록에도 없다
+});
+
+// 회차 차례(sort_order) — 성도님 앱 eventOpenList 가 마감일이 같은 회차끼리 이 차례로 세운다(첫 화면 단추도).
+// 글자 칸 길이 — 창의 maxlength 와 같은 값을 서버도 막는다(SEC-6) · 바꾼 칸만 본다(옛 값은 막지 않는다).
+test("evEventSave — 회차 차례(sort_order)·글자 길이", async () => {
+  const t = people.bibleevent.token;
+  const read = async () => (await rest(`events?select=id,title,subtitle,sort_order,updated_at&id=eq.${EVC_NEW}`, "GET"))[0];
+  const save = (expect, patch) => call(t, "evEventSave", { event_id: EVC_NEW, expect, patch });
+  let cur = await read();
+  assert.ok(cur, "앞 시험(evEventCreate)이 만든 회차가 있어야 한다");
+  assert.equal(cur.sort_order, 7, "앞 시험이 차례 7 로 만들었다");
+
+  // 음수도 된다 · 응답·DB 는 수 · 기록은 글자(event.settings)
+  const neg = await save(cur.updated_at, { sort_order: "-3" });
+  assert.equal(neg.body.ok, true, JSON.stringify(neg.body));
+  assert.deepEqual(Object.keys(neg.body.event).sort(), EV_OUT_KEYS);
+  evcNoLeak(neg.body, "차례 -3");
+  assert.equal(neg.body.event.sort_order, -3);
+  cur = await read();
+  assert.equal(cur.sort_order, -3);
+  assert.equal(neg.body.event.updated_at, cur.updated_at);
+  const logs = (await call(people.super.token, "auditList", { limit: 200 })).body.rows
+    .filter((r) => r.action === "event.settings" && r.target === EVC_NEW && r.detail?.after?.sort_order === "-3");
+  assert.equal(logs.length, 1, JSON.stringify(logs));
+  assert.deepEqual(logs[0].detail.before, { sort_order: "7" });
+  assert.deepEqual(logs[0].detail.after, { sort_order: "-3" });
+
+  // 빈칸 = 0
+  const blank = await save(cur.updated_at, { sort_order: "" });
+  assert.equal(blank.body.ok, true, JSON.stringify(blank.body));
+  assert.equal(blank.body.event.sort_order, 0);
+  cur = await read();
+  assert.equal(cur.sort_order, 0);
+
+  // -999~999 정수가 아니면 bad-sort-order · 이름 101자는 event-too-long — 아무것도 안 쓴다
+  for (const [patch, code] of [[{ sort_order: "1000" }, "bad-sort-order"], [{ sort_order: "abc" }, "bad-sort-order"],
+    [{ title: "가".repeat(101) }, "event-too-long"]]) {
+    assert.deepEqual((await save(cur.updated_at, patch)).body, { ok: false, error: code }, JSON.stringify(patch));
+  }
+  assert.deepEqual(await read(), cur, "검사에 걸린 저장이 줄을 바꿨다");
+
+  // 옛 값은 막지 않는다 — 서비스 키로 차례를 5000(범위 밖)으로 두고 부제만 고쳐도 저장된다 · 차례는 그대로
+  await rest(`events?id=eq.${EVC_NEW}`, "PATCH", { sort_order: 5000 });
+  cur = await read();
+  const keep = await save(cur.updated_at, { subtitle: "차례 시험" });
+  assert.equal(keep.body.ok, true, JSON.stringify(keep.body));
+  assert.equal(keep.body.event.sort_order, 5000);
+  const after = await read();
+  assert.equal(after.subtitle, "차례 시험");
+  assert.equal(after.sort_order, 5000);
+  await rest(`events?id=eq.${EVC_NEW}`, "PATCH", { sort_order: 0 });        // 되돌린다(서비스 키 — 기록 없음)
 });
 
 // ---------- 성경필사(암송) — 한 분 더하기 · 줄 고치기 · 빼기 (계획 Task 7) ----------

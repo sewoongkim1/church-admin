@@ -49,7 +49,9 @@ function listedLine(ev) {
 // ⚙️ 회차 설정 — 접힌 칸. 지금 값을 보여 주고, 고치기는 창(event-form.js)으로
 export function settingsHtml(ev, open) {
   const kv = [["회차 ID", ev.id], ["이름", ev.title], ["짧은 이름", ev.short_title || "비움 — 이름을 그대로 써요"],
-    ["부제", ev.subtitle || "—"], ["묶음", ev.season || "—"], ["기간", periodText(ev)], ["상태", stText(ev.status)],
+    ["부제", ev.subtitle || "—"], ["묶음", ev.season || "—"],
+    ["같은 날 마감 회차끼리 차례", `${Number(ev.sort_order ?? 0) || 0} (작을수록 위)`],   // 성도님 앱 목록·첫 화면 단추 차례
+    ["기간", periodText(ev)], ["상태", stText(ev.status)],
     ["명단 공개 종료일", ev.list_until ? dot(ev.list_until) : "비움 — 기한 없이 보여요"]];
   return `<details class="be-set"${open ? " open" : ""}><summary>⚙️ 회차 설정</summary><div class="be-set-b">` +
     `<dl class="be-kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +

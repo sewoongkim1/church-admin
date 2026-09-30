@@ -38,6 +38,8 @@ import { codeCmp } from "./events-stats.ts";
 import { readName } from "./events-upload.ts";
 // 한글 키 .in() 묶음을 개수(100)와 주소 길이(6KB)로 함께 자른다(최종 검토 SEC-4 · churchcands-url-length)
 import { inChunks } from "./events-rows.ts";
+// 회차 설정의 글자 길이·차례 검사 · DB 에 쓸 값(sort_order 는 수로) — 2026-09-30 E(SEC-6 · 회차 차례)
+import { checkEventEdit, eventDbPatch } from "./events-rules.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -978,16 +980,18 @@ async function peopleExport(ctx: Ctx, b: any) {
 //    이 절의 어느 칸 목록에도 없다(성도님 메모 memo 와 담당자 메모 note 는 다른 칸).
 // ⚠️ 줄은 allRows 로 읽는다(1,000행에서 오류 없이 잘린다 — 2026-09-29 성경암송 576acfc), 인원은 head 개수.
 // ⚠️ 자격 회차 판정은 events-rules.ts 의 isEligEvent(needs) 하나 — 여기서 따로 만들지 않는다(대조 뒤 결정).
-const EV_COLS = "id,title,short_title,subtitle,season,kind,status,opens_on,closes_on,list_until,updated_at,needs";
+// ⚠️ sort_order 를 빼지 말 것 — 빠지면 eventFields 가 "0" 으로 읽어 회차 설정을 저장할 때마다 차례가 0 으로 바뀐다.
+const EV_COLS = "id,title,short_title,subtitle,season,kind,status,opens_on,closes_on,list_until,updated_at,needs,sort_order";
 // 줄 칸 목록은 이것 하나 — 명단(evRoster)·한 분 더하기·고치기(Task 7)·올리기(Task 8)가 모두 이것을 쓴다(두 벌 두지 않는다)
 const EV_ROW_COLS = "id,event_id,user_id,who_type,group_name,sub_name,name,position,note,source,created_at,updated_at";
 
-// 회차 한 줄 — 화면(📋 회차·명단)이 기대하는 칸 그대로. needs·copy·sort_order 는 싣지 않는다.
+// 회차 한 줄 — 화면(📋 회차·명단)이 기대하는 칸 그대로. needs·copy 는 싣지 않는다 · sort_order 는 회차 설정 창이 쓴다(성도님 앱 차례 · 비밀이 아니다)
 function evOut(ev: any, count: number) {
   return {
     id: ev.id, title: ev.title ?? "", short_title: ev.short_title ?? "", subtitle: ev.subtitle ?? "",
     season: ev.season ?? "", kind: ev.kind ?? "signup", status: ev.status,
     opens_on: ev.opens_on, closes_on: ev.closes_on, list_until: ev.list_until ?? null,
+    sort_order: Number(ev.sort_order ?? 0) || 0,
     updated_at: ev.updated_at ?? "",                         // 회차 설정 저장의 expect
     count,                                                   // head 개수(evCountMap)
     listedNow: evtListable(ev, kstToday()),                  // 지금 성도님께 보이는가(KST · 성경암송 evtListable 규칙)
@@ -1122,8 +1126,11 @@ async function evStats(b: any) {
 // ---------- 성경필사(암송) — 회차 만들기·설정 (Task 6) ----------
 // 설계 §2 evEventCreate·evEventSave · 옛 동작: 성경암송 api eventSave(docs/port/event-roster-legacy.md).
 //   옛것은 만들기·고치기를 upsert 하나로 했다 — 여기서는 둘로 나눈다(만들기는 insert 만 · 고치기는 있는 회차만).
-// ⚠️ needs·copy·kind·sort_order 는 받지 않는다(EV_EDIT_KEYS 밖) — 가을 말씀 동행의 자격 규칙·문구가
-//    저장 한 번에 지워지지 않게. 보내도 버린다. sort_order 는 새 회차도 DB 기본값 0(이번에 설정 화면에 없다).
+// ⚠️ needs·copy·kind 는 받지 않는다(EV_EDIT_KEYS 밖) — 가을 말씀 동행의 자격 규칙·문구가
+//    저장 한 번에 지워지지 않게. 보내도 버린다. sort_order 는 2026-09-30 부터 받는다(정수 글자 -999~999 ·
+//    DB 에 쓸 때 eventDbPatch 가 수로 · 새 회차는 보내지 않으면 0) — 성도님 앱 eventOpenList 의 셋째 잣대(마감일이 같은 회차끼리).
+// ⚠️ 글자 칸 길이(EV_TEXT_MAX — 창의 maxlength 와 같은 값)·차례는 checkEventEdit 가 **바꾼 칸만** 본다(SEC-6).
+// ⚠️ 쓴 뒤 다시 읽지 않는다 — insert/update 에서 .select(EV_COLS) 로 바로 받는다(쓴 뒤 not-found·기록 빠짐이 없게 · SEC-5).
 // ⚠️ 공개 확인은 **쓰기 전에** — 지금 성도님께 안 보이는 회차가 이 저장으로 보이게 되면(evtListable 전후)
 //    confirmListed:true 없이는 아무것도 쓰지 않고 needs-confirm. 화면이 확인 창을 띄운 뒤 다시 보낸다.
 //    저장한 뒤에 물으면 확인을 누르기 전부터 명단(이름·소속·직분)이 로그인 없이 보인다.
@@ -1134,23 +1141,25 @@ async function evEventCreate(ctx: Ctx, b: any) {
   const id = typeof src.id === "string" ? src.id.trim() : "";
   if (!EVT_ID_RE.test(id)) return { ok: false, error: "bad-event-id" };   // 만든 뒤엔 못 바꾼다(주소 ?ev= 에 쓰인다)
   const blank: EvEvent = { id, title: "", short_title: "", subtitle: "", season: "",
-    opens_on: "", closes_on: "", status: "draft", list_until: null };
+    opens_on: "", closes_on: "", status: "draft", list_until: null, sort_order: "0" };
   // 새 회차는 draft 로만 — status 는 EV_CREATE_KEYS 에 없어 보내도 버려진다. 공개는 만든 뒤 설정에서(공개 확인을 거쳐).
   const ev: EvEvent = { ...mergeEventPatch(blank, pickEventPatch(src, EV_CREATE_KEYS)), id, status: "draft" };
   const bad = checkEvent(ev, null);   // 같은 검사 함수 — DB CHECK(기간)에 걸려 500 이 나지 않게. 새 회차엔 자격 규칙이 없다.
   if (bad) return { ok: false, error: bad };
-  const { error } = await db.from("events").insert({
+  const bad2 = checkEventEdit(null, ev);   // 글자 길이·차례(만들기 = 모든 칸)
+  if (bad2) return { ok: false, error: bad2 };
+  // 쓴 줄을 그대로 받는다(.select(EV_COLS)) — 다시 읽다 null 이면 기록 없이 not-found 가 나던 자리(evread-null-after-write)
+  const { data: saved, error } = await db.from("events").insert({
     id, title: ev.title, short_title: ev.short_title, subtitle: ev.subtitle, season: ev.season,
     opens_on: ev.opens_on, closes_on: ev.closes_on, list_until: ev.list_until, status: "draft",
+    sort_order: Number(ev.sort_order) || 0,
     kind: "signup", needs: structuredClone(BE_NEEDS_DEFAULT),   // 앱 등록 폼에 직분 칸이 생기게(설계 §2) — 사본을 넣는다
-    // copy·sort_order·created_at·updated_at 은 DB 기본값({} · 0 · now())
-  });
+    // copy·created_at·updated_at 은 DB 기본값({} · now())
+  }).select(EV_COLS).single();
   if (error) {
     if ((error as any).code === "23505") return { ok: false, error: "exists" };   // 있는 회차는 덮지 않는다
     throw error;
   }
-  const saved = await evRead(id);
-  if (!saved) return { ok: false, error: "not-found" };
   const f = eventFields(saved);
   const after: Record<string, string | null> = {};
   for (const k of EV_EDIT_KEYS) after[k] = (f as unknown as Record<string, string | null>)[k];
@@ -1169,24 +1178,28 @@ async function evEventSave(ctx: Ctx, b: any) {
   // 합친 회차 전체를 검사한다 — 마감일만 늦춰 공개 종료일보다 뒤로 가는 것도 여기서 잡힌다
   const bad = checkEvent(next, eligibilityStart(cur.needs));
   if (bad) return { ok: false, error: bad };
+  // 글자 길이·차례 — **바꾼 칸만**(옛 값이 길거나 차례가 범위 밖이어도 다른 칸 저장은 막지 않는다 · SEC-6)
+  const bad2 = checkEventEdit(before, next);
+  if (bad2) return { ok: false, error: bad2 };
   const today = kstToday();
   const listedBefore = evtListable(before, today);
   const listedNow = evtListable(next, today);
   if (!listedBefore && listedNow && b.confirmListed !== true) return { ok: false, error: "needs-confirm" };
   const diff = eventDiff(before, next);
   let saved = cur;
+  // 인원은 쓰기 **전에** 센다 — 회차 설정은 인원을 바꾸지 않는다. 쓴 뒤에 세다 실패하면 저장은 됐는데 500 이 났다(SEC-5).
+  const count = (await evCountMap([id])).get(id) ?? 0;
   if (Object.keys(diff.after).length) {
     // 조건부 update — 읽은 뒤 쓰기 전 사이에 다른 담당자가 저장했으면 0행 → conflict(남의 저장을 덮지 않는다)
+    // 쓴 줄을 그대로 받는다(.select(EV_COLS)) — 다시 읽다 null 이면 기록 없이 not-found 가 나던 자리(evread-null-after-write)
     const { data: upd, error } = await db.from("events")
-      .update({ ...diff.after, updated_at: new Date().toISOString() })
-      .eq("id", id).eq("updated_at", cur.updated_at).select("id");
+      .update({ ...eventDbPatch(diff.after), updated_at: new Date().toISOString() })
+      .eq("id", id).eq("updated_at", cur.updated_at).select(EV_COLS);
     if (error) throw error;
     if (!upd?.length) return { ok: false, error: "conflict" };
-    saved = await evRead(id);
-    if (!saved) return { ok: false, error: "not-found" };
+    saved = upd[0];
     await audit(ctx, "event.settings", id, { title: saved.title, before: diff.before, after: diff.after });
   }
-  const count = (await evCountMap([id])).get(id) ?? 0;
   return { ok: true, event: evOut(saved, count), listedBefore, listedNow };
 }
 

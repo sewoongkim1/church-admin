@@ -11,6 +11,8 @@ import { esc, dialog } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickDate, pickOne, fmtDateLabel } from "../../core/picker.js";
 import { EV_STATUS, STATUS_KO, STATUS_HINT, norm, eventPatch } from "./roster-logic.js";
+// 글자 칸 상한(서버 events-rules.ts EV_TEXT_MAX 와 같다 — 서버도 event-too-long 으로 막는다 · SEC-6)
+import { EV_TEXT_MAX } from "./roster-logic.js";
 import { ELIG_LINE, UNTIL_WARN } from "./roster-ui.js";
 
 const CONFIRM_TEXT = "이 회차가 성도님 첫 화면에 나타납니다 — 명단(이름·소속·직분)이 로그인 없이 보여요";
@@ -36,10 +38,14 @@ function formHtml(v, ev) {
       ? `<p class="be-note">새 회차는 「준비 중」으로 만들어져 성도님께 안 보여요 — 만든 뒤 ⚙️ 회차 설정에서 상태를 바꿔 주세요</p>` +
         textField("id", "회차 ID", "영문 소문자·숫자·붙임표 · 만든 뒤 못 바꿔요", v.id, `maxlength="41" autocapitalize="off" spellcheck="false" placeholder="예: summer-2027"`)
       : `<p class="be-hint">회차 ID <b>${esc(ev.id)}</b> — 만든 뒤에는 바꿀 수 없어요</p>` + (ev.hasEligibility ? ELIG_LINE : "")) +
-    textField("title", "이름", "관리 목록·명단 제목", v.title, `maxlength="100" placeholder="예: 2027 썸머 써 바이블"`) +
-    textField("short_title", "짧은 이름", "첫 화면 단추 — 20자 안쪽 권함 · 비우면 이름 그대로", v.short_title, `maxlength="40"`) +
-    textField("subtitle", "부제", "안 써도 돼요", v.subtitle, `maxlength="100"`) +
-    textField("season", "묶음", "분기 표기 · 예: 2027-3Q", v.season, `maxlength="20"`) +
+    textField("title", "이름", "관리 목록·명단 제목", v.title, `maxlength="${EV_TEXT_MAX.title}" placeholder="예: 2027 썸머 써 바이블"`) +
+    textField("short_title", "짧은 이름", "첫 화면 단추 — 20자 안쪽 권함 · 비우면 이름 그대로", v.short_title, `maxlength="${EV_TEXT_MAX.short_title}"`) +
+    textField("subtitle", "부제", "안 써도 돼요", v.subtitle, `maxlength="${EV_TEXT_MAX.subtitle}"`) +
+    textField("season", "묶음", "분기 표기 · 예: 2027-3Q", v.season, `maxlength="${EV_TEXT_MAX.season}"`) +
+    // 회차 차례 — 성도님 앱 eventOpenList 는 ① 등록할 수 있고 안 낸 것 ② 마감일 ③ 이 차례 ④ id 로 세운다.
+    // type=number 는 쓰지 않는다(바퀴·화살표로 값이 바뀌고 빈칸·「-」가 조용히 버려진다) — 숫자 자판만 띄운다. 검사는 서버(bad-sort-order).
+    textField("sort_order", "같은 날 마감하는 회차끼리 차례", "작을수록 위 · 보통 0 · 성도님 앱 목록과 첫 화면 단추가 이 차례를 따라요",
+      v.sort_order, `inputmode="numeric" maxlength="4" spellcheck="false"`) +
     `<div class="be-2col">${dateField("opens_on", v.opens_on)}${dateField("closes_on", v.closes_on)}</div>` +
     (ev ? statusField(v.status) : "") +
     dateField("list_until", v.list_until) +
@@ -67,8 +73,9 @@ function setStatus(root, st) {
 export async function openEventForm({ call, ev = null, onStale = null } = {}) {
   const v = ev
     ? { title: ev.title || "", short_title: ev.short_title || "", subtitle: ev.subtitle || "", season: ev.season || "",
-        opens_on: ev.opens_on || "", closes_on: ev.closes_on || "", status: ev.status || "draft", list_until: ev.list_until || "" }
-    : { id: "", title: "", short_title: "", subtitle: "", season: "", opens_on: "", closes_on: "", list_until: "" };
+        opens_on: ev.opens_on || "", closes_on: ev.closes_on || "", status: ev.status || "draft", list_until: ev.list_until || "",
+        sort_order: String(ev.sort_order ?? 0) }
+    : { id: "", title: "", short_title: "", subtitle: "", season: "", opens_on: "", closes_on: "", list_until: "", sort_order: "0" };
   let first = "", staleCode = "";
   const out = await openForm({
     title: ev ? "⚙️ 회차 설정 고치기" : "＋ 새 회차 만들기",
@@ -100,7 +107,8 @@ export async function openEventForm({ call, ev = null, onStale = null } = {}) {
       const cur = read(root);
       if (!ev) {
         const r = await call("evEventCreate", { event: { id: cur.id, title: cur.title, short_title: cur.short_title,
-          subtitle: cur.subtitle, season: cur.season, opens_on: cur.opens_on, closes_on: cur.closes_on, list_until: cur.list_until } });
+          subtitle: cur.subtitle, season: cur.season, opens_on: cur.opens_on, closes_on: cur.closes_on, list_until: cur.list_until,
+          sort_order: cur.sort_order } });
         return r.ok ? { ok: true, value: r.event } : r;
       }
       const patch = eventPatch(ev, cur);

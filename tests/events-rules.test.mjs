@@ -141,10 +141,11 @@ test("mergeEventPatch — 보낸 칸만 · 다듬기 · list_until 빈칸은 nul
   assert.equal(mergeEventPatch(cur, { status: "open" }).status, "open");
 });
 
-test("mergeEventPatch — needs·copy·kind·id·sort_order 는 받지 않는다", () => {
+test("mergeEventPatch — needs·copy·kind·id 는 받지 않는다(sort_order 는 2026-09-30 부터 받는다 — 아래 「회차 차례」 시험)", () => {
   const cur = EV();
-  const out = mergeEventPatch(cur, { id: "other-id", needs: { eligibility: {} }, copy: { a: 1 }, kind: "quiz", sort_order: 9 });
+  const out = mergeEventPatch(cur, { id: "other-id", needs: { eligibility: {} }, copy: { a: 1 }, kind: "quiz" });
   assert.deepEqual(out, cur);
+  assert.equal(mergeEventPatch(cur, { sort_order: 9 }).sort_order, "9");
   assert.deepEqual(mergeEventPatch(cur, null), cur);
   assert.deepEqual(mergeEventPatch(cur, ["title"]), cur);
 });
@@ -397,27 +398,48 @@ test("candidateKeys — 자모분리(NFD)로 적힌 이름은 완성형 키도 �
 import { EV_EDIT_KEYS, EV_CREATE_KEYS, pickEventPatch, eventFields, eventDiff, mergeEventPatch as mergeForKeyCheck }
   from "../supabase/functions/church-admin/events-rules.ts";
 
-test("EV_EDIT_KEYS·EV_CREATE_KEYS — needs·copy·kind·id·sort_order 는 없다 · 만들기엔 status 도 없다", () => {
-  assert.deepEqual(EV_EDIT_KEYS, ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until"]);
-  for (const k of ["needs", "copy", "kind", "id", "sort_order", "updated_at"]) assert.ok(!EV_EDIT_KEYS.includes(k), k);
-  assert.deepEqual(EV_CREATE_KEYS, ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "list_until"]);
+test("EV_EDIT_KEYS·EV_CREATE_KEYS — sort_order 는 받는다(2026-09-30) · needs·copy·kind·id 는 없다 · 만들기엔 status 도 없다", () => {
+  assert.deepEqual(EV_EDIT_KEYS, ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until", "sort_order"]);
+  for (const k of ["needs", "copy", "kind", "id", "updated_at"]) assert.ok(!EV_EDIT_KEYS.includes(k), k);
+  assert.deepEqual(EV_CREATE_KEYS, ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "list_until", "sort_order"]);
 });
 
-test("EV_EDIT_KEYS 는 mergeEventPatch 가 받는 여덟 칸과 같다 — 어긋나면 고친 칸이 조용히 버려진다", () => {
+test("EV_EDIT_KEYS 는 mergeEventPatch 가 받는 아홉 칸과 같다 — 어긋나면 고친 칸이 조용히 버려진다", () => {
   const cur = eventFields({ id: "x-1", title: "가", short_title: "나", subtitle: "다", season: "라",
     opens_on: "2026-10-01", closes_on: "2026-10-31", status: "draft", list_until: "2026-12-31" });
   const patch = { title: "t2", short_title: "s2", subtitle: "u2", season: "q2", opens_on: "2027-01-01",
-    closes_on: "2027-01-31", status: "open", list_until: "2027-12-31" };
+    closes_on: "2027-01-31", status: "open", list_until: "2027-12-31", sort_order: "7" };
   assert.deepEqual(Object.keys(patch).sort(), [...EV_EDIT_KEYS].sort());
   const out = mergeForKeyCheck(cur, patch);
   for (const k of EV_EDIT_KEYS) assert.equal(out[k], patch[k], k);
+  assert.equal(out.sort_order, "7");
   assert.equal(out.id, "x-1");
+});
+
+// 반대 방향(rules-test-one-direction) — EV_EDIT_KEYS 밖의 칸은 mergeEventPatch 를 지나도 아무것도 바꾸지 않는다
+test("mergeEventPatch — EV_EDIT_KEYS 밖의 칸(needs·copy·kind·id·updated_at·created_at·count)은 보내도 그대로 · 여분 칸도 안 생긴다", () => {
+  const cur = eventFields({ id: "x-1", title: "가", short_title: "나", subtitle: "다", season: "라",
+    opens_on: "2026-10-01", closes_on: "2026-10-31", status: "draft", list_until: "2026-12-31", sort_order: 4 });
+  assert.deepEqual(mergeForKeyCheck(cur, { needs: { a: 1 }, copy: {}, kind: "quiz", id: "y-2", updated_at: "x", created_at: "x", count: 5 }), cur);
+  assert.deepEqual(Object.keys(mergeForKeyCheck(cur, {})).sort(), Object.keys(cur).sort());
+});
+
+test("mergeEventPatch — 회차 차례(sort_order)는 정수 글자로 다듬는다 · 정수 꼴이 아니면 그대로(검사가 막는다)", () => {
+  const cur = eventFields({ id: "x-1", title: "가", opens_on: "2026-10-01", closes_on: "2026-10-31", status: "draft" });
+  const so = (v) => mergeForKeyCheck(cur, { sort_order: v }).sort_order;
+  assert.equal(so("05"), "5");
+  assert.equal(so(" 12 "), "12");
+  assert.equal(so("-0"), "0");
+  assert.equal(so(""), "0");
+  assert.equal(so("-7"), "-7");
+  for (const v of ["+5", "1.5", "abc"]) assert.equal(so(v), v, v);
+  assert.equal(mergeForKeyCheck({ ...cur, sort_order: "10" }, { title: "나" }).sort_order, "10");   // 안 보낸 칸은 그대로
 });
 
 test("pickEventPatch — 고칠 수 있는 칸만 · 보낸 칸만 · 값은 글자로", () => {
   const p = pickEventPatch({ title: " 새 이름 ", needs: { eligibility: {} }, copy: { intro: "x" }, kind: "quiz",
     id: "other-id", sort_order: 3, list_until: null }, EV_EDIT_KEYS);
-  assert.deepEqual(p, { title: " 새 이름 ", list_until: "" });            // 다듬기(trim)는 mergeEventPatch 가 한다
+  assert.deepEqual(p, { title: " 새 이름 ", list_until: "", sort_order: "3" });   // 다듬기(trim)는 mergeEventPatch 가 한다
   assert.deepEqual(pickEventPatch({ status: "open", title: "가" }, EV_CREATE_KEYS), { title: "가" });
   assert.deepEqual(pickEventPatch({ title: 12, subtitle: true, season: { a: 1 }, opens_on: Number.NaN, closes_on: undefined }, EV_EDIT_KEYS),
     { title: "12", subtitle: "", season: "", opens_on: "", closes_on: "" });
@@ -427,15 +449,21 @@ test("pickEventPatch — 고칠 수 있는 칸만 · 보낸 칸만 · 값은 글
   assert.deepEqual(pickEventPatch(Object.create({ title: "물려받은 칸" }), EV_EDIT_KEYS), {});   // hasOwnProperty
 });
 
-test("eventFields — 표의 한 줄 → 아홉 칸 · 나머지 칸은 버린다 · list_until 빈 것은 null", () => {
+test("eventFields — 표의 한 줄 → 열 칸(sort_order 는 글자로) · 나머지 칸은 버린다 · list_until 빈 것은 null", () => {
   assert.deepEqual(eventFields({ id: "lent-2026", title: "사순절", short_title: "", subtitle: null, season: "2026-1Q",
     opens_on: "2026-02-18", closes_on: "2026-04-04", status: "closed", list_until: null,
     needs: { position: true }, copy: {}, kind: "signup", sort_order: 0, updated_at: "2026-09-29T00:00:00+00:00" }),
     { id: "lent-2026", title: "사순절", short_title: "", subtitle: "", season: "2026-1Q",
-      opens_on: "2026-02-18", closes_on: "2026-04-04", status: "closed", list_until: null });
+      opens_on: "2026-02-18", closes_on: "2026-04-04", status: "closed", list_until: null, sort_order: "0" });
   assert.deepEqual(eventFields({ list_until: "" }),
-    { id: "", title: "", short_title: "", subtitle: "", season: "", opens_on: "", closes_on: "", status: "", list_until: null });
+    { id: "", title: "", short_title: "", subtitle: "", season: "", opens_on: "", closes_on: "", status: "", list_until: null, sort_order: "0" });
   assert.equal(eventFields({ list_until: "2026-12-31" }).list_until, "2026-12-31");
+  // 회차 차례 — 없음·null·빈 글은 "0"(DB 기본값) · 수는 글자로
+  assert.equal(eventFields({ sort_order: 0 }).sort_order, "0");
+  assert.equal(eventFields({}).sort_order, "0");
+  assert.equal(eventFields({ sort_order: null }).sort_order, "0");
+  assert.equal(eventFields({ sort_order: 10 }).sort_order, "10");
+  assert.equal(eventFields({ sort_order: -3 }).sort_order, "-3");
 });
 
 test("eventDiff — 바뀐 칸만 전·후 · 같으면 빈 것 · id 는 보지 않는다", () => {
@@ -446,6 +474,47 @@ test("eventDiff — 바뀐 칸만 전·후 · 같으면 빈 것 · id 는 보지
   assert.deepEqual(eventDiff({ ...a, list_until: "2026-12-31" }, a),
     { before: { list_until: "2026-12-31" }, after: { list_until: null } });
   assert.deepEqual(eventDiff(a, { ...a, id: "y-2" }), { before: {}, after: {} });
+  // 회차 차례도 바뀐 칸으로 나온다(DB 에 쓸 때는 eventDbPatch 가 수로)
+  assert.deepEqual(eventDiff(a, { ...a, sort_order: "5" }), { before: { sort_order: "0" }, after: { sort_order: "5" } });
+});
+
+// ---------- 회차 글자 칸 길이 · 회차 차례 검사(SEC-6 · 2026-09-30) ----------
+// 창의 maxlength 와 같은 값을 서버도 막는다. **바꾼 칸만** 본다 — 옛 값이 길어도 다른 칸 저장은 된다.
+import * as evEdit from "../supabase/functions/church-admin/events-rules.ts";
+
+test("EV_TEXT_MAX — 이름 100 · 짧은 이름 40 · 부제 100 · 묶음 20(창의 maxlength 와 같다)", () => {
+  assert.deepEqual(evEdit.EV_TEXT_MAX, { title: 100, short_title: 40, subtitle: 100, season: 20 });
+});
+
+test("checkEventEdit(null, ev) — 만들기: 글자 칸이 길면 event-too-long · 차례가 -999~999 정수가 아니면 bad-sort-order", () => {
+  const ev = { ...eventFields({ id: "x-1", title: "가", opens_on: "2026-10-01", closes_on: "2026-10-31", status: "draft" }) };
+  assert.equal(evEdit.checkEventEdit(null, ev), null);
+  assert.equal(evEdit.checkEventEdit(null, { ...ev, title: "가".repeat(100) }), null);          // 딱 100자는 된다
+  for (const [k, n] of [["title", 101], ["short_title", 41], ["subtitle", 101], ["season", 21]]) {
+    assert.equal(evEdit.checkEventEdit(null, { ...ev, [k]: "가".repeat(n) }), "event-too-long", k);
+  }
+  for (const v of ["1000", "+5", "1.5", "abc", "-1000"]) {
+    assert.equal(evEdit.checkEventEdit(null, { ...ev, sort_order: v }), "bad-sort-order", v);
+  }
+  for (const v of ["-999", "999", "0"]) assert.equal(evEdit.checkEventEdit(null, { ...ev, sort_order: v }), null, v);
+});
+
+test("checkEventEdit(before, next) — 바꾼 칸만 본다: 옛 값이 길거나(부제 150자) 차례가 5000 이어도 다른 칸 저장은 된다", () => {
+  const before = { ...eventFields({ id: "x-1", title: "가", opens_on: "2026-10-01", closes_on: "2026-10-31", status: "draft" }),
+    subtitle: "나".repeat(150), sort_order: "5000" };
+  assert.equal(evEdit.checkEventEdit(before, { ...before, title: "새 이름" }), null);
+  assert.equal(evEdit.checkEventEdit(before, { ...before, subtitle: "다".repeat(101) }), "event-too-long");   // 바꿨으면 본다
+  assert.equal(evEdit.checkEventEdit(before, { ...before, sort_order: "6000" }), "bad-sort-order");
+  assert.equal(evEdit.checkEventEdit(before, { ...before, sort_order: "3" }), null);
+});
+
+test("eventDbPatch — sort_order 는 DB 에 수로 · 나머지는 그대로 · 없으면 같은 내용의 사본", () => {
+  assert.deepEqual(evEdit.eventDbPatch({ sort_order: "12", title: "x" }), { sort_order: 12, title: "x" });
+  assert.deepEqual(evEdit.eventDbPatch({ sort_order: "-3" }), { sort_order: -3 });
+  const a = { title: "x", list_until: null };
+  const out = evEdit.eventDbPatch(a);
+  assert.deepEqual(out, a);
+  assert.notEqual(out, a);                                                   // 사본(받은 것을 고치지 않는다)
 });
 
 // ---------- 직분은 완성형(NFC)으로(최종 검토 M1 · 2026-09-30) ----------

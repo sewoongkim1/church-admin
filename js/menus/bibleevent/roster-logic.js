@@ -19,7 +19,9 @@ export const STATUS_HINT = {
 export const SRC_LABEL = { app: "📱 앱", import: "📋 이관" };
 const SRC_TEXT = { app: "앱", import: "이관" };
 export const CHURCH_STATES = ["맞음", "확인 필요", "없음"];
-export const EV_EDIT_KEYS = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until"];
+export const EV_EDIT_KEYS = ["title", "short_title", "subtitle", "season", "opens_on", "closes_on", "status", "list_until", "sort_order"];
+// 회차 글자 칸의 상한 — 창(event-form.js)의 maxlength 가 이 값을 쓴다. 서버 events-rules.ts EV_TEXT_MAX 와 같다(시험이 맞대 본다 · SEC-6)
+export const EV_TEXT_MAX = { title: 100, short_title: 40, subtitle: 100, season: 20 };
 export const ROW_KEYS = ["who_type", "group", "sub", "name", "position", "note"];
 // 담당자 메모 창의 글자 수 상한 — 서버는 머리 표기(「담당자가 더함 / 」 10자)를 붙인 **뒤** 500자로 센다(계약 §5)
 export const NOTE_FORM_MAX = 480;
@@ -164,12 +166,14 @@ export function sortEvents(list) {
 }
 
 // 회차 설정 — 바뀐 칸만(서버 evEventSave 는 보낸 칸만 바꾼다). list_until 은 null 과 "" 가 같다(비움 — 서버가 null 로)
+// sort_order(회차 차례)는 0·「0」·빈칸이 같다(서버가 빈칸을 0 으로) — 옛 응답에 칸이 없어도 0 으로 본다.
 // needs·copy·kind·id 같은 칸은 EV_EDIT_KEYS 에 없어 보내지 않는다 — 자격 규칙·문구가 조용히 지워지지 않게.
 export function eventPatch(before, v) {
   const out = {};
   for (const k of EV_EDIT_KEYS) {
     if (!own(v, k)) continue;
-    const a = norm(before?.[k]), b = norm(v[k]);
+    const fix = k === "sort_order" ? (x) => norm(x) || "0" : norm;
+    const a = fix(before?.[k]), b = fix(v[k]);
     if (a !== b) out[k] = b;
   }
   return out;

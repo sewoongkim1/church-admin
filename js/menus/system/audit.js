@@ -32,7 +32,7 @@ const filtersText = (f) => Object.entries(f || {})
 // ⚠️ 칸 이름을 바꾸면 여기와 tests/audit.test.mjs 를 함께 — 안 고치면 기록 줄이 오류 없이 0·빈칸으로 보인다.
 const EV_STATUS = { draft: "준비 중", open: "열림", closed: "마감", archived: "보관" };   // 📋 회차·명단의 상태 이름과 같다
 const EV_FIELD = { title: "이름", short_title: "짧은 이름", subtitle: "부제", season: "묶음",
-  opens_on: "시작일", closes_on: "마감일", status: "상태", list_until: "공개 종료일" };
+  opens_on: "시작일", closes_on: "마감일", status: "상태", list_until: "공개 종료일", sort_order: "차례" };
 const ROW_FIELD = { who_type: "구분", group: "소속", sub: "세부", name: "이름", position: "직분" };
 const SRC = { app: "📱 앱", import: "📋 이관" };                                           // 📋 회차·명단의 출처 표시와 같다
 const joinDot = (...parts) => parts.filter(Boolean).join(" · ");

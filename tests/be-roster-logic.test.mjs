@@ -172,6 +172,29 @@ test("eventPatch — 바뀐 칸만 · 앞뒤·가운데 빈칸 무시 · list_un
   assert.deepEqual(eventPatch(ev, { title: "썸머  2026" }), { title: "썸머 2026" });   // 보낸 칸만 · 서버처럼 다듬어
 });
 
+// ---------- 회차 차례(sort_order) · 글자 칸 상한(2026-09-30 · SEC-6) ----------
+import * as rosterLogic from "../js/menus/bibleevent/roster-logic.js";
+import * as serverRules from "../supabase/functions/church-admin/events-rules.ts";
+
+test("EV_TEXT_MAX — 서버(events-rules.ts)와 같은 상한(창의 maxlength 가 이 값을 쓴다)", () => {
+  assert.ok(serverRules.EV_TEXT_MAX, "서버에 EV_TEXT_MAX 가 있어야 한다");
+  assert.deepEqual(rosterLogic.EV_TEXT_MAX, serverRules.EV_TEXT_MAX);
+  assert.deepEqual(rosterLogic.EV_TEXT_MAX, { title: 100, short_title: 40, subtitle: 100, season: 20 });
+});
+
+test("eventPatch — 회차 차례는 0·「0」·빈칸이 같다(보내지 않는다) · 바꾸면 글자로", () => {
+  const ev = { id: "summer-2026", title: "썸머", short_title: "", subtitle: "", season: "", opens_on: "2026-07-01",
+    closes_on: "2026-08-31", status: "closed", list_until: null, sort_order: 0 };
+  const v = { title: "썸머", short_title: "", subtitle: "", season: "", opens_on: "2026-07-01",
+    closes_on: "2026-08-31", status: "closed", list_until: "" };
+  assert.deepEqual(eventPatch(ev, { ...v, sort_order: "0" }), {});
+  assert.deepEqual(eventPatch(ev, { ...v, sort_order: "" }), {});
+  assert.deepEqual(eventPatch(ev, { ...v, sort_order: "3" }), { sort_order: "3" });
+  const { sort_order: _drop, ...noOrder } = ev;                               // 옛 응답(sort_order 없음)
+  assert.deepEqual(eventPatch(noOrder, { ...v, sort_order: "0" }), {});
+  assert.deepEqual(eventPatch({ ...ev, sort_order: 10 }, { ...v, sort_order: "10" }), {});
+});
+
 test("rowPatch — 바뀐 칸만 · 목장은 바꾼 때만 다듬는다(07 을 그대로 두면 안 보낸다) · 겹빈칸은 같은 값 · keys 로 좁힌다", () => {
   const row = R({ id: 9, group: "화평", sub: "07", name: "홍길동", position: "집사", note: "원래: 화평 30 · 집사" });
   const same = { who_type: "교구", group: "화평", sub: "07", name: " 홍길동 ", position: "집사", note: "원래: 화평 30 · 집사" };
