@@ -1105,3 +1105,9 @@ body:has(#view > section[aria-busy="true"]){cursor:progress}
 .be-pp-cb{margin-bottom:12px;font-size:13px;color:var(--gray)}
 .be-pp .cb,.be-pp .cb small{font-size:13px}
 .be-pp-note{padding:8px 10px;border-radius:8px;background:var(--ghost-bg);color:var(--navy);font-size:13px;line-height:1.5}
+
+/* 🧪 시험 참여자(2026-09-30) — 찾기 줄은 성경필사 이력(.be-hi-find)과 같은 꼴 */
+.mt-find{display:flex;gap:8px;align-items:stretch;margin-bottom:6px}
+.mt-find .search{flex:1;min-width:0;margin-bottom:0}
+.mt-find .btn{flex:none;min-width:88px}
+.mt-warn{margin-top:14px}
