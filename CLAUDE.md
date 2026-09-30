@@ -49,7 +49,7 @@
   판을 올릴 때는 **새 이름**으로 넣고 판·integrity 를 함께 바꾼다(`tests/xlsx-loader.test.mjs` 가 파일 해시와 대조). npm·jsdelivr 의 xlsx 는 0.18.5(CVE 둘 · 한국 시간대에서 날짜 칸을 하루 앞으로 읽음)에서 멈췄다 — 되돌리지 말 것.
 
 ## 교인명부 (2026-09-29 운영 개시)
-dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명부) 담당자가 찾고·보고·내려받는다. 사역 화면에는 **교적 표시**(맞음·확인 필요·없음)만.
+dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명부) 담당자가 찾고·보고·내려받는다. 사역 화면에는 **교적 표시**(맞음·확인 필요·없음)와 「이름을 누르면 교적 창」(`ministryPerson` · 사역신청만이면 다섯 칸 — 아래).
 설계·계획: v2 `docs/superpowers/specs/2026-09-29-church-people-directory-design.md` · `docs/superpowers/plans/2026-09-29-church-people-directory.md`
 - 표 `church_people`(한 분 한 줄 · `household_id` = 세대주 교인ID) · `church_people_imports`(올린 기록 = 화면의 「명부 기준일」) · 비공개 사진 칸 `church-people-photos` — 모두 서버만 연다(SQL 003).
 - **새 명단이 오면**(저장소 밖 작업 폴더 `C:\Projects\교인명부_작업\<기준일>\`):
@@ -60,6 +60,12 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - ⚠️ 원본 대조는 「원본 낱말이 결과 어딘가에 있나」만 본다(칸이 뒤바뀌어도 통과) — **살펴보기의 새로·바뀜·빠짐 수가 평소와 다르면 넣지 말고 멈출 것.** dimode 표 모양이 바뀌어 「기타사항」 뒤에 값 칸이 생기면 지번주소 자리로 들어갈 수 있다.
 - 원본 함정: 교회학교 소속 없는 분 전원의 「교사」에 같은 한 사람이 찍힌다(비운다) · 세대주 번호 `0` = 「연결 없음」(가족 없음) · 기타사항은 칸이 아니라 `title` 속성에(올리지 않는다).
 - 사역 응답(`ministryList`·`ministryPaper*`)에는 `church:{state,reason}` **두 칸만** — 교적의 연락처·주소·직분을 싣지 않는다. 명부가 없으면 `null`(화면이 표시를 안 그린다).
+- 사역신청·담당자 「이름을 누르면 교적 창」(2026-09-30 · `ministryPerson` · 역할 `ministry` — 담당자·역할 화면은 총괄이 부른다 · 화면 `js/menus/ministry/person-link.js` → `openChurchPerson({action:"ministryPerson"})`):
+  모양·기록은 `evPerson` 과 같다(`full`/`basic`). 맞대는 줄은 `ministryApplicant` 하나(신청 현황·임명현황 who·번호 → `applicantFromWho` · 종이 명단 gu·mok → `applicantFromPaper` 와 같은 결과 · 담당자 identity) — **명단 교적 표시와 같은 줄**이라야 「맞음」인 분이 늘 열린다.
+  ⚠️ **번호로 한 분을 고르는 것은 `full` 만**(사역신청만이면 번호는 교적 표시 「소속 다름」에만 — 번호→교인 조회 통로를 만들지 않는다). 번호는 DOM(`data-*`)·응답·기록에 싣지 않는다(단추엔 줄 열쇠만 · 누를 때 메모리의 줄에서 꺼낸다).
+- 교적 표시의 「남성」(2026-09-30 친구 제보): 명단 목장 「남성」은 교적 목장 칸에 「남성」이 든 분(운영 표기 `믿음-남성`·`사랑-남성`·`섬김-남성`·`소망-남성1`·`소망-남성2`·`은혜-남성목장`·`화평-남성` · 기쁨엔 없음)과 맞댄다.
+  ⚠️ `mokNumber("소망-남성1")` 은 1 이다 — 숫자 목장 신청은 남성 목장 분을 **빼고** 맞댄다(안 빼면 「소망 1목장」 동명이인이 같은 소속이 된다). 「목장 확인」은 99·빈 목장(과 「남성」인데 교적은 숫자 목장)만.
+  성경필사 줄만 「옮겨 적은 줄은 맞음」(`transcribedSame` — 줄이 동명이인 중 정확히 한 분의 `mapChurchPerson` 결과와 같으면 같은 소속) · 사역 줄엔 쓰지 않는다. 명단에 적는 값은 그대로 「남성」(앱 로그인·계정 잇기 열쇠).
 - 찾기·보기·내려받기는 `admin_audit` 의 `people.*` — 「바꾼 기록」 기본 보기에선 빠지고 「교인명부 기록」 보기에서만 보인다. 이 기록은 명단에서 빠져도 지우지 않는다(개인정보 안내 6번).
 - 다음 명단(12월 무렵) 전에 할 다듬기: v2 계획서 끝의 최종 검토 「나중」 목록(옛 기준일 폴더로 덮어쓰기 막기 · 깨진 글자 멈춤 · 씨앗 사진 원자 복사 등).
 
@@ -88,7 +94,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 빈칸 채우기(`fillDecision`)는 교인명부 전체에서 이름이 한 분일 때만, 빈 칸만 채운다. 줄에 적힌 소속이 명부 소속과 다르면 아무것도 채우지 않는다(`different-affiliation`).
 - 회차를 성도님께 보이게 하는 저장은 `needs-confirm`(아무것도 안 쓴 상태) → 화면 확인 창 → `confirmListed:true`. 공개 확인은 쓰기 **전**이다.
   회차 차례(`sort_order`)는 회차 설정의 「같은 날 마감하는 회차끼리 차례」(정수 -999~999 · 작을수록 위 · 새 회차 0). 성도님 앱 eventOpenList 는 ① 등록할 수 있고 안 낸 것 ② 마감일 ③ 차례 ④ id 로 세운다 — 차례는 마감일이 같은 회차끼리만 앞뒤를 가르고, 그때 첫 화면 단추(맨 앞 회차)도 정한다. 회차 글자 칸(이름 100 · 짧은 이름 40 · 부제 100 · 묶음 20자)은 서버도 막는다(`event-too-long` · 바꾼 칸만 — 옛 값이 길어도 다른 칸 저장은 된다).
-- 교인명부에서 주는 값은 **이름·구분·소속·세부·직분 다섯**뿐(예외 하나 — 아래 `evPerson` 의 `full`). 기록: `event.*` 는 「바꾼 기록」 · `people.lookup`(`{q, count}` · `evPeopleLookup`·`evPerson` 두 곳)·`people.fill`(`{rows, names, asked, askedNames}` · 살펴보기에서 명부에 물었으면 **채운 것이 없어도** 한 줄 — 2026-09-30 SEC-2 · `fillRecord`)은 「교인명부 기록」 ·
+- 교인명부에서 주는 값은 **이름·구분·소속·세부·직분 다섯**뿐(예외 하나 — 아래 `evPerson` 의 `full`). 기록: `event.*` 는 「바꾼 기록」 · `people.lookup`(`{q, count}` · `evPeopleLookup`·`evPerson`·`ministryPerson` 세 곳 — `ministryPerson` 은 `from:"ministry"`, 번호로 골랐으면 `byPhone:true` · 번호 자체는 싣지 않는다)·`people.fill`(`{rows, names, asked, askedNames}` · 살펴보기에서 명부에 물었으면 **채운 것이 없어도** 한 줄 — 2026-09-30 SEC-2 · `fillRecord`)은 「교인명부 기록」 ·
   `event.upload` 는 건수만 **납작하게**. 칸 이름을 바꾸면 `js/menus/system/audit.js`·`tests/audit.test.mjs` 도 함께(안 고치면 기록 줄이 0·빈칸으로 보인다).
 - 이름을 누르면 교적 창(`evPerson` · `events-person.ts` · 화면 `person-popup.js`): **부른 분의 역할로 서버가 모양을 정한다**(`ctx.roles` — 화면이 보낸 것을 믿지 않는다) — `directory`·`super` 면 `full`(교인ID·이름·소속·직분 → 화면이 교인명부 `openPerson` → `peoplePerson` 「자세히」 창 · 기록은 그쪽 `people.view`, 한 분으로 못 골라 후보를 줄 때만 여기서 `people.lookup`), 성경필사만이면 `basic`(다섯 칸 + 교적 표시 · 늘 `people.lookup`). **교인ID 를 `basic` 에 싣지 말 것** — 위 「다섯뿐」의 유일한 예외가 `full` 이다.
   고르는 규칙은 교적 표시와 같은 `sameAffiliation`(같은 소속 한 분 → 이름이 한 분뿐 → 못 고르면 후보 스무 분 · `total` 은 자르기 전 수). 창은 뒤로 가기 한 칸(`history.state` `{bePerson:1}`)을 쌓아 뒤로 가기가 창만 닫는다 — `modal.js` 와 같은 차례(「닫기」로 닫으면 그 칸을 거둔 뒤에 끝낸다).
