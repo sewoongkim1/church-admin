@@ -49,6 +49,15 @@ export function isDay(s: unknown): boolean {
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === t;
 }
 
+// 지난 회차에 넣는 줄의 낸 날(created_at) — 마감일이 오늘(KST)보다 앞선 회차만 「마감일 한국 자정」, 그 밖은 null(DB 기본값 now()).
+//   M2(2026-09-30 친구 결정): 성경암송 evtPositionHint(앱 등록 폼의 직분 기본값)와 「이미 내신 것」 차례가
+//   created_at 이 가장 늦은 줄을 「가장 최근」으로 본다 — 2022 명단을 오늘 올린 줄이 가장 새것으로 보이면 안 된다.
+//   명단 올리기(uploadRecords)·한 분 더하기(evRowAdd) 두 곳이 이것 하나로 정한다. 오늘 마감하는 회차는 아직 열린 회차다.
+export function pastEventCreatedAt(closesOn: unknown, today: string): string | null {
+  if (typeof closesOn !== "string" || !isDay(closesOn) || !isDay(today)) return null;
+  return closesOn < today ? `${closesOn}T00:00:00+09:00` : null;
+}
+
 // ── 자격 회차(가을 말씀 동행처럼 needs.eligibility 가 있는 회차) — **이 두 함수만** 쓴다(CONTRACT §5) ──
 // hasEligibility(evOut · Task 5) · before-eligibility(evEventSave · Task 6) · eligibility-event(Task 7·8)가
 // 모두 이 둘을 부른다. 서버·화면이 「자격 회차인가」를 세 가지로 다르게 판정하던 것을 한 곳으로 모았다.

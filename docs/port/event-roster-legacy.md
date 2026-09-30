@@ -2089,7 +2089,7 @@ if(getPw()) load(); else renderLogin();
 46. 이관 계정 잇기는 `users` 통째 읽기(1,000행에서 잘림)로 글자 그대로 같은 `identity_key` 만 본다 — `user_identity_aliases` 는 안 본다 —
     index.ts:5861-5875. **[바뀜]** `usersByKeys`(users + aliases, 100개씩).
 47. 그 회차에 앱으로 낸 계정은 이관 줄에 잇지 않는다 · 한 계정은 한 줄에만 잇는다 — index.ts:5877-5893.
-48. 이관 `note` 는 `norm` 만(길이 상한 없음) · `phone`·`memo` 는 빈 값 — index.ts:5853-5855. **[바뀜]** 새 쪽 `note` 는 붙임말(`담당자가 더함`·`명단 올리기`·`소속: 교인명부로 채움`, ` / ` 로 이음)을 붙인 **뒤** 500자가 넘으면 `note-too-long`(창의 글자 수 상한은 480) · `phone`·`memo` 는 쓰지 않는다.
+48. 이관 `note` 는 `norm` 만(길이 상한 없음) · `phone`·`memo` 는 빈 값 — index.ts:5853-5855. **[바뀜]** 새 쪽 `note` 는 붙임말(`담당자가 더함`·`명단 올리기`·`소속: 교인명부로 채움`·`직분: 교인명부로 채움`(직분만 채운 줄 · 2026-09-30), ` / ` 로 이음)을 붙인 **뒤** 500자가 넘으면 `note-too-long`(창의 글자 수 상한은 480) · `phone`·`memo` 는 쓰지 않는다.
 49. 공개 명단(`eventRosterPublic`)은 로그인 없이 다섯 칸만, `evtListable` 인 회차만 준다 — index.ts:5725-5742. **[안 옮김]** 그대로 둔다.
 50. 첫 화면 목록(`eventOpenList`)은 관리자 비밀번호가 없으면 `evtListable` 인 회차만 준다 — index.ts:5291-5294, 5311-5314. **[안 옮김]** 그대로 둔다.
 51. 성도님이 앱에서 내면 `(event_id, user_id)` upsert 가 소속·직분·phone·memo·answers 를 덮고 `source='app'` 으로 만든다 · `note` 는 남는다 ·

@@ -4,7 +4,8 @@
 // 서버 evUploadCheck(살펴보기)·evUploadSave(넣기)가 둘 다 **처음부터 다시** 다듬고 판정한다 — 이 화면은 칸을 나눠 보내고
 // 받은 판정을 보여 줄 뿐이다. 넣은 줄은 source='import', 메모 「명단 올리기」(서버가 붙인다).
 // ⚠️ 자격 회차(needs.eligibility 가 있는 회차 — 가을 말씀 동행)는 고르개에 나오지 않는다(서버도 eligibility-event 로 막는다).
-// ⚠️ 「빈칸은 교인명부로 채우기」를 켜고 살펴보면 교인명부 값(소속·직분)이 화면에 나온다 — 서버가 people.fill 기록(채운 분 이름)을 남긴다.
+// ⚠️ 「빈칸은 교인명부로 채우기」를 켜고 살펴보면 교인명부 값(소속·직분)이 화면에 나온다 — 서버가 people.fill 기록(물은 이름·채운 분 이름 ·
+//    명부에 물었으면 채운 것이 없어도 · SEC-2 2026-09-30)을 남긴다.
 // ⚠️ 시스템 창을 띄우지 않는다 — 확인·알림은 ui.js dialog, 고르기는 picker.js pickOne. 엑셀 **파일 고르기**만 운영체제 창이라
 //    붙여넣기 칸과 끌어다 놓기를 함께 둔다.
 // ⚠️ 회차를 고르면 주소를 #/be-upload?ev=<id> 로 바꾼다 — replaceState 라 hashchange 가 안 나고(route 가 다시 안 그린다),
@@ -109,7 +110,7 @@ export async function render(el, { call, query }) {
       <label class="be-up-fill"><input type="checkbox" id="be-up-fill">
         <span><b>빈칸은 교인명부로 채우기</b>
           <small>교인명부에 그 이름이 한 분뿐일 때만 비어 있는 교구·목장·직분을 채워요 — 적힌 칸은 덮지 않고, 적힌 소속이 교인명부와 다르면 채우지 않아요.
-            살펴보기만 해도 채운 분 이름이 열람 기록에 남아요.</small></span></label>
+            살펴보기만 해도 교인명부에 물어본 이름(빈칸이 있는 줄)과 채운 분 이름이 열람 기록에 남아요.</small></span></label>
       <div id="be-up-sum" class="be-up-sum"></div>
       <div id="be-up-marks" class="tabs be-up-marks" role="group" aria-label="판정으로 거르기" hidden></div>
       <div id="be-up-list"></div>
