@@ -73,7 +73,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 성경암송 쪽에 **남긴 것**: `eventRoster`(읽기)·`eventExcuse`(자격 인정)·자격 회차 미신청 목록 — 가을 말씀 동행용, 다음 단계에서 옮긴다(그때 성경암송 `admin.html` 이벤트 타일도 이리로).
   성도님 앱 액션(`eventOpenList`·`eventSignup`·`eventDrop`·`eventRosterPublic`·`eventStamps`)은 건드리지 않는다.
 - 표는 성경암송 것 — **칸·제약·RLS 를 바꾸지 않는다**(새 SQL 은 역할 한 줄 `004_bibleevent_role.sql` 뿐).
-  담당자가 더한 줄은 `source='import'` + `note` 앞에 `담당자가 더함`·`명단 올리기`·`소속: 교인명부로 채움`(겹치면 ` / `). 서버는 붙임말을 붙인 **뒤** 500자를 넘으면 `note-too-long` — 창의 글자 수 상한은 480.
+  담당자가 더한 줄은 `source='import'` + `note` 앞에 `담당자가 더함`·`명단 올리기`·`소속: 교인명부로 채움`(겹치면 ` / `). 서버는 붙임말을 붙인 **뒤** 500자를 넘으면 `note-too-long` — 창의 글자 수 상한은 더하기 480(NOTE_FORM_MAX · 붙임말 몫) · 고치기·메모만 고치기 500(NOTE_EDIT_MAX — 고칠 땐 붙임말을 안 붙이고 서버도 500 그대로 센다).
 - `note`(담당자 메모)와 `memo`(성도님 한 줄)는 다른 칸이다. `memo`·`phone`·`answers` 는 쓰지 않고, `user_id`·`ident_key` 와 함께 응답에 싣지 않는다(명시적 칸 지도 · 줄 칸 목록은 `EV_ROW_COLS` 하나 · 계정은 `hasUser` 로만).
 - `ident_key` 는 `paper.ts` `appIdentityKey`(NFC 안 함) — `authz.ts` `identityKey`(NFC)를 쓰면 앱 계정과 영영 안 맞는다. 같은 분 판정은 `sameKeys`(07/7·N목장·NFC) 한 규칙 — 한 분 더하기·고치기·올리기가 함께 쓴다. 더해서 교구 줄은 **한쪽 목장이 비었거나 99** 면 같은 교구·같은 이름을 같은 분으로 본다(`looseSame` · 올리기는 채우기 전 줄의 키도 · 화면 `dupFlags` 도 같게 · 2026-09-30 최종 검토 I1).
 - 앱 계정은 **조회만** 해서 잇는다(만들지 않는다 · `member_login` 금지). 한글 키 `.in()` 은 100개·6KB 씩(`inChunks`).

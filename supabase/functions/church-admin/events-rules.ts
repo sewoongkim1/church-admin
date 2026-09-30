@@ -181,7 +181,8 @@ export function checkRow(row: EvRow): string | null {
 }
 
 // 담당자 메모 길이 — ⚠️ 서버는 붙임말(「담당자가 더함 / 」·「명단 올리기」 등)을 **붙인 뒤의** 글을 넣기 직전에 이것으로 본다.
-// 창(Task 10)의 글자 수 상한은 480 — 「담당자가 더함 / 」(10자)을 붙여도 500 을 넘지 않게(CONTRACT §5).
+// 창의 글자 수 상한은 더하기 480(NOTE_FORM_MAX — 「담당자가 더함 / 」(10자)을 붙여도 500 을 넘지 않게 · CONTRACT §5) ·
+// 고치기·메모만 고치기 500(NOTE_EDIT_MAX — evRowSave 는 붙임말을 안 붙이고 이것으로 500 그대로 센다).
 export function checkNote(note: unknown): string | null {
   return String(note ?? "").length > BE_NOTE_MAX ? "note-too-long" : null;
 }

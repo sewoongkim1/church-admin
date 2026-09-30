@@ -270,3 +270,14 @@ test("norm·tidyMok — 서버 legacyNorm·tidyRow(교구 줄의 목장 칸)와 
     assert.equal(tidyMok(x), server, "tidyMok " + JSON.stringify(x));
   }
 });
+
+// ---------- 다시 고침(2026-09-30) — CLAUDE.md 「성경필사(암송)」 의 메모 상한이 창의 값과 같게 ----------
+test("CLAUDE.md 메모 상한 — 더하기 480(NOTE_FORM_MAX)·고치기·메모만 고치기 500(NOTE_EDIT_MAX)을 코드 값 그대로 적는다(doc-note-max)", () => {
+  const md = readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
+  const lines = md.split(/\r?\n/).filter((l) => l.includes("note-too-long"));
+  assert.equal(lines.length, 1, "CLAUDE.md 에 note-too-long 줄이 하나여야 한다");
+  const line = lines[0];
+  assert.ok(line.includes(`더하기 ${NOTE_FORM_MAX}(NOTE_FORM_MAX`), "더하기 창 상한이 NOTE_FORM_MAX 값으로 적혀 있지 않다");
+  assert.ok(line.includes(`고치기·메모만 고치기 ${rosterLogic.NOTE_EDIT_MAX}(NOTE_EDIT_MAX`), "고치기 창 상한이 NOTE_EDIT_MAX 값으로 적혀 있지 않다");
+  assert.ok(!/창의 글자 수 상한은 480\.\s*$/.test(line), "창 상한을 480 하나로만 적고 있다(고치기 창은 500)");
+});
