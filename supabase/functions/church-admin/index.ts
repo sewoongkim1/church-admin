@@ -473,6 +473,92 @@ async function ministryDelete(ctx: Ctx, b: any) {
   return { ok: true, deleted };
 }
 
+// ---------- 사역신청 — 시험 참여자(2026-09-30) ----------
+// 명단에 오른 앱 계정은 기간 밖에도 성경암송 첫 화면에 🤝 사역신청이 보이고 신청·취소가 된다(그쪽 api ministryTester·ministryApply).
+// 명단은 app_config.ministryTesters = identity_key 배열(ministryAdmins 와 같은 모양). ⚠️ 성경암송 PUBLIC_CONFIG_KEYS 에 넣지 않는다(이름이 든다).
+// ⚠️ 키가 아니라 사람으로 맞댄다 — 등록 뒤 소속이 바뀐 분의 옛 키는 user_identity_aliases 로 간다(keysToUserIds).
+// ⚠️ 응답에 user_id 를 싣지 않는다. 손잡이는 identity_key(이름·소속으로 만든 값이라 비밀이 아니다).
+// ⚠️ 읽고-고쳐-쓰기다. 화면이 저장 중 단추를 잠그고, 저장 뒤 **다시 읽은** 명단을 돌려준다.
+const TESTERS_KEY = "ministryTesters";
+const appUserWho = (u: any) =>
+  (u.type === "교구" ? [u.gu, u.mok ? u.mok + "목장" : ""] : [u.bu, u.grade]).filter(Boolean).join(" ");
+
+async function testerKeys(): Promise<string[]> {
+  const { data, error } = await db.from("app_config").select("value").eq("key", TESTERS_KEY).maybeSingle();
+  if (error) throw error;
+  return Array.isArray(data?.value) ? (data!.value as unknown[]).map((x) => norm(x)).filter(Boolean) : [];
+}
+
+async function testersView(keys: string[]) {
+  const who = await keysToUserIds(keys);
+  const ids = [...new Set(who.values())];
+  const byId = new Map<string, any>();
+  if (ids.length) {
+    const { data, error } = await db.from("users")
+      .select("id,identity_key,type,gu,mok,bu,grade,name,last_seen_at").in("id", ids);
+    if (error) throw error;
+    for (const u of (data ?? []) as any[]) byId.set(u.id, u);
+  }
+  return keys.map((k) => {
+    const u = byId.get(who.get(k) ?? "");
+    // 계정이 지워졌거나 키에 쓸 수 없는 글자가 섞였다 — 들어올 수 없으니 화면이 「빼 주세요」로 알린다
+    if (!u) return { key: k, name: "", who: "", last_seen_at: null, moved: false, missing: true };
+    return { key: k, name: u.name ?? "", who: appUserWho(u), last_seen_at: u.last_seen_at ?? null,
+      moved: u.identity_key !== k, missing: false };
+  });
+}
+
+async function ministryTesters() {
+  return { ok: true, testers: await testersView(await testerKeys()) };
+}
+
+// 이름으로 앱 계정 찾기 — 앱에 한 번이라도 로그인한 분만 있다. 동명이인은 소속·마지막 접속으로 가른다.
+async function ministryTesterFind(b: any) {
+  const q = norm(b.name);
+  if (!q) return { ok: false, error: "no-name" };
+  if (q.length > 40) return { ok: false, error: "too-long" };
+  const pattern = q.replace(/[\\%_]/g, "\\$&");
+  const { data, error } = await db.from("users")
+    .select("id,identity_key,type,gu,mok,bu,grade,name,last_seen_at")
+    .ilike("name", `%${pattern}%`).order("name").order("id").limit(31);
+  if (error) throw error;
+  const rows = (data ?? []) as any[];
+  const mine = new Set((await keysToUserIds(await testerKeys())).values());
+  return { ok: true, more: rows.length > 30, users: rows.slice(0, 30).map((u) => ({
+    key: u.identity_key, name: u.name ?? "", who: appUserWho(u), last_seen_at: u.last_seen_at ?? null, tester: mine.has(u.id) })) };
+}
+
+// 한 분씩 더하기·빼기 — 목록을 통째로 받지 않는다(옛 화면·동시 편집이 다른 분을 조용히 지운다)
+async function ministryTesterSave(ctx: Ctx, b: any) {
+  const op = String(b.op ?? "");
+  const key = norm(b.key);
+  if ((op !== "add" && op !== "remove") || !key || key.length > 200) return { ok: false, error: "invalid" };
+  const keys = await testerKeys();
+  let name = "", who = "";
+  if (op === "add") {
+    // 더할 때는 users 에 있는 키만 — 화면은 찾기 결과에서 고른다
+    const { data: u, error } = await db.from("users").select("id,type,gu,mok,bu,grade,name").eq("identity_key", key).maybeSingle();
+    if (error) throw error;
+    if (!u) return { ok: false, error: "not-found" };
+    // 같은 분이 옛 키로 이미 있으면 더하지 않는다(사람으로 맞댄다)
+    const have = new Set((await keysToUserIds(keys)).values());
+    if (have.has(u.id)) return { ok: true, already: true, testers: await testersView(keys) };
+    keys.push(key);
+    name = u.name ?? ""; who = appUserWho(u);
+  } else {
+    const i = keys.indexOf(key);
+    if (i < 0) return { ok: true, already: true, testers: await testersView(keys) };   // 이미 빠졌다 — 쓰지도 기록하지도 않는다
+    const [v] = await testersView([key]);
+    name = v.name; who = v.who;
+    keys.splice(i, 1);
+  }
+  const { error } = await db.from("app_config").upsert(
+    { key: TESTERS_KEY, value: keys, updated_at: new Date().toISOString() }, { onConflict: "key" });
+  if (error) throw error;
+  await audit(ctx, "ministry.tester", "", { op, name, who });
+  return { ok: true, testers: await testersView(await testerKeys()) };
+}
+
 // ---------- 사역신청 — 사역팀 정보(4·5단계 · 2026-09-29) ----------
 // 원문: docs/port/ministry-catalog-legacy.md 1.2·1.4·1.7·1.8. 원문 ministryCatalog 는 성도 화면과
 // 공유해 게이트가 없었지만, 여기서는 관리자 전용(canCall)이라 ministryAdminError 를 두지 않는다.
@@ -1581,6 +1667,9 @@ Deno.serve(async (req) => {
       case "ministryCatalogOrder": return json(await ministryCatalogOrder(ctx, b));
       case "ministryPaperCheck": return json(await ministryPaper(ctx, b, false));
       case "ministryPaperSave":  return json(await ministryPaper(ctx, b, true));
+      case "ministryTesters":    return json(await ministryTesters());
+      case "ministryTesterFind": return json(await ministryTesterFind(b));
+      case "ministryTesterSave": return json(await ministryTesterSave(ctx, b));
       case "peopleSearch": return json(await peopleSearch(ctx, b));
       case "peoplePerson": return json(await peoplePerson(ctx, b));
       case "peopleStats":  return json(await peopleStats());

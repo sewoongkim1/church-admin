@@ -116,6 +116,10 @@ const PROBE = {
   ministryCatalogOrder: { ids: [] },
   ministryPaperCheck: { rows: [] },
   ministryPaperSave: { rows: [] },
+  // 시험 참여자(2026-09-30) — 없는 이름 찾기 · 없는 키 빼기(명단에 없으면 쓰지도 기록하지도 않는다)
+  ministryTesters: {},
+  ministryTesterFind: { name: "ca-test-probe-없음" },
+  ministryTesterSave: { op: "remove", key: "ca-test-probe-없음" },
   peopleSearch: { q: "ca-test-probe-없음" },
   peoplePerson: { id: 0 },
   peopleStats: {},
@@ -2047,4 +2051,48 @@ test("성경필사 명단 올리기 살펴보기: 40자 한글 이름 150줄도 
     assert.ok(x.notes.some((n) => n.includes("교인명부에 없는 이름")), JSON.stringify(x.notes));
   }
   assert.equal(await dbCount(UP.ev), before, "살펴보기가 줄을 넣었다");
+});
+
+// ---------- 사역신청 시험 참여자(2026-09-30) ----------
+test("시험 참여자: 찾기 → 더하기 → 명단 → 다시 더하기(already) → 빼기 · user_id 안 실음", async () => {
+  const [row] = await rest("app_config?select=value&key=eq.ministryTesters", "GET");
+  const orig = row ? row.value : null;
+  const tok = people.ministry.token;
+  const key = "교구|시험|0|||ca-test-min-" + STAMP;
+  try {
+    const f = await call(tok, "ministryTesterFind", { name: "ca-test-min" });
+    assert.equal(f.body.ok, true, JSON.stringify(f.body));
+    const me = f.body.users.find((u) => u.key === key);
+    assert.ok(me, "찾기에 시험 계정이 없다");
+    assert.equal(me.tester, false);
+    assert.ok(!UUID_RE.test(JSON.stringify(f.body)), "찾기 응답에 UUID");
+
+    const a = await call(tok, "ministryTesterSave", { op: "add", key });
+    assert.equal(a.body.ok, true, JSON.stringify(a.body));
+    const t = a.body.testers.find((x) => x.key === key);
+    assert.ok(t && t.name === "ca-test-min" && t.missing === false, JSON.stringify(a.body.testers));
+    assert.ok(!UUID_RE.test(JSON.stringify(a.body)), "명단 응답에 UUID");
+
+    const again = await call(tok, "ministryTesterSave", { op: "add", key });
+    assert.equal(again.body.already, true);
+    assert.equal(again.body.testers.filter((x) => x.key === key).length, 1);
+
+    const f2 = await call(tok, "ministryTesterFind", { name: "ca-test-min" });
+    assert.equal(f2.body.users.find((u) => u.key === key).tester, true);
+
+    const nf = await call(tok, "ministryTesterSave", { op: "add", key: key + "-없음" });
+    assert.equal(nf.body.error, "not-found");
+    assert.equal((await call(tok, "ministryTesterFind", { name: "" })).body.error, "no-name");
+    assert.equal((await call(tok, "ministryTesterSave", { op: "x", key })).body.error, "invalid");
+
+    const r = await call(tok, "ministryTesterSave", { op: "remove", key });
+    assert.equal(r.body.ok, true);
+    assert.equal(r.body.testers.some((x) => x.key === key), false);
+
+    const log = await rest(`admin_audit?select=action,detail&action=eq.ministry.tester&member_id=eq.${people.ministry.memberId}&order=id.desc&limit=2`, "GET");
+    assert.deepEqual(log.map((x) => x.detail.op), ["remove", "add"]);
+  } finally {
+    await rest("app_config?key=eq.ministryTesters", "DELETE");
+    if (orig !== null) await rest("app_config", "POST", { key: "ministryTesters", value: orig });
+  }
 });

@@ -105,3 +105,9 @@ test("옛 기록은 그대로 — people.search · 모르는 기록은 빈 줄",
   assert.equal(detailText(R("people.search", { q: "홍", filters: {}, total: 3 })), "‘홍’ · 3명");
   assert.equal(detailText(R("something.else", { a: 1 })), "");
 });
+
+test("ministry.tester — 더함/뺌 · 이름 · 소속", () => {
+  assert.match(LABEL["ministry.tester"], /[가-힣]/);
+  assert.equal(detailText(R("ministry.tester", { op: "add", name: "홍길동", who: "화평 20목장" })), "더함 · 홍길동 · 화평 20목장");
+  assert.equal(detailText(R("ministry.tester", { op: "remove", name: "홍길동", who: "" })), "뺌 · 홍길동");
+});
