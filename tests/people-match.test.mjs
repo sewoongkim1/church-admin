@@ -276,15 +276,51 @@ test("남성 — 전화가 있어도 차례는 ① 같은 소속(남성 목장) 
     { state: "확인 필요", reason: "소속 다름" });
 });
 
-test("matchChurch·churchFor 의 셋째 인자(more) — 같은 소속으로 더 칠 분 · 넘기지 않으면 예전 그대로", () => {
+test("matchChurch·churchFor 의 셋째 인자(isSame) — 「같은 소속」 판정을 통째로 바꾼다 · 넘기지 않으면 예전 그대로(sameAffiliation)", () => {
+  // 2026-09-30 오전엔 「더할 분」(more · sameAffiliation 과 또는)이었다 — 성경필사 줄이 교구 줄에서 아이를 **빼야** 해서 판정 전체를 받는다
   const a = SG("화평", "");
   const dir = [C({ mok1: "화평", mok3: "화평-" }), C({ mok1: "소망", mok3: "소망-3목장" })];
   assert.deepEqual(matchChurch(dir, a), { state: "확인 필요", reason: "목장 확인(같은 교구 1명)" });
   assert.deepEqual(matchChurch(dir, a, (c) => c.mok3 === "화평-"), { state: "맞음", reason: "" });
   assert.deepEqual(matchChurch(dir, a, () => true), { state: "확인 필요", reason: "같은 소속에 같은 이름 2명" });
   assert.deepEqual(matchChurch(dir, a, () => false), matchChurch(dir, a));
+  // 더하기가 아니라 바꾸기다 — sameAffiliation 이 맞다는 분도 isSame 이 아니라면 같은 소속이 아니다(뒤 단계로 간다)
+  const n20 = [C({ mok1: "화평", mok3: "화평-20목장" })];
+  assert.deepEqual(matchChurch(n20, SG("화평", "20")), { state: "맞음", reason: "" });
+  assert.deepEqual(matchChurch(n20, SG("화평", "20"), () => false), { state: "확인 필요", reason: "같은 이름 1명" });
   const idx = new Map([["김철수", dir]]);
   assert.deepEqual(churchFor(idx, a, (c) => c.mok3 === "화평-"), { state: "맞음", reason: "" });
   assert.equal(churchFor(null, a, () => true), null, "명부 없음은 여전히 null");
   assert.equal(churchFor(idx, { ...a, name: "김(철수)" }, () => true), null, "물을 수 없는 이름도 null");
+});
+
+// ── 명부의 아이(kind2 교회학교·학생 · 2026-09-30 옮겨 적기 검토 2·4) ─────────────────
+// 명부에는 아이도 가족의 교구·목장이 있다(events-people.ts ⚠️). 「남성」 갈래(2026-09-30 새로 연 것)는 아이를 뺀다 — 사역 줄도.
+// 숫자 목장 갈래는 사역 줄 표시가 함께 바뀌는 오래된 동작이라 그대로 둔다(성경필사 줄은 events-person.ts signupSame 이 뺀다).
+import { KID_KIND2, candKid } from "../supabase/functions/church-admin/people-match.ts";
+import { mapChurchPerson } from "../supabase/functions/church-admin/events-people.ts";
+
+test("KID_KIND2 — events-people.ts 의 아이 목록(mapChurchPerson 규칙 1)과 같다", () => {
+  // events-people.ts 의 KID_KIND2 는 내보내지 않는다(그 파일이 이 파일을 import 한다) — 옮겨 적기 결과로 맞대 본다
+  for (const kind2 of ["교회학교", "학생", "장년", "청년", "노년", "유아", "교역자", "", " 학생 ", "학생".normalize("NFD")]) {
+    const p = { name_key: "x", kind2, mok1: "소망", mok3: "소망-3목장", school_dept: "중등부", position: "", position_detail: "" };
+    assert.equal(candKid(toCand(p)), mapChurchPerson(p)?.who_type === "교회학교", JSON.stringify(kind2));
+  }
+  assert.deepEqual(KID_KIND2, ["교회학교", "학생"]);
+});
+
+test("남성 — 가족 목장 칸이 「소망-남성1」인 아이는 「소망 남성」 줄과 같은 소속이 아니다(성경필사·사역 줄 모두) · 숫자 목장은 예전 그대로", () => {
+  const kid = C({ kind2: "학생", mok1: "소망", mok3: "소망-남성1", school_dept: "중등부" });
+  const adult = C({ kind2: "장년", mok1: "소망", mok3: "소망-남성1" });
+  for (const a of [SG("소망", "남성"), applicantFromWho("김철수", "소망 남성", ""), applicantFromPaper({ gu: "소망", mok: "남성", name: "김철수", phone: "" })]) {
+    assert.equal(sameAffiliation(kid, a), false, JSON.stringify(a));
+    assert.equal(sameAffiliation(adult, a), true, JSON.stringify(a));
+    // 아이 한 분뿐이면 이 갈래를 열기 전 결과 그대로 「목장 확인(같은 교구 1명)」
+    assert.deepEqual(matchChurch([kid], a), { state: "확인 필요", reason: "목장 확인(같은 교구 1명)" });
+    // 어른과 아이 동명이인 — 어른 한 분이 같은 소속(「같은 소속에 같은 이름 2명」이 아니다)
+    assert.deepEqual(matchChurch([kid, adult], a), { state: "맞음", reason: "" });
+  }
+  assert.equal(sameAffiliation(C({ kind2: "교회학교", mok1: "소망", mok3: "소망-남성2", school_dept: "유년부" }), applicantFromWho("김철수", "소망 남성2목장", "")), false);
+  // ⚠️ 숫자 목장 갈래는 아이를 빼지 않는다(사역 줄 표시가 바뀐다 — 친구에게 물을 일). 바꾸면 이 줄이 알려 준다
+  assert.equal(sameAffiliation(C({ kind2: "학생", mok1: "소망", mok3: "소망-3목장", school_dept: "중등부" }), applicantFromWho("김철수", "소망 3목장", "")), true);
 });
