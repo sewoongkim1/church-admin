@@ -629,7 +629,9 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-famon{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 10px;font-weight:700;color:var(--navy)}
 .pp-rel{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;margin-right:6px;border-radius:999px;background:var(--ghost-bg);color:var(--navy);font-size:12px;font-weight:700}
 .pp-kpis{display:flex;gap:var(--gap);flex-wrap:wrap}
-.pp-kpi{flex:1 1 160px;display:flex;flex-direction:column;gap:2px}
+/* ⚠️ 선택자를 `.pp-kpis .pp-kpi`(0,2,0)로 둔다 — 「사진 없는 분」 카드는 <a class="card pp-kpi"> 라
+   `.pp-kpi`(0,1,0) 하나로는 위 `a.card{display:block}`(0,1,1)에 져서 「사진 없는 분406명 …」처럼 한 줄로 붙었다(2026-09-30). */
+.pp-kpis .pp-kpi{flex:1 1 160px;display:flex;flex-direction:column;gap:2px}
 .pp-kpi b{font-size:1.4rem;color:var(--navy)}
 .pp-stat{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);margin-bottom:8px}
 .pp-stat th,.pp-stat td{padding:6px 10px;border-bottom:1px solid var(--light);font-size:14px;text-align:right}

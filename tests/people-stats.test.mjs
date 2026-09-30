@@ -119,3 +119,26 @@ test("응답 크기 — 8,672명 가짜 명부의 교인 현황이 수십 KB 안
   const kb = Buffer.byteLength(JSON.stringify(big)) / 1024;
   assert.ok(kb < 60, `${kb.toFixed(1)}KB`);
 });
+
+// ⚠️ 「사진 없는 분」 카드는 <a class="card pp-kpi"> — `a.card{display:block}`(0,1,1)이 이기면 라벨·숫자·안내가
+// 한 줄로 붙는다(「사진 없는 분406명 …」 · 2026-09-30). 세로로 쌓는 규칙의 특이도가 a.card 보다 높아야 한다.
+import { readFileSync } from "node:fs";
+test("KPI 카드 — <a class=\"card pp-kpi\"> 도 세로로 쌓인다(세로 규칙 특이도 > a.card)", () => {
+  const css = readFileSync(new URL("../css/admin.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ sel: sel.trim(), body }));
+  // 거친 특이도 — [아이디, 클래스·속성·가상클래스, 요소] (이 파일의 단순한 선택자면 충분)
+  const spec = (s) => [(s.match(/#[\w-]+/g) || []).length,
+    (s.match(/\.[\w-]+|\[[^\]]*\]|:(?!:)[\w-]+/g) || []).length,
+    (s.replace(/[.#:][\w-]+|\[[^\]]*\]/g, " ").match(/(^|[\s>+~])[a-z][\w-]*/gi) || []).length];
+  const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  const displayOf = (want) => rules.flatMap((r) => r.sel.split(",").map((s) => s.trim())
+    .filter((s) => want(s) && /(^|;)\s*display\s*:/.test(r.body))
+    .map((s) => ({ s, sp: spec(s), flex: /display\s*:\s*flex/.test(r.body) })));
+  const block = displayOf((s) => s === "a.card");
+  const kpi = displayOf((s) => /\.pp-kpi$/.test(s));
+  assert.ok(block.length && kpi.length, "a.card 와 .pp-kpi 의 display 규칙이 있어야 한다");
+  const top = kpi.sort((a, b) => cmp(b.sp, a.sp))[0];
+  assert.ok(top.flex, `${top.s} 가 display:flex 여야 한다`);
+  for (const b of block) assert.ok(cmp(top.sp, b.sp) > 0, `${top.s}(${top.sp}) 가 ${b.s}(${b.sp}) 를 이겨야 한다`);
+  assert.match(css, /flex-direction:column/);
+});
