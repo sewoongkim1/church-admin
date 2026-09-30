@@ -2,8 +2,8 @@
 // 이름·교인ID 는 모두 지어낸 것(홍길동 · 11~). 교인명부 칸 모양은 서버가 읽는 EV_PERSON_COLS 그대로.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { personAsk, personPick, personLabel, personOut } from "../supabase/functions/church-admin/events-person.ts";
-import { matchChurch, toCand, applicantFromSignup } from "../supabase/functions/church-admin/people-match.ts";
+import { personAsk, personPick, personPickFor, personLabel, personOut, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
+import { matchChurch, toCand, applicantFromSignup, applicantFromWho, sameAffiliation } from "../supabase/functions/church-admin/people-match.ts";
 import { LOOKUP_MAX } from "../supabase/functions/church-admin/events-upload.ts";
 
 // 교인명부 한 분 — 서버가 읽는 칸(person_id·name + ChurchPerson 일곱)만
@@ -122,4 +122,130 @@ test("personOut — 명부의 다른 칸(연락처·주소·생년월일·사진
     assert.ok(!full.includes(k), "full 에 새어 나감: " + k);
   }
   assert.ok(full.includes('"person_id":990001'), "full 은 교인ID 를 싣는다(「자세히」 창을 열려고)");
+});
+
+// ---------- 사역신청·담당자 이름을 누르면(ministryPerson · 2026-09-30) — personPickFor · personOutFor ----------
+// 번호는 모두 지어낸 것(0100000000N). 명부 번호 칸 phone_digits 는 띄어쓰기로 여럿(toCand 가 나눈다).
+
+// 옛 personPick(2026-09-30 이 바꾸기 전) 그대로 — 번호가 없을 때 새 규칙이 이것과 한 글자도 다르지 않은지 맞대 본다.
+// ⚠️ personPick 은 이제 personPickFor 를 부르므로 둘을 견주면 제 자신과 견주는 셈이다 — 그래서 옛 식을 여기 옮겨 둔다.
+function oldPick(cands, ask) {
+  const all = [...(cands ?? [])].sort((a, b) => Number(a.person_id) - Number(b.person_id));
+  const a = applicantFromSignup(ask);
+  const same = all.filter((c) => sameAffiliation(toCand(c), a));
+  const list = [...same, ...all.filter((c) => !same.includes(c))];
+  if (same.length === 1) return { pick: 0, list };
+  if (same.length === 0 && all.length === 1) return { pick: 0, list };
+  return { pick: null, list };
+}
+const ids = (r) => ({ pick: r.pick, list: r.list.map((p) => p.person_id) });
+const PH = (n) => "0100000000" + n;                       // 지어낸 번호
+
+test("personPickFor — 번호가 없으면 옛 personPick 과 완전히 같다(고른 분·목록 차례 모두 · 성경필사 evPerson 이 안 바뀐다)", () => {
+  const dir = [P(12), P(11, { mok1: "소망", mok3: "소망-3목장" }), P(14, { mok1: "소망", mok3: "소망-3목장" }),
+    P(15, { mok1: "믿음", mok3: "믿음-1목장" }), P(13), P(21, { kind2: "청년", mok1: "청년부", mok3: "청년-3", position: "" }),
+    P(16, { mok1: "새가족", mok3: "2026-09" }), P(17, { phone_digits: PH(1) })];
+  const asks = [ask("교구", "화평", "20"), ask("교구", "소망", "3"), ask("교구", "믿음", "1"), ask("교구", "기쁨", "2"),
+    ask("교구", "화평", "남성"), ask("교구", "화평", ""), ask("교구", "화평", "99"), ask("교구", "새가족", ""),
+    ask("교회학교", "중등부", ""), ask("교회학교", "청년부", ""), ask("", "", "")];
+  const sets = [dir, [], dir.slice(0, 1), dir.slice(1, 2), dir.slice(1, 3), dir.slice(0, 2), [dir[0], dir[4]], [dir[3], dir[1]],
+    dir.slice(5), dir.slice(2, 6), [dir[7]], [dir[7], dir[3]]];
+  for (const q of asks) {
+    for (const cands of sets) {
+      const want = ids(oldPick(cands, q));
+      assert.deepEqual(ids(personPickFor(cands, applicantFromSignup(q))), want, JSON.stringify(q));
+      assert.deepEqual(ids(personPick(cands, q)), want, "personPick " + JSON.stringify(q));
+      // 번호 칸이 숫자 없는 글자여도 같다(phoneDigits 가 "" 로 만든다)
+      assert.deepEqual(ids(personPickFor(cands, { ...applicantFromSignup(q), phone: "-- " })), want, "숫자 없는 번호 " + JSON.stringify(q));
+    }
+  }
+});
+
+test("personPickFor — 같은 소속이 없고 동명이인 셋 · 번호가 한 분과 맞으면 그분(맨 앞 · 나머지는 교인ID 차례)", () => {
+  const cands = [P(31, { mok1: "소망", mok3: "소망-3목장", phone_digits: PH(1) }),
+    P(33, { mok1: "믿음", mok3: "믿음-1목장", phone_digits: PH(3) + " " + PH(4) }),
+    P(32, { mok1: "기쁨", mok3: "기쁨-2목장", phone_digits: PH(2) })];
+  const a = { ...applicantFromSignup(ask("교구", "화평", "20")), phone: "010-0000-0004" };   // 대시가 있어도 숫자만 맞댄다 · 둘째 번호
+  assert.deepEqual(ids(personPickFor(cands, a)), { pick: 0, list: [33, 31, 32] });
+  // 번호 없이는 고르지 않는다(옛 규칙 그대로)
+  assert.deepEqual(ids(personPickFor(cands, { ...a, phone: "" })), { pick: null, list: [31, 32, 33] });
+  // 아무와도 안 맞으면 고르지 않는다
+  assert.deepEqual(ids(personPickFor(cands, { ...a, phone: PH(9) })), { pick: null, list: [31, 32, 33] });
+  // 번호 일부만 같으면 맞지 않는다(정확히 같은 번호만)
+  assert.equal(personPickFor(cands, { ...a, phone: "0000000004" }).pick, null);
+  // 받은 배열은 그대로
+  assert.deepEqual(cands.map((p) => p.person_id), [31, 33, 32]);
+});
+
+test("personPickFor — 같은 소속 둘 · 번호가 그중 한 분과 맞으면 그분 · 차례는 고른 분 → 나머지 같은 소속 → 나머지", () => {
+  const cands = [P(45, { mok1: "소망", mok3: "소망-3목장", phone_digits: PH(5) }), P(42, { phone_digits: PH(2) }),
+    P(41, { phone_digits: PH(1) }), P(44, { mok1: "믿음", mok3: "믿음-1목장" })];
+  const a = { ...applicantFromSignup(ask("교구", "화평", "20")), phone: PH(2) };
+  assert.deepEqual(ids(personPickFor(cands, a)), { pick: 0, list: [42, 41, 44, 45] });
+  // 신청 현황 줄의 who 로 읽어도(applicantFromWho — 명단의 교적 표시와 같은 함수) 같다
+  assert.deepEqual(ids(personPickFor(cands, applicantFromWho("홍길동", "화평 20목장", PH(2)))), { pick: 0, list: [42, 41, 44, 45] });
+  // 번호가 없으면 고르지 않는다 — 같은 소속 먼저(교인ID 차례)
+  assert.deepEqual(ids(personPickFor(cands, { ...a, phone: "" })), { pick: null, list: [41, 42, 44, 45] });
+});
+
+test("personPickFor — 번호가 두 분과 맞으면 고르지 않는다", () => {
+  const same2 = [P(51, { phone_digits: PH(1) }), P(52, { phone_digits: PH(7) + " " + PH(1) })];
+  assert.equal(personPickFor(same2, { ...applicantFromSignup(ask("교구", "화평", "20")), phone: PH(1) }).pick, null);
+  const diff2 = [P(53, { mok1: "소망", mok3: "소망-3목장", phone_digits: PH(1) }), P(54, { mok1: "믿음", mok3: "믿음-1목장", phone_digits: PH(1) })];
+  assert.deepEqual(ids(personPickFor(diff2, { ...applicantFromSignup(ask("교구", "화평", "20")), phone: PH(1) })), { pick: null, list: [53, 54] });
+});
+
+test("personPickFor — 같은 소속이 둘이면 번호도 그 안에서만 본다(소속 밖 한 분과만 맞으면 고르지 않는다)", () => {
+  const cands = [P(61), P(62), P(63, { mok1: "소망", mok3: "소망-3목장", phone_digits: PH(3) })];
+  const a = { ...applicantFromSignup(ask("교구", "화평", "20")), phone: PH(3) };
+  assert.deepEqual(ids(personPickFor(cands, a)), { pick: null, list: [61, 62, 63] });
+  // 교적 표시도 「같은 소속에 같은 이름 2명」 — 창이 소속 다른 분을 열지 않는다
+  assert.deepEqual(matchChurch(cands.map(toCand), a), { state: "확인 필요", reason: "같은 소속에 같은 이름 2명" });
+  // 같은 소속이 한 분이면(맞음) 번호가 소속 밖 분과 맞아도 그 한 분
+  assert.deepEqual(ids(personPickFor([P(61), cands[2]], a)), { pick: 0, list: [61, 63] });
+});
+
+test("personPickFor — 목장을 모르는 줄(「화평 남성」)도 번호가 한 분과 맞으면 그분 · 교적 표시는 명단과 같은 「목장 확인」", () => {
+  const cands = [P(71, { phone_digits: PH(1) }), P(72, { mok3: "화평-5목장", phone_digits: PH(2) })];
+  const a = applicantFromWho("홍길동", "화평 남성", PH(2));
+  assert.deepEqual(ids(personPickFor(cands, a)), { pick: 0, list: [72, 71] });
+  const o = personOutFor(cands, a, false);
+  assert.deepEqual(o.church, matchChurch(cands.map(toCand), a), "창의 표시 = 명단의 표시(같은 함수·같은 후보·같은 줄)");
+  assert.deepEqual(o.church, { state: "확인 필요", reason: "목장 확인(같은 교구 2명)" });
+});
+
+test("personOutFor basic — 번호가 있으면 교적 표시가 명단처럼 「소속 다름」 · 고른 분 다섯 칸", () => {
+  const cands = [P(81, { mok1: "소망", mok3: "소망-3목장", phone_digits: PH(1) }), P(82, { mok1: "믿음", mok3: "믿음-1목장", phone_digits: PH(2) })];
+  const a = applicantFromWho("홍길동", "화평 20목장", "010-0000-0002");
+  const o = personOutFor(cands, a, false);
+  assert.deepEqual(o, { mode: "basic", pick: 0, total: 2,
+    people: [{ name: "홍길동", who_type: "교구", group: "믿음", sub: "1", position: "집사" }],
+    church: { state: "확인 필요", reason: "소속 다름" } });
+  // 번호가 없으면 옛 표시 그대로(「같은 이름 2명」 · 고르지 않음)
+  const n = personOutFor(cands, { ...a, phone: "" }, false);
+  assert.deepEqual([n.pick, n.church], [null, { state: "확인 필요", reason: "같은 이름 2명" }]);
+  // personOut(성경필사)은 번호가 없는 personOutFor 와 같다
+  const q = ask("교구", "화평", "20");
+  assert.deepEqual(personOut(cands, q, false), personOutFor(cands, applicantFromSignup(q), false));
+  assert.deepEqual(personOut(cands, q, true), personOutFor(cands, applicantFromSignup(q), true));
+  // full 도 번호로 고른다 — 교인ID 한 분
+  assert.deepEqual(personOutFor(cands, a, true),
+    { mode: "full", pick: 0, total: 2, candidates: [{ person_id: 82, name: "홍길동", label: "믿음 1목장", position: "집사" }] });
+});
+
+test("personOutFor — 명부 번호(phone_digits)·받은 번호가 basic·full 어디에도 나가지 않는다(고른 때·못 고른 때 모두)", () => {
+  const cands = [P(990011, { mok1: "소망", mok3: "소망-3목장", phone_digits: "01000000011 01000000012" }),
+    P(990012, { mok1: "믿음", mok3: "믿음-1목장", phone_digits: "01000000013" }),
+    P(990013, { phone1: "010-0000-0014", phone_digits: "01000000014", address: "비밀주소" })];
+  const asks = [applicantFromWho("홍길동", "기쁨 2목장", "01000000013"),     // 한 분과 맞음 → 고름
+    applicantFromWho("홍길동", "기쁨 2목장", "01000000099"),                  // 아무와도 안 맞음 → 후보 셋
+    applicantFromWho("홍길동", "화평 20목장", "01000000014")];                // 같은 소속 한 분 → 고름
+  for (const a of asks) {
+    for (const full of [false, true]) {
+      const j = JSON.stringify(personOutFor(cands, a, full));
+      for (const k of ["phone", "01000000011", "01000000012", "01000000013", "01000000014", "01000000099", "0000-0014", "비밀주소"]) {
+        assert.ok(!j.includes(k), (full ? "full" : "basic") + " 에 새어 나감: " + k + " " + j);
+      }
+    }
+  }
 });

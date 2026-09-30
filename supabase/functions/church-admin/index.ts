@@ -29,6 +29,9 @@ import { applyFill, fillNames, filledNames, judgeUpload, lookupName, lookupOut, 
 
 // 성경필사(암송) 이름을 누르면 교적 창(Task 16) — 이 과제의 이름은 events-person.ts 에서만 가져온다(CONTRACT 5)
 import { personAsk, personOut, type PersonCand } from "./events-person.ts";
+// 사역신청·담당자 이름을 누르면 교적 창(ministryPerson · 2026-09-30) — ⚠️ 이미 들인 이름(applicantFromSignup·applicantFromWho·personAsk·readName)은 적지 않는다
+import { personOutFor } from "./events-person.ts";
+import { phoneDigits } from "./people-match.ts";
 // 목장이 비었거나 99 인 교구 줄의 같은 분 판정(최종 검토 I1) — 위 import 에 없는 이름만
 import { looseKey, looseSame } from "./events-rows.ts";
 import { looseIndex } from "./events-upload.ts";
@@ -1546,6 +1549,38 @@ async function evPerson(ctx: Ctx, b: any) {
   return { ok: true, ...out };
 }
 
+// ---------- 사역신청·담당자 — 이름을 누르면 교적 창 (2026-09-30 · 친구 요청) ----------
+// 성경필사 evPerson 과 **같은 창·같은 규칙·같은 모양**(events-person.ts personOutFor) — 신청 현황·임명현황·종이 명단 올리기 결과,
+// 그리고 시스템 → 담당자·역할(총괄 — ministry 게이트를 super 로 지난다)이 부른다. evPerson 은 고치지 않았다(성경필사 역할이 부른다).
+// ⚠️ 모양은 **부른 분의 역할**로 여기서 정한다(ctx.roles — 화면이 보낸 것을 믿지 않는다): directory·super → full(교인ID →
+//    화면이 peoplePerson 「자세히」 창 · 그 액션이 directory 를 다시 본다), 그 밖(사역신청 역할만) → basic(다섯 칸 + 교적 표시).
+// ⚠️ 맞대 볼 줄 — who(신청 현황·임명현황 줄의 「화평 20목장」·「유치부 …」)가 오면 ministryList 의 교적 표시와 **같은 함수**
+//    applicantFromWho 로 읽는다(그래야 창의 표시 = 명단의 표시). who 가 없으면 구분·소속·세부(personAsk —
+//    종이 명단: 교구·교구·목장 / 담당자: 교구·교구·목장 또는 교회학교·부서·학년).
+// ⚠️ 전화를 받는 까닭 — 사역신청 줄엔 성도님이 적은 번호가 있고, 명단의 교적 표시(「소속 다름」)도 그 번호로 나온다.
+//    같은 소속이 둘이거나 소속 다른 동명이인일 때 명부 번호가 **정확히 한 분**과 맞으면 그분을 고른다(personPickFor).
+//    명부 번호(phone_digits)는 고르는 데만 읽고 **응답에 싣지 않는다**(personOutFor 의 명시적 칸 지도) · 받은 번호는 기록에도 안 남긴다.
+//    주소·생년월일·사진 칸은 읽지 않는다(EV_PERSON_COLS + 번호 하나).
+// ⚠️ 기록은 evPerson 과 같은 규칙·같은 모양 people.lookup {q, count} — basic 이면 늘, full 이면 고르지 못했을 때(pick null)만.
+const MIN_PERSON_COLS = EV_PERSON_COLS + ",phone_digits";
+
+async function ministryPerson(ctx: Ctx, b: any) {
+  const q = readName(b.name);                                       // evPerson 과 같은 이름 검사(no-name · bad-char · too-long)
+  if (q.error) return { ok: false, error: q.error };
+  if (!(await peopleSource())) return { ok: true, mode: "none" };   // 명부가 한 번도 안 올라왔다 — 묻지도 기록하지도 않는다
+  const phone = phoneDigits(b.phone).slice(0, 20);
+  const who = typeof b.who === "string" ? b.who.normalize("NFC").trim().slice(0, 80) : "";
+  const a = who ? applicantFromWho(q.name, who, phone) : { ...applicantFromSignup(personAsk(b, q.name)), phone };
+  const cands = await allRows(() => db.from("church_people").select(MIN_PERSON_COLS)
+    .eq("name_key", q.key).order("person_id", { ascending: true }));
+  const full = ctx.roles.includes("directory") || ctx.roles.includes("super");
+  const out = personOutFor(cands as PersonCand[], a, full);
+  if (out.mode === "basic" || out.pick === null) {
+    await audit(ctx, "people.lookup", "", { q: q.name, count: out.mode === "basic" ? out.people.length : out.candidates.length });
+  }
+  return { ok: true, ...out };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
@@ -1598,6 +1633,7 @@ Deno.serve(async (req) => {
       case "evUploadSave":   return json(await evUpload(ctx, b, true));
       case "evPeopleLookup": return json(await evPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
+      case "ministryPerson": return json(await ministryPerson(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);

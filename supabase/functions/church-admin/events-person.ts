@@ -14,14 +14,22 @@
 //    full(교인명부 역할·총괄) — 교인ID·이름·소속 한 줄·직분. 화면이 교인ID 로 교인명부 peoplePerson(「자세히」 창)을 연다.
 //    basic(성경필사 역할만) — 다섯 칸(lookupOut — evPeopleLookup 과 같은 칸 지도)과 교적 표시. 교인ID 는 싣지 않는다.
 //    연락처·주소·생년월일·사진은 어느 쪽에도 없다(서버도 그 칸을 읽지 않는다 · 스프레드 금지).
+//
+// 사역신청·담당자 화면(ministryPerson · 2026-09-30 친구 요청)도 이 규칙을 쓴다 — 신청 현황·임명현황·종이 명단 올리기 결과·
+//    시스템 → 담당자·역할. 맞대 볼 줄(Applicant)만 부르는 쪽이 만들고(personPickFor·personOutFor), 고르기·응답 모양은 한 벌이다.
+// ⚠️ 전화 단계는 ministryPerson 만 쓴다(성경필사 명단엔 전화가 없다 — applicantFromSignup 이 phone 을 늘 "" 로 둔다).
+//    ④ 위 ①② 로 못 골랐고 부르는 쪽이 번호를 줬으면 — 같은 소속 안에서(같은 소속이 없으면 같은 이름 전부에서) 명부 번호가
+//       **정확히 한 분**과 맞을 때만 그분. 두 분 이상과 맞거나 아무와도 안 맞으면 고르지 않는다.
+//    명부 번호(phone_digits)는 고르는 데만 쓴다 — 응답은 아래 명시적 칸 지도(full 넷 · basic 다섯 + 교적 표시)로만 나간다.
 import { mapChurchPerson, positionFromChurch, type ChurchPerson } from "./events-people.ts";
 import { affLabel } from "./events-stats.ts";
 import { lookupOut, LOOKUP_MAX } from "./events-upload.ts";
 import { legacyNorm } from "./paper.ts";
-import { applicantFromSignup, matchChurch, sameAffiliation, toCand, type Church } from "./people-match.ts";
+import { applicantFromSignup, matchChurch, phoneDigits, sameAffiliation, toCand, type Applicant, type Church } from "./people-match.ts";
 import { BE_FIELD_MAX } from "./events-rules.ts";
 
-export type PersonCand = ChurchPerson & { person_id: number | string; name: string };
+// phone_digits — ministryPerson 만 읽는다(명부 번호 · 띄어쓰기로 여럿 · toCand 가 나눈다). 고르는 데만 쓰고 응답엔 없다.
+export type PersonCand = ChurchPerson & { person_id: number | string; name: string; phone_digits?: string };
 export type PersonAsk = { who_type: string; group_name: string; sub_name: string; name: string };
 export type PersonFull = { person_id: number; name: string; label: string; position: string };
 export type PersonBasic = { name: string; who_type: string; group: string; sub: string; position: string };
@@ -43,16 +51,33 @@ export function personAsk(b: unknown, name: string): PersonAsk {
   };
 }
 
-// 후보 차례와 고른 분 — 같은 소속 먼저(교인ID 차례), 그다음 나머지(교인ID 차례). pick 은 list 의 자리(늘 0 또는 null).
-// 받은 배열은 바꾸지 않는다.
-export function personPick(cands: PersonCand[], ask: PersonAsk): { pick: 0 | null; list: PersonCand[] } {
-  const all = [...(cands ?? [])].sort((a, b) => Number(a.person_id) - Number(b.person_id));
-  const a = applicantFromSignup(ask);
+// 후보 차례와 고른 분 — 고른 분 맨 앞, 그다음 나머지 같은 소속(교인ID 차례), 그다음 나머지(교인ID 차례).
+// pick 은 list 의 자리(늘 0 또는 null). 받은 배열은 바꾸지 않는다.
+//   pool = 소속까지 같은 분(sameAffiliation)이 하나라도 있으면 그분들, 없으면 같은 이름 전부
+//   pool 이 한 분 → 그분 · 아니고 번호가 있으면 → pool 에서 명부 번호가 맞는 분이 정확히 한 분일 때 그분 · 그 밖 → null
+// ⚠️ 번호가 없으면 옛 personPick 과 **완전히 같다**(같은 소속 1 → 고름 · 같은 소속 0 이고 이름 전체 1 → 고름 · 그 밖 null) —
+//    evPerson(성경필사)의 동작이 한 글자도 안 바뀌게. 시험(events-person.test.mjs)이 여러 경우를 맞대 본다.
+// ⚠️ 같은 소속이 있으면 번호도 **그 안에서만** 본다 — 같은 소속이 둘인데 번호가 소속 밖 한 분과 맞으면 고르지 않는다
+//    (명단의 교적 표시가 「같은 소속에 같은 이름 N명」인데 창이 소속 다른 분을 여는 일이 없게).
+export function personPickFor(cands: PersonCand[], a: Applicant): { pick: 0 | null; list: PersonCand[] } {
+  const all = [...(cands ?? [])].sort((x, y) => Number(x.person_id) - Number(y.person_id));
   const same = all.filter((c) => sameAffiliation(toCand(c), a));
-  const list = [...same, ...all.filter((c) => !same.includes(c))];
-  if (same.length === 1) return { pick: 0, list };
-  if (same.length === 0 && all.length === 1) return { pick: 0, list };
-  return { pick: null, list };
+  const rest = all.filter((c) => !same.includes(c));
+  const pool = same.length ? same : all;
+  let chosen: PersonCand | null = pool.length === 1 ? pool[0] : null;
+  const ph = phoneDigits(a?.phone);
+  if (!chosen && ph) {
+    const hit = pool.filter((c) => toCand(c).phones.includes(ph));
+    if (hit.length === 1) chosen = hit[0];
+  }
+  if (!chosen) return { pick: null, list: [...same, ...rest] };
+  const c = chosen;
+  return { pick: 0, list: [c, ...same.filter((x) => x !== c), ...rest.filter((x) => x !== c)] };
+}
+
+// 성경필사 명단 줄(구분·소속·세부 — 전화 없음)로 고르기. evPerson 이 부른다.
+export function personPick(cands: PersonCand[], ask: PersonAsk): { pick: 0 | null; list: PersonCand[] } {
+  return personPickFor(cands, applicantFromSignup(ask));
 }
 
 // 교인명부 역할에게 보이는 소속 한 줄 — 명단과 같은 꼴(affLabel · 「화평 20목장」·「소망 남성」·「중등부」).
@@ -64,8 +89,9 @@ export function personLabel(p: ChurchPerson): string {
 }
 
 // 응답(ok 빼고) — 명시적 칸 지도로만. 고르지 못했으면 스무 분까지(evPeopleLookup 과 같은 상한) · total 은 자르기 전 수.
-export function personOut(cands: PersonCand[], ask: PersonAsk, full: boolean): PersonOut {
-  const { pick, list } = personPick(cands, ask);
+// ⚠️ phone_digits 는 어느 모양에도 싣지 않는다 — full 은 아래 네 칸, basic 은 lookupOut 다섯 칸 + 교적 표시 { state, reason }.
+export function personOutFor(cands: PersonCand[], a: Applicant, full: boolean): PersonOut {
+  const { pick, list } = personPickFor(cands, a);
   const shown = pick === null ? list.slice(0, LOOKUP_MAX) : [list[pick]];
   const total = list.length;
   if (full) {
@@ -76,9 +102,15 @@ export function personOut(cands: PersonCand[], ask: PersonAsk, full: boolean): P
       })),
     };
   }
-  // 교적 표시 — 명단(evRoster)과 같은 함수·같은 후보(이 이름의 명부 전체)로. 그래서 창의 표시와 명단의 표시가 같다.
+  // 교적 표시 — 명단(evRoster·ministryList·ministryPaper)과 같은 함수·같은 후보(이 이름의 명부 전체)로. 그래서 창의 표시와 명단의 표시가 같다.
+  //   번호를 받았으면(ministryPerson) 명단과 똑같이 「소속 다름」까지 나온다 — 명단도 그 번호로 matchChurch 를 부른다.
   return {
     mode: "basic", pick, total, people: shown.map((p) => lookupOut(p)),
-    church: matchChurch((cands ?? []).map(toCand), applicantFromSignup(ask)),
+    church: matchChurch((cands ?? []).map(toCand), a),
   };
+}
+
+// 성경필사 명단 줄로(evPerson) — 전화 없는 personOutFor.
+export function personOut(cands: PersonCand[], ask: PersonAsk, full: boolean): PersonOut {
+  return personOutFor(cands, applicantFromSignup(ask), full);
 }

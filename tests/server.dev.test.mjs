@@ -116,6 +116,8 @@ const PROBE = {
   ministryCatalogOrder: { ids: [] },
   ministryPaperCheck: { rows: [] },
   ministryPaperSave: { rows: [] },
+  // 이름을 누르면 교적 창(사역신청·담당자 · 2026-09-30) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
+  ministryPerson: { name: "" },
   peopleSearch: { q: "ca-test-probe-없음" },
   peoplePerson: { id: 0 },
   peopleStats: {},
