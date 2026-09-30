@@ -340,3 +340,52 @@ test("교구 카드 CSS — 옛 .pp-kpi 규칙 없음 · .pp-gucards 는 grid ·
   const js = readFileSync(new URL("../js/menus/people/stats.js", import.meta.url), "utf8");
   assert.ok(!js.includes("pp-kpi") && !js.includes("#/people?nophoto"), "화면에 옛 카드가 남았다");   // 머리 주석의 ?nophoto=1 은 설명
 });
+
+// 규칙을 @media 안팎으로 나눠 읽는다(주석은 뺀 CSS) — [{ media, sel, body }] · media 는 감싼 @media 머리(없으면 "")
+function cssRules(css) {
+  const out = [], stack = [];
+  let buf = "";
+  for (const ch of css) {
+    if (ch === "{") { stack.push(buf.trim()); buf = ""; }
+    else if (ch === "}") {
+      const sel = stack.pop();
+      if (!sel.startsWith("@")) out.push({ media: stack.filter((s) => s.startsWith("@media")).join(" "), sel, body: buf.trim() });
+      buf = "";
+    } else buf += ch;
+  }
+  assert.equal(stack.length, 0, "괄호 짝이 안 맞는다");
+  return out;
+}
+
+// 2026-09-30 검토 — auto-fit(열 수를 폭에 맡김)이면 일곱 장이 360·375 에서 3·3·1, 555~705 에서 6·1 로 접혀
+// 「기쁨」 하나만 한 줄에 남았다. 열 수를 정해 둔다: 폰 넷(넷·셋 두 줄) · 640px 부터 일곱(한 줄).
+// 폭마다 실제로 몇 장이 한 줄에 놓이고 글자가 넘치지 않는지는 브라우저로 300~1,995px 를 5px 씩 훑어 봤다(커밋 메시지).
+test("교구 카드 CSS — 열 수는 정해 둔다(폰 4 · 640px 부터 7) · auto-fit/auto-fill 없음 · 넓은 PC 는 폭 상한", () => {
+  const css = readFileSync(new URL("../css/admin.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const g = cssRules(css).filter((r) => r.sel === ".pp-gucards");
+  assert.ok(g.length >= 2, ".pp-gucards 규칙이 모자란다");
+  for (const r of g) assert.ok(!/auto-(fit|fill)/.test(r.body), `열 수를 폭에 맡기면 「기쁨」 하나가 따로 남는다: ${r.media} ${r.body}`);
+  const cols = g.filter((r) => /grid-template-columns/.test(r.body))
+    .map((r) => [r.media, r.body.match(/grid-template-columns:\s*repeat\((\d+),\s*minmax\(0,\s*1fr\)\)/)?.[1]]);
+  assert.deepEqual(cols, [["", "4"], ["@media (min-width:640px)", "7"]], JSON.stringify(cols));
+  assert.ok(g.some((r) => r.media === "@media (min-width:640px)" && /max-width:\s*\d+px/.test(r.body)), "넓은 PC 폭 상한");
+  // 가장 좁은 폰(320)은 칸 사이·안쪽만 줄인다 — 열 수는 그대로 넷
+  const narrow = cssRules(css).filter((r) => /max-width:359px/.test(r.media) && /pp-gucard/.test(r.sel));
+  assert.ok(narrow.length && narrow.every((r) => !/grid-template-columns/.test(r.body)), "320 도 넷·셋");
+});
+
+// 처음 화면 카드 아래 줄(main.js renderHome 이 MENUS 의 desc 를 그린다) — 이제 없는 「사진 없는 분」을 말하지 않고 새 가구 수를 말한다
+import { MENUS } from "../js/menus/registry.js";
+test("교인 현황 메뉴 설명 — 지금 화면대로(교구별 인원·가구) · 「사진 없는 분」 없음", () => {
+  const m = MENUS.find((x) => x.id === "people-stats");
+  assert.ok(!m.desc.includes("사진"), m.desc);
+  assert.ok(m.desc.includes("가구"), m.desc);   // 320 폭에서도 한 줄(옛 설명과 같은 길이)
+});
+
+// d) 가 되돌아가지 않게 — 교인 현황의 고를 목록은 statsChoices(「(없음)」 포함)이지 교인 찾기의 filterChoices 가 아니다
+test("교인 현황 화면 — 고를 목록은 statsChoices 에서(교인 찾기 filterChoices 를 부르지 않는다)", () => {
+  const js = readFileSync(new URL("../js/menus/people/stats.js", import.meta.url), "utf8");
+  const code = js.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+  assert.ok(/import\s*\{[^}]*\bstatsChoices\b[^}]*\}\s*from\s*"\.\/stats-logic\.js"/.test(code), "statsChoices 를 들여온다");
+  assert.ok(!/\bfilterChoices\b/.test(code), "교인 찾기 규칙(filterChoices)을 쓰면 출석 「(없음)」을 못 고른다");
+});

@@ -23,7 +23,8 @@ const pairTable = (title, head, pairs) => !pairs.length ? "" :
   `<h3 class="sec-title">${esc(title)}</h3><table class="pp-stat"><thead><tr><th>${esc(head)}</th><th>인원</th></tr></thead>` +
   `<tbody>${pairs.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${n(v)}</td></tr>`).join("")}</tbody></table>`;
 
-// 거르기가 달린 표 셋 — 열쇠 → [제목, 거르기 열쇠들]. 거르기 열쇠는 filterChoices(교인 찾기와 같은 고를 목록)의 열쇠.
+// 거르기가 달린 표 셋 — 열쇠 → [제목, 거르기 열쇠들]. 거르기 열쇠는 statsChoices(stats-logic.js · 같은 표의 다른 거르기 안에서 셈 ·
+//   출석 「(없음)」 포함)의 열쇠 — 교인 찾기 filterChoices 와 다르다(그쪽은 「(없음)」을 못 고른다 · 맞추면 d) 가 되돌아간다).
 const SECS = { gu: ["교구별", ["kind3"]], position: ["직분별", ["kind3"]], age: ["연령대 · 성별", ["kind3", "mok1"]] };
 // 고르개 제목에 붙이는 짧은 표 이름 — 폰 시트 제목이 두 줄로 꺾이지 않게(「교구별 · 출석 — 여러 개 고르기」는 320px 에서 꺾였다)
 const SHORT = { gu: "교구별", position: "직분별", age: "연령대" };

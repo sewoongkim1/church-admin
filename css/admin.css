@@ -629,20 +629,30 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-famon{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 10px;font-weight:700;color:var(--navy)}
 .pp-rel{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;margin-right:6px;border-radius:999px;background:var(--ghost-bg);color:var(--navy);font-size:12px;font-weight:700}
 /* ── 교인 현황 맨 위 교구 카드 일곱 (2026-09-30 친구 요청 「교구별로 인원수만 · 인원 수 & 가구 수」) ──
-   교구 이름 / 「1,234명」 / 「612가구」를 가운데로 쌓는다. 칸 폭은 똑같이(grid auto-fit · 가장 좁아도 폰 80px · 600px 부터 88px) —
-   PC 1366(본문 1,062px)은 일곱이 한 줄, 폰 390(본문 358px)은 넷·셋 두 줄, 320(본문 288px)은 셋씩 세 줄.
-   숫자 글자는 칸 폭을 따라간다(cqi — 카드가 크기 기준) — 가장 좁은 칸(안쪽 70px)에서 1.15rem, 넓으면 1.4rem 까지.
-   네 자리 「1,888명」은 글자 크기의 약 3.6배 폭이라 25cqi 면 안쪽 폭의 90% 안이다. 폭을 vw 로 재지 않는다 —
-   PC 는 옆 메뉴(240px)가 있어 화면 폭과 칸 폭이 따로 논다(1024px 에서 칸이 폰보다 좁아진다).
+   교구 이름 / 「1,234명」 / 「612가구」를 가운데로 쌓는다. 칸 폭은 똑같이 · **열 수는 폭에 맡기지 않고 정해 둔다** —
+   폰(640px 아래)은 늘 넷·셋 두 줄, 640px 부터 일곱이 한 줄. 넓은 PC 에서 카드가 한없이 넓어지지 않게 묶음 폭은 1,100px 까지
+   (1366 의 본문 1,062px 는 그대로 가득 · 1920 에서 칸이 222px 까지 벌어졌었다).
+   ⚠️ auto-fit(열 수를 폭에 맡김)으로 되돌리지 말 것 — 일곱 장이라 360·375 에서 3·3·1, 465~605 에서 5·2, 555~705 에서 6·1 로
+   접혀 「기쁨」 하나만 한 줄에 남고, 폰에서 카드 묶음이 185px → 297px 로 늘어 교구별 표가 첫 화면 밖으로 밀렸다(2026-09-30 검토).
+   640 인 까닭 — 640 이상에서 본문이 가장 좁은 곳은 640(608px)이고 거기서 일곱 칸의 안쪽이 60px 다. 600 이면 55px 라
+   「1,088가구」(13px 에서 56px)가 넘친다. PC 는 옆 메뉴(240px) 때문에 1024 에서 본문이 720px 로 다시 좁아지지만 안쪽 76px.
+   숫자 글자는 칸 폭을 따라간다(cqi — 카드가 크기 기준) — 25cqi 를 1~1.4rem 사이로(320 만 .9rem 까지). 네 자리 「1,888명」은 글자 크기의 약 3.6배라
+   25cqi 면 안쪽의 90% 안이다. 가구 줄도 22cqi(약 4.3배라 95%)로 12~13px. 폭을 vw 로 재지 않는다(옆 메뉴 때문에 따로 논다).
+   320(본문 288px)은 칸 사이·안쪽 여백을 줄여 넷·셋을 지킨다(안쪽 57px — 그대로면 52px 라 네 자리가 카드 끝에 닿는다).
    ⚠️ .card 의 아래 여백(margin-bottom)이 칸 사이를 벌리지 않게 선택자를 `.pp-gucards .pp-gucard`(0,2,0)로 둔다. */
-.pp-gucards{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.pp-gucards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}
 .pp-gucards .pp-gucard{margin:0;padding:10px 6px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;
   text-align:center;container-type:inline-size}
 .pp-gucard-g{font-size:14px;font-weight:800;color:var(--navy-dark)}
-.pp-gucard b{font-size:1.15rem;font-size:clamp(1.15rem,25cqi,1.4rem);line-height:1.3;color:var(--navy);white-space:nowrap}
-.pp-gucard-h{font-size:13px;color:var(--ink-2);white-space:nowrap}
-@media (min-width:600px){
-  .pp-gucards{gap:var(--gap);grid-template-columns:repeat(auto-fit,minmax(88px,1fr))}   /* 안쪽 여백이 넓어진 만큼 칸도 */
+.pp-gucard b{font-size:1rem;font-size:clamp(1rem,25cqi,1.4rem);line-height:1.3;color:var(--navy);white-space:nowrap}
+.pp-gucard-h{font-size:13px;font-size:clamp(12px,22cqi,13px);color:var(--ink-2);white-space:nowrap}
+@media (max-width:359px){
+  .pp-gucards{gap:6px}
+  .pp-gucards .pp-gucard{padding:10px 4px}
+  .pp-gucard b{font-size:clamp(.9rem,25cqi,1.4rem)}
+}
+@media (min-width:640px){
+  .pp-gucards{gap:var(--gap);grid-template-columns:repeat(7,minmax(0,1fr));max-width:1100px}
   .pp-gucards .pp-gucard{padding:14px 8px}
   .pp-gucard-g{font-size:15px}
 }
