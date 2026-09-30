@@ -750,6 +750,12 @@ a.mn-tel.sm{padding:2px 8px}
 /* ⚠️ 480px = js/core/picker.js POP_MAX_H (판 자리 계산이 이 상한을 쓴다 — 함께 바꿀 것) */
 .pk-dim.pop .pk{position:fixed;max-width:calc(100vw - 16px);max-height:min(480px,calc(100vh - 16px));
   border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px rgba(13,27,62,.18)}
+/* 긴 선택지(pickOne wrap · 회차 제목 전체 · 2026-09-30 콤보 리뷰 M-2) — PC 판이 한 줄 너비까지 늘지 않게 상한 640px.
+   판의 min-width(누른 단추 너비 · picker.js)가 이기므로 콤보(최대 720)면 콤보와 같은 너비. 글은 띄어쓰기에서 줄바꿈(콤보 단추와 같다)
+   · 여러 줄이면 위아래 여백. ⚠️ .pop 에만 — 폰 바텀 시트는 그대로 */
+.pk-dim.pop .pk.pk-wrap{max-width:min(640px,calc(100vw - 16px))}
+.pk-dim.pop .pk-wrap .pk-opt{padding-block:8px}
+.pk-dim.pop .pk-wrap .pk-opt-t{word-break:keep-all;overflow-wrap:anywhere}
 @keyframes pk-up{from{transform:translateY(100%)}to{transform:none}}
 @media (prefers-reduced-motion:reduce){.pk-dim.sheet .pk{animation:none}}
 .pk-grip{flex:none;width:40px;height:5px;margin:8px auto 0;border-radius:999px;background:#d5d9e0}

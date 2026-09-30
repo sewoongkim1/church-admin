@@ -11,8 +11,8 @@
 import { esc, toast, dialog, errorText } from "../../core/ui.js";
 import { pickOne, pickMany } from "../../core/picker.js";
 import { CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
-import { CHURCH_STATES, SRC_LABEL, blankFilter, groupRows, filterRows, dupFlags, positionCounts, csvText, sortEvents, evPickOptions }
-  from "./roster-logic.js";
+import { CHURCH_STATES, SRC_LABEL, blankFilter, groupRows, filterRows, dupFlags, positionCounts, csvText, sortEvents, evPickOptions,
+  comboRefocus } from "./roster-logic.js";
 import { TITLE, ELIG_LINE, CHURCH_LABEL, evBarHtml, comboSub, headHtml, settingsHtml, sourceHtml, filtersHtml, sumHtml, listHtml,
   rowMenuOptions } from "./roster-ui.js";
 import { openEventForm } from "./event-form.js";
@@ -25,6 +25,9 @@ let f = blankFilter();   // 거르기 — 같은 회차면 메뉴를 옮겨 다�
 let fFor = "";           // f 가 어느 회차의 거르기인가
 let setOpen = false;     // ⚙️ 회차 설정 — 처음엔 접어 둔다
 let unbindMq = null;     // 앞 화면이 건 matchMedia change 떼기 — 다음 그리기가 부른다(FE-3)
+// 콤보로 회차를 바꾸면 route 가 새 <section> 에 통째로 다시 그려 초점이 <body> 로 떨어진다 — 고른 회차를 적어 두고
+// 다음 그리기가 한 번만 꺼내 콤보에 초점을 돌려준다(2026-09-30 콤보 리뷰 M-1 · 첫 열기·↻ 새로 불러오기는 그대로)
+const comboFocus = comboRefocus();
 
 const stamp = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -54,6 +57,7 @@ export async function render(el, ctx) {
   const { call, go, query } = ctx;
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
   const want = String((query && query.ev) || "");
+  const refocusCombo = comboFocus.take(want);   // 꺼내면 지운다 — 이 그리기가 도중에 끝나도 다음 첫 열기로 새지 않게
   const [evs, asked] = await Promise.all([
     call("evEvents"),
     want ? call("evRoster", { event_id: want }) : Promise.resolve(null),
@@ -138,10 +142,12 @@ export async function render(el, ctx) {
     reload();
   }
   // 회차 고르기 — 우리 고르개(폰은 아래 판). 닫기(Esc·뒤 막·「닫기」)면 그대로 · 초점은 고르개가 콤보로 돌려준다.
-  // 다른 회차를 고르면 주소 ?ev= 로(칩을 누를 때와 같다 — route 가 다시 그린다)
+  // 다른 회차를 고르면 주소 ?ev= 로(칩을 누를 때와 같다 — route 가 다시 그린다) · 다시 그린 콤보에 초점(comboFocus)
+  // wrap — 제목 전체라 PC 판이 한 줄 너비로 늘지 않게(상한 640px · 콤보가 더 넓으면 콤보 너비 · 글 줄바꿈)
   async function pickEvent(b) {
-    const v = await pickOne({ anchor: b, title: "회차 고르기", options: evPickOptions(evList), value: ev.id });
+    const v = await pickOne({ anchor: b, title: "회차 고르기", options: evPickOptions(evList), value: ev.id, wrap: true });
     if (v == null || v === ev.id || !el.isConnected) return;
+    comboFocus.mark(v);
     go(`be-roster?ev=${encodeURIComponent(v)}`);
   }
   async function newEvent() {
@@ -237,4 +243,5 @@ export async function render(el, ctx) {
   const onMq = () => { if (!el.isConnected) { unbind(); return; } draw(); };
   unbindMq?.(); unbindMq = unbind; mqWide.addEventListener("change", onMq);
   draw();
+  if (refocusCombo) refocus(".be-combo");   // 콤보로 바꾼 회차 — 다시 그린 콤보에 초점(M-1)
 }

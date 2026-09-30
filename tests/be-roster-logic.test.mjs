@@ -381,3 +381,24 @@ test("M7 문서 — CLAUDE.md 「성경필사(암송)」·event-roster-legacy.md
   assert.ok(body.includes('if (cur.source !== "import") return { ok: false, error: "app-row" };'));
   assert.ok(body.includes('if (isEligEvent(ev.needs)) return { ok: false, error: "eligibility-event" };'));
 });
+
+// ---------- 콤보 작은 지적 C(2026-09-30 · 리뷰 3d5fa47 M-1) ----------
+test("comboRefocus — 고르개로 고른 회차를 다시 그릴 때만 한 번 참 · 첫 열기·↻ 새로 불러오기·메뉴 다시 열기·다른 회차는 거짓(combo-refocus · M-1)", () => {
+  assert.equal(typeof rosterLogic.comboRefocus, "function", "roster-logic.js 가 comboRefocus 를 내보내야 한다");
+  const r = rosterLogic.comboRefocus();
+  assert.equal(r.take("ca-a"), false, "첫 열기 — 적어 둔 것이 없다");
+  r.mark("ca-a");
+  assert.equal(r.take("ca-a"), true, "고른 회차를 그린다 — 초점을 콤보로");
+  assert.equal(r.take("ca-a"), false, "한 번만 — 뒤이은 ↻ 새로 불러오기·메뉴 다시 열기는 거짓");
+  r.mark("ca-a");
+  assert.equal(r.take("ca-b"), false, "다른 회차를 그린다(주소를 손으로 바꿈) — 거짓");
+  assert.equal(r.take("ca-a"), false, "거짓이어도 표시는 지운다(남은 표시가 나중 첫 열기에 초점을 옮기지 않게)");
+  r.mark("");
+  assert.equal(r.take(""), false, "빈 id 는 적지 않는다");
+  r.mark(7);
+  assert.equal(r.take("7"), true, "글자로 견준다");
+  const x = rosterLogic.comboRefocus(), y = rosterLogic.comboRefocus();
+  x.mark("ca-a");
+  assert.equal(y.take("ca-a"), false, "표시는 만든 것마다 따로");
+  assert.equal(x.take("ca-a"), true);
+});

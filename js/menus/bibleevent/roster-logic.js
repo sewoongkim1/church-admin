@@ -192,6 +192,17 @@ export function evPickHint(ev) {
 export const evPickOption = (ev) => ({ value: ev.id, label: evPickLabel(ev), hint: evPickHint(ev) });
 export const evPickOptions = (list) => sortEvents(list).map(evPickOption);
 
+// 콤보로 회차를 바꾼 뒤의 초점(2026-09-30 콤보 리뷰 M-1) — go() → route 가 화면을 통째로 다시 그려 초점이 <body> 로 떨어진다.
+// 고른 회차 id 를 적어 두고(mark) 다음 그리기가 **한 번만** 꺼내 본다(take — 꺼내면 지운다). 같은 회차를 그릴 때만 참.
+// 첫 열기·↻ 새로 불러오기·메뉴 다시 열기는 적어 둔 것이 없어 거짓(초점을 옮기지 않는다). id 는 글자로 견준다.
+export function comboRefocus() {
+  let want = "";
+  return {
+    mark: (id) => { want = String(id ?? ""); },
+    take: (id) => { const hit = want !== "" && want === String(id ?? ""); want = ""; return hit; },
+  };
+}
+
 // 회차 설정 — 바뀐 칸만(서버 evEventSave 는 보낸 칸만 바꾼다). list_until 은 null 과 "" 가 같다(비움 — 서버가 null 로)
 // sort_order(회차 차례)는 0·「0」·빈칸이 같다(서버가 빈칸을 0 으로) — 옛 응답에 칸이 없어도 0 으로 본다.
 // needs·copy·kind·id 같은 칸은 EV_EDIT_KEYS 에 없어 보내지 않는다 — 자격 규칙·문구가 조용히 지워지지 않게.

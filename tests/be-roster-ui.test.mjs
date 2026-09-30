@@ -108,3 +108,24 @@ test("화면 모듈이 Node 에서 읽힌다 — 들여온 이름이 모두 있�
   assert.equal(typeof r.openRowDelete, "function");
   assert.equal(typeof m.render, "function");
 });
+
+// ---------- 콤보 작은 지적 C(2026-09-30 · 리뷰 3d5fa47 M-1 · M-2) ----------
+import { readFileSync } from "node:fs";
+test("roster.js — 콤보로 고르면 표시(mark) 뒤 go · render 는 시작에 take(want) · 다 그린 뒤 .be-combo 에 초점 · 콤보 고르개는 wrap(M-1 · M-2)", () => {
+  // 윈도 checkout(core.autocrlf)이면 CRLF — 줄 끝을 \n 으로 맞춘 뒤 견준다
+  const src = readFileSync(new URL("../js/menus/bibleevent/roster.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const a = src.indexOf("async function pickEvent"), b = src.indexOf("async function newEvent");
+  assert.ok(a > 0 && b > a, "pickEvent 가 newEvent 앞에 있어야 한다");
+  const pick = src.slice(a, b);
+  assert.match(pick, /pickOne\(\{[^}]*\bwrap: true\b[^}]*\}\)/, "콤보 고르개는 긴 제목이라 wrap(PC 판 너비 상한 · 줄바꿈)");
+  const m = pick.indexOf("comboFocus.mark(v)"), g = pick.indexOf("go(`be-roster?ev=");
+  assert.ok(m > 0 && g > m, "go 앞에 표시를 적는다(hashchange → route 가 곧 그린다)");
+  assert.match(src, /\nconst comboFocus = comboRefocus\(\);/, "표시는 모듈에 하나(route 가 새 <section> 에 다시 그려도 남는다)");
+  const w = src.indexOf("const want = "), t = src.indexOf("const refocusCombo = comboFocus.take(want);");
+  assert.ok(w > 0 && t > w && t < src.indexOf("await Promise.all"), "render 시작(첫 await 앞)에 꺼낸다 — 꺼내면 지워진다");
+  const end = src.lastIndexOf("\n  draw();\n");
+  assert.ok(end > 0, "render 끝의 draw()");
+  assert.ok(src.slice(end).includes('if (refocusCombo) refocus(".be-combo");'), "다 그린 뒤 초점을 콤보로");
+  // 다른 고르개(거르기·줄 메뉴)는 wrap 없이 그대로
+  assert.equal((src.match(/\bwrap: true\b/g) || []).length, 1);
+});

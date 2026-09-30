@@ -102,6 +102,12 @@ export function popHeight(chrome, content, vh, cap = POP_MAX_H) {
   return Math.max(0, Math.min(chrome + content, cap, vh - 16));
 }
 
+// 한 줄 고르기 판의 class — wrap(긴 선택지 · 예: 회차 제목 전체)이면 pk-wrap 을 더한다(2026-09-30 콤보 리뷰 M-2).
+// 넓은 화면 작은 판은 너비를 두지 않아 내용 한 줄 너비까지 늘어난다 — 1280px 에서 긴 제목이면 콤보(720)보다 훨씬 넓어졌다.
+// pk-wrap 은 css/admin.css `.pk-dim.pop .pk.pk-wrap` 이 너비 상한(640px)을 걸고 글을 줄바꿈한다. 판의 min-width(누른 단추 너비)가
+// max-width 를 이기므로 단추가 더 넓으면 단추와 같은 너비. 폰 바텀 시트는 규칙이 .pop 에만 있어 그대로 · 안 주면 전과 같다.
+export const oneCls = (wrap) => (wrap ? "pk-one pk-wrap" : "pk-one");
+
 // 달력을 처음 열 때 보여 줄 달 [해, 달] — 지금 값 → 오늘(고를 수 있으면) → 오늘이 시작일(min) 앞이면 min → 그 밖엔 끝날(max).
 // 날짜 꼴이 아닌 값·한계는 없는 것으로 본다.
 export function calStart({ value = "", today, min = "", max = "" } = {}) {
@@ -237,8 +243,9 @@ function openShell({ anchor, title, mode, cls = "", onBuild }) {
 }
 
 // 한 줄 고르기 — 누르면 곧 닫힌다. 지금 값은 ✓
-export function pickOne({ anchor, title, options = [], value = "", mode } = {}) {
-  return openShell({ anchor, title, mode, cls: "pk-one", onBuild: ({ body, close }) => {
+// wrap: true — 선택지 글이 긴 곳(회차 제목 전체)에서만. PC 판 너비 상한 640px · 글 줄바꿈(oneCls 위 설명)
+export function pickOne({ anchor, title, options = [], value = "", mode, wrap = false } = {}) {
+  return openShell({ anchor, title, mode, cls: oneCls(wrap), onBuild: ({ body, close }) => {
     body.innerHTML = `<div class="pk-list">${options.map((o, i) => {
       const on = String(o.value) === String(value);
       return `<button type="button" class="pk-opt${on ? " on" : ""}" data-i="${i}" aria-pressed="${on}">

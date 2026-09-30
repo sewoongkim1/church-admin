@@ -184,3 +184,39 @@ test("timeScrollTarget — 지금 값 → near → 오전 9시", () => {
   assert.deepEqual(timeScrollTarget({ minutes, near: "" }), { h: "09", m: "00" });
   assert.deepEqual(timeScrollTarget({ minutes, near: "bad" }), { h: "09", m: "00" });
 });
+
+// ---------- 콤보 작은 지적 C(2026-09-30 · 리뷰 3d5fa47 M-2) ----------
+import * as picker from "../js/core/picker.js";
+import { readFileSync } from "node:fs";
+test("pickOne wrap — 긴 선택지(회차 제목 전체)면 판에 pk-wrap · 안 주면 전과 같은 pk-one(다른 부르는 곳 그대로 · M-2)", () => {
+  assert.equal(typeof picker.oneCls, "function", "picker.js 가 oneCls 를 내보내야 한다");
+  assert.equal(picker.oneCls(), "pk-one");
+  assert.equal(picker.oneCls(false), "pk-one");
+  assert.equal(picker.oneCls(true), "pk-one pk-wrap");
+});
+test("pk-wrap CSS — PC 작은 판만 너비 상한 640px(누른 단추가 더 넓으면 단추 너비 — min-width 가 이긴다) · 글은 띄어쓰기에서 줄바꿈 · 폰 시트·기본 판 규칙은 그대로(M-2)", () => {
+  // 윈도 checkout(core.autocrlf)이면 CRLF — 줄 끝을 \n 으로 맞춘 뒤 줄마다 본다
+  const css = readFileSync(new URL("../css/admin.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.ok(css.includes(".pk-dim.pop .pk.pk-wrap{max-width:min(640px,calc(100vw - 16px))}"), "PC 판 너비 상한");
+  assert.match(css, /\.pk-dim\.pop \.pk-wrap \.pk-opt\{padding-block:8px\}/, "여러 줄이 되면 위아래 여백");
+  assert.match(css, /\.pk-dim\.pop \.pk-wrap \.pk-opt-t\{word-break:keep-all;overflow-wrap:anywhere\}/, "한글은 띄어쓰기에서 · 띄어쓰기 없는 긴 글만 anywhere");
+  // 기본 판(다른 고르개) 규칙은 한 글자도 그대로
+  assert.ok(css.includes(".pk-dim.pop .pk{position:fixed;max-width:calc(100vw - 16px);max-height:min(480px,calc(100vh - 16px));"));
+  // pk-wrap 규칙은 모두 PC 판(.pk-dim.pop) 안에만 — 폰 바텀 시트는 전과 같다
+  const rules = css.split("\n").filter((l) => /^[^/ ].*\.pk-wrap/.test(l));
+  assert.ok(rules.length >= 3, rules.join("\n"));
+  for (const l of rules) assert.ok(l.startsWith(".pk-dim.pop "), l);
+});
+test("placePopover — 너비 상한이 붙으면 판이 콤보 왼쪽에 맞는다(1024px · 콤보 597 · 전엔 898 이라 옆 메뉴 위로 밀렸다 · M-2)", () => {
+  const combo = { left: 272, top: 124, bottom: 206, right: 869 };
+  const vp = { width: 1024, height: 800 };
+  const wide = placePopover(combo, { width: 898, height: 203 }, vp);           // 전: 한 줄 너비 그대로
+  assert.ok(wide.left < 240, "전에는 옆 메뉴(240px) 위까지 밀렸다");
+  const capped = Math.max(597, Math.min(898, 640));                           // min-width(단추) · max-width(640)
+  assert.equal(capped, 640);
+  assert.deepEqual(placePopover(combo, { width: capped, height: 260 }, vp), { left: 272, top: 212 });
+  // 1280px · 콤보 720 — 판 = 콤보 너비(720) 로 딱 맞는다
+  assert.equal(Math.max(720, Math.min(891, 640)), 720);
+  assert.deepEqual(placePopover({ left: 272, top: 124, bottom: 184, right: 992 }, { width: 720, height: 260 }, { width: 1280, height: 860 }),
+    { left: 272, top: 190 });
+});
