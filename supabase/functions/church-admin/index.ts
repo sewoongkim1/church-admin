@@ -1055,8 +1055,9 @@ async function peoplePerson(ctx: Ctx, b: any) {
 async function peopleStats() {
   const source = await peopleSource();
   if (!source) return { ok: true, source: null, stats: null };
+  // person_id 는 교구 카드의 가구를 세대주 교구에 두는 데만 쓴다(householdsByGu) — statsOf 가 응답에 싣지 않는다
   const rows = await allRows(() => db.from("church_people")
-    .select("mok1,mok3,kind2,kind3,position,school_dept,gender,age,has_photo,household_id").order("person_id", { ascending: true }));
+    .select("person_id,mok1,mok3,kind2,kind3,position,school_dept,gender,age,has_photo,household_id").order("person_id", { ascending: true }));
   return { ok: true, source, stats: statsOf(rows) };
 }
 
