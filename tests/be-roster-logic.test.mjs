@@ -254,3 +254,19 @@ test("M3 문구 — 이어진 분의 「📋 이미 내신 것」은 회차가 �
   assert.ok(pv.includes("이어진 분은 그 회차가 앱에 보이는 동안 「이미 내신 것」에서 보시고,"));
   assert.ok(!pv.includes("이어진 분은 앱의 「이미 내신 것」에서 보시고,"));
 });
+
+// ---------- 시험 손질 D(2026-09-30) — 화면의 다듬기와 서버의 다듬기를 같은 입력표로 맞댄다 ----------
+import { legacyNorm } from "../supabase/functions/church-admin/paper.ts";
+import { tidyRow } from "../supabase/functions/church-admin/events-rules.ts";
+
+test("norm·tidyMok — 서버 legacyNorm·tidyRow(교구 줄의 목장 칸)와 같은 입력표에서 같은 값(client-norm-no-parity-test)", () => {
+  for (const x of ["  홍  길동 ", "전화로\n\n확인", "\t가\t나 ", "", null, undefined]) {
+    assert.equal(norm(x), legacyNorm(x), "norm " + JSON.stringify(x));
+  }
+  const moks = ["07", "007목장", " 20목장 ", "20 목장", "남성목장", "남성 목장", "0", "00", "99", "099", "이십", "20-1", "",
+    "남성목장".normalize("NFD"), "20목장".normalize("NFD")];
+  for (const x of moks) {
+    const server = tidyRow({ who_type: "교구", group_name: "화평", sub_name: x, name: "홍길동", position: "" }).sub_name;
+    assert.equal(tidyMok(x), server, "tidyMok " + JSON.stringify(x));
+  }
+});
