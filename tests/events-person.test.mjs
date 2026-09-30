@@ -42,7 +42,8 @@ test("personPick — ① 소속까지 같은 분 한 분이면 그분 ② 같은
   assert.deepEqual(two.list.map((p) => p.person_id), [12, 13, 11], "같은 소속 먼저 · 안에서는 교인ID 차례");
   assert.equal(personPick([a, b], ask("교구", "화평", "5")).pick, null);
   assert.deepEqual(personPick([], ask("교구", "화평", "20")), { pick: null, list: [] });
-  // 목장을 모르는 줄(「남성」·빈칸)은 같은 소속으로 보지 않는다 — 명부에 한 분뿐일 때만 그분
+  // 교적 남성 목장이 없으면 「남성」 줄은 같은 소속이 없다(2026-09-30 부터 「남성」은 교적 남성 목장과 맞댄다 — 목장 모름이 아니다) ·
+  // 빈칸 줄도 번호 있는 목장 분(화평-20목장)과는 같은 소속이 아니다 — 둘 다 명부에 한 분뿐일 때만 그분(②)
   assert.equal(personPick([a, b], ask("교구", "화평", "남성")).pick, null);
   assert.equal(personPick([a], ask("교구", "화평", "")).pick, 0);
   // 교회학교 — 부서가 같으면(청년부는 명부의 교구 칸에 있다)
@@ -382,11 +383,11 @@ test("transcribedSame — 교적 {장년 · 소망 · 소망-남성1} 을 옮겨
   const men = P(201, { kind2: "장년", mok1: "소망", mok3: "소망-남성1" });
   const row = moved(men);
   assert.deepEqual([row.who_type, row.group_name, row.sub_name], ["교구", "소망", "남성"], "옮겨 적기는 「남성」 그대로(앱 로그인 열쇠)");
-  assert.equal(transcribedSame(row)(toCand(men)), true);
+  assert.equal(transcribedSame(row, [toCand(men)])(toCand(men)), true);
   assert.deepEqual(signupChurch([toCand(men)], row), { state: "맞음", reason: "" });
   assert.deepEqual(churchForSignup(new Map([["홍길동", [toCand(men)]]]), row), { state: "맞음", reason: "" });
   // 「남성목장」처럼 적힌 줄도(tidyMok 꼴로 견준다)
-  assert.equal(transcribedSame({ ...row, sub_name: "남성목장" })(toCand(men)), true);
+  assert.equal(transcribedSame({ ...row, sub_name: "남성목장" }, [toCand(men)])(toCand(men)), true);
 });
 
 test("transcribedSame — 청년공동체·청년새가족 분을 옮겨 적은 줄(교회학교 · 청년부)은 맞음 · 예전 규칙(sameAffiliation)으론 못 맞췄다", () => {
@@ -395,7 +396,7 @@ test("transcribedSame — 청년공동체·청년새가족 분을 옮겨 적은 
     const row = moved(y);
     assert.deepEqual([row.who_type, row.group_name, row.sub_name], ["교회학교", "청년부", ""], mok1);
     assert.equal(sameAffiliation(toCand(y), applicantFromSignup(row)), false, "예전 규칙은 명부 교구 칸 「청년부」만 봤다");
-    assert.equal(transcribedSame(row)(toCand(y)), true, mok1);
+    assert.equal(transcribedSame(row, [toCand(y)])(toCand(y)), true, mok1);
     assert.deepEqual(signupChurch([toCand(y)], row), { state: "맞음", reason: "" }, mok1);
     // 다른 사람(교구 분)이 함께 있어도 옮겨 적은 분 한 분만 같은 소속
     assert.deepEqual(signupChurch([toCand(y), toCand(P(211))], row), { state: "맞음", reason: "" }, mok1);
@@ -410,19 +411,25 @@ test("transcribedSame — 목장 번호 없는 교적(「화평-」)을 옮겨 �
     "예전 규칙 — 빈 목장은 목장 모름");
   assert.deepEqual(signupChurch([toCand(noNum)], row), { state: "맞음", reason: "" });
   // 목장 칸 꼴 — 「20목장」=「20」 · 「07」=「7」 · 자모분리·앞뒤 빈칸 소속도
-  assert.equal(transcribedSame({ who_type: "교구", group_name: "화평", sub_name: "20목장" })(toCand(P(221))), true);
-  assert.equal(transcribedSame({ who_type: "교구", group_name: " 화평 ".normalize("NFD"), sub_name: " 20 " })(toCand(P(221))), true);
-  assert.equal(transcribedSame({ who_type: "교구", group_name: "화평", sub_name: "07" })(toCand(P(222, { mok3: "화평-7목장" }))), true);
+  const one = (row, p) => transcribedSame(row, [toCand(p)])(toCand(p));   // 명부에 그분 한 분일 때
+  assert.equal(one({ who_type: "교구", group_name: "화평", sub_name: "20목장" }, P(221)), true);
+  assert.equal(one({ who_type: "교구", group_name: " 화평 ".normalize("NFD"), sub_name: " 20 " }, P(221)), true);
+  assert.equal(one({ who_type: "교구", group_name: "화평", sub_name: "07" }, P(222, { mok3: "화평-7목장" })), true);
   // 다르면 아니다 — 목장 · 교구 · 구분
-  assert.equal(transcribedSame({ who_type: "교구", group_name: "화평", sub_name: "21" })(toCand(P(221))), false);
-  assert.equal(transcribedSame({ who_type: "교구", group_name: "소망", sub_name: "20" })(toCand(P(221))), false);
-  assert.equal(transcribedSame({ who_type: "교회학교", group_name: "화평", sub_name: "20" })(toCand(P(221))), false);
-  assert.equal(transcribedSame({ who_type: "", group_name: "화평", sub_name: "20" })(toCand(P(221))), false, "구분이 빈 줄은 옮겨 적은 줄이 아니다");
+  assert.equal(one({ who_type: "교구", group_name: "화평", sub_name: "21" }, P(221)), false);
+  assert.equal(one({ who_type: "교구", group_name: "소망", sub_name: "20" }, P(221)), false);
+  assert.equal(one({ who_type: "교회학교", group_name: "화평", sub_name: "20" }, P(221)), false);
+  assert.equal(one({ who_type: "", group_name: "화평", sub_name: "20" }, P(221)), false, "구분이 빈 줄은 옮겨 적은 줄이 아니다");
   // 옮겨 적기가 소속을 못 정하는 분(새가족·부서 없는 아이)은 어떤 줄과도 같지 않다
   for (const q of [ask("교구", "새가족", ""), ask("교회학교", "", ""), ask("", "", "")]) {
-    assert.equal(transcribedSame(q)(toCand(P(223, { mok1: "새가족", mok3: "2026-09" }))), false, JSON.stringify(q));
-    assert.equal(transcribedSame(q)(toCand(P(224, { kind2: "교회학교", school_dept: "" }))), false, JSON.stringify(q));
+    assert.equal(one(q, P(223, { mok1: "새가족", mok3: "2026-09" })), false, JSON.stringify(q));
+    assert.equal(one(q, P(224, { kind2: "교회학교", school_dept: "" })), false, JSON.stringify(q));
   }
+  // 목장 빈칸 교구 줄은 후보 목록(이 이름의 명부 전체)을 보고 판정한다 — 목록을 빠뜨리면 옮겨 적은 줄로 치지 않는다(안전한 쪽)
+  assert.equal(transcribedSame(row)(toCand(noNum)), false);
+  assert.equal(transcribedSame(row, [])(toCand(noNum)), false);
+  // 목장이 적힌 줄은 목록과 상관없다(목장 칸이 곧 그분을 가른다)
+  assert.equal(transcribedSame({ who_type: "교구", group_name: "화평", sub_name: "20" })(toCand(P(221))), true);
 });
 
 test("transcribedSame — 같은 옮겨 적기가 되는 동명이인 둘 → 「같은 소속에 같은 이름 2명」(확인 필요) · 창도 고르지 않는다", () => {
@@ -430,11 +437,17 @@ test("transcribedSame — 같은 옮겨 적기가 되는 동명이인 둘 → �
   const row = moved(two[0]);
   assert.deepEqual(signupChurch(two.map(toCand), row), { state: "확인 필요", reason: "같은 소속에 같은 이름 2명" });
   assert.equal(personPick(two, row).pick, null);
+  // 번호 없는 목장 둘(화평- · 화평-교역자) — 둘 다 (화평 · 빈칸)으로 옮겨 적힌다. 처음(2026-09-30 오전)엔 「같은 소속에 같은 이름 2명」이었다.
+  // 이제 빈칸 교구 줄은 같은 교구 어른이 한 분일 때만 옮겨 적은 줄로 치므로(옮겨 적기 검토 1·3) 예전 표시 「목장 확인(같은 교구 2명)」 —
+  // 어느 쪽이든 「확인 필요」이고 창은 고르지 않는다. 문구는 빈칸 줄이 목장을 모르는 줄일 수도 있다는 사실대로다.
   const nn = [P(233, { mok3: "화평-" }), P(234, { mok3: "화평-교역자" })];
-  assert.deepEqual(signupChurch(nn.map(toCand), moved(nn[0])), { state: "확인 필요", reason: "같은 소속에 같은 이름 2명" });
+  assert.deepEqual(signupChurch(nn.map(toCand), moved(nn[0])), { state: "확인 필요", reason: "목장 확인(같은 교구 2명)" });
+  assert.equal(personPick(nn, moved(nn[0])).pick, null);
 });
 
-test("transcribedSame — 옮겨 적지 않은(다르게 적힌) 줄은 예전 규칙 그대로(signupChurch = more 없는 matchChurch)", () => {
+test("transcribedSame — 옮겨 적지 않은(다르게 적힌) 줄은 예전 규칙 그대로(signupChurch = isSame 없는 matchChurch)", () => {
+  // ⚠️ 아래 명부의 아이(246 · 화평-20목장 가족 목장)는 어느 줄과도 같은 소속이 아니다 — 성경필사 줄은 교구 줄에서 아이를 빼므로(signupSame)
+  //    「화평 20」 줄을 넣으면 예전과 갈린다. 그 경우는 아래 「아이」 시험이 본다.
   const dir = [P(241), P(242, { mok1: "소망", mok3: "소망-3목장" }), P(243, { mok1: "청년공동체", mok3: "청년공동체-1" }),
     P(244, { mok3: "화평-" }), P(245, { mok1: "소망", mok3: "소망-남성1" }), P(246, { kind2: "교회학교", mok1: "화평", mok3: "화평-20목장", school_dept: "중등부" })];
   const rows = [ask("교구", "화평", "21"), ask("교구", "기쁨", "2"), ask("교구", "화평", "99"), ask("교회학교", "고등부", ""),
@@ -442,7 +455,7 @@ test("transcribedSame — 옮겨 적지 않은(다르게 적힌) 줄은 예전 �
   const sets = [dir, dir.slice(0, 2), dir.slice(2, 4), dir.slice(3), [dir[4]], []];
   for (const q of rows) for (const cands of sets) {
     const cs = cands.map(toCand);
-    assert.ok(cs.every((c) => !transcribedSame(q)(c)), "이 줄들은 누구를 옮겨 적은 것도 아니다 " + JSON.stringify(q));
+    assert.ok(cs.every((c) => !transcribedSame(q, cs)(c)), "이 줄들은 누구를 옮겨 적은 것도 아니다 " + JSON.stringify(q));
     assert.deepEqual(signupChurch(cs, q), matchChurch(cs, applicantFromSignup(q)), JSON.stringify(q));
     assert.deepEqual(ids(personPick(cands, q)), ids(personPickFor(cands, applicantFromSignup(q))), "창도 예전 그대로 " + JSON.stringify(q));
   }
@@ -467,8 +480,14 @@ test("evPerson — basic 의 교적 표시 = 명단의 표시(signupChurch) · f
   // 소망-남성1 분 + 소망-1목장 분 — 「소망 남성」 줄은 남성1 분 · 「소망 1」 줄은 1목장 분(남성1 이 1목장으로 읽히던 함정)
   assert.deepEqual(personOut([dir[3], dir[5]], ask("교구", "소망", "남성"), true).candidates.map((c) => c.person_id), [254]);
   assert.deepEqual(personOut([dir[3], dir[5]], ask("교구", "소망", "1"), true).candidates.map((c) => c.person_id), [256]);
-  // 번호 없는 목장(화평-) 분 + 화평-20목장 분 — 목장 빈칸 줄은 화평- 분
-  assert.deepEqual(personOut([dir[1], dir[2]], moved(dir[2]), true).candidates.map((c) => c.person_id), [253]);
+  // 번호 없는 목장(화평-) 분 + 화평-20목장 분 — 목장 빈칸 줄은 **고르지 않는다**(두 분 다 후보 · 교인ID 차례).
+  // 처음(2026-09-30 오전)엔 [253] 을 기대값으로 못 박았다 — 빈칸은 옮겨 적은 빈칸인지 목장을 몰라 비운 빈칸인지 줄 값으로 못 가른다
+  // (옮겨 적기 검토 1·3). 명단 표시도 「목장 확인(같은 교구 2명)」이다.
+  const nb = personOut([dir[1], dir[2]], moved(dir[2]), true);
+  assert.deepEqual([nb.pick, nb.candidates.map((c) => c.person_id)], [null, [252, 253]]);
+  assert.deepEqual(signupChurch([dir[1], dir[2]].map(toCand), moved(dir[2])), { state: "확인 필요", reason: "목장 확인(같은 교구 2명)" });
+  // 화평- 분 한 분뿐이면(친구 제보 꼴) 그분
+  assert.deepEqual(personOut([dir[2]], moved(dir[2]), true).candidates.map((c) => c.person_id), [253]);
 });
 
 test("ministryPerson(사역·담당자)은 transcribedSame 을 쓰지 않는다 — 같은 경우에 사역 줄은 예전 결과", () => {
@@ -492,4 +511,146 @@ test("ministryPerson(사역·담당자)은 transcribedSame 을 쓰지 않는다 
   const men = [P(264, { mok1: "소망", mok3: "소망-남성1" }), P(265, { mok1: "소망", mok3: "소망-3목장" })];
   assert.deepEqual(personOutFor(men, ministryApplicant({ who: "소망 남성" }, "홍길동"), false).church, { state: "맞음", reason: "" });
   assert.deepEqual(personOutFor(men, ministryApplicant({ who: "소망 남성" }, "홍길동"), true).candidates.map((c) => c.person_id), [264]);
+});
+
+// ---------- 옮겨 적기 검토(2026-09-30 오후) — 목장 빈칸 교구 줄 · 명부의 아이 ----------
+// 빈칸 교구 줄(「화평 · 빈칸」)은 옮겨 적은 줄(번호 없는 목장)과 목장을 몰라 비운 줄(한 분 더하기 「모르면 비워 두기」·올리기·옛 이관)이
+// 값이 같다 — 같은 교구 어른이 그분 한 분일 때만 옮겨 적은 줄로 친다(옮겨 적기 검토 1·3).
+// 명부의 아이는 가족의 교구·목장을 가진다 — 성경필사 교구 줄의 같은 소속에서 뺀다(옮겨 적기 검토 2·4 · mapChurchPerson 규칙 1 과 같은 차례).
+const KID = (p) => ["교회학교", "학생"].includes(p.kind2);
+
+test("목장 빈칸 교구 줄 + 같은 교구 어른 둘(번호 없는 분 · 번호 있는 분) → 「목장 확인(같은 교구 2명)」 · 창은 고르지 않고 두 분 다(옮겨 적기 검토 1·3)", () => {
+  const row = ask("교구", "화평", "");   // 목장을 몰라 비운 줄 — 번호 없는 분을 옮겨 적은 줄과 값이 같다
+  const want = { state: "확인 필요", reason: "목장 확인(같은 교구 2명)" };
+  for (const m3 of ["화평-교역자", "화평-", ""]) {
+    for (const bm3 of ["화평-20목장", "화평-12목장", "화평-남성"]) {
+      const A = P(301, { mok3: m3 }), B = P(302, { mok3: bm3 });
+      const tag = m3 + " / " + bm3;
+      const mA = moved(A);
+      assert.deepEqual([mA.who_type, mA.group_name, mA.sub_name], [row.who_type, row.group_name, row.sub_name], "A 를 옮겨 적은 줄과 값이 같다 " + tag);
+      const dir = [B, A], cs = dir.map(toCand);
+      assert.ok(cs.every((c) => !transcribedSame(row, cs)(c)), "같은 교구 어른이 둘이면 옮겨 적은 줄로 치지 않는다 " + tag);
+      assert.deepEqual(signupChurch(cs, row), want, tag);
+      assert.deepEqual(signupChurch(cs, row), matchChurch(cs, applicantFromSignup(row)), "예전 규칙(matchChurch)과 같다 " + tag);
+      assert.deepEqual(churchForSignup(new Map([["홍길동", cs]]), row), want, "명단(evRoster·evRowChurch) " + tag);
+      const f = personOut(dir, row, true);
+      assert.deepEqual([f.pick, f.total, f.candidates.map((c) => c.person_id)], [null, 2, [301, 302]], "full 은 A 「자세히」를 곧바로 열지 않는다 " + tag);
+      const b = personOut(dir, row, false);
+      assert.deepEqual([b.pick, b.people.length, b.church], [null, 2, want], "basic 도 B 가 창에서 사라지지 않는다 " + tag);
+    }
+  }
+});
+
+test("목장 빈칸 교구 줄 — 같은 교구 어른이 그분 한 분이면 맞음(친구 제보 꼴) · 다른 교구 동명이인·같은 교구 아이 동명이인은 세지 않는다", () => {
+  const A = P(311, { mok3: "화평-교역자" });
+  const row = moved(A);
+  const others = [P(312, { mok1: "소망", mok3: "소망-3목장" }),
+    P(313, { kind2: "학생", mok1: "화평", mok3: "화평-20목장", school_dept: "중등부", position: "" }),
+    P(314, { kind2: "교회학교", mok1: "화평", mok3: "화평-", school_dept: "유년부", position: "" })];
+  for (const dir of [[A], [A, others[0]], [others[1], A], [others[2], A], [...others, A]]) {
+    const cs = dir.map(toCand), tag = dir.map((p) => p.person_id).join(",");
+    assert.deepEqual(signupChurch(cs, row), { state: "맞음", reason: "" }, tag);
+    assert.deepEqual(churchForSignup(new Map([["홍길동", cs]]), row), { state: "맞음", reason: "" }, tag);
+    const f = personOut(dir, row, true);
+    assert.deepEqual([f.pick, f.candidates.map((c) => c.person_id)], [0, [311]], tag);
+    const b = personOut(dir, row, false);
+    assert.deepEqual([b.pick, b.church], [0, { state: "맞음", reason: "" }], tag);
+  }
+  // 명단(churchForSignup)은 churchFor 와 같은 열쇠(nameKey — 띄어쓰기 없앰)로 후보를 찾아 같은 교구 어른을 센다
+  const two = [toCand(A), toCand(P(315, { mok3: "화평-20목장" }))];
+  assert.deepEqual(churchForSignup(new Map([["홍길동", two]]), { ...row, name: "홍 길동" }), { state: "확인 필요", reason: "목장 확인(같은 교구 2명)" });
+  assert.deepEqual(churchForSignup(new Map([["홍길동", [toCand(A)]]]), { ...row, name: " 홍 길동 " }), { state: "맞음", reason: "" });
+  assert.equal(churchForSignup(null, row), null, "명부 없음은 null 그대로");
+});
+
+test("옮겨 적은 어른 줄 + 같은 목장의 아이 동명이인(가족 목장) → 맞음 · 창은 어른 · 아이를 옮겨 적은 줄은 아이(옮겨 적기 검토 2)", () => {
+  for (const kidKind of ["학생", "교회학교"]) {
+    const pairs = [
+      [P(321, { kind2: "장년", mok1: "소망", mok3: "소망-남성1" }), P(322, { kind2: kidKind, mok1: "소망", mok3: "소망-남성1", school_dept: "고등부", position: "" })],
+      [P(323, { kind2: "장년", mok1: "소망", mok3: "소망-12목장" }), P(324, { kind2: kidKind, mok1: "소망", mok3: "소망-12목장", school_dept: "고등부", position: "" })],
+    ];
+    for (const [adult, kid] of pairs) {
+      const dir = [kid, adult], cs = dir.map(toCand);   // 아이 교인ID 가 앞이어도
+      const rowA = moved(adult), rowC = moved(kid), tag = kidKind + " " + adult.mok3;
+      assert.equal(rowA.who_type, "교구", tag);
+      assert.deepEqual([rowC.who_type, rowC.group_name], ["교회학교", "고등부"], "아이를 옮겨 적으면 교회학교 줄 " + tag);
+      assert.deepEqual(signupChurch(cs, rowA), { state: "맞음", reason: "" }, tag);
+      assert.deepEqual(churchForSignup(new Map([["홍길동", cs]]), rowA), { state: "맞음", reason: "" }, tag);
+      const f = personOut(dir, rowA, true);
+      assert.deepEqual([f.pick, f.candidates.map((c) => c.person_id)], [0, [adult.person_id]], tag);
+      const b = personOut(dir, rowA, false);
+      assert.deepEqual([b.pick, b.church, b.people[0].who_type], [0, { state: "맞음", reason: "" }, "교구"], tag);
+      assert.deepEqual(signupChurch(cs, rowC), { state: "맞음", reason: "" }, "아이 줄 " + tag);
+      assert.deepEqual(personOut(dir, rowC, true).candidates.map((c) => c.person_id), [kid.person_id], "아이 줄 " + tag);
+    }
+    // 사역 줄 — 「남성」 갈래는 아이를 뺀다(새로 연 갈래 · people-match.ts) · 숫자 목장은 예전 그대로(친구에게 물을 일)
+    const [[m, mk], [n, nk]] = pairs;
+    assert.deepEqual(matchChurch([mk, m].map(toCand), applicantFromWho("홍길동", "소망 남성", "")), { state: "맞음", reason: "" });
+    assert.deepEqual(matchChurch([nk, n].map(toCand), applicantFromWho("홍길동", "소망 12목장", "")),
+      { state: "확인 필요", reason: "같은 소속에 같은 이름 2명" }, "사역 줄 숫자 목장은 이번에 바꾸지 않았다");
+  }
+});
+
+test("교적에 아이(가족 목장 「소망-남성1」) 한 분뿐 + 「소망 남성」 줄 → 맞음이 아니다(목장 확인) · 성경필사·사역 줄 모두(옮겨 적기 검토 4)", () => {
+  const kid = P(331, { kind2: "학생", mok1: "소망", mok3: "소망-남성1", school_dept: "중등부", position: "" });
+  const row = ask("교구", "소망", "남성");
+  const want = { state: "확인 필요", reason: "목장 확인(같은 교구 1명)" };   // 「남성」 갈래를 열기 전(2026-09-30 오전 전) 결과 그대로
+  assert.deepEqual(signupChurch([toCand(kid)], row), want);
+  assert.deepEqual(churchForSignup(new Map([["홍길동", [toCand(kid)]]]), row), want);
+  assert.deepEqual(personOut([kid], row, false).church, want);
+  assert.deepEqual(matchChurch([toCand(kid)], applicantFromWho("홍길동", "소망 남성", "")), want, "사역 who");
+  assert.deepEqual(personOutFor([kid], ministryApplicant({ who: "소망 남성" }, "홍길동"), false).church, want, "사역 창");
+  // 창은 명부에 한 분뿐이라 그분을 보여 준다(② — 표시는 「확인 필요」 그대로 · 예전과 같다)
+  assert.equal(personOut([kid], row, true).pick, 0);
+  // 숫자 목장 — 성경필사 줄은 아이를 빼서 「같은 이름 1명」 · 사역 줄은 예전 그대로 「맞음」
+  const kid3 = P(332, { kind2: "학생", mok1: "소망", mok3: "소망-3목장", school_dept: "중등부", position: "" });
+  assert.deepEqual(signupChurch([toCand(kid3)], ask("교구", "소망", "3")), { state: "확인 필요", reason: "같은 이름 1명" });
+  assert.deepEqual(matchChurch([toCand(kid3)], applicantFromWho("홍길동", "소망 3목장", "")), { state: "맞음", reason: "" });
+});
+
+test("옮겨 적은 줄은 맞음 — 같은 옮겨 적기가 되는 동명이인이 없고, 빈칸 교구 줄이면 같은 교구 어른이 그분뿐일 때(명부 묶음을 다 맞대 본다)", () => {
+  // 운영 교적의 꼴(어른 번호·번호 없음·남성 · 아이 가족 목장 · 청년 · 새가족). 이름·교인ID 는 지어낸 것.
+  // ⚠️ 부서 칸(school_dept)이 있는 **어른**은 넣지 않았다 — 교회학교 줄의 같은 소속(sameAffiliation 부서 갈래)이 그분도 세는 오래된 틈이
+  //    남아 있다(옮겨 적은 아이 줄 + 같은 부서 칸의 어른 동명이인 → 「같은 소속에 같은 이름 2명」). 이번에 고치지 않았다.
+  const pool = [P(401), P(402, { mok3: "화평-교역자" }), P(403, { mok3: "화평-" }), P(404, { mok1: "소망", mok3: "소망-남성1" }),
+    P(405, { mok1: "소망", mok3: "소망-남성2" }), P(406, { kind2: "학생", mok1: "소망", mok3: "소망-남성1", school_dept: "고등부", position: "" }),
+    P(407, { kind2: "교회학교", mok1: "화평", mok3: "화평-20목장", school_dept: "중등부", position: "" }),
+    P(408, { kind2: "청년", mok1: "청년공동체", mok3: "청년공동체-2", position: "" }), P(409, { kind2: "청년", mok1: "청년부", mok3: "청년-3", position: "" }),
+    P(410, { mok1: "새가족", mok3: "2026-09" }), P(411, { kind2: "학생", mok1: "화평", mok3: "화평-", school_dept: "중등부", position: "" }),
+    P(412, { mok1: "은혜", mok3: "은혜-남성목장" })];
+  const key = (p) => { const m = mapChurchPerson(p); return m ? [m.who_type, m.group_name, m.sub_name].join("|") : null; };
+  const subsets = [];
+  for (let i = 0; i < pool.length; i++) {
+    subsets.push([pool[i]]);
+    for (let j = i + 1; j < pool.length; j++) {
+      subsets.push([pool[i], pool[j]]);
+      for (let k = j + 1; k < pool.length; k++) subsets.push([pool[i], pool[j], pool[k]]);
+    }
+  }
+  let hit = 0, miss = 0;
+  for (const dir of subsets) {
+    const cs = dir.map(toCand);
+    for (const p of dir) {
+      if (key(p) === null) continue;                                   // 옮겨 적기가 소속을 못 정하는 분(새가족)
+      const row = moved(p), tag = dir.map((x) => x.person_id).join(",") + " → " + p.person_id;
+      const twin = dir.some((q) => q !== p && key(q) === key(p));
+      const blank = row.who_type === "교구" && row.sub_name === "";
+      const lone = !blank || dir.filter((q) => q.mok1 === row.group_name && !KID(q)).length === 1;
+      const b = personOut(dir, row, false), f = personOut(dir, row, true), st = signupChurch(cs, row);
+      assert.deepEqual(b.church, st, "창의 표시 = 명단의 표시 " + tag);
+      assert.deepEqual(churchForSignup(new Map([["홍길동", cs]]), row), st, "색인으로 찾아도 같다 " + tag);
+      if (!twin && lone) {
+        hit++;
+        assert.deepEqual(st, { state: "맞음", reason: "" }, tag);
+        assert.deepEqual([f.pick, f.candidates.map((c) => c.person_id)], [0, [p.person_id]], "full 은 그분 " + tag);
+        assert.equal(b.pick, 0, tag);
+      } else {
+        miss++;
+        assert.equal(st.state, "확인 필요", tag);
+        assert.equal(f.pick, null, "full 은 고르지 않는다 " + tag);
+        assert.ok(f.candidates.some((c) => c.person_id === p.person_id), "그분이 후보에 있다 " + tag);
+      }
+    }
+  }
+  assert.ok(hit > 100 && miss > 20, `두 갈래 모두 시험 안에 있다(맞음 ${hit} · 확인 필요 ${miss})`);
 });

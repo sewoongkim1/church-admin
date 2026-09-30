@@ -5,7 +5,7 @@
 export const MENUS = [
   { id: "people", group: "교인명부", icon: "🔎", label: "교인 찾기", desc: "이름·전화 뒷자리로 찾기 · 사진 · 내려받기",
     role: "directory", load: () => import("./people/search.js") },
-  { id: "people-stats", group: "교인명부", icon: "📊", label: "교인 현황", desc: "교구·부서·직분·연령대별 인원 · 사진 없는 분",
+  { id: "people-stats", group: "교인명부", icon: "📊", label: "교인 현황", desc: "교구별 인원·가구 · 직분·부서·연령대별 인원",
     role: "directory", load: () => import("./people/stats.js") },
   { id: "status", group: "사역신청", icon: "📋", label: "신청 현황", desc: "접수·임명·취소 · 같은 번호 확인 · 삭제",
     role: "ministry", load: () => import("./ministry/status.js") },

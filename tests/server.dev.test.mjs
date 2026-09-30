@@ -795,6 +795,10 @@ test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 �
   assert.ok(st.body.stats.total >= 2);
   assert.ok(st.body.stats.households >= 1);
   assert.ok(st.body.stats.options.mok1.includes("시험"));
+  // 맨 위 교구 카드(2026-09-30) — 일곱 줄 · 가구는 세대주 교구 · 응답에 교인ID·목장 이름이 없다(person_id 는 세대주 판정에만)
+  assert.deepEqual(st.body.stats.guCards.map((c) => c.gu), ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨"]);
+  const stJson = JSON.stringify(st.body);
+  for (const bad of ["990000001", "990000002", "시험-0목장", "시험-5목장", "ca-test"]) assert.ok(!stJson.includes(bad), "교인 현황에 실렸다: " + bad);
 
   const ex = await call(d, "peopleExport", { q: "ca-test-min" });
   assert.deepEqual(ex.body.rows.map((x) => x.person_id), [990000001]);

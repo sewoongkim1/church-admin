@@ -119,12 +119,85 @@ function countBy(rows: any[], f: (r: any) => string): Pair[] {
   return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"));
 }
 const guRank = (g: string) => { const i = MATCH_GU.indexOf(g); return i < 0 ? 99 : i; };
+const guKey = (r: any): string => r.mok1 || "(목장 없음)";   // 교구 칸 — 비었으면 「(목장 없음)」(교구별 표와 같은 이름)
 
-// 숫자만 — 이름·연락처는 담지 않는다
+// 교인 현황 맨 위 카드의 교구(2026-09-30 친구 요청 「교구별로 인원수만 · 믿음 소망 사랑 섬김 은혜 화평 기쁨」) —
+// 이 차례 그대로 일곱. 새가족·청년부 등 그 밖의 교구는 카드가 없다(아래 교구별 표에는 있다).
+export const CARD_GU = ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨"];
+
+// 가구를 교구에 — 신앙세대주 기준(2026-09-30 친구 요청 「인원 수 & 가구 수」).
+//   한 가구(household_id 가 같은 분들)는 그 세대주(교인ID = household_id 인 분)의 교구에서 **한 번만** 센다.
+//   세대주가 명부에 없으면 식구가 가장 많은 교구, 같으면 guOrder(교구별 표 차례 — 앱 교구 차례가 앞) 앞쪽.
+//   household_id 가 비었거나 0 인 분은 가구로 치지 않는다(statsOf 의 households 와 같은 규칙 · 같은 값 비교) —
+//   그래서 모든 교구(카드 밖 교구 포함)의 가구를 더하면 households 와 같다(tests/people-stats.test.mjs 가 대조한다).
+// ⚠️ person_id 는 세대주를 찾는 데만 쓴다 — 돌려주는 것은 교구 → 가구 수뿐이다(교인ID·세대주 번호를 싣지 않는다).
+export function householdsByGu(rows: any[], guOrder: string[]): Map<string, number> {
+  const guOfId = new Map<unknown, string>();                  // 교인ID → 교구
+  for (const r of rows) if (r.person_id !== undefined && r.person_id !== null) guOfId.set(r.person_id, guKey(r));
+  const members = new Map<unknown, Map<string, number>>();    // 세대주 교인ID → 교구 → 식구 수
+  for (const r of rows) {
+    if (!r.household_id) continue;
+    if (!members.has(r.household_id)) members.set(r.household_id, new Map());
+    const per = members.get(r.household_id)!, g = guKey(r);
+    per.set(g, (per.get(g) ?? 0) + 1);
+  }
+  const rank = new Map<string, number>(guOrder.map((g, i): [string, number] => [g, i]));
+  const at = (g: string) => rank.get(g) ?? guOrder.length;
+  const out = new Map<string, number>();
+  for (const [h, per] of members) {
+    const g = guOfId.get(h) ?? [...per.entries()]
+      .sort((a, b) => b[1] - a[1] || at(a[0]) - at(b[0]) || a[0].localeCompare(b[0], "ko"))[0][0];
+    out.set(g, (out.get(g) ?? 0) + 1);
+  }
+  return out;
+}
+
+// 성별 칸 — 연령대 표의 남·여·모름(「남」「여」가 아니면 모두 모름)
+export const SEXES = ["남", "여", "모름"];
+const sexIndex = (g: unknown) => (g === "남" ? 0 : g === "여" ? 1 : 2);
+
+// 거르기용 숫자 묶음(2026-09-30 친구 요청 「교구별·직분별 출석 필터 · 연령별 성별 출석 및 교구 필터」).
+// 화면(js/menus/people/stats-logic.js)이 출석·교구를 고를 때마다 이것으로 표를 **다시 센다** — 서버를 다시 부르지 않는다.
+//   dict = 값 사전(칸마다 목록) · 줄 = [값 번호…, 인원]. 번호는 dict 의 그 칸 목록 자리다.
+//     gu       [교구, 목장, 출석, 인원]   — 목장 수는 더할 수 없는 값이라(출석 둘을 고르면 겹치는 목장) 목장 칸까지 둔다.
+//              목장은 **이름 없이 번호만**(0 = 목장 칸이 빈 분 · 1부터 = 목장, 같은 이름이면 같은 번호) — 화면은 목장이
+//              비었나·같은 목장인가만 본다. 목장 이름 수백 개를 싣지 않는다(2026-09-30 검토).
+//     position [직분, 출석, 인원]
+//     age      [연령대, 성별, 출석, 교구, 인원] — 연령대는 dict.band(= AGE_BANDS) · 성별은 dict.sex(= SEXES) 자리
+//   dict.gu·kind3·position 은 아래 gu·kind3·position 표와 같은 차례(화면이 교구 차례를 그대로 쓴다).
+//   교구 없음은 「(목장 없음)」, 출석·직분 없음은 「(없음)」, 목장 없음은 번호 0(목장 수에 안 센다) — 위 표들과 같은 규칙.
+// ⚠️ 숫자·분류 값만 — 이름·연락처·교인ID·세대주 번호·목장 이름을 넣지 않는다(tests/people-query.test.mjs 가 JSON 을 훑는다).
+// ⚠️ 거르기 없이 다시 센 결과가 gu·position·age 와 **똑같아야** 한다(tests/people-stats.test.mjs 가 대조한다) —
+//   위 표의 규칙(교구·출석 없음 이름, 목장 빈 글자 빼기, ageBand)을 바꾸면 여기도 함께.
+function factsOf(rows: any[], guOrder: string[], kind3Order: string[], positionOrder: string[]) {
+  const mokAt = new Map<string, number>();
+  const at = (list: string[]) => new Map(list.map((v, i) => [v, i]));
+  const guAt = at(guOrder), k3At = at(kind3Order), posAt = at(positionOrder), bandAt = at(AGE_BANDS);
+  const mokIndex = (m: string) => {        // 빈 글자 = 0, 목장 = 1 부터(처음 나온 차례) — 이름은 여기서 버린다
+    if (!m) return 0;
+    if (!mokAt.has(m)) mokAt.set(m, mokAt.size + 1);
+    return mokAt.get(m)!;
+  };
+  const gu = new Map<string, number>(), position = new Map<string, number>(), age = new Map<string, number>();
+  const add = (m: Map<string, number>, key: number[]) => { const k = key.join(","); m.set(k, (m.get(k) ?? 0) + 1); };
+  for (const r of rows) {
+    const g = guAt.get(guKey(r))!, k = k3At.get(r.kind3 || NONE)!;
+    add(gu, [g, mokIndex(r.mok3 || ""), k]);
+    add(position, [posAt.get(r.position || NONE)!, k]);
+    add(age, [bandAt.get(ageBand(r.age))!, sexIndex(r.gender), k, g]);
+  }
+  const lines = (m: Map<string, number>) => [...m.entries()].map(([k, n]) => [...k.split(",").map(Number), n]);
+  return {
+    dict: { gu: guOrder, kind3: kind3Order, position: positionOrder, band: AGE_BANDS, sex: SEXES },
+    gu: lines(gu), position: lines(position), age: lines(age),
+  };
+}
+
+// 숫자만 — 이름·연락처는 담지 않는다. rows 에 person_id 가 있으면 가구를 세대주 교구에 둔다(householdsByGu · 응답엔 안 싣는다).
 export function statsOf(rows: any[]) {
   const byGu = new Map<string, { n: number; moks: Set<string> }>();
   for (const r of rows) {
-    const g = r.mok1 || "(목장 없음)";
+    const g = guKey(r);
     if (!byGu.has(g)) byGu.set(g, { n: 0, moks: new Set() });
     const x = byGu.get(g)!;
     x.n++;
@@ -141,6 +214,7 @@ export function statsOf(rows: any[]) {
       x: inB.filter((r) => r.gender !== "남" && r.gender !== "여").length };
   });
   const keys = (pairs: Pair[]) => pairs.map(([k]) => k).filter((k) => k !== NONE);
+  const hh = householdsByGu(rows, gu.map((g) => g.gu));
   return {
     total: rows.length,
     noPhoto: rows.filter((r) => !r.has_photo).length,
@@ -149,5 +223,8 @@ export function statsOf(rows: any[]) {
     school: countBy(rows.filter((r) => r.school_dept), (r) => r.school_dept),
     age,
     options: { mok1: gu.map((g) => g.gu).filter((g) => g !== "(목장 없음)"), kind2: keys(kind2), kind3: keys(kind3), position: keys(position) },
+    // 맨 위 교구 카드 — 일곱 줄 늘 이 차례(0명이어도 줄이 있다) · 인원은 교구별 표(거르기 없음)와 같다 · 가구는 세대주 기준
+    guCards: CARD_GU.map((g) => ({ gu: g, n: byGu.get(g)?.n ?? 0, households: hh.get(g) ?? 0 })),
+    facts: factsOf(rows, gu.map((g) => g.gu), kind3.map(([k]) => k), position.map(([k]) => k)),
   };
 }
