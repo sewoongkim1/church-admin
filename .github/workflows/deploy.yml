@@ -32,10 +32,11 @@ jobs:
         run: python3 tools/stamp.py
       - uses: actions/configure-pages@v5
       # 화면 파일만 올린다 — supabase/·tests/·tools/·docs 는 사이트에 나가지 않는다.
+      # vendor/ = 저장소에 넣은 SheetJS(엑셀 읽기 · js/core/xlsx.js — 빠지면 두 올리기 화면이 엑셀을 못 읽는다)
       - name: 올릴 것만 모으기
         run: |
           mkdir _site
-          cp -r index.html privacy.html favicon.png apple-touch-icon.png img js css files _site/
+          cp -r index.html privacy.html favicon.png apple-touch-icon.png img js css files vendor _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: "_site"

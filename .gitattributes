@@ -1,0 +1,2 @@
+# 저장소에 그대로 넣은 남의 파일(SheetJS) — 줄바꿈을 바꾸면 integrity(sha384)가 어긋나 브라우저가 돌리지 않는다(js/core/xlsx.js)
+vendor/** -text
