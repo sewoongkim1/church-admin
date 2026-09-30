@@ -120,6 +120,44 @@ function countBy(rows: any[], f: (r: any) => string): Pair[] {
 }
 const guRank = (g: string) => { const i = MATCH_GU.indexOf(g); return i < 0 ? 99 : i; };
 
+// 성별 칸 — 연령대 표의 남·여·모름(「남」「여」가 아니면 모두 모름)
+export const SEXES = ["남", "여", "모름"];
+const sexIndex = (g: unknown) => (g === "남" ? 0 : g === "여" ? 1 : 2);
+
+// 거르기용 숫자 묶음(2026-09-30 친구 요청 「교구별·직분별 출석 필터 · 연령별 성별 출석 및 교구 필터」).
+// 화면(js/menus/people/stats-logic.js)이 출석·교구를 고를 때마다 이것으로 표를 **다시 센다** — 서버를 다시 부르지 않는다.
+//   dict = 값 사전(칸마다 목록) · 줄 = [값 번호…, 인원]. 번호는 dict 의 그 칸 목록 자리다.
+//     gu       [교구, 목장, 출석, 인원]   — 목장 수는 더할 수 없는 값이라(출석 둘을 고르면 겹치는 목장) 목장 칸까지 둔다
+//     position [직분, 출석, 인원]
+//     age      [연령대, 성별, 출석, 교구, 인원] — 연령대는 dict.band(= AGE_BANDS) · 성별은 dict.sex(= SEXES) 자리
+//   dict.gu·kind3·position 은 아래 gu·kind3·position 표와 같은 차례(화면이 교구 차례를 그대로 쓴다).
+//   교구 없음은 「(목장 없음)」, 출석·직분 없음은 「(없음)」, 목장 없음은 빈 글자 ""(목장 수에 안 센다) — 위 표들과 같은 규칙.
+// ⚠️ 숫자·분류 값만 — 이름·연락처·교인ID·세대주 번호를 넣지 않는다(tests/people-query.test.mjs 가 JSON 을 훑는다).
+// ⚠️ 거르기 없이 다시 센 결과가 gu·position·age 와 **똑같아야** 한다(tests/people-stats.test.mjs 가 대조한다) —
+//   위 표의 규칙(교구·출석 없음 이름, 목장 빈 글자 빼기, ageBand)을 바꾸면 여기도 함께.
+function factsOf(rows: any[], guOrder: string[], kind3Order: string[], positionOrder: string[]) {
+  const mok: string[] = [], mokAt = new Map<string, number>();
+  const at = (list: string[]) => new Map(list.map((v, i) => [v, i]));
+  const guAt = at(guOrder), k3At = at(kind3Order), posAt = at(positionOrder), bandAt = at(AGE_BANDS);
+  const mokIndex = (m: string) => {
+    if (!mokAt.has(m)) { mokAt.set(m, mok.length); mok.push(m); }
+    return mokAt.get(m)!;
+  };
+  const gu = new Map<string, number>(), position = new Map<string, number>(), age = new Map<string, number>();
+  const add = (m: Map<string, number>, key: number[]) => { const k = key.join(","); m.set(k, (m.get(k) ?? 0) + 1); };
+  for (const r of rows) {
+    const g = guAt.get(r.mok1 || "(목장 없음)")!, k = k3At.get(r.kind3 || NONE)!;
+    add(gu, [g, mokIndex(r.mok3 || ""), k]);
+    add(position, [posAt.get(r.position || NONE)!, k]);
+    add(age, [bandAt.get(ageBand(r.age))!, sexIndex(r.gender), k, g]);
+  }
+  const lines = (m: Map<string, number>) => [...m.entries()].map(([k, n]) => [...k.split(",").map(Number), n]);
+  return {
+    dict: { gu: guOrder, mok, kind3: kind3Order, position: positionOrder, band: AGE_BANDS, sex: SEXES },
+    gu: lines(gu), position: lines(position), age: lines(age),
+  };
+}
+
 // 숫자만 — 이름·연락처는 담지 않는다
 export function statsOf(rows: any[]) {
   const byGu = new Map<string, { n: number; moks: Set<string> }>();
@@ -149,5 +187,6 @@ export function statsOf(rows: any[]) {
     school: countBy(rows.filter((r) => r.school_dept), (r) => r.school_dept),
     age,
     options: { mok1: gu.map((g) => g.gu).filter((g) => g !== "(목장 없음)"), kind2: keys(kind2), kind3: keys(kind3), position: keys(position) },
+    facts: factsOf(rows, gu.map((g) => g.gu), kind3.map(([k]) => k), position.map(([k]) => k)),
   };
 }

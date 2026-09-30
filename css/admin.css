@@ -635,6 +635,12 @@ a.mn-tel.sm{padding:2px 8px}
 .pp-stat th,.pp-stat td{padding:6px 10px;border-bottom:1px solid var(--light);font-size:14px;text-align:right}
 .pp-stat th:first-child,.pp-stat td:first-child{text-align:left}
 .pp-stat thead th{background:var(--light);color:var(--gray);font-size:13px}
+/* ── 교인 현황 거르기 (2026-09-30) ── 표 위 「출석」·「교구」 단추는 🔎 교인 찾기의 .pp-pick-b 그대로.
+   한 줄에 둘(연령대·성별)까지 — 폰 320px(본문 288px)에서도 둘이 한 줄(130+8+130), 더 좁으면 줄을 바꿔 한 칸씩.
+   넓은 화면에선 단추가 표 폭만큼 늘지 않게 240px 까지. 표 아래 합계 줄은 굵게 · 위에 두 줄 테두리. */
+.pp-sfilters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 8px}
+.pp-sfilters .pp-pick-b{flex:1 1 130px;width:auto;max-width:240px}
+.pp-stat tfoot th,.pp-stat tfoot td{border-top:2px solid var(--border);border-bottom:0;font-weight:800;color:var(--navy-dark)}
 /* 사역 화면의 교적 표시 */
 .cb{display:inline-flex;align-items:center;gap:4px;min-height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-style:normal;font-weight:700;margin-left:6px;white-space:nowrap}
 .cb small{font-weight:400}

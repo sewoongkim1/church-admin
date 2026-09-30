@@ -131,3 +131,38 @@ test("statsOf — 교구 차례 · 목장 수 · 사진 없음 · 가구 수 · 
   assert.deepEqual(s.options.mok1, ["믿음", "기쁨"]);
   assert.ok(!s.options.position.includes("(없음)"));
 });
+
+test("statsOf facts — 묶음 셋(교구·목장·출석 / 직분·출석 / 연령대·성별·출석·교구) · 값 사전", () => {
+  const R = (o) => ({ mok1: "", mok3: "", kind2: "", kind3: "", position: "", school_dept: "", gender: "", age: null, has_photo: true, household_id: null, ...o });
+  const f = statsOf([
+    R({ mok1: "기쁨", mok3: "기쁨-01목장", kind3: "출석교인", position: "집사", gender: "남", age: 51 }),
+    R({ mok1: "기쁨", mok3: "기쁨-01목장", kind3: "출석교인", position: "집사", gender: "남", age: 55 }),
+    R({ mok1: "기쁨", mok3: "", kind3: "장기결석", position: "권사", gender: "여", age: 70 }),
+    R({ kind3: "", gender: null, age: null }),
+  ]).facts;
+  assert.deepEqual(f.dict.gu, ["기쁨", "(목장 없음)"]);
+  assert.deepEqual(f.dict.kind3, ["출석교인", "(없음)", "장기결석"]);   // 서버 kind3 표 차례(인원 많은 차례 · 같으면 가나다)
+  assert.deepEqual(f.dict.position, ["집사", "(없음)", "권사"]);                 // 서버 position 표 차례
+  const at = (list, v) => list.indexOf(v);
+  const [기쁨, 없음] = [at(f.dict.gu, "기쁨"), at(f.dict.gu, "(목장 없음)")];
+  const [출석, 결석, k없음] = [at(f.dict.kind3, "출석교인"), at(f.dict.kind3, "장기결석"), at(f.dict.kind3, "(없음)")];
+  const mok = (m) => at(f.dict.mok, m);
+  assert.deepEqual(f.gu, [[기쁨, mok("기쁨-01목장"), 출석, 2], [기쁨, mok(""), 결석, 1], [없음, mok(""), k없음, 1]]);
+  assert.deepEqual(f.position.map(([p, k, n]) => [f.dict.position[p], f.dict.kind3[k], n]),
+    [["집사", "출석교인", 2], ["권사", "장기결석", 1], ["(없음)", "(없음)", 1]]);
+  assert.deepEqual(f.age.map(([b, s, k, g, n]) => [f.dict.band[b], f.dict.sex[s], f.dict.kind3[k], f.dict.gu[g], n]),
+    [["50대", "남", "출석교인", "기쁨", 2], ["70대", "여", "장기결석", "기쁨", 1], ["모름", "모름", "(없음)", "(목장 없음)", 1]]);
+});
+
+test("statsOf — 응답에 이름·연락처·교인ID·세대주 번호가 없다(숫자·분류 값만)", () => {
+  const rows = [
+    { person_id: 990000001, name: "시험가람", phone1: "010-0000-0001", address: "시험시 비밀주소", household_id: 990000001,
+      mok1: "기쁨", mok3: "기쁨-01목장", kind2: "장년", kind3: "출석교인", position: "집사", school_dept: "", gender: "남", age: 40, has_photo: true },
+    { person_id: 990000002, name: "시험나래", phone1: "010-0000-0002", address: "시험시 비밀주소", household_id: 990000001,
+      mok1: "기쁨", mok3: "기쁨-01목장", kind2: "장년", kind3: "출석교인", position: "", school_dept: "", gender: "여", age: 38, has_photo: false },
+  ];
+  const json = JSON.stringify(statsOf(rows));
+  for (const bad of ["시험가람", "시험나래", "010-0000", "비밀주소", "990000001", "990000002", "person_id", "phone", "name"]) {
+    assert.ok(!json.includes(bad), "응답에 들어갔다: " + bad);
+  }
+});
