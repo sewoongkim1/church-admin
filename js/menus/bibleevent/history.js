@@ -11,7 +11,7 @@ import { pickMany } from "../../core/picker.js";
 import { SRC_LABEL } from "./roster-logic.js";
 import {
   APPROX, MIN_REPEAT, quickChips, quickIds, chipOn, labelMap, barRows, crossTable, repeatChoices, repeatersAt, fitRepeat, statsCsv,
-  csvName, histSummary, histRowText, statsPickOptions,
+  csvName, histSummary, histRowText, statsPickOptions, orderStats, recentIds,
 } from "./history-logic.js";
 // 이름을 누르면 교적 창(Task 16)
 import { openChurchPerson } from "./person-popup.js";
@@ -45,7 +45,7 @@ export async function render(el, { call }) {
   const r = await call("evEvents");
   if (!r.ok) { el.innerHTML = TITLE + `<p class="empty">회차를 불러오지 못했어요 — ${esc(errorText(r))}</p>`; return; }
   const events = r.events || [];                      // 마감일 늦은 회차 먼저(서버 차례) · 보관 회차까지 모두
-  const labels = labelMap(events);
+  const labels = labelMap(events);                    // 통계 이름표 「2026 사순절 마가복음」(연도 + 제목 · 완서자 등 뺌 · 2026-10-01)
   const known = new Set(events.map((e) => e.id));
   if (sel) { sel = sel.filter((id) => known.has(id)); if (!sel.length) sel = null; }   // 그사이 없어진 회차는 뺀다
   let hist = null;    // 마지막 이름 찾기 { name, groups }
@@ -126,7 +126,7 @@ export async function render(el, { call }) {
       `aria-pressed="${on === c.key}">${esc(c.label)}${c.n == null ? "" : ` <em>${c.n}</em>`}</button>`).join("");
     const ids = sel || events.map((e) => e.id);
     $(".be-hi-selsum").textContent = sel
-      ? `고른 회차 ${ids.length}개 — ${ids.map((id) => labels.get(id) || id).join(" · ")}`
+      ? `고른 회차 ${ids.length}개 — ${recentIds(ids, events).map((id) => labels.get(id) || id).join(" · ")}`
       : `모든 회차 ${events.length}개`;
   };
 
@@ -142,7 +142,7 @@ export async function render(el, { call }) {
         <span class="be-hi-bt" aria-hidden="true"><i style="width:${b.pct}%"></i></span><b>${n(b.count)}명</b></div>`).join("")}</div>
       <h3 class="sec-title">교구(부서) × 회차 <small class="muted">명단 줄 수</small></h3>
       <div class="be-hi-wrap"><table class="be-hi-x">
-        <thead><tr><th>소속</th>${x.cols.map((c) => `<th>${esc(c.label)}</th>`).join("")}<th>합계</th></tr></thead>
+        <thead><tr><th>소속</th>${x.cols.map((c) => `<th><span class="be-hi-xc">${esc(c.label)}</span></th>`).join("")}<th>합계</th></tr></thead>
         <tbody>${x.rows.map((row) => row.head
           ? `<tr class="be-hi-xh"><th colspan="${x.cols.length + 2}">${esc(row.label)}</th></tr>`
           : `<tr><th>${esc(row.label)}</th>${row.cells.map((v) => `<td>${v ? n(v) : "·"}</td>`).join("")}<td><b>${n(row.total)}</b></td></tr>`).join("")}</tbody>
@@ -164,7 +164,8 @@ export async function render(el, { call }) {
     outEl.innerHTML = `<p class="empty">통계를 내는 중…</p>`;
     const d = await busy(el, () => call("evStats", { event_ids: sel || [] }));
     if (!d.ok) { stats = null; outEl.innerHTML = `<p class="empty">통계를 내지 못했어요 — ${esc(errorText(d))}</p>`; return; }
-    stats = { perEvent: d.perEvent || [], byGroup: d.byGroup || [], repeaters: d.repeaters || [] };
+    // 최근 회차 먼저(2026-10-01 친구) — 여기 한 곳에서 세우고 막대·교구×회차 열·여러 번 참여한 분·내려받기가 이 차례를 쓴다
+    stats = orderStats({ perEvent: d.perEvent || [], byGroup: d.byGroup || [], repeaters: d.repeaters || [] }, events);
     const choices = repeatChoices(stats.repeaters);
     minRepeat = fitRepeat(choices, minRepeat);
     drawStats();

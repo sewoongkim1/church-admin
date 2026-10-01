@@ -10,12 +10,13 @@ import { errorText } from "../js/core/ui.js";
 import { MENUS } from "../js/menus/registry.js";
 
 // 회차 목록(evEvents 차례 — 마감일 늦은 것 먼저). id 는 운영 회차 모양 그대로(개인정보 아님).
+// 통계 이름표(labelMap)는 제목에서 — 「2026 사순절 성경필사」 → 「2026 사순절」(2026-10-01 친구 「왼쪽에 년도」)
 const EVS = [
-  { id: "autumn-2026", title: "가을 말씀 동행", short_title: "가을 동행", closes_on: "2026-11-28", count: 0 },
-  { id: "summer-2026", title: "2026 썸머 써 바이블", short_title: "", closes_on: "2026-08-31", count: 199 },
-  { id: "lent-booklet-2026", title: "2026 사순절 소책자", short_title: "소책자 26", closes_on: "2026-04-05", count: 80 },
-  { id: "lent-2026", title: "2026 사순절 성경필사", short_title: "사순절 26", closes_on: "2026-04-05", count: 515 },
-  { id: "lent-2025", title: "2025 사순절 성경필사", short_title: "사순절 25", closes_on: "2025-04-20", count: 400 },
+  { id: "autumn-2026", title: "가을 말씀 동행", short_title: "가을 동행", opens_on: "2026-10-27", closes_on: "2026-11-28", count: 0 },
+  { id: "summer-2026", title: "2026 썸머 써 바이블", short_title: "", opens_on: "2026-05-01", closes_on: "2026-08-31", count: 199 },
+  { id: "lent-booklet-2026", title: "2026 사순절 소책자", short_title: "소책자 26", opens_on: "2026-02-18", closes_on: "2026-04-05", count: 80 },
+  { id: "lent-2026", title: "2026 사순절 성경필사", short_title: "사순절 26", opens_on: "2026-02-18", closes_on: "2026-04-05", count: 515 },
+  { id: "lent-2025", title: "2025 사순절 성경필사", short_title: "사순절 25", opens_on: "2025-03-05", closes_on: "2025-04-20", count: 400 },
 ];
 // evStats 모양(CONTRACT 5절) — repeaters[].label 은 **소속만**(evWho 꼴), events 는 회차 id
 const STATS = {
@@ -63,11 +64,69 @@ test("chipOn — null·전부는 all · 빠른 고르기와 같으면 그 열쇠
   assert.equal(chipOn(EVS, ["autumn-2026"]), "custom");
 });
 
-test("labelMap — 짧은 이름 → 제목 → id", () => {
-  const m = labelMap(EVS);
-  assert.equal(m.get("lent-2026"), "사순절 26");
-  assert.equal(m.get("summer-2026"), "2026 썸머 써 바이블");
-  assert.equal(labelMap([{ id: "x-1", title: "", short_title: "" }]).get("x-1"), "x-1");
+// 운영 회차 열두 개(2026-10-01 · id·시작일·제목·짧은 이름 — 개인정보 아님). 요청에 시작일이 없던 소책자 2025 는
+// 2024·2026 소책자처럼 그해 사순절과 같은 날로 둔다. 마감일은 운영 값을 몰라 「같은 해 같은 날 시작한 둘」을 같은 마감일로 둔다.
+const PROD = [
+  { id: "lent-2022", opens_on: "2022-03-02", closes_on: "2022-04-16", title: "2022 사순절 마태복음 완서자", short_title: "사순절 완서자" },
+  { id: "lent-2023", opens_on: "2023-02-22", closes_on: "2023-04-08", title: "2023 사순절 마가복음 완서자", short_title: "사순절 마가복음 완서자" },
+  { id: "lent-2024", opens_on: "2024-02-14", closes_on: "2024-03-30", title: "2024 사순절 누가복음 완서자", short_title: "사순절 누가복음 완서자" },
+  { id: "lent-booklet-2024", opens_on: "2024-02-14", closes_on: "2024-03-30", title: "2024 사순절 소책자 이벤트 참여자", short_title: "사순절 소책자 이벤트" },
+  { id: "summer-2024", opens_on: "2024-06-01", closes_on: "2024-08-31", title: "2024 썸머 써 바이블 잠언 완서자", short_title: "썸머 써 바이블 완서자" },
+  { id: "lent-2025", opens_on: "2025-03-05", closes_on: "2025-04-19", title: "2025 사순절 요한복음 완서자", short_title: "사순절 요한복음 완서자" },
+  { id: "lent-booklet-2025", opens_on: "2025-03-05", closes_on: "2025-04-19", title: "2025 사순절 소책자 이벤트 참여자", short_title: "사순절 소책자 이벤트" },
+  { id: "summer-2025", opens_on: "2025-06-01", closes_on: "2025-08-31", title: "2025 썸머 써 바이블 롬/갈 완서자", short_title: "썸머 써 바이블 완서자" },
+  { id: "lent-2026", opens_on: "2026-02-18", closes_on: "2026-04-04", title: "2026 사순절 마가복음 성경필사 완서자", short_title: "사순절 마가복음 완서자" },
+  { id: "lent-booklet-2026", opens_on: "2026-02-18", closes_on: "2026-04-04", title: "2026 사순절 소책자 이벤트 참여자", short_title: "사순절 소책자 이벤트" },
+  { id: "summer-2026", opens_on: "2026-05-01", closes_on: "2026-08-31", title: "2026 썸머 써 바이블 옵/말 완서자", short_title: "썸머 써 바이블 완서자" },
+  { id: "autumn-2026", opens_on: "2026-10-27", closes_on: "2026-11-28", title: "2026 가을 말씀 동행", short_title: "가을 말씀 동행" },
+];
+
+test("labelMap — 운영 회차 열둘: 제목에서 연도(시작일) + 이름 · 「완서자」「이벤트」「참여자」「성경필사」는 뺀다(2026-10-01 친구)", () => {
+  const m = labelMap(PROD);
+  assert.deepEqual(PROD.map((e) => m.get(e.id)), [
+    "2022 사순절 마태복음",          // 짧은 이름(「사순절 완서자」)이 아니라 제목 — 「2022년은 마태복음입니다」
+    "2023 사순절 마가복음",
+    "2024 사순절 누가복음",
+    "2024 사순절 소책자",
+    "2024 썸머 써 바이블 잠언",
+    "2025 사순절 요한복음",
+    "2025 사순절 소책자",
+    "2025 썸머 써 바이블 롬/갈",
+    "2026 사순절 마가복음",
+    "2026 사순절 소책자",
+    "2026 썸머 써 바이블 옵/말",
+    "2026 가을 말씀 동행",
+  ]);
+  // 같은 이름이 두 해에 있어도 이름표는 다르다(2023·2026 사순절 마가복음)
+  assert.equal(new Set(m.values()).size, PROD.length);
+});
+
+test("labelMap — 연도는 시작일(opens_on)에서 · 제목 앞 연도는 떼고 한 번만 · 시작일이 없으면 제목 앞 연도 · 둘 다 없으면 연도 없이", () => {
+  const one = (e) => labelMap([{ id: "x", ...e }]).get("x");
+  assert.equal(one({ title: "사순절 마가복음 완서자", opens_on: "2023-02-22" }), "2023 사순절 마가복음", "제목에 연도가 없으면 시작일 연도를 붙인다");
+  assert.equal(one({ title: "2026 썸머 써 바이블", opens_on: "2026-05-01" }), "2026 썸머 써 바이블", "두 번 붙이지 않는다");
+  assert.equal(one({ title: "2025 사순절", opens_on: "2026-02-18" }), "2026 사순절", "다르면 시작일 연도 — 제목 앞 연도는 뗀다");
+  assert.equal(one({ title: "2026년 사순절", opens_on: "2026-02-18" }), "2026 사순절", "「2026년」도 앞 연도로 본다");
+  assert.equal(one({ title: "사순절 2026", opens_on: "2026-02-18" }), "2026 사순절", "뒤에 같은 연도가 한 번 더 있어도 한 번만");
+  assert.equal(one({ title: "2024 사순절 완서자" }), "2024 사순절", "시작일이 없으면 제목 앞 연도");
+  for (const bad of ["", null, "x", "2026-3-1", "2026-13-01", "2026/03/01", "20260301"]) {
+    assert.equal(one({ title: "2024 사순절", opens_on: bad }), "2024 사순절", "시작일이 꼴이 아니면 제목 앞 연도: " + bad);
+    assert.equal(one({ title: "가을 말씀 동행", opens_on: bad }), "가을 말씀 동행", "둘 다 없으면 연도 없이: " + bad);
+  }
+  assert.equal(one({ title: " 2026  가을   말씀 동행 ", opens_on: " 2026-10-27 " }), "2026 가을 말씀 동행", "빈칸은 하나로");
+});
+
+test("labelMap — 뺄 말은 따로 선 낱말만 · 다 빼면 비는 이름은 빼기 전 그대로 · 제목 → 짧은 이름 → id", () => {
+  const one = (e) => labelMap([{ id: "x-1", ...e }]).get("x-1");
+  assert.equal(one({ title: "완서자 모임 이벤트성 참여자들", opens_on: "2026-01-01" }), "2026 모임 이벤트성 참여자들",
+    "따로 선 「완서자」만 빼고 붙어 있는 말(이벤트성·참여자들)은 그대로");
+  assert.equal(one({ title: "2026 완서자 이벤트", opens_on: "2026-03-01" }), "2026 완서자 이벤트", "다 빼면 비니 빼기 전 그대로");
+  assert.equal(one({ title: "완서자", opens_on: "2026-03-01" }), "2026 완서자");
+  assert.equal(one({ title: "", short_title: "2024 썸머 완서자", opens_on: "2024-06-01" }), "2024 썸머", "제목이 비면 짧은 이름");
+  assert.equal(one({ title: "", short_title: "", opens_on: "2024-06-01" }), "2024 x-1", "그것도 비면 id");
+  assert.equal(one({ title: "", short_title: "" }), "x-1");
+  assert.equal(one({ title: "2026", opens_on: "2026-03-01" }), "2026", "연도뿐인 제목이 「2026 2026」이 되지 않게");
+  assert.deepEqual([...labelMap(null)], []);
 });
 
 test("barRows — 가장 많은 회차가 100% · 0명은 0% · 적어도 2% · 이름은 짧은 이름", () => {
@@ -80,7 +139,7 @@ test("barRows — 가장 많은 회차가 100% · 0명은 0% · 적어도 2% · 
 
 test("crossTable — 열은 회차 차례 · 구분이 바뀌는 곳에 머리 줄 · 빈 칸은 0 · 맨 아래 합계", () => {
   const x = crossTable(STATS, labelMap(EVS));
-  assert.deepEqual(x.cols, [{ id: "lent-2026", label: "사순절 26" }, { id: "lent-2025", label: "사순절 25" }, { id: "summer-2026", label: "2026 썸머 써 바이블" }]);
+  assert.deepEqual(x.cols, [{ id: "lent-2026", label: "2026 사순절" }, { id: "lent-2025", label: "2025 사순절" }, { id: "summer-2026", label: "2026 썸머 써 바이블" }]);
   assert.deepEqual(x.rows, [
     { head: true, label: "교구" },
     { head: false, label: "화평", cells: [2, 0, 1], total: 3 },
@@ -101,18 +160,18 @@ test("여러 번 참여 — 「N회 이상」 칩은 3회부터 가장 많은 �
   assert.deepEqual(repeatersAt(undefined, 3), []);
 });
 
-test("statsCsv — BOM · \\r\\n · 세 표 · 따옴표 · 회차 id 는 짧은 이름으로 · 여러 번 참여는 「이름」「소속」 두 칸 · 근삿값 안내", () => {
+test("statsCsv — BOM · \\r\\n · 세 표 · 따옴표 · 회차는 세 표 모두 막대와 같은 이름표(연도 + 이름) · 여러 번 참여는 「이름」「소속」 두 칸 · 근삿값 안내", () => {
   const csv = statsCsv(STATS, labelMap(EVS), 4);
   assert.ok(csv.startsWith("\uFEFF"));
   assert.deepEqual(csv.slice(1).split("\r\n"), [
     '"회차별 인원"',
     '"회차","인원"',
-    '"2026 사순절 성경필사","3"',
-    '"2025 사순절 성경필사","0"',
+    '"2026 사순절","3"',
+    '"2025 사순절","0"',
     '"2026 썸머 써 바이블","1"',
     "",
     '"교구(부서) × 회차 — 명단 줄 수"',
-    '"구분","소속","사순절 26","사순절 25","2026 썸머 써 바이블","합계"',
+    '"구분","소속","2026 사순절","2025 사순절","2026 썸머 써 바이블","합계"',
     '"교구","화평","2","0","1","3"',
     '"교구","기쁨","1","0","0","1"',
     '"교회학교","청년부","0","0","0","0"',
@@ -120,8 +179,10 @@ test("statsCsv — BOM · \\r\\n · 세 표 · 따옴표 · 회차 id 는 짧은
     "",
     `"여러 번 참여한 분 — 4회 이상 · ${APPROX}"`,
     '"이름","소속","횟수","참여 회차"',
-    '"홍길동","화평 20목장","5","사순절 26 · 2026 썸머 써 바이블 · 없는-회차"',
+    '"홍길동","화평 20목장","5","2026 사순절 · 2026 썸머 써 바이블 · 없는-회차"',
   ]);
+  // 회차 목록에 없는 회차(이름표 없음)는 서버가 준 제목 → id
+  assert.ok(statsCsv(STATS, new Map(), 4).includes('"2026 사순절 성경필사","3"'));
   assert.ok(statsCsv({ ...STATS, repeaters: [{ n: 1, name: '홍"길동', label: "x", times: 9, events: [] }] }, new Map(), 3)
     .includes('"홍""길동"'));
 });
@@ -213,4 +274,119 @@ test("statsPickOptions — 「통계에 넣을 회차」 선택지: 「연·월 
     assert.equal(x.hint, rosterLogicH.evPickHint(e));
   }
   assert.deepEqual(statsPickOptions(null), []);
+});
+
+// ---------- 회차 차례(2026-10-01 · 친구 「순서는 연도 일자별 내림차순으로」) ----------
+// 서버 statsOf 는 기간 차례(마감일 오름차순)로 준다 — 화면이 history-logic.js 한 곳에서 최근 회차 먼저로 다시 세운다.
+test("recentIds — 시작일 늦은 것 먼저 → 마감일 늦은 것 먼저 → id(abc 순) · 날짜 없는 회차는 뒤 · 목록에 없는 id 는 맨 뒤 받은 차례 · 받은 배열은 그대로", () => {
+  const { recentIds } = historyLogic;
+  assert.equal(typeof recentIds, "function", "history-logic.js 가 recentIds 를 내보내야 한다");
+  const ids = PROD.map((e) => e.id);   // 시작일 오름차순
+  const labels = labelMap(PROD);
+  assert.deepEqual(recentIds(ids, PROD).map((id) => labels.get(id)), [
+    "2026 가을 말씀 동행",
+    "2026 썸머 써 바이블 옵/말",
+    "2026 사순절 마가복음",   // 시작일(2026-02-18)·마감일이 같은 둘 → id 차례: "lent-2026" < "lent-booklet-2026" → 마가복음이 먼저
+    "2026 사순절 소책자",
+    "2025 썸머 써 바이블 롬/갈",
+    "2025 사순절 요한복음",   // 2025 도 같은 날 시작·같은 마감 → id 차례
+    "2025 사순절 소책자",
+    "2024 썸머 써 바이블 잠언",
+    "2024 사순절 누가복음",
+    "2024 사순절 소책자",
+    "2023 사순절 마가복음",
+    "2022 사순절 마태복음",
+  ]);
+  assert.equal(ids[0], "lent-2022", "받은 배열은 그대로");
+  // 같은 날 시작하면 마감일 늦은 것이 먼저 — id 보다 먼저 본다
+  const same = [{ id: "a", opens_on: "2026-02-18", closes_on: "2026-04-04" }, { id: "b", opens_on: "2026-02-18", closes_on: "2026-05-01" }];
+  assert.deepEqual(recentIds(["a", "b"], same), ["b", "a"]);
+  // 시작일이 비었거나 꼴이 아니면 날짜 있는 회차 뒤(그 안에서는 마감일 → id)
+  const undated = [{ id: "n", opens_on: "" }, { id: "x", opens_on: "x" }, { id: "m", opens_on: "2026-13-01" }, { id: "d", opens_on: "2020-01-01" }];
+  assert.deepEqual(recentIds(["x", "n", "m", "d"], undated), ["d", "m", "n", "x"]);
+  // 회차 목록에 없는 id 는 맨 뒤, 받은 차례 그대로
+  assert.deepEqual(recentIds(["zz", "lent-2022", "aa", "summer-2026"], PROD), ["summer-2026", "lent-2022", "zz", "aa"]);
+  assert.deepEqual(recentIds(null, PROD), []);
+  assert.deepEqual(recentIds(["b", "a"], null), ["b", "a"]);
+});
+
+test("orderStats — 막대·교구×회차 열·내려받기(세 표)·여러 번 참여한 분의 참여 회차가 한 차례(최근 회차 먼저) · 받은 통계는 그대로", () => {
+  const { orderStats } = historyLogic;
+  assert.equal(typeof orderStats, "function", "history-logic.js 가 orderStats 를 내보내야 한다");
+  const o = orderStats(STATS, EVS);
+  assert.deepEqual(o.perEvent.map((e) => e.id), ["summer-2026", "lent-2026", "lent-2025"]);
+  assert.deepEqual(o.byGroup, STATS.byGroup, "교구 줄 차례는 서버 그대로(열만 바뀐다)");
+  assert.deepEqual(o.repeaters.map((p) => p.events), [["summer-2026", "lent-2026", "없는-회차"], ["lent-2026"]]);
+  assert.deepEqual(o.repeaters.map((p) => [p.n, p.name, p.label, p.times]), STATS.repeaters.map((p) => [p.n, p.name, p.label, p.times]));
+  assert.deepEqual(STATS.perEvent.map((e) => e.id), ["lent-2026", "lent-2025", "summer-2026"], "받은 통계는 그대로");
+  assert.deepEqual(STATS.repeaters[0].events, ["lent-2026", "summer-2026", "없는-회차"]);
+
+  const labels = labelMap(EVS);
+  assert.deepEqual(barRows(o.perEvent, labels).map((b) => [b.label, b.count]), [["2026 썸머 써 바이블", 1], ["2026 사순절", 3], ["2025 사순절", 0]]);
+  const x = crossTable(o, labels);
+  assert.deepEqual(x.cols.map((c) => c.label), ["2026 썸머 써 바이블", "2026 사순절", "2025 사순절"]);
+  assert.deepEqual(x.rows[1], { head: false, label: "화평", cells: [1, 2, 0], total: 3 });
+  assert.deepEqual(x.foot, { cells: [1, 3, 0], total: 4 });
+  const lines = statsCsv(o, labels, 4).slice(1).split("\r\n");
+  assert.deepEqual(lines.slice(2, 5), ['"2026 썸머 써 바이블","1"', '"2026 사순절","3"', '"2025 사순절","0"']);
+  assert.equal(lines[7], '"구분","소속","2026 썸머 써 바이블","2026 사순절","2025 사순절","합계"');
+  assert.equal(lines[8], '"교구","화평","1","2","0","3"');
+  assert.equal(lines.at(-1), '"홍길동","화평 20목장","5","2026 썸머 써 바이블 · 2026 사순절 · 없는-회차"');
+
+  // 운영 열둘 — 서버 차례(마감일 오름차순)로 와도 막대는 최근 회차 먼저, 가을 말씀 동행이 맨 위·2022 마태복음이 맨 아래
+  const per = [...PROD].sort((a, b) => a.closes_on.localeCompare(b.closes_on) || a.id.localeCompare(b.id))
+    .map((e) => ({ id: e.id, title: e.title, count: 1 }));
+  const bars = barRows(orderStats({ perEvent: per, byGroup: [], repeaters: [] }, PROD).perEvent, labelMap(PROD)).map((b) => b.label);
+  assert.equal(bars[0], "2026 가을 말씀 동행");
+  assert.deepEqual(bars.slice(1, 4), ["2026 썸머 써 바이블 옵/말", "2026 사순절 마가복음", "2026 사순절 소책자"]);
+  assert.equal(bars.at(-1), "2022 사순절 마태복음");
+  for (const b of bars) assert.match(b, /^20\d\d /, "모든 막대 이름이 연도로 시작: " + b);
+  assert.deepEqual(orderStats({}, EVS), { perEvent: [], byGroup: [], repeaters: [] });
+});
+
+// ---------- 이름표가 잘리지 않게(2026-10-01 · 「사순절 마가복음 완서:」로 잘려 보였다) ----------
+import { readFileSync } from "node:fs";
+const CSS = readFileSync(new URL("../css/admin.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const cssRule = (sel) => {
+  const m = CSS.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{([^}]*)\\}"));
+  assert.ok(m, "css/admin.css 에 " + sel + " 규칙");
+  return m[1];
+};
+
+test("막대 이름표 — 말줄임 없이 낱말 단위로 줄을 바꾼다 · 13px 이상 · 누르는 자리 36px(--chip) · 폰 칸 10em · PC(640px~) 칸 14em", () => {
+  const bl = cssRule(".be-hi-bl");
+  assert.doesNotMatch(bl, /ellipsis|nowrap|overflow:hidden/, "자르지 않는다");
+  assert.match(bl, /min-height:var\(--chip\)/, "누르는 자리 36px");
+  assert.match(bl, /word-break:keep-all/, "낱말 단위로 줄바꿈(연도가 늘 첫 줄 맨 앞)");
+  assert.match(bl, /overflow-wrap:anywhere/, "아주 긴 낱말만 끊는다(칸을 넘치지 않게)");
+  const bar = cssRule(".be-hi-bar");
+  const px = bar.match(/font-size:(\d+)px/);
+  assert.ok(px && Number(px[1]) >= 13, "13px 이상: " + bar);
+  assert.match(bar, /grid-template-columns:minmax\(0,10em\) minmax\(0,1fr\) minmax\(4em,auto\)/,
+    "폰 — 이름 10em(360px 에서도 막대가 남는다) · 숫자 칸 4em 이상(줄마다 막대 길이가 같게)");
+  assert.match(CSS, /@media \(min-width:640px\)\{\.be-hi-bar\{grid-template-columns:minmax\(0,14em\) minmax\(0,1fr\) minmax\(4em,auto\)\}\}/, "PC 이름 14em");
+  assert.match(cssRule(".be-hi-bar b"), /text-align:right/);
+});
+
+test("교구×회차 표 머리 칸 — 회차 이름은 줄을 바꾼다(6~8em — 운영 이름표가 두 줄) · 표는 옆으로 밀리는 칸(.be-hi-wrap) 안에만 · 13px 이상", () => {
+  const xc = cssRule(".be-hi-xc");
+  assert.match(xc, /white-space:normal/);
+  assert.match(xc, /word-break:keep-all/);
+  assert.match(xc, /overflow-wrap:anywhere/);
+  assert.match(xc, /min-width:6em/);
+  assert.match(xc, /max-width:8em/);
+  assert.match(cssRule(".be-hi-wrap"), /overflow-x:auto/);
+  const th = cssRule(".be-hi-x thead th");
+  const px = th.match(/font-size:(\d+)px/);
+  assert.ok(px && Number(px[1]) >= 13, th);
+  assert.match(th, /vertical-align:bottom/, "줄 수가 달라도 숫자 바로 위에 붙는다");
+});
+
+test("history.js — 차례는 통계를 받은 한 곳(orderStats) · 고른 회차 줄도 같은 차례(recentIds) · 표 머리 칸은 .be-hi-xc · 막대 링크는 그대로 회차 id", () => {
+  const src = readFileSync(new URL("../js/menus/bibleevent/history.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.equal((src.match(/orderStats\(/g) || []).length, 1, "통계를 받은 곳 한 번만 — 그리기·내려받기는 그 결과를 쓴다");
+  assert.match(src, /stats = orderStats\(\{ perEvent: d\.perEvent \|\| \[\], byGroup: d\.byGroup \|\| \[\], repeaters: d\.repeaters \|\| \[\] \}, events\)/);
+  assert.match(src, /recentIds\(ids, events\)\.map\(\(id\) => labels\.get\(id\) \|\| id\)/);
+  assert.match(src, /<th><span class="be-hi-xc">\$\{esc\(c\.label\)\}<\/span><\/th>/);
+  assert.match(src, /<a class="be-hi-bl" href="\$\{rosterHref\(b\.id\)\}">\$\{esc\(b\.label\)\}<\/a>/, "명단 링크는 이름표가 아니라 id");
 });
