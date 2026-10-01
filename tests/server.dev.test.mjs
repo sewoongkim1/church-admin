@@ -5,6 +5,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { ACTION_ROLES, knownRoles } from "../supabase/functions/church-admin/authz.ts";
+import { HISTORY_UNMATCHED_YET } from "../supabase/functions/church-admin/history-db.ts";
 
 const URL_ = process.env.DEV_URL, ANON = process.env.DEV_ANON, SERVICE = process.env.DEV_SERVICE_KEY;
 if (!URL_ || !URL_.includes("ktpwthwqzgcqcrmsafdo")) throw new Error("개발 프로젝트(ktpwthwqzgcqcrmsafdo)에만 돌린다 — dev.env 를 확인할 것");
@@ -2430,6 +2431,11 @@ async function hiFixtures() {
   ]);
 }
 const hiDb = (q) => rest(`ministry_history?select=id,name,person_id,link_how,match_basis,match_reason,updated_at&${q}&order=id`, "GET");
+// 이 사람(member_id)이 이 액션으로 지금까지 남긴 기록의 가장 큰 id — 이 뒤(id=gt.)만 보면 이번 부름이 남긴 것만 본다
+async function hiAuditMark(member_id, action) {
+  const rows = await rest(`admin_audit?select=id&member_id=eq.${member_id}&action=eq.${action}&order=id.desc&limit=1`, "GET");
+  return rows[0]?.id ?? 0;
+}
 
 test("사역 이력 — 표 둘(ministry_history·ministry_history_imports)은 공개 키·로그인 사용자로 안 열린다", async () => {
   for (const t of ["ministry_history", "ministry_history_imports"]) {
@@ -2533,6 +2539,80 @@ test("사역 이력 — 올리기(살펴보기·넣기) · 맞춤 · 교인ID �
     const logs = await rest(`admin_audit?select=action,detail&action=eq.history.upload&member_id=eq.${people.ministry.memberId}&order=id.desc&limit=2`, "GET");
     assert.ok(logs.length >= 1);
     assert.ok(!JSON.stringify(logs).includes("ca-test-hi-"), "기록에 이름이 실렸다");
+  } finally {
+    await hiClean();
+  }
+});
+
+// ── 사역 이력 — 개발 다시 보기(2026-10-01 최종 검토 뒤) — 살펴보기 명부 기록 · 잇기 잠금(expect) · 내려받기 거르기 · 자리 표시 사유 ──
+test("사역 이력 — 살펴보기 명부 기록(people.lookup) · 잇기 잠금(expect) · 내려받기 거르기(only·q) · 자리 표시 사유가 남지 않음", async () => {
+  await hiFixtures();
+  const m = people.ministry.token;
+  const year = HI.year;
+  const mid = people.ministry.memberId;
+  try {
+    // (a) 살펴보기(historyUploadCheck) — 새 줄이 있으면 people.lookup(from:"history-check") 한 줄, 물은 이름에 씨앗 이름들
+    const markCheck = await hiAuditMark(mid, "people.lookup");
+    const chk = (await call(m, "historyUploadCheck", { rows: hiRows(year), file_name: "ca-test-hi.xlsx" })).body;
+    assert.equal(chk.ok, true, JSON.stringify(chk));
+    const checkLogs = await rest(
+      `admin_audit?select=id,detail&action=eq.people.lookup&member_id=eq.${mid}&id=gt.${markCheck}&order=id.desc`, "GET");
+    const hcLogs = checkLogs.filter((r) => r.detail?.from === "history-check");
+    assert.equal(hcLogs.length, 1, "살펴보기 기록이 정확히 한 줄이어야 한다: " + JSON.stringify(checkLogs));
+    for (const n of [HI.name, HI.solo, HI.none]) {
+      assert.ok(hcLogs[0].detail.askedNames.includes(n), "물은 이름에 없다(" + n + "): " + JSON.stringify(hcLogs[0].detail));
+    }
+
+    // PROBE 꼴(rows: []) — 아무것도 묻지 않았으니 기록도 없다
+    const markEmpty = await hiAuditMark(mid, "people.lookup");
+    const chkEmpty = (await call(m, "historyUploadCheck", { rows: [] })).body;
+    assert.equal(chkEmpty.ok, true, JSON.stringify(chkEmpty));
+    const emptyLogs = await rest(`admin_audit?select=id&action=eq.people.lookup&member_id=eq.${mid}&id=gt.${markEmpty}`, "GET");
+    assert.equal(emptyLogs.length, 0, "rows:[] 인데도 기록이 남았다: " + JSON.stringify(emptyLogs));
+
+    // (b) 넣기 — 자리 표시 사유가 다시 맞추기 뒤 실제 사유로 바뀐다(플레이스홀더가 남으면 안 된다)
+    const sv = (await call(m, "historyUploadSave", { rows: hiRows(year), file_name: "ca-test-hi.xlsx" })).body;
+    assert.equal(sv.ok, true, JSON.stringify(sv));
+    assert.equal(sv.rematched, true, JSON.stringify(sv));   // 다시 맞추기가 실제로 돌았다 — 안 돌면 아래 사유 검사가 의미 없다
+    const rows = await hiDb(`year=eq.${year}&name=like.ca-test-hi-*`);
+    const by = Object.fromEntries(rows.map((r) => [r.name, r]));
+    assert.notEqual(by[HI.none].match_reason, HISTORY_UNMATCHED_YET,
+      "못 맞춘 줄에 자리 표시 사유가 그대로 남았다: " + JSON.stringify(by[HI.none]));
+    assert.ok(by[HI.none].match_reason, "못 맞춘 줄에 사유가 비어 있다: " + JSON.stringify(by[HI.none]));
+    assert.equal(by[HI.name].match_reason, "", "맞춘 줄에 사유가 남았다: " + JSON.stringify(by[HI.name]));
+
+    // (c) 잇기 잠금(expect) — 낡은 expect 는 conflict(기록도 안 남는다) · 새 expect 는 그대로 된다
+    const row0 = by[HI.name];
+    const staleAt = row0.updated_at;
+    const bump = (await call(m, "historyRowSave", { id: row0.id, expect: staleAt, patch: { src_note: "ca-test-hi-bump-" + STAMP } })).body;
+    assert.equal(bump.ok, true, JSON.stringify(bump));
+    const freshAt = bump.row.updated_at;
+    assert.notEqual(freshAt, staleAt, "src_note 를 고쳤는데 updated_at 이 그대로다");
+
+    const markStale = await hiAuditMark(mid, "history.link");
+    const staleLink = (await call(m, "historyLink", { id: row0.id, op: "none", expect: staleAt })).body;
+    assert.equal(staleLink.error, "conflict", JSON.stringify(staleLink));
+    const staleLogs = await rest(`admin_audit?select=id&action=eq.history.link&member_id=eq.${mid}&id=gt.${markStale}`, "GET");
+    assert.equal(staleLogs.length, 0, "conflict 인데도 history.link 기록이 남았다: " + JSON.stringify(staleLogs));
+
+    const markFresh = await hiAuditMark(mid, "history.link");
+    const freshLink = (await call(m, "historyLink", { id: row0.id, op: "none", expect: freshAt })).body;
+    assert.equal(freshLink.ok, true, JSON.stringify(freshLink));
+    assert.equal(freshLink.row.linked, false, "이분 아님으로 풀었는데 linked 가 그대로다");
+    const freshLogs = await rest(`admin_audit?select=id&action=eq.history.link&member_id=eq.${mid}&id=gt.${markFresh}`, "GET");
+    assert.equal(freshLogs.length, 1, "잇기 성공인데 기록이 안 남았다: " + JSON.stringify(freshLogs));
+
+    // (d) 내려받기 거르기 — only:"none" 은 이번 해의 못 맞춘 줄만(HI.name 을 방금 풀어 둘이 됐다) · q 는 이름으로만 더 좁힌다
+    const scopeQ = String(STAMP);
+    const expNone = (await call(m, "historyExport", { years: [year], only: "none", q: scopeQ })).body;
+    assert.equal(expNone.ok, true, JSON.stringify(expNone));
+    assert.deepEqual(new Set(expNone.rows.map((r) => r.name)), new Set([HI.name, HI.none]),
+      "못 맞춘 줄만 거르기가 틀렸다: " + JSON.stringify(expNone.rows.map((r) => r.name)));
+    assert.ok(expNone.rows.every((r) => !r.linked), "only:none 인데 이어진 줄이 섞였다: " + JSON.stringify(expNone.rows));
+
+    const expQ = (await call(m, "historyExport", { years: [year], q: HI.none })).body;
+    assert.equal(expQ.ok, true, JSON.stringify(expQ));
+    assert.deepEqual(expQ.rows.map((r) => r.name), [HI.none], "q 거르기가 이름 말고 다른 줄도 돌려줬다: " + JSON.stringify(expQ.rows));
   } finally {
     await hiClean();
   }
