@@ -14,6 +14,7 @@ export const LABEL = {
   "ministry.catalog": "사역팀 정보 고침", "ministry.order": "사역팀 차례 바꿈",
   "ministry.paper": "종이 명단 넣음",
   "ministry.tester": "사역 시험 참여자",
+  "history.request": "사역 이력 정정 신청 처리",
   "people.search": "명부 찾기", "people.view": "교인 보기", "people.export": "명부 내려받기", "people.import": "명부 올림",
   // 성경필사(암송) — detail 모양은 서버 index.ts 의 audit() 호출과 한 벌(tests/audit.test.mjs 가 못 박는다)
   "event.create": "성경필사 회차 만듦", "event.settings": "성경필사 회차 설정 바꿈",
@@ -76,6 +77,10 @@ export function detailText(r) {
   if (r.action === "ministry.order") return `${(d.ids || []).length}팀`;
   if (r.action === "ministry.paper") return `저장 ${d.saved} · 새 계정 ${d.created} · 그대로 ${d.same} · 오류 ${d.errors}`;
   if (r.action === "ministry.tester") return [d.op === "add" ? "더함" : "뺌", d.name, d.who].filter(Boolean).join(" · ");
+  if (r.action === "history.request") {
+    const K = { not_mine: "내 것이 아니에요", wrong_team: "팀·부서가 틀려요", other: "그 밖에", missing: "빠진 사역", find_me: "내 기록 찾아 주세요" };
+    return [`#${d.id ?? r.target}`, K[d.kind] || d.kind || "", `${d.from || ""} → ${d.to || ""}`, d.verified ? "본인 확인" : ""].filter(Boolean).join(" · ");
+  }
   if (r.action === "people.search") {
     const f = filtersText(d.filters);
     return `${d.q ? `‘${d.q}’` : "(검색어 없음)"}${f ? " · " + f : ""} · ${d.total}명${d.page ? ` · ${d.page + 1}쪽` : ""}`;

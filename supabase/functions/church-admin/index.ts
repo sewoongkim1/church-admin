@@ -54,6 +54,8 @@ import { churchForSignup } from "./events-person.ts";
 // 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
 import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, readLoginWho, REQ_OPEN, requestBlock, requestInsert, requestOut, REQUEST_SELECT, sortHistory } from "./history-check.ts";
+// 「📮 정정 신청」 담당자 처리(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
+import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, requestAdminOut, requestAuditDetail, requestCounts, requestSetBlock, requestSetPatch, ROW_ADMIN_SELECT } from "./history-check.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1764,6 +1766,57 @@ async function internalHistoryRequest(b: any) {
   return { ok: true };
 }
 
+// ── 「📮 정정 신청」 — 사역 이력 정정 신청 처리(담당자 · 역할 ministry · 2026-10-01) ──
+//   설계: v2 docs/superpowers/specs/2026-10-01-ministry-history-requests-admin-design.md §4
+//   ⚠️ 응답에 user_id·person_id·handled_by 를 싣지 않는다(requestAdminOut).
+//   ⚠️ 상태로 거를 때 .in() 을 쓰지 않는다 — 「확인 중」의 빈칸을 PostgREST 목록 글자로 넘기지 않으려고(hcRequests 와 같은 까닭). 받아서 거른다.
+async function hrRows(ids: number[]): Promise<Map<number, any>> {
+  const m = new Map<number, any>();
+  const uniq = [...new Set(ids.filter((x) => Number.isSafeInteger(x) && x > 0))];
+  for (let i = 0; i < uniq.length; i += 200) {
+    const { data, error } = await db.from("ministry_history").select(ROW_ADMIN_SELECT).in("id", uniq.slice(i, i + 200));
+    if (error) throw error;
+    for (const r of data ?? []) m.set(Number(r.id), r);
+  }
+  return m;
+}
+
+async function historyRequestList(b: any) {
+  const filter = String(b.status ?? "open");
+  if (!REQ_FILTERS.includes(filter)) return { ok: false, error: "bad-status" };
+  const all = (await allRows(() => db.from("ministry_history_requests").select(REQUEST_ADMIN_SELECT).order("id", { ascending: true })))
+    .map((r: any) => ({ ...r, id: Number(r.id) }));
+  const pick = filterRequests(all, filter);
+  const rows = await hrRows(pick.map((r: any) => Number(r.history_id)));
+  return {
+    ok: true, counts: requestCounts(all),
+    list: pick.map((r: any) => requestAdminOut(r, r.history_id == null ? null : rows.get(Number(r.history_id)) ?? null)),
+  };
+}
+
+async function historyRequestSet(ctx: Ctx, b: any) {
+  const p = parseRequestSet(b);
+  if (!p.ok) return p;
+  const { data: cur, error } = await db.from("ministry_history_requests").select("id,kind,status,updated_at")
+    .eq("id", p.set.id).maybeSingle();
+  if (error) throw error;
+  if (!cur) return { ok: false, error: "not-found" };
+  const block = requestSetBlock(p.set, cur);
+  if (block) return { ok: false, error: block };
+  // 본 뒤로 아무도 안 바꿨을 때만 쓴다(updated_at 조건) — 0행이면 그사이 누가 바꿨다
+  const { data: upd, error: ue } = await db.from("ministry_history_requests")
+    .update(requestSetPatch(p.set, ctx.member?.id ?? null, new Date().toISOString()))
+    .eq("id", p.set.id).eq("updated_at", cur.updated_at).select(REQUEST_ADMIN_SELECT).maybeSingle();
+  if (ue) {
+    if ((ue as any).code === "23505") return { ok: false, error: "already-open" };   // 다시 열기 — 같은 줄에 열린 신청이 있다
+    throw ue;
+  }
+  if (!upd) return { ok: false, error: "conflict" };
+  await audit(ctx, "history.request", String(p.set.id), requestAuditDetail(cur, p.set));
+  const rows = await hrRows(upd.history_id == null ? [] : [Number(upd.history_id)]);
+  return { ok: true, row: requestAdminOut(upd, upd.history_id == null ? null : rows.get(Number(upd.history_id)) ?? null) };
+}
+
 async function internalRoute(req: Request): Promise<Response> {
   if (!internalKeyOk(req.headers.get("x-internal-key"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")) {
     return json({ ok: false, error: "unauthorized" }, 401);
@@ -1842,6 +1895,8 @@ Deno.serve(async (req) => {
       case "evPeopleLookup": return json(await evPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
+      case "historyRequestList": return json(await historyRequestList(b));
+      case "historyRequestSet":  return json(await historyRequestSet(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);

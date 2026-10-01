@@ -11,6 +11,7 @@ import {
   requestCounts, requestSetBlock, requestSetPatch,
 } from "../supabase/functions/church-admin/history-check.ts";
 import { ACTION_ROLES, canCall } from "../supabase/functions/church-admin/authz.ts";
+import { LABEL, detailText } from "../js/menus/system/audit.js";
 
 const P = (id, o) => ({ person_id: id, kind2: "장년", mok1: "", mok3: "", school_dept: "", phone_digits: "", ...o });
 const W = (o) => ({ type: "교구", gu: "기쁨", mok: "12", bu: "", grade: "", name: "홍길동", ...o });
@@ -241,4 +242,12 @@ test("filterRequests·requestCounts — 끝나지 않은 것은 오래된 것부
   assert.deepEqual(filterRequests(rows, "done").map((x) => x.id), [4, 1]);
   assert.deepEqual(filterRequests(rows, "all").map((x) => x.id), [4, 2, 3, 1]);
   assert.deepEqual(requestCounts(rows), { "신청": 1, "확인 중": 1 });
+});
+
+test("기록 history.request — 한국말 이름 · 내용에 이름·답이 없다", () => {
+  assert.match(LABEL["history.request"], /[가-힣]/);
+  const t = detailText({ action: "history.request", target: "3", detail: { id: 3, kind: "not_mine", from: "신청", to: "반영", verified: true } });
+  assert.equal(t, "#3 · 내 것이 아니에요 · 신청 → 반영 · 본인 확인");
+  assert.equal(detailText({ action: "history.request", target: "4", detail: { id: 4, kind: "find_me", from: "확인 중", to: "반영 안 함", verified: false } }),
+    "#4 · 내 기록 찾아 주세요 · 확인 중 → 반영 안 함");
 });

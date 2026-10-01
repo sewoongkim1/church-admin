@@ -132,6 +132,9 @@ const PROBE = {
   ministryTesterSave: { op: "remove", key: "ca-test-probe-없음" },
   // 이름을 누르면 교적 창(사역신청·담당자 · 2026-09-30) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
   ministryPerson: { name: "" },
+  // 「📮 정정 신청」(2026-10-01) — 목록은 읽기만 · 처리는 id 0 → bad-id(쓰지도 기록하지도 않는다)
+  historyRequestList: { status: "open" },
+  historyRequestSet: { id: 0, status: "확인 중", expect: "x" },
   peopleSearch: { q: "ca-test-probe-없음" },
   peoplePerson: { id: 0 },
   peopleStats: {},
