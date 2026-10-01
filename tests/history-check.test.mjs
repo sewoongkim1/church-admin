@@ -358,18 +358,50 @@ test("index.ts 빠진 사역 줄 — 「반영」이 아니면 어디서 왔든 
   assert.ok(noop.includes("h.removed"), "같은 상태로 다시 저장해 뺀 것을 돌려주지 않는다");
 });
 
-test("index.ts 신청 삭제 — 두 쓰기(신청 지우기·줄 빼기)를 먼저, 기록은 그 뒤 · 「반영 한 번 더」는 넣은 뒤 신청이 아직 있는지 다시 본다(#2)", () => {
-  const del = fnBody("historyRequestDelete");
+test("index.ts 신청 삭제 — 두 쓰기(신청 지우기·줄 빼기)를 먼저, 기록은 그 뒤 · 지운 신청의 줄 빼기(missingRequestGone)는 다시 들어오지 않게 why 를 남긴다(#2)", () => {
+  // 신청이 있을 때의 갈래만(이미 지워진 신청의 줄 빼기 if (!cur) {…} 는 아래 시험이 본다 · 검증 2차 #3)
+  const live = fnBody("historyRequestDelete");
+  const del = live.slice(live.indexOf("if (String(cur.updated_at) !== expect)"));
   const undoAt = del.indexOf("undoMissingRequest("), reqAuditAt = del.indexOf('audit(ctx, "history.request.delete"');
   assert.ok(undoAt > 0 && reqAuditAt > 0, del);
   assert.ok(undoAt < reqAuditAt, "줄 빼기가 신청 삭제 기록보다 뒤다 — 기록이 실패하면 지운 신청의 줄이 살아 남는다");
   assert.ok(del.indexOf(".delete()") < undoAt, "신청을 지우기 전에 줄을 뺀다");
+  const gone = fnBody("missingRequestGone");
+  assert.ok(gone.includes("undoMissingRequest(") && gone.includes('why: "request-deleted"') && gone.includes('error: "not-found"'), gone);
+});
+
+test("index.ts 「한 번 더」(같은 상태) — 쓴 뒤 신청의 지금 상태를 다시 본다 · 지워졌으면 not-found · 상태가 바뀌었으면 그 상태로 한 번만 다시 맞추고 conflict(2026-10-02 검증 2차 #1·#2)", () => {
+  const st = fnBody("requestStatusNow");
+  assert.ok(st.includes('from("ministry_history_requests")') && st.includes('select("id,status")'), st);
   const set = fnBody("historyRequestSet");
   const noop = set.slice(set.indexOf("if (requestSetNoop("), set.indexOf("const block = requestSetBlock("));
-  assert.match(noop, /h\.created \|\| h\.restored\)[\s\S]*missingRequestGone\(ctx, /, noop);
-  const gone = fnBody("missingRequestGone");
-  assert.ok(gone.includes('from("ministry_history_requests")') && gone.includes("undoMissingRequest("), gone);
-  assert.ok(gone.includes('why: "request-deleted"') && gone.includes('error: "not-found"'), gone);
+  // 넣기·되살리기·고치기(반영을 가정) · 빼기(반영 아님을 가정) 뒤 · 직접 뺀 줄(history-removed — 지워진 신청의 줄을 손으로 넣으라고 하지 않게) 뒤
+  assert.match(noop, /const added = !!\(h\.created \|\| h\.restored \|\| h\.edited\), removed = !!h\.removed;/, noop);
+  assert.match(noop, /if \(added \|\| removed \|\| h\.error === "history-removed"\) \{[\s\S]*requestStatusNow\(Number\(cur\.id\)\)/, noop);
+  // 지워졌으면 — 넣은 쪽만 줄을 다시 뺀다(missingRequestGone) · 빼기·직접 뺀 줄은 그냥 not-found
+  assert.ok(noop.includes('if (now === null) return added ? await missingRequestGone(ctx, Number(cur.id)) : { ok: false, error: "not-found" };'), noop);
+  // 가정한 상태와 다르면 지금 상태로 한 번만(고친 내용 없이) — 되풀이하지 않는다
+  assert.ok(noop.includes('(now === "반영") !== added'), noop);
+  assert.equal((noop.match(/missingRequestHistory\(/g) ?? []).length, 2, "다시 맞추기가 없거나 한 번보다 많다");
+  assert.ok(noop.includes("missingRequestHistory(ctx, { ...cur, status: now }, now, null)"), noop);
+  assert.match(noop, /return \{ ok: false, error: "conflict", \.\.\.\(h2 \? \{ history: h2 \} : \{\}\) \};/, noop);
+  // 지운 신청의 줄 빼기는 신청 표를 다시 읽지 않는다(부르는 쪽이 requestStatusNow 로 봤다)
+  assert.ok(!fnBody("missingRequestGone").includes("ministry_history_requests"));
+});
+
+test("index.ts 신청 삭제 — 이미 지워진 신청이어도 그 신청의 살아 있는 줄은 뺀다(지울 때 줄 빼기·기록이 함께 실패한 뒤 다시 누르면 치운다 · 2026-10-02 검증 2차 #3)", () => {
+  const del = fnBody("historyRequestDelete");
+  const gone = del.slice(del.indexOf("if (!cur)"), del.indexOf("if (String(cur.updated_at) !== expect)"));
+  assert.ok(gone.includes("undoMissingRequest(db, id,"), gone);
+  assert.ok(gone.includes('if (!g.removed) return { ok: false, error: "not-found" };'), gone);
+  assert.ok(gone.includes('why: "request-deleted"'), gone);
+  assert.ok(gone.includes('return { ok: false, error: "not-found", history: { removed: true, id: g.id, year: g.year } };'), gone);
+  // 줄 빼기(쓰기)는 기록보다 먼저 — 기록이 던져도 줄은 빠져 있다
+  assert.ok(gone.indexOf("undoMissingRequest(") < gone.indexOf('audit(ctx, "history.delete"'), gone);
+});
+
+test("index.ts missingRequestHistory — 교적 직분을 못 읽고 넣었으면(positionFailed) 넣은 응답에 그대로 싣는다(화면이 창으로 · 2026-10-02 검증 2차 #5)", () => {
+  assert.match(fnBody("missingRequestHistory"), /created: !!r\.created, \.\.\.\(r\.positionFailed \? \{ positionFailed: true \} : \{\}\)/);
 });
 
 test("개인정보 안내 — 「빠진 사역」 반영 줄의 직분을 교인명부에서 채우는 것을 6번(쓰는 곳)·8번(담는 것)에도 적는다(2026-10-02 최종 검토 #4)", () => {

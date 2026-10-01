@@ -124,10 +124,17 @@ test("historyNote — 더했어요(해) · 뺐어요 · 못 했으면 창(더하
   assert.equal(historyNote({ ok: true, history: { removed: false } }, q, back), null);
   // 더하다 실패(D6) — 상태는 이미 저장됐다 · 반영을 한 번 더 누르면 채운다 · 채우기만 했으면(same) 「상태는 저장했지만」을 뺀다
   //   고친 내용은 창이 닫히며 사라진다 — 다시 열어 「사역 이력에 넣을 내용」을 확인하라고(2026-10-02 최종 검토 #7)
-  assert.deepEqual(historyNote({ ok: true, history: { error: "history-failed" } }, q, add),
+  //   그 말은 고친 내용(line)을 보냈을 때만(넷째 인자 · 안 고치고 「반영」만 눌렀으면 잃은 것이 없다 · 2026-10-02 검증 2차 #4)
+  assert.deepEqual(historyNote({ ok: true, history: { error: "history-failed" } }, q, add, true),
     { dialog: "상태는 저장했지만 사역 이력에 넣지 못했어요 — 고친 내용도 들어가지 않았어요. 잠시 뒤 다시 열어 「사역 이력에 넣을 내용」을 확인하고 「반영」을 한 번 더 눌러 주세요" });
-  assert.deepEqual(historyNote({ ok: true, same: true, history: { error: "history-failed" } }, q, add),
+  assert.deepEqual(historyNote({ ok: true, same: true, history: { error: "history-failed" } }, q, add, true),
     { dialog: "사역 이력에 넣지 못했어요 — 고친 내용도 들어가지 않았어요. 잠시 뒤 다시 열어 「사역 이력에 넣을 내용」을 확인하고 「반영」을 한 번 더 눌러 주세요" });
+  for (const sent of [false, undefined]) {
+    assert.deepEqual(historyNote({ ok: true, history: { error: "history-failed" } }, q, add, sent),
+      { dialog: "상태는 저장했지만 사역 이력에 넣지 못했어요 — 잠시 뒤 「반영」을 한 번 더 눌러 주세요" }, String(sent));
+    assert.deepEqual(historyNote({ ok: true, same: true, history: { error: "history-failed" } }, q, add, sent),
+      { dialog: "사역 이력에 넣지 못했어요 — 잠시 뒤 「반영」을 한 번 더 눌러 주세요" }, String(sent));
+  }
   assert.match(historyNote({ ok: true, history: { error: "history-failed" } }, q, back).dialog, /빼지 못했어요/);
   assert.match(historyNote({ ok: true, history: { error: "history-deleted" } }, q, add).dialog, /지워 달라는 요청/);
 });
@@ -235,6 +242,18 @@ test("historyNote — 「반영 한 번 더」 사이에 다른 분이 신청을
     { dialog: "그사이 다른 분이 이 신청을 지웠는데, 사역 이력에 넣은 줄을 빼지 못했어요 — 「📜 사역 이력」에서 그 줄을 빼 주세요" });
 });
 
+test("historyNote — 「한 번 더」 사이에 다른 분이 상태를 바꿨다(conflict) · 서버가 새 상태로 한 번 다시 맞췄으면 평소 안내 · 못 맞췄으면 창(2026-10-02 검증 2차 #1)", () => {
+  const q = QM({ status: "확인 중" });
+  for (const f of [{ status: "확인 중" }, { status: "반영" }]) {
+    assert.equal(historyNote({ ok: false, error: "conflict" }, q, f), null);   // 평소 안내(「다른 분이 먼저 바꿨어요」)
+    assert.equal(historyNote({ ok: false, error: "conflict", history: { id: 3, year: 2023, restored: true } }, q, f), null);
+    assert.equal(historyNote({ ok: false, error: "conflict", history: { id: 3, year: 2023, removed: true } }, q, f), null);
+    assert.deepEqual(historyNote({ ok: false, error: "conflict", history: { error: "history-failed" } }, q, f),
+      { dialog: "그사이 다른 분이 이 신청의 상태를 바꿨는데, 사역 이력 줄을 그 상태에 맞추지 못했어요 — 새로 불러와 지금 상태 그대로 한 번 더 저장해 주세요" });
+    assert.match(historyNote({ ok: false, error: "conflict", history: { error: "history-deleted" } }, q, f).dialog, /지워 달라는 요청/);
+  }
+});
+
 test("lineBody — 「사역 이력에 넣을 내용」은 고쳤을 때만 보낸다(안 고쳤으면 서버가 줄·신청 글 그대로 · 헛 「그사이 바뀌었어요」를 막는다 · 2026-10-02 최종 검토 #6)", () => {
   const q = QM({ status: "반영", line: LN({ state: "in", expect: "U0" }) });
   const same = { year: "2023", committee: "찬양위원회", team: "호산나찬양대", role_title: "" };
@@ -253,8 +272,11 @@ test("requests.js — 「삭제」 깃발은 try/finally 로 내린다 · reques
   assert.ok(at > 0, "삭제 확인 창이 없다");
   const after = src.slice(at, src.indexOf('call("historyRequestDelete"', at));
   assert.match(after, /if \(!box\.isConnected\) return \{ ok: false \};/, after);
-  // 고친 내용(line)은 lineBody 로만 싣는다
-  assert.ok(src.includes("...lineBody(q, line)"), "historyRequestSet 이 lineBody 를 거치지 않는다");
+  // 고친 내용(line)은 lineBody 로만 싣는다 · 보냈는지를 historyNote 에 넘긴다(「고친 내용도 들어가지 않았어요」는 보냈을 때만 · 검증 2차 #4)
+  assert.ok(src.includes("const lb = lineBody(q, line);") && src.includes("...lb })"), "historyRequestSet 이 lineBody 를 거치지 않는다");
+  assert.equal((src.match(/historyNote\(r, q, f, !!lb\.line\)/g) ?? []).length, 2, "historyNote 에 line 을 보냈는지 넘기지 않는다");
+  // 신청 삭제의 not-found 도 deleteNote 를 거친다(이미 지워진 신청의 남은 줄을 뺐으면 알린다 · 검증 2차 #3)
+  assert.ok(src.includes('return { ok: true, value: { kind: r.error, note: deleteNote(r) } }'), "삭제 not-found 가 deleteNote 를 거치지 않는다");
 });
 
 test("formHtml — 「삭제」 단추는 「반영 안 함」 바로 뒤 같은 줄(.hr-sts) · 상태 단추가 아니다(aria-pressed·data-st 없음)", () => {
@@ -282,6 +304,11 @@ test("deleteNote — 지웠어요 · 사역 이력에서도 뺐어요 · 빼지 
   assert.deepEqual(deleteNote({ ok: true, history: { removed: true, id: 3, year: 2023 } }), { toast: "신청을 지웠어요 · 사역 이력에서도 뺐어요" });
   assert.deepEqual(deleteNote({ ok: true, history: { error: "history-failed" } }),
     { dialog: "신청은 지웠지만 사역 이력에서 그 줄을 빼지 못했어요 — 「📜 사역 이력」에서 빼 주세요" });
+  // 이미 지워진 신청 — 서버가 남은 줄을 뺐으면 그것도 알린다 · 아니면 평소 안내(「그 신청을 찾지 못했어요」 · 2026-10-02 검증 2차 #3)
+  assert.equal(deleteNote({ ok: false, error: "not-found" }), null);
+  assert.equal(deleteNote({ ok: false, error: "conflict" }), null);
+  assert.deepEqual(deleteNote({ ok: false, error: "not-found", history: { removed: true, id: 3, year: 2023 } }),
+    { toast: "신청은 이미 지워졌어요 · 사역 이력에서도 뺐어요" });
 });
 
 test("rowHtml — 빠진 사역이 「📜 사역 이력」에 들어가 있으면 그 줄 한 줄(해 부서 · 팀 직책) · 빼 둔 줄·draft 는 없음 · escape", () => {

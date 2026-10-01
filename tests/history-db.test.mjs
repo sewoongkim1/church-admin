@@ -465,6 +465,12 @@ test("parseTeamText — 「·•/|」로 나눔 · 끝 직분 떼기(끝 낱말 
   assert.deepEqual(parseTeamText("시온성가대 · 이명권사님"), { committee: "", team: "시온성가대", position: "이명권사" });
   assert.deepEqual(parseTeamText("새가족부 · 운영 · 서리집사님"), { committee: "새가족부", team: "운영", position: "서리집사" });
   assert.deepEqual(parseTeamText("교육위원회 · 서리"), { committee: "교육위원회", team: "서리", position: "" });   // 앞말만으로는 직분이 아니다
+  // 교적의 겹앞말·뒷말 「은퇴협동권사」·「서리집사은퇴」(events-people.ts positionFromChurch 주석의 꼴 · 2026-10-02 검증 2차 #6)
+  assert.deepEqual(parseTeamText("시온성가대 · 은퇴협동권사"), { committee: "", team: "시온성가대", position: "은퇴협동권사" });
+  assert.deepEqual(parseTeamText("시온성가대 · 서리집사은퇴"), { committee: "", team: "시온성가대", position: "서리집사은퇴" });
+  assert.deepEqual(parseTeamText("찬양위원회 시온성가대 은퇴협동권사님"), { committee: "찬양위원회", team: "시온성가대", position: "은퇴협동권사" });
+  assert.deepEqual(parseTeamText("새가족부 · 운영 · 서리집사은퇴"), { committee: "새가족부", team: "운영", position: "서리집사은퇴" });
+  assert.deepEqual(parseTeamText("교육위원회 · 서리은퇴"), { committee: "교육위원회", team: "서리은퇴", position: "" });   // 앞말·뒷말만으로는 직분이 아니다
   assert.deepEqual(parseTeamText("집사"), { committee: "", team: "집사", position: "" });           // 직분 한 마디뿐이면 떼지 않는다
   assert.deepEqual(parseTeamText("시온성가대 · 권사"), { committee: "", team: "시온성가대", position: "권사" });
   assert.deepEqual(parseTeamText("찬양위원회 시온성가대".normalize("NFD")), { committee: "찬양위원회", team: "시온성가대", position: "" });

@@ -140,8 +140,10 @@ export function deleteConfirmText(q) {
   return q.kind === "missing" && q.line?.state === "in" ? base + " 「반영」으로 「📜 사역 이력」에 더한 줄도 빠져요(빼 둔 줄이 돼요)." : base;
 }
 
-// 서버 historyRequestDelete 의 답 → { toast } · { dialog }(줄을 빼지 못했으면 놓치지 않게 창)
+// 서버 historyRequestDelete 의 답 → { toast } · { dialog }(줄을 빼지 못했으면 놓치지 않게 창) · null(평소 안내)
+//   not-found + history.removed — 이미 지워진 신청인데 그 신청의 살아 있는 줄이 남아 있어 서버가 뺐다(2026-10-02 검증 2차 #3)
 export function deleteNote(r) {
+  if (r?.error) return r.error === "not-found" && r.history?.removed ? { toast: "신청은 이미 지워졌어요 · 사역 이력에서도 뺐어요" } : null;
   if (r?.history?.error) return { dialog: "신청은 지웠지만 사역 이력에서 그 줄을 빼지 못했어요 — 「📜 사역 이력」에서 빼 주세요" };
   return { toast: r?.history?.removed ? "신청을 지웠어요 · 사역 이력에서도 뺐어요" : "신청을 지웠어요" };
 }
@@ -183,19 +185,28 @@ const HISTORY_DIALOG = {
 //   not-found + history.error — 「반영 한 번 더」 사이에 다른 분이 신청을 지웠고, 서버가 방금 넣은 줄을 다시 빼지 못했다(2026-10-02 최종 검토 #2).
 //     신청이 없으니 다시 저장할 길이 없다 — 이때만 「📜 사역 이력」에서 손으로 빼 달라고 한다.
 //   positionFailed — 넣었지만 교적 직분을 못 읽어 직분이 빈칸이다(놓치지 않게 창 · 2026-10-02 최종 검토 #9).
-export function historyNote(r, q, f) {
+//   conflict + history — 「한 번 더」 사이에 다른 분이 상태를 반영 ↔ 반영 아님으로 바꿔, 서버가 그 상태로 줄을 한 번 다시 맞췄다(검증 2차 #1).
+//     맞췄으면 평소 안내(「다른 분이 먼저 바꿨어요」) · 못 맞췄으면 창(지금 상태 그대로 한 번 더 저장하면 서버가 다시 맞춘다).
+//   sent — 「사역 이력에 넣을 내용」을 고쳐 보냈다(lineBody 가 line 을 실었다). 더하다 실패 때 「고친 내용도 들어가지 않았어요」는 그때만(검증 2차 #4).
+export function historyNote(r, q, f, sent = false) {
   const h = r?.history;
   if (!h) return null;
   if (r.error === "not-found") {
     return h.error ? { dialog: "그사이 다른 분이 이 신청을 지웠는데, 사역 이력에 넣은 줄을 빼지 못했어요 — 「📜 사역 이력」에서 그 줄을 빼 주세요" } : null;
   }
+  if (r.error === "conflict") {
+    if (!h.error) return null;
+    return { dialog: HISTORY_DIALOG[h.error] ??
+      "그사이 다른 분이 이 신청의 상태를 바꿨는데, 사역 이력 줄을 그 상태에 맞추지 못했어요 — 새로 불러와 지금 상태 그대로 한 번 더 저장해 주세요" };
+  }
   if (HISTORY_DIALOG[h.error]) return { dialog: HISTORY_DIALOG[h.error] };
   if (h.error) {
     // 빼다 실패 — 손으로 빼라고 하지 않는다(손으로 뺀 줄은 다시 「반영」해도 돌아오지 않는다) · 같은 상태로 한 번 더 저장하면 서버가 다시 뺀다(#1)
     if (f.status !== "반영") return { dialog: (r.same ? "" : "상태는 바꿨지만 ") + "사역 이력에서 빼지 못했어요 — 잠시 뒤 같은 상태로 한 번 더 저장해 주세요" };
-    // 더하다 실패 — 고친 내용은 창이 닫히며 사라진다(신청 글도 줄도 그 값을 갖고 있지 않다 · #7)
-    return { dialog: (r.same ? "" : "상태는 저장했지만 ") + "사역 이력에 넣지 못했어요 — 고친 내용도 들어가지 않았어요. " +
-      "잠시 뒤 다시 열어 「사역 이력에 넣을 내용」을 확인하고 「반영」을 한 번 더 눌러 주세요" };
+    // 더하다 실패 — 고친 내용은 창이 닫히며 사라진다(신청 글도 줄도 그 값을 갖고 있지 않다 · #7) · 고쳐 보냈을 때만 그 말을(sent)
+    return { dialog: (r.same ? "" : "상태는 저장했지만 ") + "사역 이력에 넣지 못했어요 — " + (sent
+      ? "고친 내용도 들어가지 않았어요. 잠시 뒤 다시 열어 「사역 이력에 넣을 내용」을 확인하고 「반영」을 한 번 더 눌러 주세요"
+      : "잠시 뒤 「반영」을 한 번 더 눌러 주세요") };
   }
   if (h.edited) return { toast: "사역 이력 줄을 고쳤어요" };
   const year = h.year ?? q.year ?? "";

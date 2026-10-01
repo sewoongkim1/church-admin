@@ -148,7 +148,9 @@ insert into admin_role_grants (member_id, role_id) select id,'super' from m
 ⚠️ `and src_key not like 'erased:%'` 를 꼭 둔다 — 안 두면 같은 문장을 두 번 돌릴 때 이미 해시인 `src_key` 를 또 해시해 `erasedKey` 가 더는 못 맞히는 값이 된다).
 그리고 `insert into admin_audit (action, target, detail) values ('history.delete', '<줄 id>', '{"erased": true}')` 로 「바꾼 기록」에 한 줄(이름은 적지 않는다).
 ⚠️ 정정 신청으로 더한 줄(`src_key` 가 `req:` 로 시작)은 `delete` 하지 말고 해시 `update` 만 — 지우면 그 신청을 누가 「저장」만 해도(빠진 사역은 같은 상태여도 늘 다시 보낸다) 새 줄로 다시 들어간다(해시가 있으면 `history-deleted` 로 막는다).
-그다음 그 신청을 📮 「삭제」로 지운다(또는 `delete from ministry_history_requests where id=<신청 번호>` — 신청 줄에 이름·교인ID·글이 남아 📮 와 앱 「내 정정 신청」에 보인다). 그분이 낸 다른 정정 신청도 같은 길로 지운다.
+그다음 그 신청을 📮 「삭제」로 지운다(또는 `delete from ministry_history_requests where id=<신청 번호>` — 신청 줄에 이름·교인ID·글이 남아 📮 와 앱 「내 정정 신청」에 보인다). 그분이 낸 다른 정정 신청도 같은 길로 지운다 —
+찾기는 `select id, kind, status from ministry_history_requests where person_id=<교인ID> or user_id=(select user_id from ministry_history_requests where id=<신청 번호>)`(교적을 못 찾은 신청은 person_id 가 비어 user_id 로만 잡힌다).
+⚠️ SQL 로 지우면 📮 「삭제」와 달리 `history.request.delete` 기록이 남지 않는다 — `insert into admin_audit (action, target, detail) values ('history.request.delete', '<신청 번호>', '{"id": <신청 번호>, "kind": "<종류>", "status": "<상태>"}')` 로 손으로 한 줄씩.
 ③ **카카오 Redirect URI** 는 카카오 콘솔 「앱 → 플랫폼 키 → REST API 키」 화면에 있다(「고급 → 로그아웃 리다이렉트」와 다르다)
 ④ **Client Secret** 을 바꿀 때는 카카오에서 새로 만든 뒤 개발·운영 Supabase Kakao 설정 두 곳을 같은 날 바꾼다.
 - 카톡·문자 공유 미리보기는 `index.html` 의 `og:*`(이미지 `img/og-admin.png`, 1200×630, 절대 주소). 새 파일·폴더를 화면에 쓰면 `deploy.yml` 의 `cp` 목록에도 넣는다(안 넣으면 404).

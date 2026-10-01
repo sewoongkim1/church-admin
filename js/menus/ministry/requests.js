@@ -93,7 +93,8 @@ export async function render(el, { call }) {
           if (!yes) return { ok: false };   // 두기 — 창은 그대로(줄 없이)
           const r = await call("historyRequestDelete", { id: q.id, expect: q.updated_at });
           if (r.ok) return { ok: true, value: { kind: "deleted", note: deleteNote(r) } };
-          if (r.error === "conflict" || r.error === "not-found") return { ok: true, value: r.error };   // 창을 닫고 새로 불러온다
+          // 창을 닫고 새로 불러온다 — 이미 지워진 신청의 남은 줄을 서버가 뺐으면 그것도 알린다(deleteNote · 검증 2차 #3)
+          if (r.error === "conflict" || r.error === "not-found") return { ok: true, value: { kind: r.error, note: deleteNote(r) } };
           return msgOf(r) ? { ok: false, message: msgOf(r) } : r;
         }
         const f = { status: picked, answer: box.querySelector("#hr-ans").value, verified: !!box.querySelector("#hr-ver")?.checked };
@@ -102,11 +103,12 @@ export async function render(el, { call }) {
         if (bad) return badOf(bad);
         // 바뀐 것이 없으면 보내지도 않는다 — 빠진 사역만 예외(반영이면 사역 이력 줄을 채우거나 고치고 · 아니면 남은 줄을 다시 뺀다 · resendSame)
         if (!resendSame(q, f) && f.status === q.status && f.answer.trim() === q.answer) return { ok: true, value: "same" };
-        // 「사역 이력에 넣을 내용」은 고쳤을 때만 싣는다(lineBody — 검사 lineCheck 는 보이면 늘)
-        const r = await call("historyRequestSet", { id: q.id, ...f, expect: q.updated_at, ...lineBody(q, line) });
-        if (r.ok) return { ok: true, value: { kind: r.same ? "same" : "saved", note: historyNote(r, q, f) } };
-        // 창을 닫고 새로 불러온다 — 「반영 한 번 더」 사이에 신청이 지워졌는데 넣은 줄을 다시 빼지 못했으면 창으로(historyNote)
-        if (r.error === "conflict" || r.error === "not-found") return { ok: true, value: { kind: r.error, note: historyNote(r, q, f) } };
+        // 「사역 이력에 넣을 내용」은 고쳤을 때만 싣는다(lineBody — 검사 lineCheck 는 보이면 늘) · 실었는지를 안내에 넘긴다(검증 2차 #4)
+        const lb = lineBody(q, line);
+        const r = await call("historyRequestSet", { id: q.id, ...f, expect: q.updated_at, ...lb });
+        if (r.ok) return { ok: true, value: { kind: r.same ? "same" : "saved", note: historyNote(r, q, f, !!lb.line) } };
+        // 창을 닫고 새로 불러온다 — 「한 번 더」 사이에 신청이 지워졌거나 상태가 바뀌었는데 줄을 맞추지 못했으면 창으로(historyNote)
+        if (r.error === "conflict" || r.error === "not-found") return { ok: true, value: { kind: r.error, note: historyNote(r, q, f, !!lb.line) } };
         return msgOf(r) ? { ok: false, message: msgOf(r) } : r;
       },
     });

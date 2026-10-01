@@ -258,9 +258,19 @@ test("빠진 사역 — 고친 내용으로 반영(직분은 교적 · 목장 99
     const [dLog] = await rest(`admin_audit?select=member_id,detail&action=eq.history.request.delete&target=eq.${req2}&order=id.desc&limit=1`, "GET");
     assert.equal(dLog.member_id, st.memberId);
     assert.deepEqual(dLog.detail, { id: req2, kind: "missing", status: "반영" });
-    const [rLog] = await rest(`admin_audit?select=detail&action=eq.history.delete&target=eq.${r2.id}&order=id.desc&limit=1`, "GET");
+    const [rLog] = await rest(`admin_audit?select=id,detail&action=eq.history.delete&target=eq.${r2.id}&order=id.desc&limit=1`, "GET");
     assert.deepEqual(rLog.detail, { year: 2005, from: "request", request: req2, why: "request-deleted" });
-    assert.equal((await call("historyRequestDelete", { id: req2, expect: cur.updated_at })).body.error, "not-found");
+    assert.deepEqual((await call("historyRequestDelete", { id: req2, expect: cur.updated_at })).body, { ok: false, error: "not-found" });
+    // 이미 지워진 신청의 줄이 살아 남은 자리(지울 때 줄 빼기가 실패하고 기록까지 던진 뒤 · REST 로 그 줄만 되살려 만든다) —
+    //   다시 「삭제」하면 not-found 와 함께 그 줄을 뺀다(history.removed · 기록 history.delete why:"request-deleted" · 2026-10-02 검증 2차 #3)
+    await rest(`ministry_history?id=eq.${r2.id}`, "PATCH", { deleted_at: null, deleted_by: null });
+    assert.deepEqual((await call("historyRequestDelete", { id: req2, expect: cur.updated_at })).body,
+      { ok: false, error: "not-found", history: { removed: true, id: r2.id, year: 2005 } });
+    assert.ok((await hxRows(req2))[0].deleted_at, "지운 신청의 남은 줄을 다시 「삭제」해도 빼지 않았다");
+    const [rLog2] = await rest(`admin_audit?select=id,detail&action=eq.history.delete&target=eq.${r2.id}&order=id.desc&limit=1`, "GET");
+    assert.ok(rLog2.id > rLog.id, "남은 줄을 빼고 기록하지 않았다");
+    assert.deepEqual(rLog2.detail, { year: 2005, from: "request", request: req2, why: "request-deleted" });
+    assert.deepEqual((await call("historyRequestDelete", { id: req2, expect: cur.updated_at })).body, { ok: false, error: "not-found" });
     assert.equal((await call("historyRequestDelete", { id: reqId, expect: "" })).body.error, "conflict");   // 본 것 없이 지우지 않는다
 
     // ⑧ 되살리다 실패한 뒤 「반영」 한 번 더 — 상태는 「반영」인데 줄은 정정 신청 쪽이 빼 둔 채(확인 중→반영 에서 되살리기 쓰기가
