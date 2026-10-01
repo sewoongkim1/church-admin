@@ -3,7 +3,7 @@
 //   node --experimental-strip-types --test tests/history-requests.dev.test.mjs
 // ⚠️ 공용 server.dev.test.mjs 는 여러 세션이 고친다 — PROBE 두 줄만 거기 두고 나머지는 여기.
 // 시험 자료: 담당자(이메일 로그인 ca-test-hr-…) · 기록 한 줄(src_key ca-test-hr-<STAMP>-a) · 신청 넷(지어낸 user_id) — 끝나면 모두 지운다.
-//   빠진 사역 고쳐서 반영·신청 삭제 시험(2026-10-02)은 제 자료(교인명부 990000092 · 신청 셋 · 줄 req:<id>)를 그 시험 안에서 만들고 지운다.
+//   빠진 사역 고쳐서 반영·신청 삭제 시험(2026-10-02)은 제 자료(교인명부 990000092 · 신청 넷 · 줄 req:<id>)를 그 시험 안에서 만들고 지운다.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { REQUEST_ADMIN_OUT_KEYS } from "../supabase/functions/church-admin/history-check.ts";
@@ -274,6 +274,25 @@ test("빠진 사역 — 고친 내용으로 반영(직분은 교적 · 목장 99
     assert.equal((await hxRows(req3))[0].deleted_at, null, "정정 신청 쪽이 뺀 줄인데 반영 한 번 더로 되살아나지 않았다");
     const [reLog] = await rest(`admin_audit?select=detail&action=eq.history.add&target=eq.${r3.id}&order=id.desc&limit=1`, "GET");
     assert.deepEqual(reLog.detail, { year: 2006, from: "request", request: req3, restored: true });
+
+    // ⑨ 두 칸 신청(committee_text 가 글자 · 2026-10-02 · SQL 009) — 목록에 committee_text · draft 는 칸 그대로(나누지 않는다 · 끝의 「집사」도 팀에 둔다)
+    //   · 고친 내용 없이 반영하면 칸 그대로 들어간다 · 신청 글은 그대로
+    const req4 = await hxMake({ year: 2007, committee_text: "봉사위원회", team_text: "주차팀 집사" });
+    reqIds.push(req4);
+    q = await hxFind(req4);
+    assert.deepEqual(Object.keys(q).sort(), REQUEST_ADMIN_OUT_KEYS);
+    assert.deepEqual([q.committee_text, q.team_text], ["봉사위원회", "주차팀 집사"]);
+    assert.deepEqual(q.line, { state: "draft", year: 2007, committee: "봉사위원회", team: "주차팀 집사", role_title: "", position: "", expect: "" });
+    assert.equal((await hxFind(reqId)).committee_text, null, "옛 한 칸 신청의 committee_text 는 null");
+    cur = await hxReq(req4);
+    const a4 = (await call("historyRequestSet", { id: req4, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.equal(a4.history?.created, true, JSON.stringify(a4));
+    assert.equal(a4.row.committee_text, "봉사위원회");
+    const r4 = (await hxRows(req4))[0];
+    rowIds.add(r4.id);
+    assert.deepEqual([r4.year, r4.committee, r4.team, r4.position], [2007, "봉사위원회", "주차팀 집사", "권사"]);
+    const [kept4] = await rest(`ministry_history_requests?select=year,committee_text,team_text&id=eq.${req4}`, "GET");
+    assert.deepEqual(kept4, { year: 2007, committee_text: "봉사위원회", team_text: "주차팀 집사" }, "성도님 신청 글이 바뀌었다");
 
     // 기록에 이름·교인ID 가 실리지 않는다
     const logs = await rest(`admin_audit?select=detail&target=in.(${[...reqIds, ...rowIds].join(",")})&action=in.(history.add,history.edit,history.delete,history.request,history.request.delete)`, "GET");

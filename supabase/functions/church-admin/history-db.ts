@@ -240,10 +240,13 @@ export function historyFilter(rows: any[], b: any): { hit: any[]; years: number[
 }
 
 /// ── 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01 · index.ts historyRequestSet 이 부른다) ──
-//   성도님이 성경암송 앱 「🗂️ 사역 이력 확인」에서 낸 글(team_text · 칸 이름표 「부서 · 팀」 · 보기 「찬양위원회 시온성가대」)을 부서·팀으로 읽어
-//   창에 미리 채우고(requestLineOut · draft), 담당자가 연도·부서·팀·직책을 고쳐 「반영」하면 그 내용(line)으로 넣는다(2026-10-02 친구 요청).
-//   ⚠️ 성도님 신청 글(year·team_text)은 바꾸지 않는다 — 고친 값은 사역 이력 줄에만 들어간다.
-//   ⚠️ 직분은 교적(교인명부)의 직분이다(친구 2026-10-01 「직분은 교적 기준」) — 글에 적힌 직분은 줄에 쓰지 않는다(떼어 내기만 한다).
+//   성도님이 성경암송 앱 「🗂️ 사역 이력 확인」에서 낸 부서·팀(requestDraft)을 창에 미리 채우고(requestLineOut · draft),
+//   담당자가 연도·부서·팀·직책을 고쳐 「반영」하면 그 내용(line)으로 넣는다(2026-10-02 친구 요청).
+//   부서·팀은 두 꼴(history-check.ts ReqIn): 두 칸 신청(committee_text 가 글자 · 2026-10-02 「부서」「팀」 두 칸)은 칸 그대로,
+//   옛 한 칸 신청(committee_text null · 칸 이름표 「부서 · 팀」 · 보기 「찬양위원회 시온성가대」)은 team_text 를 parseTeamText 로 나눈다.
+//   ⚠️ 성도님 신청 글(year·committee_text·team_text)은 바꾸지 않는다 — 고친 값은 사역 이력 줄에만 들어간다.
+//   ⚠️ 직분은 교적(교인명부)의 직분이다(친구 2026-10-01 「직분은 교적 기준」) — 글에 적힌 직분은 줄에 쓰지 않는다(한 칸 글은 떼어 내기만 한다 ·
+//      두 칸 신청은 칸 그대로라 팀 칸 끝에 「집사」를 적었으면 그대로 남는다 — 담당자가 「사역 이력에 넣을 내용」에서 고친다).
 //   ⚠️ 이 줄의 열쇠는 srcKey 가 아니라 `req:<신청 id>` 다 — 신청 하나에 줄 하나(두 번 반영해도 하나 · 되돌리면 그 줄만 뺀다).
 //      그래서 나중에 그 해 엑셀 명단을 올렸는데 같은 사역이 들어 있으면 엑셀 줄은 **따로 한 줄**로 들어간다(열쇠가 달라 「이미 있음」이 아니다)
 //      — 겹치면 담당자가 📜 사역 이력에서 하나를 뺀다.
@@ -294,14 +297,26 @@ export function parseRequestLine(x: any): { line: ReqLine | null; error: string 
   return { line: { year, committee, team, role_title, expect: String(x?.expect ?? "").trim() }, error: "" };
 }
 
-// 줄이 없을 때 창에 채울 내용 — 성도님 글(team_text)에서 읽은 부서·팀 · 신청 해(직책은 비움)
-function requestDraftLine(req: any): { year: number | null; committee: string; team: string; role_title: string } {
+// 신청의 부서·팀(미리 채움 · line 없이 반영할 때) — 신청에서 부서·팀을 읽는 곳은 이 하나다(목록 draft · line 없는 반영 · missingRowFromRequest).
+//   두 칸 신청(committee_text 가 글자 · 빈 글자도): 칸 그대로(NFC · 빈칸 접기 · 앞뒤 자르기만 · 나누지도 직분을 떼지도 않는다)
+//   옛 한 칸 신청(committee_text null · 칸 없음): team_text 를 parseTeamText 로(지금까지처럼)
+export function requestDraft(req: any): { committee: string; team: string } {
+  if (req?.committee_text != null) {
+    const t = (v: unknown) => nfc(v).replace(/\s+/g, " ");
+    return { committee: t(req.committee_text), team: t(req.team_text) };
+  }
   const p = parseTeamText(req?.team_text);
-  return { year: req?.year == null ? null : Number(req.year), committee: p.committee, team: p.team, role_title: "" };
+  return { committee: p.committee, team: p.team };
+}
+
+// 줄이 없을 때 창에 채울 내용 — 신청의 부서·팀(requestDraft) · 신청 해(직책은 비움)
+function requestDraftLine(req: any): { year: number | null; committee: string; team: string; role_title: string } {
+  const d = requestDraft(req);
+  return { year: req?.year == null ? null : Number(req.year), committee: d.committee, team: d.team, role_title: "" };
 }
 
 // 목록(historyRequestList)이 빠진 사역 신청마다 싣는 line — 정해진 일곱 칸만(이름·목장·교인ID 를 싣지 않는다 · history-check.ts requestAdminOut 이 한 번 더 고른다)
-//   row: 이 신청의 req:<id> 줄(없으면 null) — 살아 있으면 in · 빼 두었으면 out · 없으면 draft(성도님 글에서 읽음)
+//   row: 이 신청의 req:<id> 줄(없으면 null) — 살아 있으면 in · 빼 두었으면 out · 없으면 draft(신청의 부서·팀 · requestDraft)
 export function requestLineOut(req: any, row: any | null) {
   if (row) {
     return { state: row.deleted_at ? "out" : "in", year: Number(row.year), committee: String(row.committee ?? ""), team: String(row.team ?? ""),
@@ -312,7 +327,8 @@ export function requestLineOut(req: any, row: any | null) {
 }
 
 // 신청 한 줄 → 사역 이력 한 줄(다듬기·검사는 tidyHistoryRow 그대로).
-//   line: 창이 고쳐 보낸 연도·부서·팀·직책(없으면 성도님 글에서 읽은 draft) · position: 교적(교인명부)의 직분(D4 — 글의 직분은 쓰지 않는다)
+//   line: 창이 고쳐 보낸 연도·부서·팀·직책(없으면 신청의 부서·팀 draft · requestDraft) · position: 교적(교인명부)의 직분(D4 — 글의 직분은 쓰지 않는다)
+//   부서나 팀 하나는 있어야 한다(need-team · 둘 다 비면 넣지 않는다)
 //   목장: 교구 「교구-목장」(목장이 99·빈칸이면 교구만 — requests-logic.js whoText 와 같은 규칙 · D3) · 교회학교 「부서」 · 이름은 신청 때의 로그인 이름.
 export function missingRowFromRequest(req: any, line: Partial<ReqLine> | null, position: unknown): { row: Record<string, any> | null; error: string } {
   const l: any = line ?? requestDraftLine(req);

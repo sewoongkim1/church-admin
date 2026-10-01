@@ -113,6 +113,10 @@ test("정정 신청 — 이분 줄에 넣고, 같은 줄 두 번 · 남의 줄 �
   assert.equal((await send({ kind: "find_me" })).error, "already-found");
   assert.equal((await send({ kind: "missing", year: "", team_text: "주차팀" })).error, "bad-year");
   assert.deepEqual(await send({ kind: "missing", year: 2023, team_text: "찬양위원회 시온성가대" }), { ok: true });
+  // 두 칸(2026-10-02 · committee_text 가 글자면 부서·팀을 따로 · SQL 009) — 둘 다 비면 need-team · 칸마다 100자
+  assert.equal((await send({ kind: "missing", year: 2024, committee_text: " ", team_text: "" })).error, "need-team");
+  assert.equal((await send({ kind: "missing", year: 2024, committee_text: "가".repeat(101), team_text: "주차팀" })).error, "too-long");
+  assert.deepEqual(await send({ kind: "missing", year: 2024, committee_text: " 봉사위원회 ", team_text: "주차팀" }), { ok: true });
 });
 
 test("찾지 못한 분은 「찾아 주세요」 하나만", async () => {
@@ -124,8 +128,13 @@ test("찾지 못한 분은 「찾아 주세요」 하나만", async () => {
 
 test("내 신청 현황 — 최근 것이 위 · 정해진 칸만 · uuid 없음", async () => {
   const j = await call({ action: "internalMyHistory", who: WHO, user_id: UID });
-  assert.deepEqual(j.requests.map((r) => r.kind), ["find_me", "missing", "wrong_team"]);
+  assert.deepEqual(j.requests.map((r) => r.kind), ["find_me", "missing", "missing", "wrong_team"]);
   for (const r of j.requests) assert.deepEqual(Object.keys(r).sort(), REQUEST_OUT_KEYS);
+  // 두 칸 신청은 committee_text 가 글자(다듬은 그대로) · 옛 한 칸 신청은 null(team_text 에 「부서·팀」 글)
+  const [two, one] = j.requests.filter((r) => r.kind === "missing");
+  assert.deepEqual([two.year, two.committee_text, two.team_text], [2024, "봉사위원회", "주차팀"]);
+  assert.deepEqual([one.year, one.committee_text, one.team_text], [2023, null, "찬양위원회 시온성가대"]);
+  assert.ok(j.requests.filter((r) => r.kind !== "missing").every((r) => r.committee_text === null));
   assert.ok(j.requests.every((r) => r.status === "신청"));
   assert.ok(!UUID_RE.test(JSON.stringify(j)), "uuid 가 샜다");
 });

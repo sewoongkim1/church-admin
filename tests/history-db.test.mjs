@@ -10,6 +10,8 @@ import { parseTeamText, missingRowFromRequest, applyMissingRequest, undoMissingR
   from "../supabase/functions/church-admin/history-db.ts";
 // 2026-10-02 — 빠진 사역을 고쳐서 반영(parseRequestLine) · 목록의 줄 미리 채우기(requestLineOut)
 import { parseRequestLine, requestLineOut } from "../supabase/functions/church-admin/history-db.ts";
+// 2026-10-02 — 빠진 사역 「부서」「팀」 두 칸(committee_text · SQL 009) · 신청의 부서·팀 미리 채움(requestDraft)
+import { requestDraft } from "../supabase/functions/church-admin/history-db.ts";
 import { srcKey } from "../supabase/functions/church-admin/history-match.ts";
 
 // 아주 작은 가짜 쿼리빌더 — supabase-js 체인(.select().eq()... await)을 흉내만 낸다.
@@ -433,8 +435,9 @@ test("내려받기 — 화면의 거르기(only·q)를 따른다 · 기록에 �
 
 // ── 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01 · 2026-10-02 고쳐서 반영 · 기록·되살리기·목장 99·직분 교적) ──
 // 신청 한 줄(REQUEST_ADMIN_SELECT 모양에서 쓰는 칸만)
-const REQ = (o = {}) => ({ id: 7, kind: "missing", year: 2023, team_text: "찬양위원회 시온성가대", who_type: "교구", who_group: "기쁨",
-  who_sub: "12", who_name: "가나다", person_id: 11, status: "반영", ...o });
+//   committee_text 는 기본 null — 옛 한 칸 신청(team_text 에 「부서 · 팀」). 글자(빈 글자도)면 두 칸 신청(2026-10-02 · SQL 009).
+const REQ = (o = {}) => ({ id: 7, kind: "missing", year: 2023, committee_text: null, team_text: "찬양위원회 시온성가대", who_type: "교구",
+  who_group: "기쁨", who_sub: "12", who_name: "가나다", person_id: 11, status: "반영", ...o });
 // 화면이 고쳐 보낸 내용(parseRequestLine 을 거친 모양)
 const LINE = (o = {}) => ({ year: 2023, committee: "찬양위원회", team: "시온성가대", role_title: "", expect: "", ...o });
 // applyMissingRequest 의 옵션 — 시험마다 교적 직분·마지막 빼기 기록을 바꿔 끼운다
@@ -461,6 +464,22 @@ test("parseTeamText — 「·•/|」로 나눔 · 끝 직분 떼기(끝 낱말 
   assert.deepEqual(parseTeamText("시온성가대 · 권사"), { committee: "", team: "시온성가대", position: "권사" });
   assert.deepEqual(parseTeamText("찬양위원회 시온성가대".normalize("NFD")), { committee: "찬양위원회", team: "시온성가대", position: "" });
   assert.deepEqual(parseTeamText(" · / "), { committee: "", team: "", position: "" });
+});
+
+test("requestDraft — 신청의 부서·팀 미리 채움 · 두 칸(committee_text 가 글자)은 다듬기만(나누지 않는다) · 옛 한 칸(null)은 parseTeamText", () => {
+  // 두 칸 — 적은 그대로(NFC · 빈칸 접기 · 앞뒤 자르기) · 끝의 직분 낱말도 떼지 않는다
+  assert.deepEqual(requestDraft(REQ({ committee_text: "찬양위원회", team_text: "시온성가대" })), { committee: "찬양위원회", team: "시온성가대" });
+  assert.deepEqual(requestDraft(REQ({ committee_text: " 찬양위원회  시온성가대 ".normalize("NFD"), team_text: "  집사  " })),
+    { committee: "찬양위원회 시온성가대", team: "집사" });
+  assert.deepEqual(requestDraft(REQ({ committee_text: "", team_text: "시온성가대" })), { committee: "", team: "시온성가대" });
+  assert.deepEqual(requestDraft(REQ({ committee_text: "새가족부", team_text: "" })), { committee: "새가족부", team: "" });
+  assert.deepEqual(requestDraft(REQ({ committee_text: "새가족부 · 운영", team_text: null })), { committee: "새가족부 · 운영", team: "" });
+  // 옛 한 칸(null · 칸 없음) — 지금처럼 나눈다(끝 직분은 뗀다)
+  assert.deepEqual(requestDraft(REQ()), { committee: "찬양위원회", team: "시온성가대" });
+  assert.deepEqual(requestDraft(REQ({ team_text: "새가족부 · 운영 · 안수집사" })), { committee: "새가족부", team: "운영" });
+  const { committee_text, ...old } = REQ({ team_text: "시온성가대" });
+  assert.deepEqual(requestDraft(old), { committee: "", team: "시온성가대" });
+  assert.deepEqual(requestDraft(null), { committee: "", team: "" });
 });
 
 test("parseRequestLine — 연도(1950~2100 정수) · 부서나 팀 하나는 · 칸마다 100자 · NFC·빈칸 접기·앞뒤 자르기 · expect 는 글자 그대로", () => {
@@ -494,6 +513,11 @@ test("requestLineOut — 목록이 창에 미리 채울 줄 · 살아 있으면 
   const d = requestLineOut(REQ({ team_text: "새가족부 · 운영 · 안수집사" }), null);
   assert.deepEqual(d, { state: "draft", year: 2023, committee: "새가족부", team: "운영", role_title: "", position: "", expect: "" });
   assert.deepEqual(Object.keys(d).sort(), KEYS);
+  // 두 칸 신청 — draft 는 부서·팀 칸 그대로(나누지 않는다)
+  assert.deepEqual(requestLineOut(REQ({ committee_text: "봉사위원회", team_text: "주차팀 집사" }), null),
+    { state: "draft", year: 2023, committee: "봉사위원회", team: "주차팀 집사", role_title: "", position: "", expect: "" });
+  assert.deepEqual(requestLineOut(REQ({ committee_text: "", team_text: "찬양위원회 시온성가대" }), null),
+    { state: "draft", year: 2023, committee: "", team: "찬양위원회 시온성가대", role_title: "", position: "", expect: "" });
 });
 
 test("missingRowFromRequest — 줄은 고친 내용(line)대로 · 직분은 넘겨받은 교적 직분 · 목장(교구-목장 · 99·빈칸은 교구만 · 교회학교 부서) · 열쇠 req:<id> · 원본 메모", () => {
@@ -522,6 +546,15 @@ test("missingRowFromRequest — 줄은 고친 내용(line)대로 · 직분은 �
   assert.equal(missingRowFromRequest(REQ({ year: null }), null, "").error, "bad-year");
   assert.equal(missingRowFromRequest(REQ(), LINE({ year: 1900 }), "").error, "bad-year");
   assert.equal(missingRowFromRequest(REQ({ who_name: " " }), null, "").error, "no-name");
+  // 두 칸 신청 — line 이 없으면 부서·팀 칸 그대로(나누지 않는다) · 둘 중 하나만 있어도 · 둘 다 비면 need-team
+  const t = missingRowFromRequest(REQ({ committee_text: "봉사위원회", team_text: "주차팀 집사" }), null, "권사");
+  assert.deepEqual([t.row.committee, t.row.team, t.row.position], ["봉사위원회", "주차팀 집사", "권사"]);
+  assert.deepEqual([missingRowFromRequest(REQ({ committee_text: "새가족부", team_text: "" }), null, "").row.committee,
+    missingRowFromRequest(REQ({ committee_text: "", team_text: "운영" }), null, "").row.team], ["새가족부", "운영"]);
+  assert.deepEqual(missingRowFromRequest(REQ({ committee_text: "", team_text: " " }), null, ""), { row: null, error: "need-team" });
+  // line 이 있으면 두 칸이어도 line 대로
+  assert.equal(missingRowFromRequest(REQ({ committee_text: "봉사위원회", team_text: "주차팀" }), LINE({ committee: "교육위원회", team: "유년부" }), "")
+    .row.committee, "교육위원회");
 });
 
 // 아주 작은 메모리 표(ministry_history 하나) — eq·is·not 거르기 · insert(같은 src_key 면 23505) · update · select · maybeSingle·single
@@ -578,6 +611,22 @@ test("applyMissingRequest — 넣기: 본인 교인ID · 사람이 이은 줄 ·
   assert.deepEqual(await undoMissingRequest(db, 7, "m2", "T3"), { id: 100, year: 2023, removed: true });
   assert.deepEqual([rows[0].deleted_at, rows[0].deleted_by, rows[0].updated_at], ["T3", "m2", "T3"]);
   assert.deepEqual(await undoMissingRequest(db, 7, "m2", "T4"), { removed: false });
+});
+
+test("applyMissingRequest — 두 칸 신청을 고친 내용(line) 없이 반영하면 부서·팀 칸 그대로 넣는다(나누지 않는다 · 2026-10-02)", async () => {
+  const { db, rows } = memDb();
+  const a = await applyMissingRequest(db, REQ({ committee_text: "봉사위원회", team_text: "주차팀 집사" }), OPT());
+  assert.deepEqual(a, { id: 100, year: 2023, created: true });
+  assert.deepEqual([rows[0].committee, rows[0].team, rows[0].role_title, rows[0].position, rows[0].src_key],
+    ["봉사위원회", "주차팀 집사", "", "권사", "req:7"]);
+  // 부서만 적은 두 칸 신청
+  const b = memDb();
+  await applyMissingRequest(b.db, REQ({ committee_text: "새가족부", team_text: "" }), OPT());
+  assert.deepEqual([b.rows[0].committee, b.rows[0].team], ["새가족부", ""]);
+  // 둘 다 빈 두 칸 신청(서버 parseRequest 가 막지만) — 넣지 않는다
+  const c = memDb();
+  assert.deepEqual(await applyMissingRequest(c.db, REQ({ committee_text: "", team_text: "" }), OPT()), { error: "need-team" });
+  assert.equal(c.rows.length, 0);
 });
 
 test("applyMissingRequest — 고친 내용(line)으로 넣는다 · 교적 직분 읽기가 실패해도 줄은 넣는다(직분 빈칸 · console.error)", async () => {

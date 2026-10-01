@@ -42,8 +42,13 @@ export function dayText(iso) {
 const historyText = (x) => [x.year, [x.committee, [x.team, x.role_title].filter(Boolean).join(" ")].filter(Boolean).join(" · ")]
   .filter(Boolean).join(" ");
 
+// 빠진 사역 신청의 부서·팀 글 — 두 칸 신청(committee_text 가 글자 · 2026-10-02)은 「부서 · 팀」(빈 칸은 뺀다) ·
+//   옛 한 칸 신청(committee_text null · 옛 서버 응답처럼 칸이 없음)은 team_text 그대로. 성경암송 앱 목록 머리와 같은 규칙이다.
+const requestTeamText = (q) => (q.committee_text != null
+  ? [q.committee_text, q.team_text].filter(Boolean).join(" · ") : (q.team_text || ""));
+
 export function targetText(q) {
-  if (q.kind === "missing") return `빠진 사역 ${q.year ?? ""} — ${q.team_text || ""}`;
+  if (q.kind === "missing") return `빠진 사역 ${q.year ?? ""} — ${requestTeamText(q)}`;
   if (q.kind === "find_me") return "기록을 찾지 못한 분";
   if (!q.row) return "(지워진 기록)";
   const t = historyText(q.row);
@@ -71,7 +76,7 @@ export function rowHtml(q) {
 
 // ── 빠진 사역 — 「사역 이력에 넣을 내용」(2026-10-02 친구 요청 · 고쳐서 반영) ──
 //   서버(historyRequestList)가 line 을 준다: in(살아 있는 줄) · out(빼 둔 줄) · draft(줄 없음 — 성도님 글에서 읽음).
-//   성도님 신청 글(year·team_text)은 바뀌지 않는다 — 고친 값은 사역 이력 줄에만 들어간다. 직분은 교적의 직분(여기서 고치지 않는다).
+//   성도님 신청 글(year·committee_text·team_text)은 바뀌지 않는다 — 고친 값은 사역 이력 줄에만 들어간다. 직분은 교적의 직분(여기서 고치지 않는다).
 const LINE_NOTE = {
   in: "지금 「📜 사역 이력」에 있는 줄이에요 — 고쳐서 저장하면 그 줄이 바뀌어요",
   out: "빼 둔 줄이에요 — 「반영」으로 저장하면 다시 넣어요(「📜 사역 이력」에서 직접 뺀 줄은 다시 넣지 않아요)",

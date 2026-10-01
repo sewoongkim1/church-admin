@@ -33,6 +33,21 @@ test("targetText — 줄 · 빼 둔 줄 · 빠진 사역 · 찾아 주세요 · 
   assert.equal(targetText(Q({ row: null })), "(지워진 기록)");
 });
 
+// 2026-10-02 친구 요청 「네 두칸으로 해주세요」 — 두 칸 신청(committee_text 가 글자)은 「부서 · 팀」(빈 칸은 뺀다) ·
+//   옛 한 칸 신청(committee_text null · 옛 서버 응답처럼 칸이 없음)은 team_text 그대로 — 성경암송 앱 목록 머리와 같은 규칙
+test("targetText — 빠진 사역 두 칸(부서 · 팀) · 한 칸만 적은 두 칸 · 옛 한 칸 신청은 글 그대로", () => {
+  const M = (o) => Q({ kind: "missing", row: null, year: 2023, ...o });
+  assert.equal(targetText(M({ committee_text: "찬양위원회", team_text: "시온성가대" })), "빠진 사역 2023 — 찬양위원회 · 시온성가대");
+  assert.equal(targetText(M({ committee_text: "새가족부", team_text: "" })), "빠진 사역 2023 — 새가족부");
+  assert.equal(targetText(M({ committee_text: "", team_text: "시온성가대" })), "빠진 사역 2023 — 시온성가대");
+  assert.equal(targetText(M({ committee_text: null, team_text: "찬양위원회 시온성가대" })), "빠진 사역 2023 — 찬양위원회 시온성가대");
+  assert.equal(targetText(M({ team_text: "찬양위원회 · 시온성가대" })), "빠진 사역 2023 — 찬양위원회 · 시온성가대");   // 칸 없음 = 한 칸
+  // 목록 줄·처리 창도 같은 글(escape 해서)
+  const two = M({ committee_text: "<찬양>위원회", team_text: "시온성가대" });
+  assert.ok(rowHtml(two).includes("빠진 사역 2023 — &lt;찬양&gt;위원회 · 시온성가대"));
+  assert.ok(formHtml(two).includes("빠진 사역 2023 — &lt;찬양&gt;위원회 · 시온성가대"));
+});
+
 test("rowHtml — 값은 escape · 줄 열쇠는 id 숫자", () => {
   const h = rowHtml(Q({ detail: "<b>x</b>", who: { type: "교구", group: "기쁨", sub: "12", name: "<i>" } }));
   assert.ok(h.includes('data-id="5"'));

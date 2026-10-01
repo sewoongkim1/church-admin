@@ -15,9 +15,10 @@ export const REQ_TEAM_MAX = 100;
 export const REQ_OPEN_MAX = 20;
 // 직분은 성도님 앱에 보내지 않는다(2026-10-01 친구 요청 · 화면에서도 뺐다).
 export const HISTORY_SELECT = "id,year,committee,team,role_title";
-export const REQUEST_SELECT = "id,history_id,kind,detail,year,team_text,status,answer,created_at";
+// committee_text — 빠진 사역 「부서」 칸(2026-10-02 두 칸 · SQL 009) · null 이면 옛 한 칸 신청(team_text 에 「부서·팀」 글)
+export const REQUEST_SELECT = "id,history_id,kind,detail,year,committee_text,team_text,status,answer,created_at";
 export const HISTORY_OUT_KEYS = ["committee", "id", "role_title", "team", "year"];
-export const REQUEST_OUT_KEYS = ["answer", "created_at", "detail", "history_id", "id", "kind", "status", "team_text", "year"];
+export const REQUEST_OUT_KEYS = ["answer", "committee_text", "created_at", "detail", "history_id", "id", "kind", "status", "team_text", "year"];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const tidy = (s: unknown): string => String(s ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
@@ -46,7 +47,11 @@ export function readLoginWho(x: any): LoginWho | null {
   return { type, gu: tidy(x.gu), mok: tidy(x.mok), bu: tidy(x.bu), grade: tidy(x.grade), name };
 }
 
-export type ReqIn = { history_id: number | null; kind: string; detail: string; year: number | null; team_text: string };
+// 빠진 사역(kind missing)의 부서·팀 — 두 가지 꼴(2026-10-02 친구 요청 「네 두칸으로 해주세요」 · SQL 009):
+//   committee_text = null  : 옛 한 칸 신청 — team_text 에 「부서·팀」 글(담당자 쪽이 history-db.ts parseTeamText 로 나눈다)
+//   committee_text = 글자  : 두 칸 신청 — committee_text 가 부서, team_text 가 팀(둘 다 빈 글자일 수 있다 · 나누지 않는다)
+//   다른 종류는 늘 null.
+export type ReqIn = { history_id: number | null; kind: string; detail: string; year: number | null; committee_text: string | null; team_text: string };
 
 export function parseRequest(b: any): { ok: true; req: ReqIn } | { ok: false; error: string } {
   const kind = tidy(b?.kind);
@@ -57,17 +62,24 @@ export function parseRequest(b: any): { ok: true; req: ReqIn } | { ok: false; er
     const id = Number(b?.history_id);
     if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "no-row" };
     if (kind === "other" && !detail) return { ok: false, error: "need-detail" };
-    return { ok: true, req: { history_id: id, kind, detail, year: null, team_text: "" } };
+    return { ok: true, req: { history_id: id, kind, detail, year: null, committee_text: null, team_text: "" } };
   }
   if (kind === "missing") {
     const year = Number(tidy(b?.year));
     if (!Number.isInteger(year) || year < 1950 || year > 2100) return { ok: false, error: "bad-year" };
+    // 두 칸 — committee_text 가 글자일 때만(성경암송 api 가 글자일 때만 넘긴다 · 옛 캐시 앱은 보내지 않는다 → 아래 한 칸)
+    if (typeof b?.committee_text === "string") {
+      const committee = tidy(b.committee_text), team = tidy(b?.team_text);
+      if (!committee && !team) return { ok: false, error: "need-team" };
+      if (committee.length > REQ_TEAM_MAX || team.length > REQ_TEAM_MAX) return { ok: false, error: "too-long" };
+      return { ok: true, req: { history_id: null, kind, detail, year, committee_text: committee, team_text: team } };
+    }
     const team = tidy(b?.team_text);
     if (!team) return { ok: false, error: "need-team" };
     if (team.length > REQ_TEAM_MAX) return { ok: false, error: "too-long" };
-    return { ok: true, req: { history_id: null, kind, detail, year, team_text: team } };
+    return { ok: true, req: { history_id: null, kind, detail, year, committee_text: null, team_text: team } };
   }
-  return { ok: true, req: { history_id: null, kind, detail, year: null, team_text: "" } };   // find_me
+  return { ok: true, req: { history_id: null, kind, detail, year: null, committee_text: null, team_text: "" } };   // find_me
 }
 
 // 넣기 전 막기 — 화면이 미리 알리지만 정하는 것은 여기다. null = 넣어도 된다.
@@ -92,7 +104,7 @@ export function requestInsert(req: ReqIn, userId: string, personId: number | nul
   const school = w.type === "교회학교";
   return {
     user_id: userId, person_id: personId, history_id: req.history_id, kind: req.kind, detail: req.detail,
-    year: req.year, team_text: req.team_text,
+    year: req.year, committee_text: req.committee_text, team_text: req.team_text,
     who_type: w.type, who_group: school ? w.bu : w.gu, who_sub: school ? w.grade : w.mok, who_name: w.name,
   };
 }
@@ -104,10 +116,14 @@ export function historyRowOut(r: any) {
   };
 }
 
+// committee_text: null(옛 한 칸 신청 · 칸 없음) 또는 글자 — 화면에 보일 글은 「부서 · 팀」(빈 칸 뺌) 또는 team_text(성경암송 mhReqOut·담당자 targetText)
+const committeeOut = (v: unknown): string | null => (v == null ? null : String(v));
+
 export function requestOut(r: any) {
   return {
     id: Number(r.id), history_id: r.history_id == null ? null : Number(r.history_id), kind: String(r.kind ?? ""),
-    detail: String(r.detail ?? ""), year: r.year == null ? null : Number(r.year), team_text: String(r.team_text ?? ""),
+    detail: String(r.detail ?? ""), year: r.year == null ? null : Number(r.year), committee_text: committeeOut(r.committee_text),
+    team_text: String(r.team_text ?? ""),
     status: String(r.status ?? ""), answer: String(r.answer ?? ""), created_at: String(r.created_at ?? ""),
   };
 }
@@ -125,11 +141,12 @@ export const REQ_SET_STATUS = ["확인 중", "반영", "반영 안 함"];   // �
 export const REQ_ANSWER_MAX = 300;
 export const REQ_LIST_MAX = 500;
 export const REQUEST_ADMIN_SELECT =
-  "id,kind,detail,year,team_text,status,answer,created_at,updated_at,handled_at,who_type,who_group,who_sub,who_name,person_id,history_id";
+  "id,kind,detail,year,committee_text,team_text,status,answer,created_at,updated_at,handled_at,who_type,who_group,who_sub,who_name,person_id,history_id";
 export const ROW_ADMIN_SELECT = "id,year,committee,team,role_title,position,deleted_at";
 // line — 빠진 사역의 「사역 이력에 넣을 내용」 미리 채움(2026-10-02 · history-db.ts requestLineOut · 다른 종류는 null)
-export const REQUEST_ADMIN_OUT_KEYS = ["answer", "created_at", "detail", "found", "handled_at", "id", "kind", "line", "row", "status",
-  "team_text", "updated_at", "who", "year"];
+// committee_text — 빠진 사역 「부서」 칸(2026-10-02 두 칸 · null 이면 옛 한 칸 신청)
+export const REQUEST_ADMIN_OUT_KEYS = ["answer", "committee_text", "created_at", "detail", "found", "handled_at", "id", "kind", "line", "row",
+  "status", "team_text", "updated_at", "who", "year"];
 
 export type ReqSet = { id: number; status: string; answer: string; verified: boolean; expect: string };
 
@@ -173,7 +190,7 @@ export function requestAuditDetail(cur: { kind: string; status: string }, set: R
 export function requestAdminOut(r: any, row: any | null, line: any | null = null) {
   return {
     id: Number(r.id), kind: String(r.kind ?? ""), detail: String(r.detail ?? ""), year: r.year == null ? null : Number(r.year),
-    team_text: String(r.team_text ?? ""), status: String(r.status ?? ""), answer: String(r.answer ?? ""),
+    committee_text: committeeOut(r.committee_text), team_text: String(r.team_text ?? ""), status: String(r.status ?? ""), answer: String(r.answer ?? ""),
     created_at: String(r.created_at ?? ""), updated_at: String(r.updated_at ?? ""), handled_at: r.handled_at ? String(r.handled_at) : null,
     who: { type: String(r.who_type ?? ""), group: String(r.who_group ?? ""), sub: String(r.who_sub ?? ""), name: String(r.who_name ?? "") },
     found: r.person_id != null,
