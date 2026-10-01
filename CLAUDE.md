@@ -48,7 +48,11 @@
 - 엑셀 읽기(SheetJS)는 `js/core/xlsx.js` `loadXlsx` 한 곳(📤 명단 올리기·📋 종이 명단 올리기·📜 사역 이력 · FE-6 2026-09-30). 파일은 저장소 `vendor/xlsx-<판>.full.min.js`(받은 곳 cdn.sheetjs.com · integrity sha384 · deploy.yml cp 에 `vendor` · `.gitattributes` 가 줄바꿈을 막는다).
   판을 올릴 때는 **새 이름**으로 넣고 판·integrity 를 함께 바꾼다(`tests/xlsx-loader.test.mjs` 가 파일 해시와 대조). npm·jsdelivr 의 xlsx 는 0.18.5(CVE 둘 · 한국 시간대에서 날짜 칸을 하루 앞으로 읽음)에서 멈췄다 — 되돌리지 말 것.
 - **`x-internal-key` 머리가 있는 요청은 토큰 검사 앞에서 내부 갈래(`internalRoute`)로만 간다**(성경암송 「사역 이력 확인」 · 2026-10-01). 내부 액션은 `ACTION_ROLES` 에 넣지 않는다 — 토큰으로 부르면 unknown-action. 설계 v2 `docs/superpowers/specs/2026-10-01-ministry-history-check-design.md`.
-- **「📮 정정 신청」**(`historyRequestList`·`historyRequestSet`): 응답에 `user_id`·`person_id`·`handled_by` 를 싣지 않는다(`requestAdminOut`) · 「반영 안 함」 답 필수 · `not_mine` 반영은 `verified` · 상태로 거를 때 `.in()` 금지(「확인 중」 빈칸). 설계 v2 `docs/superpowers/specs/2026-10-01-ministry-history-requests-admin-design.md`.
+- **「📮 정정 신청」**(`historyRequestList`·`historyRequestSet`·`historyRequestDelete`): 응답에 `user_id`·`person_id`·`handled_by` 를 싣지 않는다(`requestAdminOut`) · 「반영 안 함」 답 필수 · `not_mine` 반영은 `verified` · 상태로 거를 때 `.in()` 금지(「확인 중」 빈칸). 설계 v2 `docs/superpowers/specs/2026-10-01-ministry-history-requests-admin-design.md`.
+  - **빠진 사역(2026-10-02):** 「반영」하면 그 해 `ministry_history` 에 `req:<신청 id>` 줄(본인 교인ID · `manual` · 직분은 교적)을 넣고, 「반영」에서 벗어나면 그 줄만 뺀다(`history-db.ts` `applyMissingRequest`·`undoMissingRequest`). 담당자가 창의 「사역 이력에 넣을 내용」(연도·부서·팀·직책 · `line` · 줄의 `updated_at` 잠금)을 고쳐 넣는다 — 성도님 글(`year`·`team_text`·`committee_text`)은 그대로 둔다.
+    ⚠️ 빼 둔 `req:` 줄은 **마지막 `history.delete` 기록이 `from:"request"` 일 때만** 되살린다 — 📜 사역 이력에서 손으로 뺀 줄·신청 삭제(`why:"request-deleted"`)로 뺀 줄은 `history-removed`. 그래서 `req:` 줄을 SQL 로 빼거나 되살리지 말 것(기록이 안 남아 판정이 틀어진다).
+  - **「삭제」**(`historyRequestDelete`): 신청 줄을 지우고(DELETE · 되돌릴 수 없다) 그 신청의 살아 있는 `req:` 줄은 빼 둔 줄로. 기록 `history.request.delete` 는 `{id, kind, status}` 만.
+  - **두 칸(SQL 009 `committee_text`):** `null` = 옛 한 칸 신청(`team_text` 를 `parseTeamText` 로 나눔) · 글자 = 두 칸(나누지 않음) — `requestDraft` 한 곳. 배포 차례 SQL 009 → 이 함수 → 성경암송 `api` → 앱.
 - **`ministry_history_requests` 에는 성경암송 쪽 트리거 `redirect_merged_member_write` 가 붙어 있다**(2026-10-02 · 앱 계정 합치기 `member_merge.sql`). 이 표를 지웠다 다시 만들면 성경암송 `supabase/member_merge.sql` 을 다시 돌릴 것 · `REQ_OPEN` 글자(「신청」·「확인 중」)나 부분 unique 색인 조건을 바꾸면 `member_merge.sql` 도 함께 고칠 것 (합치기는 새 계정에 같은 줄 열린 신청이 있으면 옛 계정 열린 신청을 지우고, 나머지는 user_id 만 옮긴다).
 
 ## 교인명부 (2026-09-29 운영 개시)
