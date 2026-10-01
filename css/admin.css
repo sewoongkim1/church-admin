@@ -1274,3 +1274,13 @@ section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:
 .hr-l{display:block;font-weight:700;margin:6px 0 4px}
 .hr-ans{width:100%;box-sizing:border-box;font:inherit;padding:10px;border:1px solid var(--border);border-radius:10px;resize:vertical}
 .hr-verify{display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:700}
+/* 빠진 사역이 「📜 사역 이력」에 들어간 줄(목록 카드 · 2026-10-02) */
+.hr-line{display:block;margin-top:4px;color:var(--navy);font-size:14px;word-break:keep-all}
+/* 「반영 안 함」 옆 「삭제」 — 상태 단추와 같은 줄(.hr-sts 의 flex) · 색은 .btn.danger 그대로 */
+.hr-sts .hr-del{flex:none}
+/* 「사역 이력에 넣을 내용」 — 칸 모양은 입력 창 공용(.field · 📜 사역 이력 칸 고치기와 같다) · 둘씩, 좁으면 하나씩 */
+.hr-line-box{margin:4px 0 14px;padding:12px 12px 2px;border:1px solid var(--border);border-radius:12px;background:#fff}
+.hr-line-box .hr-l{margin-top:0}
+.hr-line-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}
+.hr-line-grid .field{min-width:0}
+@media (max-width:519px){.hr-line-grid{grid-template-columns:1fr}}

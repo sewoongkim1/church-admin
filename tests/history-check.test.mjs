@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { applicantFromLogin, loginNameKey, matchLoginPerson } from "../supabase/functions/church-admin/people-match.ts";
 import {
   HISTORY_OUT_KEYS, REQUEST_OUT_KEYS, REQ_KINDS, REQ_LINE_KINDS, REQ_OPEN_MAX, hcUserId, historyRowOut, internalKeyOk, parseRequest,
-  readLoginWho, requestBlock, requestInsert, requestOut, sortHistory,
+  readLoginWho, requestBlock, requestInsert, requestOut, sortHistory, REQUEST_SELECT, REQUEST_ADMIN_SELECT,
   REQ_FILTERS, REQ_SET_STATUS, REQUEST_ADMIN_OUT_KEYS, filterRequests, parseRequestSet, requestAdminOut, requestAuditDetail,
   requestCounts, requestSetBlock, requestSetNoop, requestSetPatch,
 } from "../supabase/functions/church-admin/history-check.ts";
@@ -100,7 +100,7 @@ test("readLoginWho — 구분은 교구·교회학교만 · 이름 필수 · NFC
 
 test("parseRequest — 줄 정정은 history_id 필수 · 「그 밖에」는 설명 필수", () => {
   assert.deepEqual(parseRequest({ kind: "not_mine", history_id: "12" }),
-    { ok: true, req: { history_id: 12, kind: "not_mine", detail: "", year: null, team_text: "" } });
+    { ok: true, req: { history_id: 12, kind: "not_mine", detail: "", year: null, committee_text: null, team_text: "" } });
   assert.deepEqual(parseRequest({ kind: "wrong_team" }), { ok: false, error: "no-row" });
   assert.deepEqual(parseRequest({ kind: "wrong_team", history_id: -1 }), { ok: false, error: "no-row" });
   assert.deepEqual(parseRequest({ kind: "other", history_id: 3, detail: "  " }), { ok: false, error: "need-detail" });
@@ -109,13 +109,46 @@ test("parseRequest — 줄 정정은 history_id 필수 · 「그 밖에」는 �
 
 test("parseRequest — 빠진 사역은 연도·부서팀 필수 · 찾아 주세요는 줄 없이", () => {
   assert.deepEqual(parseRequest({ kind: "missing", year: "2023", team_text: " 시온성가대 ", history_id: 9 }),
-    { ok: true, req: { history_id: null, kind: "missing", detail: "", year: 2023, team_text: "시온성가대" } });
+    { ok: true, req: { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: null, team_text: "시온성가대" } });
   assert.deepEqual(parseRequest({ kind: "missing", year: "", team_text: "시온성가대" }), { ok: false, error: "bad-year" });
   assert.deepEqual(parseRequest({ kind: "missing", year: 1900, team_text: "시온성가대" }), { ok: false, error: "bad-year" });
   assert.deepEqual(parseRequest({ kind: "missing", year: 2023, team_text: "" }), { ok: false, error: "need-team" });
   assert.deepEqual(parseRequest({ kind: "missing", year: 2023, team_text: "가".repeat(101) }), { ok: false, error: "too-long" });
   assert.deepEqual(parseRequest({ kind: "find_me", history_id: 5, detail: "목장이 바뀌었어요" }),
-    { ok: true, req: { history_id: null, kind: "find_me", detail: "목장이 바뀌었어요", year: null, team_text: "" } });
+    { ok: true, req: { history_id: null, kind: "find_me", detail: "목장이 바뀌었어요", year: null, committee_text: null, team_text: "" } });
+});
+
+// 2026-10-02 친구 요청 「네 두칸으로 해주세요」 — 빠진 사역 「부서」「팀」 두 칸(committee_text · SQL 009)
+//   committee_text 가 글자(빈 글자도)면 두 칸 신청 — 둘 다 다듬기만 하고 나누지 않는다. 글자가 아니면(옛 앱 · null) 한 칸 그대로.
+test("parseRequest — 두 칸(committee_text 가 글자) · 둘 중 하나는 · 칸마다 100자 · 나누지 않는다 · 옛 한 칸은 그대로", () => {
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: " 찬양위원회 ".normalize("NFD"), team_text: "시온   성가대" }),
+    { ok: true, req: { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: "찬양위원회", team_text: "시온 성가대" } });
+  // 부서만 · 팀만(부서는 빈 글자 — 그래도 두 칸 신청)
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "새가족부", team_text: "" }).req,
+    { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: "새가족부", team_text: "" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "", team_text: "시온성가대" }).req,
+    { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: "", team_text: "시온성가대" });
+  assert.equal(parseRequest({ kind: "missing", year: 2023, committee_text: "새가족부" }).req.team_text, "");   // 팀이 없으면 빈 글자
+  // 한 칸에 「부서 팀 직분」을 적어도 나누지 않는다(담당자가 「사역 이력에 넣을 내용」에서 고친다)
+  assert.equal(parseRequest({ kind: "missing", year: 2023, committee_text: "찬양위원회 시온성가대 집사", team_text: "" }).req.committee_text,
+    "찬양위원회 시온성가대 집사");
+  // 오류 — 둘 다 빔 · 칸마다 100자 · 연도는 지금처럼(연도를 먼저 본다)
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "  ", team_text: " " }), { ok: false, error: "need-team" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "", team_text: "" }), { ok: false, error: "need-team" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "가".repeat(101), team_text: "팀" }), { ok: false, error: "too-long" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "부서", team_text: "가".repeat(101) }), { ok: false, error: "too-long" });
+  assert.equal(parseRequest({ kind: "missing", year: 2023, committee_text: "가".repeat(100), team_text: "나".repeat(100) }).ok, true);
+  assert.deepEqual(parseRequest({ kind: "missing", year: "", committee_text: "", team_text: "" }), { ok: false, error: "bad-year" });
+  // 글자가 아니면 한 칸 신청 — null · 숫자 · 없음은 team_text 하나로 보고 committee_text 는 null(옛 앱이 보낸 것과 같다)
+  for (const committee_text of [null, undefined, 3, {}]) {
+    const r = parseRequest({ kind: "missing", year: 2023, committee_text, team_text: "찬양위원회 시온성가대" });
+    assert.deepEqual(r.req, { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: null, team_text: "찬양위원회 시온성가대" },
+      String(committee_text));
+  }
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: null, team_text: "" }), { ok: false, error: "need-team" });
+  // 다른 종류는 늘 null(보내도 읽지 않는다)
+  assert.equal(parseRequest({ kind: "wrong_team", history_id: 3, committee_text: "찬양위원회" }).req.committee_text, null);
+  assert.equal(parseRequest({ kind: "find_me", committee_text: "찬양위원회" }).req.committee_text, null);
 });
 
 test("parseRequest — 모르는 종류·긴 설명", () => {
@@ -144,12 +177,18 @@ test("requestBlock — 찾았나 · 이분 줄인가 · 이미 열린 신청 · 
 });
 
 test("requestInsert — 신청 때 소속·이름 사본(교구는 교구·목장, 교회학교는 부서·학년)", () => {
-  const req = { history_id: 7, kind: "not_mine", detail: "", year: null, team_text: "" };
+  const req = { history_id: 7, kind: "not_mine", detail: "", year: null, committee_text: null, team_text: "" };
   const uid = "0f8fad5b-d9cb-469f-a165-70867728950e";
   assert.deepEqual(requestInsert(req, uid, 5, { type: "교구", gu: "기쁨", mok: "12", bu: "", grade: "", name: "홍길동" }), {
-    user_id: uid, person_id: 5, history_id: 7, kind: "not_mine", detail: "", year: null, team_text: "",
+    user_id: uid, person_id: 5, history_id: 7, kind: "not_mine", detail: "", year: null, committee_text: null, team_text: "",
     who_type: "교구", who_group: "기쁨", who_sub: "12", who_name: "홍길동",
   });
+  // 두 칸 신청은 committee_text 를 그대로 넣는다(빈 글자도 — null 은 옛 한 칸 신청이라는 뜻이다)
+  const w = { type: "교구", gu: "기쁨", mok: "12", bu: "", grade: "", name: "홍길동" };
+  const two = requestInsert(parseRequest({ kind: "missing", year: 2023, committee_text: "", team_text: "시온성가대" }).req, uid, 5, w);
+  assert.deepEqual([two.committee_text, two.team_text], ["", "시온성가대"]);
+  const one = requestInsert(parseRequest({ kind: "missing", year: 2023, team_text: "찬양위원회 시온성가대" }).req, uid, 5, w);
+  assert.deepEqual([one.committee_text, one.team_text], [null, "찬양위원회 시온성가대"]);
   const s = requestInsert(req, uid, null, { type: "교회학교", gu: "", mok: "", bu: "중등부", grade: "2학년", name: "홍길동" });
   assert.equal(s.who_group, "중등부"); assert.equal(s.who_sub, "2학년"); assert.equal(s.person_id, null);
 });
@@ -159,10 +198,26 @@ test("historyRowOut·requestOut — 정해진 칸만(교인ID·user_id·그때 �
     person_id: 990000001, mok: "기쁨-12", match_basis: "맞음", link_how: "auto", src_note: "x", name: "홍길동" });
   assert.deepEqual(Object.keys(h).sort(), HISTORY_OUT_KEYS);
   assert.equal(h.id, 3);
+  assert.ok(!("position" in h), "직분은 성도님 앱에 보내지 않는다(2026-10-01)");
   const q = requestOut({ id: 1, history_id: null, kind: "find_me", detail: "", year: null, team_text: "", status: "신청",
     answer: "", created_at: "2026-10-01T00:00:00Z", user_id: "u", person_id: 5, handled_by: "m", who_name: "홍길동" });
   assert.deepEqual(Object.keys(q).sort(), REQUEST_OUT_KEYS);
   assert.equal(q.history_id, null);
+  assert.equal(q.committee_text, null);                                     // 칸이 없거나 null — 옛 한 칸 신청
+  // 두 칸 신청은 committee_text 를 글자 그대로(빈 글자도) — 성경암송 앱이 「부서 · 팀」으로 잇는다
+  const m = (committee_text) => requestOut({ id: 2, history_id: null, kind: "missing", detail: "", year: 2023, committee_text,
+    team_text: "시온성가대", status: "신청", answer: "", created_at: "C" });
+  assert.equal(m("찬양위원회").committee_text, "찬양위원회");
+  assert.equal(m("").committee_text, "");
+  assert.equal(m(null).committee_text, null);
+  assert.deepEqual(Object.keys(m("찬양위원회")).sort(), REQUEST_OUT_KEYS);
+  assert.ok(REQUEST_OUT_KEYS.includes("committee_text"));
+  assert.deepEqual([...REQUEST_OUT_KEYS].sort(), REQUEST_OUT_KEYS, "칸 집합은 차례대로 적는다(시험이 sort 와 맞댄다)");
+});
+
+test("REQUEST_SELECT·REQUEST_ADMIN_SELECT — committee_text 를 읽는다(두 칸 신청 · SQL 009)", () => {
+  assert.ok(REQUEST_SELECT.split(",").includes("committee_text"), REQUEST_SELECT);
+  assert.ok(REQUEST_ADMIN_SELECT.split(",").includes("committee_text"), REQUEST_ADMIN_SELECT);
 });
 
 test("sortHistory — 연도 내림차순 · 같은 해는 부서·팀·id 차례", () => {
@@ -242,6 +297,28 @@ test("requestAdminOut — 정해진 칸만(user_id·person_id·handled_by 없음
   assert.ok(!JSON.stringify(o).includes("990000001") && !JSON.stringify(o).includes("0f8fad5b") && !JSON.stringify(o).includes("기쁨-12"));
   assert.equal(requestAdminOut({ ...r, person_id: null }, null).found, false);
   assert.equal(requestAdminOut(r, null).row, null);
+  assert.equal(requestAdminOut(r, null).line, null);
+  assert.equal(o.committee_text, null);                                     // 칸이 없으면 null(옛 한 칸 신청)
+  assert.equal(requestAdminOut({ ...r, kind: "missing", committee_text: "찬양위원회" }, null).committee_text, "찬양위원회");
+  assert.equal(requestAdminOut({ ...r, kind: "missing", committee_text: "" }, null).committee_text, "");
+  assert.ok(REQUEST_ADMIN_OUT_KEYS.includes("committee_text"));
+});
+
+// 2026-10-02 — 빠진 사역의 「사역 이력에 넣을 내용」 미리 채움(line) · 정해진 칸만(교인ID·user_id·이름·목장이 끼어들 수 없다)
+test("requestAdminOut — 빠진 사역의 line 을 싣는다(정해진 일곱 칸만) · 그래도 person_id·user_id 없음 · 칸 집합에 line", () => {
+  assert.ok(REQUEST_ADMIN_OUT_KEYS.includes("line"));
+  assert.deepEqual([...REQUEST_ADMIN_OUT_KEYS].sort(), REQUEST_ADMIN_OUT_KEYS, "칸 집합은 차례대로 적는다(시험이 sort 와 맞댄다)");
+  const r = { id: 7, kind: "missing", detail: "", year: 2023, team_text: "찬양위원회 시온성가대", status: "반영", answer: "", created_at: "C",
+    updated_at: "U", handled_at: "H", who_type: "교구", who_group: "기쁨", who_sub: "12", who_name: "홍길동", person_id: 990000001,
+    history_id: null, user_id: "0f8fad5b-d9cb-469f-a165-70867728950e" };
+  const line = { state: "in", year: 2023, committee: "찬양위원회", team: "시온성가대", role_title: "", position: "권사", expect: "U1",
+    person_id: 990000001, user_id: "0f8fad5b-d9cb-469f-a165-70867728950e", name: "홍길동", mok: "기쁨-12" };
+  const o = requestAdminOut(r, null, line);
+  assert.deepEqual(Object.keys(o).sort(), REQUEST_ADMIN_OUT_KEYS);
+  assert.deepEqual(o.line, { state: "in", year: 2023, committee: "찬양위원회", team: "시온성가대", role_title: "", position: "권사", expect: "U1" });
+  const j = JSON.stringify(o);
+  assert.ok(!j.includes("990000001") && !j.includes("0f8fad5b") && !j.includes("기쁨-12"), j);
+  assert.equal(requestAdminOut(r, null, { state: "draft", year: null, committee: "", team: "가", role_title: "", position: "", expect: "" }).line.year, null);
 });
 
 test("filterRequests·requestCounts — 끝나지 않은 것은 오래된 것부터 · 끝난 것·전부는 최근 것부터", () => {
@@ -259,4 +336,80 @@ test("기록 history.request — 한국말 이름 · 내용에 이름·답이 �
   assert.equal(t, "#3 · 내 것이 아니에요 · 신청 → 반영 · 본인 확인");
   assert.equal(detailText({ action: "history.request", target: "4", detail: { id: 4, kind: "find_me", from: "확인 중", to: "반영 안 함", verified: false } }),
     "#4 · 내 기록 찾아 주세요 · 확인 중 → 반영 안 함");
+});
+
+// ── 2026-10-02 최종 검토 #1·#2 — index.ts(Deno · node 로는 못 불러온다)의 정정 신청 갈래를 글자로 맞댄다 ──
+import { readFileSync } from "node:fs";
+const INDEX_SRC = readFileSync(new URL("../supabase/functions/church-admin/index.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const fnBody = (name) => {
+  const at = INDEX_SRC.indexOf(`async function ${name}(`);
+  assert.ok(at > 0, `index.ts 에 ${name} 가 없다`);
+  return INDEX_SRC.slice(at, INDEX_SRC.indexOf("\n}\n", at));
+};
+
+test("index.ts 빠진 사역 줄 — 「반영」이 아니면 어디서 왔든 뺀다(빼다 실패한 뒤 같은 상태로 한 번 더 저장하면 다시 뺀다 · #1)", () => {
+  const mrh = fnBody("missingRequestHistory");
+  assert.ok(!mrh.includes('from !== "반영"'), "「반영」에서 벗어날 때만 빼는 조건이 남았다");
+  assert.ok(mrh.includes("undoMissingRequest("), mrh);
+  const set = fnBody("historyRequestSet");
+  const noop = set.slice(set.indexOf("if (requestSetNoop("), set.indexOf("const block = requestSetBlock("));
+  // 같은 상태·같은 답이어도 빠진 사역이면 상태와 상관없이 줄을 맞춘다(반영 — 채우기·고치기 · 그 밖 — 남은 줄 빼기)
+  assert.match(noop, /if \(cur\.kind === "missing"\) \{/, noop);
+  assert.ok(noop.includes("h.removed"), "같은 상태로 다시 저장해 뺀 것을 돌려주지 않는다");
+});
+
+test("index.ts 신청 삭제 — 두 쓰기(신청 지우기·줄 빼기)를 먼저, 기록은 그 뒤 · 지운 신청의 줄 빼기(missingRequestGone)는 다시 들어오지 않게 why 를 남긴다(#2)", () => {
+  // 신청이 있을 때의 갈래만(이미 지워진 신청의 줄 빼기 if (!cur) {…} 는 아래 시험이 본다 · 검증 2차 #3)
+  const live = fnBody("historyRequestDelete");
+  const del = live.slice(live.indexOf("if (String(cur.updated_at) !== expect)"));
+  const undoAt = del.indexOf("undoMissingRequest("), reqAuditAt = del.indexOf('audit(ctx, "history.request.delete"');
+  assert.ok(undoAt > 0 && reqAuditAt > 0, del);
+  assert.ok(undoAt < reqAuditAt, "줄 빼기가 신청 삭제 기록보다 뒤다 — 기록이 실패하면 지운 신청의 줄이 살아 남는다");
+  assert.ok(del.indexOf(".delete()") < undoAt, "신청을 지우기 전에 줄을 뺀다");
+  const gone = fnBody("missingRequestGone");
+  assert.ok(gone.includes("undoMissingRequest(") && gone.includes('why: "request-deleted"') && gone.includes('error: "not-found"'), gone);
+});
+
+test("index.ts 「한 번 더」(같은 상태) — 쓴 뒤 신청의 지금 상태를 다시 본다 · 지워졌으면 not-found · 상태가 바뀌었으면 그 상태로 한 번만 다시 맞추고 conflict(2026-10-02 검증 2차 #1·#2)", () => {
+  const st = fnBody("requestStatusNow");
+  assert.ok(st.includes('from("ministry_history_requests")') && st.includes('select("id,status")'), st);
+  const set = fnBody("historyRequestSet");
+  const noop = set.slice(set.indexOf("if (requestSetNoop("), set.indexOf("const block = requestSetBlock("));
+  // 넣기·되살리기·고치기(반영을 가정) · 빼기(반영 아님을 가정) 뒤 · 직접 뺀 줄(history-removed — 지워진 신청의 줄을 손으로 넣으라고 하지 않게) 뒤
+  assert.match(noop, /const added = !!\(h\.created \|\| h\.restored \|\| h\.edited\), removed = !!h\.removed;/, noop);
+  assert.match(noop, /if \(added \|\| removed \|\| h\.error === "history-removed"\) \{[\s\S]*requestStatusNow\(Number\(cur\.id\)\)/, noop);
+  // 지워졌으면 — 넣은 쪽만 줄을 다시 뺀다(missingRequestGone) · 빼기·직접 뺀 줄은 그냥 not-found
+  assert.ok(noop.includes('if (now === null) return added ? await missingRequestGone(ctx, Number(cur.id)) : { ok: false, error: "not-found" };'), noop);
+  // 가정한 상태와 다르면 지금 상태로 한 번만(고친 내용 없이) — 되풀이하지 않는다
+  assert.ok(noop.includes('(now === "반영") !== added'), noop);
+  assert.equal((noop.match(/missingRequestHistory\(/g) ?? []).length, 2, "다시 맞추기가 없거나 한 번보다 많다");
+  assert.ok(noop.includes("missingRequestHistory(ctx, { ...cur, status: now }, now, null)"), noop);
+  assert.match(noop, /return \{ ok: false, error: "conflict", \.\.\.\(h2 \? \{ history: h2 \} : \{\}\) \};/, noop);
+  // 지운 신청의 줄 빼기는 신청 표를 다시 읽지 않는다(부르는 쪽이 requestStatusNow 로 봤다)
+  assert.ok(!fnBody("missingRequestGone").includes("ministry_history_requests"));
+});
+
+test("index.ts 신청 삭제 — 이미 지워진 신청이어도 그 신청의 살아 있는 줄은 뺀다(지울 때 줄 빼기·기록이 함께 실패한 뒤 다시 누르면 치운다 · 2026-10-02 검증 2차 #3)", () => {
+  const del = fnBody("historyRequestDelete");
+  const gone = del.slice(del.indexOf("if (!cur)"), del.indexOf("if (String(cur.updated_at) !== expect)"));
+  assert.ok(gone.includes("undoMissingRequest(db, id,"), gone);
+  assert.ok(gone.includes('if (!g.removed) return { ok: false, error: "not-found" };'), gone);
+  assert.ok(gone.includes('why: "request-deleted"'), gone);
+  assert.ok(gone.includes('return { ok: false, error: "not-found", history: { removed: true, id: g.id, year: g.year } };'), gone);
+  // 줄 빼기(쓰기)는 기록보다 먼저 — 기록이 던져도 줄은 빠져 있다
+  assert.ok(gone.indexOf("undoMissingRequest(") < gone.indexOf('audit(ctx, "history.delete"'), gone);
+});
+
+test("index.ts missingRequestHistory — 교적 직분을 못 읽고 넣었으면(positionFailed) 넣은 응답에 그대로 싣는다(화면이 창으로 · 2026-10-02 검증 2차 #5)", () => {
+  assert.match(fnBody("missingRequestHistory"), /created: !!r\.created, \.\.\.\(r\.positionFailed \? \{ positionFailed: true \} : \{\}\)/);
+});
+
+test("개인정보 안내 — 「빠진 사역」 반영 줄의 직분을 교인명부에서 채우는 것을 6번(쓰는 곳)·8번(담는 것)에도 적는다(2026-10-02 최종 검토 #4)", () => {
+  const pv = readFileSync(new URL("../privacy.html", import.meta.url), "utf8");
+  const s6 = pv.indexOf("<h3>6. "), s7 = pv.indexOf("<h3>7. "), s8 = pv.indexOf("<h3>8. "), s9 = pv.indexOf("<h3>9. ");
+  assert.ok(s6 > 0 && s7 > s6 && s8 > s7 && s9 > s8);
+  const p6 = pv.slice(s6, s7), p8 = pv.slice(s8, s9);
+  assert.ok(p6.includes("「빠진 사역」 정정 신청을 반영한 줄의 직분을 채우는 데(9번)"), "6번 쓰는 곳에 직분 채우기가 없다");
+  assert.ok(p6.includes("「사역 이력 확인」을 여신 분을 찾고"), "6번 쓰는 곳에 앱에서 그분을 찾는 것이 없다");
+  assert.ok(p8.includes("정정 신청으로 더한 줄은 신청 때의 로그인 이름·소속과 교인명부의 직분"), "8번 담는 것에 정정 신청 줄이 없다");
 });

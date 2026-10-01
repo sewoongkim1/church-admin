@@ -70,6 +70,10 @@ import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, r
 import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, requestAdminOut, requestAuditDetail, requestCounts, requestSetBlock, requestSetNoop, requestSetPatch, ROW_ADMIN_SELECT } from "./history-check.ts";
 // 사역 이력(2026-10-01 · 설계 v2 docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md) — 표 읽기·쓰기는 history-db.ts 한 곳
 import { makeHistory } from "./history-db.ts";
+// 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
+import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
+// 빠진 사역을 고쳐서 반영 · 목록의 줄 미리 채우기(2026-10-02) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
+import { parseRequestLine, requestKey, requestLineOut, type MissingApply, type ReqLine } from "./history-db.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -2141,6 +2145,20 @@ async function hrRows(ids: number[]): Promise<Map<number, any>> {
   return m;
 }
 
+// 빠진 사역 신청들의 줄(src_key req:<신청 id> · 빼 둔 줄도) — 200개씩. 열쇠는 「req:」+정수라 .in() 이스케이프 걱정이 없다.
+//   ⚠️ 교인명부(church_people)는 읽지 않는다 — 직분은 그 줄에 적힌 것을 보인다.
+async function hrLines(reqIds: number[]): Promise<Map<string, any>> {
+  const m = new Map<string, any>();
+  const keys = [...new Set(reqIds.filter((x) => Number.isSafeInteger(x) && x > 0))].map(requestKey);
+  for (let i = 0; i < keys.length; i += 200) {
+    const { data, error } = await db.from("ministry_history").select("id,year,committee,team,role_title,position,deleted_at,updated_at,src_key")
+      .in("src_key", keys.slice(i, i + 200));
+    if (error) throw error;
+    for (const r of data ?? []) m.set(String(r.src_key), r);
+  }
+  return m;
+}
+
 async function historyRequestList(b: any) {
   const filter = String(b.status ?? "open");
   if (!REQ_FILTERS.includes(filter)) return { ok: false, error: "bad-status" };
@@ -2148,10 +2166,83 @@ async function historyRequestList(b: any) {
     .map((r: any) => ({ ...r, id: Number(r.id) }));
   const pick = filterRequests(all, filter);
   const rows = await hrRows(pick.map((r: any) => Number(r.history_id)));
+  // 빠진 사역 — 「사역 이력에 넣을 내용」 미리 채움(in · out · draft · 2026-10-02) · 다른 종류는 line:null
+  const lines = await hrLines(pick.filter((r: any) => r.kind === "missing").map((r: any) => Number(r.id)));
   return {
     ok: true, counts: requestCounts(all),
-    list: pick.map((r: any) => requestAdminOut(r, r.history_id == null ? null : rows.get(Number(r.history_id)) ?? null)),
+    list: pick.map((r: any) => requestAdminOut(r, r.history_id == null ? null : rows.get(Number(r.history_id)) ?? null,
+      r.kind === "missing" ? requestLineOut(r, lines.get(requestKey(r.id)) ?? null) : null)),
   };
+}
+
+// 「빠진 사역」(kind missing) 신청의 사역 이력 줄 — 「반영」이면 그 해 이력에 더하고(applyMissingRequest · 고친 내용 line 대로), 「반영」이 아니면 뺀다.
+//   「반영」이 아니면 어디서 왔든 늘 뺀다(undoMissingRequest — 살아 있는 줄이 있을 때만 쓴다 · 없으면 0행이라 쓰지도 기록하지도 않는다).
+//     「반영」에서 벗어나다 빼기가 실패했으면 같은 상태로 한 번 더 저장해 다시 뺀다(2026-10-02 최종 검토 #1 — 손으로 빼라고 하지 않는다:
+//     「📜 사역 이력」에서 손으로 뺀 줄은 다시 「반영」해도 되살아나지 않아, 신청하신 분 교적에 이은 그 줄을 잃는다).
+//   신청 상태는 이미 바뀌었다 — 줄 쓰기가 실패해도 상태 바꾼 것을 되돌리지 않는다(응답 history:{error} → 화면이 창으로 알린다).
+//   ⚠️ try 는 줄 쓰기(applyMissingRequest·undoMissingRequest)만 감싼다 — 기록(audit)은 그 밖에서. 기록이 실패하면 다른 액션처럼 던진다(2026-10-02 리뷰 D1).
+//   빼 둔 줄은 마지막 빼기 기록이 정정 신청 쪽(from:"request")일 때만 되살린다 — 「📜 사역 이력」에서 손으로 뺀 줄은 아니다(history-removed · D2).
+//   상태가 어디서 왔는지는 보지 않는다 — 「확인 중→반영」에서 되살리다 실패한 뒤 반영에 머문 채 한 번 더 눌러도 되살린다(2026-10-02).
+//   기록: history.add(더함 · 되살림 restored:true) · history.edit(고친 칸 fields — 되살리며 고쳤어도) · history.delete(뺌)
+//         detail 은 {year, from:"request", request: 신청 id}(+ fields·restored)만(이름·교인ID·글 없음).
+//   돌려주는 것: null(할 일 없음 · 뺄 줄이 없었다) · {id, year, created|restored|edited|removed (, fields · positionFailed)} · {error}
+//     positionFailed — 넣을 때 교적 직분을 못 읽어 직분을 빈칸으로 넣었다(불리언만 · 화면이 창으로 · 최종 검토 #9)
+async function missingRequestHistory(ctx: Ctx, req: any, to: string, line: ReqLine | null = null):
+  Promise<Record<string, unknown> | null> {
+  const now = new Date().toISOString();
+  const mid = ctx.member?.id ?? null;
+  const base = { from: "request", request: Number(req.id) };
+  if (to === "반영") {
+    let r: MissingApply;
+    try {
+      r = await applyMissingRequest(db, req, { line, memberId: mid, nowIso: now });
+    } catch (err) {
+      console.error("history request → ministry_history", err);
+      return { error: "history-failed" };
+    }
+    if (r.error) return { error: r.error };
+    const year = Number(r.year ?? req.year);
+    const fields = r.fields ?? [];
+    if (r.created) await audit(ctx, "history.add", String(r.id), { year, ...base });
+    if (r.restored) await audit(ctx, "history.add", String(r.id), { year, ...base, restored: true });
+    if ((r.edited || r.restored) && fields.length) await audit(ctx, "history.edit", String(r.id), { year, fields, ...base });
+    if (r.edited) return { id: r.id, year: r.year, edited: true, fields };
+    if (r.restored) return { id: r.id, year: r.year, restored: true, ...(fields.length ? { fields } : {}) };
+    return { id: r.id, year: r.year, created: !!r.created, ...(r.positionFailed ? { positionFailed: true } : {}) };
+  }
+  let u: { id?: number; year?: number; removed: boolean };
+  try {
+    u = await undoMissingRequest(db, req.id, mid, now);
+  } catch (err) {
+    console.error("history request → ministry_history", err);
+    return { error: "history-failed" };
+  }
+  if (!u.removed) return null;
+  await audit(ctx, "history.delete", String(u.id), { year: Number(u.year ?? req.year), ...base });
+  return { id: u.id, year: u.year, removed: true };
+}
+
+// 신청의 지금 상태 — 지워졌으면 null(「한 번 더」 갈래가 줄을 쓴 뒤 다시 본다 · 2026-10-02 검증 2차 #1)
+async function requestStatusNow(reqId: number): Promise<string | null> {
+  const { data, error } = await db.from("ministry_history_requests").select("id,status").eq("id", reqId).maybeSingle();
+  if (error) throw error;
+  return data ? String(data.status ?? "") : null;
+}
+
+// 「한 번 더」(같은 상태·같은 답)로 줄을 넣거나 되살리거나 고친 뒤 신청이 지워져 있었다(requestStatusNow 가 null · 2026-10-02 최종 검토 #2).
+//   그 갈래는 신청을 읽은 뒤 잠금 없이 줄을 쓰므로, 그사이 다른 분이 신청을 지웠으면(historyRequestDelete — 그 빼기는 줄이 없을 때 지나갔다)
+//   지운 신청의 살아 있는 줄이 남는다. 그 줄을 다시 빼고(기록 history.delete why:"request-deleted" — 다시 되살아나지 않는다)
+//   {ok:false, error:"not-found"} · 빼기도 실패했으면 history:{error:"history-failed"} 를 함께(신청이 없어 다시 저장할 길이 없다 — 화면이 창으로).
+async function missingRequestGone(ctx: Ctx, reqId: number): Promise<Record<string, unknown>> {
+  let u: { id?: number; year?: number; removed: boolean };
+  try {
+    u = await undoMissingRequest(db, reqId, ctx.member?.id ?? null, new Date().toISOString());
+  } catch (err) {
+    console.error("history request gone → ministry_history", err);
+    return { ok: false, error: "not-found", history: { error: "history-failed" } };
+  }
+  if (u.removed) await audit(ctx, "history.delete", String(u.id), { year: Number(u.year), from: "request", request: reqId, why: "request-deleted" });
+  return { ok: false, error: "not-found" };
 }
 
 async function historyRequestSet(ctx: Ctx, b: any) {
@@ -2161,7 +2252,45 @@ async function historyRequestSet(ctx: Ctx, b: any) {
     .eq("id", p.set.id).maybeSingle();
   if (error) throw error;
   if (!cur) return { ok: false, error: "not-found" };
-  if (requestSetNoop(p.set, cur)) return { ok: true, same: true };   // 바뀐 것이 없으면 쓰지도 기록하지도 않는다
+  // 빠진 사역을 「반영」 — 창이 고쳐 보낸 「사역 이력에 넣을 내용」(line)을 먼저 본다. 틀리면 아무것도 쓰지 않는다(2026-10-02).
+  //   다른 종류·다른 상태로 보낸 line 은 읽지 않는다.
+  //   창은 네 칸을 고쳤을 때만 line 을 싣는다(requests-logic.js lineBody · 최종 검토 #6) — 없으면 살아 있는 줄은 그대로 ·
+  //   빼 둔 줄은 칸 그대로 되살리고 · 줄이 없으면 신청 글(requestDraft — 창에 미리 채운 것과 같다)로 넣는다.
+  let line: ReqLine | null = null;
+  if (cur.kind === "missing" && p.set.status === "반영" && b.line != null) {
+    const lp = parseRequestLine(b.line);
+    if (!lp.line) return { ok: false, error: lp.error };
+    line = lp.line;
+  }
+  if (requestSetNoop(p.set, cur)) {
+    // 빠진 사역 신청을 같은 상태·같은 답으로 한 번 더 —
+    //   「반영」: 그 해 이력에 이 신청의 줄이 없으면(이 기능 전에 반영했다) 채우고, 고친 내용(line)이 줄과 다르면 고친다. 빼 둔 줄은
+    //     마지막 빼기가 정정 신청 쪽일 때만 되살린다(「확인 중→반영」에서 되살리다 실패한 뒤의 다시 누름 · 손으로 뺀 줄은 history-removed).
+    //   그 밖(확인 중·반영 안 함): 남아 있는 줄을 다시 뺀다(「반영」에서 벗어나다 빼기가 실패한 뒤 · 2026-10-02 최종 검토 #1).
+    //   줄이 그대로면 예전처럼 쓰지도 기록하지도 않는다({ok, same}).
+    if (cur.kind === "missing") {
+      const h = await missingRequestHistory(ctx, cur, p.set.status, line);
+      if (h) {
+        // 이 갈래는 신청 줄의 잠금(updated_at)을 거치지 않는다 — 줄을 쓴 뒤 신청의 지금 상태를 다시 본다(2026-10-02 검증 2차 #1·#2).
+        //   넣기·되살리기·고치기는 「반영」을, 빼기는 「반영 아님」을 가정하고 썼다.
+        //   · 지워졌으면: 넣은 쪽이면 그 줄을 다시 뺀다(missingRequestGone · #2) · 뺐거나 직접 뺀 줄(history-removed)이면 그냥 not-found
+        //     (지워진 신청의 줄을 「＋ 한 줄 더하기」로 넣으라고 하지 않는다 — 다른 분이 신청을 지우며 그 줄을 뺀 자리다)
+        //   · 상태가 가정과 다르면(그사이 다른 분이 반영 ↔ 반영 아님으로 바꿨다 — 그분의 줄 쓰기가 이 쓰기보다 먼저 끝났을 수 있다):
+        //     지금 상태로 한 번만 다시 맞추고(고친 내용 없이) conflict + 그 결과(history) — 되풀이하지 않는다(또 바뀌는 틈은 받아들인다).
+        const added = !!(h.created || h.restored || h.edited), removed = !!h.removed;
+        if (added || removed || h.error === "history-removed") {
+          const now = await requestStatusNow(Number(cur.id));
+          if (now === null) return added ? await missingRequestGone(ctx, Number(cur.id)) : { ok: false, error: "not-found" };
+          if ((added || removed) && (now === "반영") !== added) {
+            const h2 = await missingRequestHistory(ctx, { ...cur, status: now }, now, null);
+            return { ok: false, error: "conflict", ...(h2 ? { history: h2 } : {}) };
+          }
+        }
+        if (added || removed || h.error) return { ok: true, same: true, history: h };
+      }
+    }
+    return { ok: true, same: true };   // 바뀐 것이 없으면 쓰지도 기록하지도 않는다
+  }
   const block = requestSetBlock(p.set, cur);
   if (block) return { ok: false, error: block };
   // 본 뒤로 아무도 안 바꿨을 때만 쓴다(updated_at 조건) — 0행이면 그사이 누가 바꿨다
@@ -2174,8 +2303,60 @@ async function historyRequestSet(ctx: Ctx, b: any) {
   }
   if (!upd) return { ok: false, error: "conflict" };
   await audit(ctx, "history.request", String(p.set.id), requestAuditDetail(cur, p.set));
+  // 빠진 사역 — 「반영」이 되면 그 해 이력에 줄을 더하고, 「반영」이 아니면 남은 그 줄만 뺀다(상태는 이미 바뀌었다 · 실패는 history.error 로만)
+  const h = cur.kind === "missing" ? await missingRequestHistory(ctx, cur, p.set.status, line) : null;
   const rows = await hrRows(upd.history_id == null ? [] : [Number(upd.history_id)]);
-  return { ok: true, row: requestAdminOut(upd, upd.history_id == null ? null : rows.get(Number(upd.history_id)) ?? null) };
+  const out: Record<string, unknown> = { ok: true, row: requestAdminOut(upd, upd.history_id == null ? null : rows.get(Number(upd.history_id)) ?? null) };
+  if (h) out.history = h;
+  return out;
+}
+
+// 신청 삭제(2026-10-02 친구 요청 · 역할 ministry) — 신청 줄을 지운다(성도님 앱 「내 정정 신청」에서도 사라짐 · 되돌릴 수 없다).
+//   본 뒤로 아무도 안 바꿨을 때만(expect = 창이 본 updated_at) · 0행이면 conflict.
+//   기록: history.request.delete {id, kind, status} — 이름·교인ID·글·답은 남기지 않는다. 그 신청의 history.request 기록은 그대로 둔다.
+//   빠진 사역이면 그다음 「반영」으로 더한 살아 있는 줄을 빼 둔다(undoMissingRequest · 기록 history.delete why:"request-deleted").
+//   ⚠️ try 는 줄 빼기만 감싼다 — 기록은 밖에서(D1). 줄을 못 뺐으면 history:{error:"history-failed"}(신청은 이미 지워졌다).
+//   ⚠️ 두 쓰기(신청 지우기 · 줄 빼기)를 먼저 하고 기록은 그 뒤에 — 기록이 실패해 던져도 줄은 이미 빠져 있다(2026-10-02 최종 검토 #2 ·
+//      전에는 신청 삭제 기록이 줄 빼기보다 먼저라, 그 기록이 실패하면 지운 신청의 줄이 살아 남고 다시 해 볼 신청도 없었다).
+//   이미 지워진 신청이면 not-found — 그래도 그 신청의 살아 있는 줄은 빼고 history:{removed, id, year} 를 함께(다시 누르면 치운다 · 검증 2차 #3).
+async function historyRequestDelete(ctx: Ctx, b: any) {
+  const id = Number(b?.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "bad-id" };
+  const expect = String(b?.expect ?? "").trim();
+  if (!expect) return { ok: false, error: "conflict" };   // 무엇을 보고 지우는지 모르면 지우지 않는다
+  const { data: cur, error } = await db.from("ministry_history_requests").select("id,kind,status,updated_at").eq("id", id).maybeSingle();
+  if (error) throw error;
+  if (!cur) {
+    // 이미 지워진 신청 — 그 신청의 살아 있는 줄이 남았으면 뺀다(2026-10-02 검증 2차 #3 · 지울 때 줄 빼기가 실패하고 기록까지 던져
+    //   「…빼 주세요」 창도 못 띄운 뒤의 다시 누름 · 그사이 「한 번 더」가 넣은 줄). undoMissingRequest 는 살아 있는 req:<id> 줄만 건드려 몇 번 해도 같다.
+    //   ⚠️ try 로 감싸지 않는다 — 던지면 서버 오류로 창이 그대로라 다시 누를 수 있다(줄이 있는지 모르는 채 「빼지 못했어요」라고 하지 않는다).
+    //   뺐으면 기록 history.delete why:"request-deleted"(신청 삭제 기록 history.request.delete 는 남기지 않는다 — 종류·상태를 더는 모른다).
+    const g = await undoMissingRequest(db, id, ctx.member?.id ?? null, new Date().toISOString());
+    if (!g.removed) return { ok: false, error: "not-found" };
+    await audit(ctx, "history.delete", String(g.id), { year: Number(g.year), from: "request", request: id, why: "request-deleted" });
+    return { ok: false, error: "not-found", history: { removed: true, id: g.id, year: g.year } };
+  }
+  if (String(cur.updated_at) !== expect) return { ok: false, error: "conflict" };
+  const { data: del, error: de } = await db.from("ministry_history_requests").delete()
+    .eq("id", id).eq("updated_at", cur.updated_at).select("id");
+  if (de) throw de;
+  if (!(del ?? []).length) return { ok: false, error: "conflict" };   // 그사이 누가 바꿨거나 지웠다
+  const out: Record<string, unknown> = { ok: true };
+  let u: { id?: number; year?: number; removed: boolean } | null = null;
+  if (cur.kind === "missing") {
+    try {
+      u = await undoMissingRequest(db, id, ctx.member?.id ?? null, new Date().toISOString());
+    } catch (err) {
+      console.error("history request delete → ministry_history", err);
+      out.history = { error: "history-failed" };
+    }
+  }
+  await audit(ctx, "history.request.delete", String(id), { id, kind: String(cur.kind), status: String(cur.status) });
+  if (u?.removed) {
+    await audit(ctx, "history.delete", String(u.id), { year: Number(u.year), from: "request", request: id, why: "request-deleted" });
+    out.history = { removed: true, id: u.id, year: u.year };
+  }
+  return out;
 }
 
 async function internalRoute(req: Request): Promise<Response> {
@@ -2262,6 +2443,7 @@ Deno.serve(async (req) => {
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));
       case "historyRequestList": return json(await historyRequestList(b));
       case "historyRequestSet":  return json(await historyRequestSet(ctx, b));
+      case "historyRequestDelete": return json(await historyRequestDelete(ctx, b));
       case "historyList":        return json(await historyApi.list(ctx, b));
       case "historyUploadCheck": return json(await historyApi.upload(ctx, b, false));
       case "historyUploadSave":  return json(await historyApi.upload(ctx, b, true));

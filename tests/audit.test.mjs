@@ -252,3 +252,31 @@ test("history.export — 화면에서 거른 것(못 맞춘 줄만·근거 약�
   assert.equal(detailText(R("history.export", { count: 3, years: [2024], only: "weak", search: true })), "3줄 · 2024년 · 근거 약한 줄만 · 찾기로 거름");
   assert.equal(detailText(R("history.export", { count: 10, years: [] })), "10줄 · 모든 해");
 });
+
+// 「📮 정정 신청」의 빠진 사역을 「반영」해 사역 이력에 더한 줄 · 반영을 되돌려 뺀 줄(2026-10-01) — 해와 신청 번호만(이름·교인ID 없음)
+test("history.add·history.delete — from:request 는 「2026년 · 정정 신청 #1」 · 그 밖의 기록은 그대로", () => {
+  assert.equal(detailText(R("history.add", { year: 2026, from: "request", request: 1 }, "55")), "2026년 · 정정 신청 #1");
+  assert.equal(detailText(R("history.delete", { year: 2023, from: "request", request: 12 }, "55")), "2023년 · 정정 신청 #12");
+  assert.equal(detailText(R("history.add", { from: "request" }, "55")), "정정 신청");
+  assert.equal(detailText(R("history.add", { year: 2024 })), "2024년");
+  assert.equal(detailText(R("history.delete", { erased: true }, "12")), "지워 달라는 요청 — 이름까지 지움");
+});
+
+// 2026-10-02 — 신청 삭제 · 되살림 · 정정 신청으로 고침 · 신청 삭제로 뺌(리뷰 D1) — 이름·교인ID·글 없이
+test("history.request.delete — 「사역 이력 정정 신청 삭제」 · 「#번호 · 종류 · 상태」", () => {
+  assert.equal(LABEL["history.request.delete"], "사역 이력 정정 신청 삭제");
+  assert.equal(detailText(R("history.request.delete", { id: 5, kind: "missing", status: "반영" }, "5")), "#5 · 빠진 사역 · 반영");
+  assert.equal(detailText(R("history.request.delete", { id: 9, kind: "not_mine", status: "신청" }, "9")), "#9 · 내 것이 아니에요 · 신청");
+  assert.equal(detailText(R("history.request.delete", {}, "12")), "#12");
+});
+
+test("history.add·edit·delete(from:request) — 되살림 · 정정 신청으로 고친 칸 · 신청 삭제로 뺌", () => {
+  assert.equal(detailText(R("history.add", { year: 2026, from: "request", request: 1, restored: true }, "55")), "2026년 · 정정 신청 #1 · 되살림");
+  assert.equal(detailText(R("history.edit", { year: 2024, fields: ["year", "team"], from: "request", request: 3 }, "55")), "2024년 · 정정 신청 #3 · 해·팀명");
+  assert.equal(detailText(R("history.edit", { year: 2024, fields: ["role_title"], from: "request", request: 3 }, "55")), "2024년 · 정정 신청 #3 · 직책");
+  assert.equal(detailText(R("history.delete", { year: 2023, from: "request", request: 12, why: "request-deleted" }, "55")),
+    "2023년 · 정정 신청 #12 · 신청 삭제로 뺌");
+  // 다른 기록은 그대로
+  assert.equal(detailText(R("history.edit", { year: 2024, fields: ["name", "mok"] })), "2024년 · 이름·목장");
+  assert.equal(detailText(R("history.delete", { year: 2023, from: "request", request: 12 }, "55")), "2023년 · 정정 신청 #12");
+});

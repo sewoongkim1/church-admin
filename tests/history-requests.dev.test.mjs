@@ -3,6 +3,7 @@
 //   node --experimental-strip-types --test tests/history-requests.dev.test.mjs
 // ⚠️ 공용 server.dev.test.mjs 는 여러 세션이 고친다 — PROBE 두 줄만 거기 두고 나머지는 여기.
 // 시험 자료: 담당자(이메일 로그인 ca-test-hr-…) · 기록 한 줄(src_key ca-test-hr-<STAMP>-a) · 신청 넷(지어낸 user_id) — 끝나면 모두 지운다.
+//   빠진 사역 고쳐서 반영·신청 삭제 시험(2026-10-02)은 제 자료(교인명부 990000092 · 신청 넷 · 줄 req:<id>)를 그 시험 안에서 만들고 지운다.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { REQUEST_ADMIN_OUT_KEYS } from "../supabase/functions/church-admin/history-check.ts";
@@ -140,4 +141,235 @@ test("다시 열기 — 같은 줄에 열린 신청이 있으면 already-open", 
   assert.equal((await call("historyRequestSet", { id: st.q.notMine, status: "확인 중", expect: cur.updated_at })).body.error, "already-open");
   const done = mine((await listOf("done")).list).map((x) => x.id);
   assert.ok(done.includes(st.q.notMine) && done.includes(st.q.missing));
+});
+
+// ── 2026-10-02 — 빠진 사역을 고쳐서 반영 · 살아 있는 줄 고치기 · 손으로 뺀 줄은 되살리지 않는다 · 신청 삭제 ──
+//   교적을 찾은 분의 신청이어야 줄이 들어간다(no-person) — 신청 줄을 REST 로 바로 넣고 person_id 는 고정 교인ID 990000092(교인명부 시험 줄 ·
+//   server.dev 의 정정 신청 시험 990000091 과 겹치지 않게). 앱 계정 자리는 지어낸 uuid · 끝나면 신청·줄·기록·명부 줄을 모두 지운다.
+const HX = { pid: 990000092, uid: crypto.randomUUID(), name: `ca-test-hr-${STAMP}-나` };
+const hxRows = (id) => rest(`ministry_history?select=id,year,committee,team,role_title,position,name,mok,person_id,link_how,deleted_at,updated_at&src_key=eq.req:${id}`, "GET");
+const hxReq = async (id) => (await rest(`ministry_history_requests?select=id,updated_at,status&id=eq.${id}`, "GET"))[0];
+const hxFind = async (id) => (await listOf("all")).list.find((x) => x.id === id);
+const hxMake = async (o) => (await rest("ministry_history_requests", "POST", { user_id: HX.uid, person_id: HX.pid, kind: "missing", history_id: null,
+  detail: "", who_type: "교구", who_group: "기쁨", who_sub: "99", who_name: HX.name, ...o }))[0].id;
+
+test("빠진 사역 — 고친 내용으로 반영(직분은 교적 · 목장 99 는 교구만 · 신청 글은 그대로) · 줄 고치기 · 손으로 뺀 줄은 되살리지 않는다 · 신청 삭제는 줄을 빼 둔다", async () => {
+  const reqIds = [], rowIds = new Set();
+  try {
+    await rest(`church_people?person_id=eq.${HX.pid}`, "DELETE");     // 지난번 찌꺼기(고정 ID)
+    await rest("church_people", "POST", { person_id: HX.pid, name: HX.name, name_key: HX.name, kind2: "장년",
+      mok1: "기쁨", mok3: "기쁨-99목장", position: "권사" });
+    const reqId = await hxMake({ year: 2003, team_text: "찬양위원회 시온성가대 집사" });
+    reqIds.push(reqId);
+
+    // ① 목록 — 줄이 없으니 draft(성도님 글에서 읽음 · 끝의 직분 낱말은 뗀다) · 정해진 칸만
+    let q = await hxFind(reqId);
+    assert.deepEqual(Object.keys(q).sort(), REQUEST_ADMIN_OUT_KEYS);
+    assert.deepEqual(q.line, { state: "draft", year: 2003, committee: "찬양위원회", team: "시온성가대", role_title: "", position: "", expect: "" });
+    assert.ok(!JSON.stringify(q).includes(String(HX.pid)), "목록에 교인ID 가 실렸다");
+
+    // ② 틀린 내용은 아무것도 쓰지 않는다 — 상태도 그대로 · 줄도 없음
+    let cur = await hxReq(reqId);
+    assert.equal((await call("historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at,
+      line: { year: 2003, committee: " ", team: "", role_title: "", expect: "" } })).body.error, "need-team");
+    assert.equal((await call("historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at,
+      line: { year: 1900, committee: "", team: "가", role_title: "", expect: "" } })).body.error, "bad-year");
+    assert.equal((await hxReq(reqId)).status, "신청");
+    assert.equal((await hxRows(reqId)).length, 0);
+
+    // ③ 고친 내용으로 반영 — 연도·부서·팀·직책은 고친 대로 · 직분은 교적(글의 「집사」가 아니라 권사) · 목장 99 는 교구만 · 신청 글은 그대로
+    const a = (await call("historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at,
+      line: { year: "2004", committee: "교육위원회", team: "유년부", role_title: "부장", expect: "" } })).body;
+    assert.equal(a.ok, true, JSON.stringify(a));
+    assert.deepEqual([a.history.created, a.history.year], [true, 2004], JSON.stringify(a));
+    let rows = await hxRows(reqId);
+    rowIds.add(rows[0].id);
+    assert.deepEqual(
+      [rows.length, rows[0].year, rows[0].committee, rows[0].team, rows[0].role_title, rows[0].position, rows[0].mok, rows[0].person_id, rows[0].link_how],
+      [1, 2004, "교육위원회", "유년부", "부장", "권사", "기쁨", HX.pid, "manual"]);
+    const [kept] = await rest(`ministry_history_requests?select=year,team_text&id=eq.${reqId}`, "GET");
+    assert.deepEqual(kept, { year: 2003, team_text: "찬양위원회 시온성가대 집사" }, "성도님 신청 글이 바뀌었다");
+    const [addLog] = await rest(`admin_audit?select=member_id,detail&action=eq.history.add&target=eq.${rows[0].id}&order=id.desc&limit=1`, "GET");
+    assert.equal(addLog.member_id, st.memberId);
+    assert.deepEqual(addLog.detail, { year: 2004, from: "request", request: reqId });
+
+    // ④ 목록 — in · 교적 직분 · 그 줄의 updated_at 이 expect
+    q = await hxFind(reqId);
+    assert.deepEqual([q.line.state, q.line.year, q.line.team, q.line.position, q.line.expect],
+      ["in", 2004, "유년부", "권사", rows[0].updated_at]);
+
+    // ⑤ 반영에 머문 채 고치기 — 줄만 고친다(same + edited · history.edit · 신청 줄은 그대로) · 낡은 expect 는 line-conflict(쓰지 않는다)
+    cur = await hxReq(reqId);
+    const e = (await call("historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at,
+      line: { year: 2004, committee: "교육위원회", team: "초등부", role_title: "부장", expect: q.line.expect } })).body;
+    assert.deepEqual([e.ok, e.same, e.history.edited, e.history.fields], [true, true, true, ["team"]], JSON.stringify(e));
+    assert.equal((await hxReq(reqId)).updated_at, cur.updated_at, "줄만 고쳤는데 신청 줄이 바뀌었다");
+    rows = await hxRows(reqId);
+    assert.equal(rows[0].team, "초등부");
+    const [editLog] = await rest(`admin_audit?select=detail&action=eq.history.edit&target=eq.${rows[0].id}&order=id.desc&limit=1`, "GET");
+    assert.deepEqual(editLog.detail, { year: 2004, fields: ["team"], from: "request", request: reqId });
+    const stale = (await call("historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at,
+      line: { year: 2004, committee: "교육위원회", team: "유치부", role_title: "부장", expect: q.line.expect } })).body;
+    assert.equal(stale.history?.error, "line-conflict", JSON.stringify(stale));
+    assert.equal((await hxRows(reqId))[0].team, "초등부");
+    //   줄 상자를 안 건드리면 화면은 line 을 싣지 않는다(lineBody · 2026-10-02 최종 검토 #6) — 그 줄이 그사이 바뀌었어도(낡은 expect)
+    //   답만 저장되고 헛 「그사이 바뀌었어요」가 없다 · 줄은 그대로
+    cur = await hxReq(reqId);
+    const ansOnly = (await call("historyRequestSet", { id: reqId, status: "반영", answer: "답만 고침", expect: cur.updated_at })).body;
+    assert.equal(ansOnly.ok, true, JSON.stringify(ansOnly));
+    assert.equal(ansOnly.history?.error, undefined, JSON.stringify(ansOnly));
+    assert.equal(ansOnly.row.answer, "답만 고침");
+    assert.equal((await hxRows(reqId))[0].team, "초등부");
+
+    // ⑥ 「📜 사역 이력」에서 손으로 뺀다 → 답만 고쳐 저장(반영 그대로) — 되살리지 않는다(history-removed)
+    const live = (await hxRows(reqId))[0];
+    const hand = (await call("historyRowDelete", { id: live.id, expect: live.updated_at })).body;
+    assert.equal(hand.ok, true, JSON.stringify(hand));
+    cur = await hxReq(reqId);
+    const ans = (await call("historyRequestSet", { id: reqId, status: "반영", answer: "확인했어요", expect: cur.updated_at })).body;
+    assert.equal(ans.ok, true, JSON.stringify(ans));
+    assert.equal(ans.history?.error, "history-removed", JSON.stringify(ans));
+    assert.ok((await hxRows(reqId))[0].deleted_at, "손으로 뺀 줄이 답만 고쳤는데 되살아났다");
+    // 확인 중 → 반영 으로 다시 들어와도 — 마지막 빼기가 손이라 되살리지 않는다
+    cur = await hxReq(reqId);
+    assert.equal((await call("historyRequestSet", { id: reqId, status: "확인 중", answer: "확인했어요", expect: cur.updated_at })).body.ok, true);
+    cur = await hxReq(reqId);
+    const back = (await call("historyRequestSet", { id: reqId, status: "반영", answer: "확인했어요", expect: cur.updated_at })).body;
+    assert.equal(back.history?.error, "history-removed", JSON.stringify(back));
+    assert.ok((await hxRows(reqId))[0].deleted_at, "손으로 뺀 줄이 되살아났다");
+
+    // ⑦ 신청 삭제 — 신청은 사라지고 · 「반영」으로 더한 살아 있는 줄은 빼 둔다 · 기록은 번호·종류·상태만
+    const req2 = await hxMake({ year: 2005, team_text: "새가족부 · 운영" });
+    reqIds.push(req2);
+    cur = await hxReq(req2);
+    const a2 = (await call("historyRequestSet", { id: req2, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.equal(a2.history?.created, true, JSON.stringify(a2));
+    const r2 = (await hxRows(req2))[0];
+    rowIds.add(r2.id);
+    assert.deepEqual([r2.committee, r2.team, r2.position], ["새가족부", "운영", "권사"]);
+    cur = await hxReq(req2);
+    assert.equal((await call("historyRequestDelete", { id: req2, expect: "2000-01-01T00:00:00+00:00" })).body.error, "conflict");
+    assert.ok(await hxReq(req2), "충돌인데 신청이 지워졌다");
+    const d = (await call("historyRequestDelete", { id: req2, expect: cur.updated_at })).body;
+    assert.deepEqual(d, { ok: true, history: { removed: true, id: r2.id, year: 2005 } });
+    assert.equal(await hxReq(req2), undefined, "신청이 남았다");
+    assert.ok(!(await listOf("all")).list.some((x) => x.id === req2), "지운 신청이 목록에 보인다");
+    assert.ok((await hxRows(req2))[0].deleted_at, "신청을 지웠는데 그 줄이 살아 있다");
+    const [dLog] = await rest(`admin_audit?select=member_id,detail&action=eq.history.request.delete&target=eq.${req2}&order=id.desc&limit=1`, "GET");
+    assert.equal(dLog.member_id, st.memberId);
+    assert.deepEqual(dLog.detail, { id: req2, kind: "missing", status: "반영" });
+    const [rLog] = await rest(`admin_audit?select=id,detail&action=eq.history.delete&target=eq.${r2.id}&order=id.desc&limit=1`, "GET");
+    assert.deepEqual(rLog.detail, { year: 2005, from: "request", request: req2, why: "request-deleted" });
+    assert.deepEqual((await call("historyRequestDelete", { id: req2, expect: cur.updated_at })).body, { ok: false, error: "not-found" });
+    // 이미 지워진 신청의 줄이 살아 남은 자리(지울 때 줄 빼기가 실패하고 기록까지 던진 뒤 · REST 로 그 줄만 되살려 만든다) —
+    //   다시 「삭제」하면 not-found 와 함께 그 줄을 뺀다(history.removed · 기록 history.delete why:"request-deleted" · 2026-10-02 검증 2차 #3)
+    await rest(`ministry_history?id=eq.${r2.id}`, "PATCH", { deleted_at: null, deleted_by: null });
+    assert.deepEqual((await call("historyRequestDelete", { id: req2, expect: cur.updated_at })).body,
+      { ok: false, error: "not-found", history: { removed: true, id: r2.id, year: 2005 } });
+    assert.ok((await hxRows(req2))[0].deleted_at, "지운 신청의 남은 줄을 다시 「삭제」해도 빼지 않았다");
+    const [rLog2] = await rest(`admin_audit?select=id,detail&action=eq.history.delete&target=eq.${r2.id}&order=id.desc&limit=1`, "GET");
+    assert.ok(rLog2.id > rLog.id, "남은 줄을 빼고 기록하지 않았다");
+    assert.deepEqual(rLog2.detail, { year: 2005, from: "request", request: req2, why: "request-deleted" });
+    assert.deepEqual((await call("historyRequestDelete", { id: req2, expect: cur.updated_at })).body, { ok: false, error: "not-found" });
+    assert.equal((await call("historyRequestDelete", { id: reqId, expect: "" })).body.error, "conflict");   // 본 것 없이 지우지 않는다
+
+    // ⑧ 되살리다 실패한 뒤 「반영」 한 번 더 — 상태는 「반영」인데 줄은 정정 신청 쪽이 빼 둔 채(확인 중→반영 에서 되살리기 쓰기가
+    //   DB 오류로 실패한 자리와 같다 · 그 자리는 REST 로 상태만 「반영」으로 바꿔 만든다) → 반영에 머문 채 다시 누르면 되살린다(2026-10-02)
+    const req3 = await hxMake({ year: 2006, team_text: "봉사위원회 주차팀" });
+    reqIds.push(req3);
+    cur = await hxReq(req3);
+    const a3 = (await call("historyRequestSet", { id: req3, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.equal(a3.history?.created, true, JSON.stringify(a3));
+    const r3 = (await hxRows(req3))[0];
+    rowIds.add(r3.id);
+    cur = await hxReq(req3);
+    const off3 = (await call("historyRequestSet", { id: req3, status: "확인 중", answer: "", expect: cur.updated_at })).body;
+    assert.equal(off3.history?.removed, true, JSON.stringify(off3));
+    await rest(`ministry_history_requests?id=eq.${req3}`, "PATCH", { status: "반영" });
+    cur = await hxReq(req3);
+    const again = (await call("historyRequestSet", { id: req3, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.deepEqual(again, { ok: true, same: true, history: { id: r3.id, year: 2006, restored: true } });
+    assert.equal((await hxRows(req3))[0].deleted_at, null, "정정 신청 쪽이 뺀 줄인데 반영 한 번 더로 되살아나지 않았다");
+    const [reLog] = await rest(`admin_audit?select=detail&action=eq.history.add&target=eq.${r3.id}&order=id.desc&limit=1`, "GET");
+    assert.deepEqual(reLog.detail, { year: 2006, from: "request", request: req3, restored: true });
+
+    // ⑨ 두 칸 신청(committee_text 가 글자 · 2026-10-02 · SQL 009) — 목록에 committee_text · draft 는 칸 그대로(나누지 않는다 · 끝의 「집사」도 팀에 둔다)
+    //   · 고친 내용 없이 반영하면 칸 그대로 들어간다 · 신청 글은 그대로
+    const req4 = await hxMake({ year: 2007, committee_text: "봉사위원회", team_text: "주차팀 집사" });
+    reqIds.push(req4);
+    q = await hxFind(req4);
+    assert.deepEqual(Object.keys(q).sort(), REQUEST_ADMIN_OUT_KEYS);
+    assert.deepEqual([q.committee_text, q.team_text], ["봉사위원회", "주차팀 집사"]);
+    assert.deepEqual(q.line, { state: "draft", year: 2007, committee: "봉사위원회", team: "주차팀 집사", role_title: "", position: "", expect: "" });
+    assert.equal((await hxFind(reqId)).committee_text, null, "옛 한 칸 신청의 committee_text 는 null");
+    cur = await hxReq(req4);
+    const a4 = (await call("historyRequestSet", { id: req4, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.equal(a4.history?.created, true, JSON.stringify(a4));
+    assert.equal(a4.row.committee_text, "봉사위원회");
+    const r4 = (await hxRows(req4))[0];
+    rowIds.add(r4.id);
+    assert.deepEqual([r4.year, r4.committee, r4.team, r4.position], [2007, "봉사위원회", "주차팀 집사", "권사"]);
+    const [kept4] = await rest(`ministry_history_requests?select=year,committee_text,team_text&id=eq.${req4}`, "GET");
+    assert.deepEqual(kept4, { year: 2007, committee_text: "봉사위원회", team_text: "주차팀 집사" }, "성도님 신청 글이 바뀌었다");
+
+    // ⑩ 「반영」에서 벗어나다 줄 빼기가 실패한 자리(상태는 확인 중인데 줄이 살아 있다 · REST 로 상태만 바꿔 만든다) —
+    //   같은 상태로 한 번 더 저장하면 서버가 다시 뺀다(same + removed · 기록 history.delete) · 확인 중 → 반영 안 함 도 뺀다(2026-10-02 최종 검토 #1)
+    const req5 = await hxMake({ year: 2008, team_text: "봉사위원회 안내팀" });
+    reqIds.push(req5);
+    cur = await hxReq(req5);
+    const a5 = (await call("historyRequestSet", { id: req5, status: "반영", answer: "", expect: cur.updated_at })).body;
+    const r5 = (await hxRows(req5))[0];
+    if (r5) rowIds.add(r5.id);
+    assert.equal(a5.history?.created, true, JSON.stringify(a5));
+    await rest(`ministry_history_requests?id=eq.${req5}`, "PATCH", { status: "확인 중" });
+    cur = await hxReq(req5);
+    const again5 = (await call("historyRequestSet", { id: req5, status: "확인 중", answer: "", expect: cur.updated_at })).body;
+    assert.deepEqual(again5, { ok: true, same: true, history: { id: r5.id, year: 2008, removed: true } });
+    assert.ok((await hxRows(req5))[0].deleted_at, "같은 상태로 다시 저장했는데 남은 줄이 빠지지 않았다");
+    const [rm5] = await rest(`admin_audit?select=detail&action=eq.history.delete&target=eq.${r5.id}&order=id.desc&limit=1`, "GET");
+    assert.deepEqual(rm5.detail, { year: 2008, from: "request", request: req5 });
+    assert.deepEqual((await call("historyRequestSet", { id: req5, status: "확인 중", answer: "", expect: cur.updated_at })).body,
+      { ok: true, same: true }, "뺄 줄이 없는데 무언가 했다");
+    await rest(`ministry_history?id=eq.${r5.id}`, "PATCH", { deleted_at: null, deleted_by: null });   // 다시 남은 줄(빼기 실패한 자리)
+    cur = await hxReq(req5);
+    const no5 = (await call("historyRequestSet", { id: req5, status: "반영 안 함", answer: "명단 원본에 없어요", expect: cur.updated_at })).body;
+    assert.equal(no5.ok, true, JSON.stringify(no5));
+    assert.deepEqual(no5.history, { id: r5.id, year: 2008, removed: true }, "확인 중 → 반영 안 함 이 남은 줄을 빼지 않았다");
+    let out5 = (await hxRows(req5))[0];
+    assert.ok(out5.deleted_at);
+
+    // ⑪ 정정 신청 쪽이 뺀 줄을 고친 내용으로 되살린다(반영 안 함 → 반영 · 팀을 고침) — {restored, fields} · 기록 둘(history.add restored · history.edit fields)
+    //   (2026-10-02 최종 검토 #11 — 되살리며 고친 칸도 history.edit 으로 남는지)
+    q = await hxFind(req5);
+    assert.deepEqual([q.line.state, q.line.team, q.line.expect], ["out", "안내팀", out5.updated_at]);
+    cur = await hxReq(req5);
+    const re5 = (await call("historyRequestSet", { id: req5, status: "반영", answer: "다시 확인했어요", expect: cur.updated_at,
+      line: { year: 2008, committee: "봉사위원회", team: "주차팀", role_title: "", expect: q.line.expect } })).body;
+    assert.equal(re5.ok, true, JSON.stringify(re5));
+    assert.deepEqual(re5.history, { id: r5.id, year: 2008, restored: true, fields: ["team"] });
+    out5 = (await hxRows(req5))[0];
+    assert.deepEqual([out5.deleted_at, out5.year, out5.committee, out5.team, out5.person_id, out5.link_how], [null, 2008, "봉사위원회", "주차팀", HX.pid, "manual"]);
+    const [reAdd5] = await rest(`admin_audit?select=detail&action=eq.history.add&target=eq.${r5.id}&order=id.desc&limit=1`, "GET");
+    assert.deepEqual(reAdd5.detail, { year: 2008, from: "request", request: req5, restored: true });
+    const [reEdit5] = await rest(`admin_audit?select=detail&action=eq.history.edit&target=eq.${r5.id}&order=id.desc&limit=1`, "GET");
+    assert.deepEqual(reEdit5.detail, { year: 2008, fields: ["team"], from: "request", request: req5 });
+
+    // 기록에 이름·교인ID 가 실리지 않는다
+    const logs = await rest(`admin_audit?select=detail&target=in.(${[...reqIds, ...rowIds].join(",")})&action=in.(history.add,history.edit,history.delete,history.request,history.request.delete)`, "GET");
+    assert.ok(logs.length >= 6, JSON.stringify(logs));
+    assert.ok(!JSON.stringify(logs).includes(HX.name) && !JSON.stringify(logs).includes(String(HX.pid)), "기록에 이름·교인ID 가 실렸다");
+  } finally {
+    const errs = [];
+    const step = async (label, fn) => { try { await fn(); } catch (err) { errs.push(label + " — " + (err?.message ?? err)); } };
+    // 줄 번호는 줄을 지우기 전에 열쇠(req:<id>)로 다시 모은다 — 응답을 맞대다 실패해 rowIds 에 못 넣은 줄의 기록도 지우려고(2026-10-02 최종 검토 #13)
+    if (reqIds.length) await step("이력 줄 번호", async () => {
+      for (const r of await rest(`ministry_history?select=id&src_key=in.(${reqIds.map((id) => `"req:${id}"`).join(",")})`, "GET")) rowIds.add(r.id);
+    });
+    for (const id of reqIds) await step("이력 줄 " + id, () => rest(`ministry_history?src_key=eq.req:${id}`, "DELETE"));
+    if (reqIds.length) await step("신청 기록", () => rest(`admin_audit?action=in.(history.request,history.request.delete)&target=in.(${reqIds.join(",")})`, "DELETE"));
+    if (rowIds.size) await step("이력 기록", () => rest(`admin_audit?action=in.(history.add,history.edit,history.delete)&target=in.(${[...rowIds].join(",")})`, "DELETE"));
+    await step("신청", () => rest(`ministry_history_requests?user_id=eq.${HX.uid}`, "DELETE"));
+    await step("교인명부", () => rest(`church_people?person_id=eq.${HX.pid}`, "DELETE"));
+    if (errs.length) throw new Error("정리 실패 " + errs.length + "건: " + errs.join(" / "));
+  }
 });
