@@ -161,3 +161,9 @@ test("ministry.phoneclear — 「사역 번호 지움」 · 지운 수", () => {
   assert.match(LABEL["ministry.phoneclear"], /[가-힣]/);
   assert.equal(detailText(R("ministry.phoneclear", { count: 12 }, "2027")), "결정된 신청 12건의 번호");
 });
+
+test("people.linksync — 「기록 잇기 맞추기」 · 수만", () => {
+  assert.match(LABEL["people.linksync"], /[가-힣]/);
+  assert.equal(detailText(R("people.linksync", { orders: 1200, signups: 2834, added: 3, changed: 1, unmatched: 12, written: 4034 }, "8")),
+    "사역신청 1200줄 · 성경필사 2834줄 · 새로 이음 3 · 바뀜 1 · 못 맞춤 12");
+});

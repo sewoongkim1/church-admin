@@ -14,6 +14,9 @@ export const ACTION_ROLES: Record<string, string | null> = {
   membersSetRoles: "super",
   membersSetStatus: "super",
   auditList: "super",
+  // 교인명부(2026-10-01) — 새 명부를 올린 뒤 사역신청·성경필사 기록을 교인과 다시 잇는다(auto 줄만 · 사람이 정한 줄은 그대로).
+  //   apply:true 가 아니면 세기만 한다(시험 PROBE 가 아무것도 안 바꾸게). 기록 people.linksync(수만).
+  peopleLinkSync: "super",
   // 사역신청(2단계 · 2026-09-28) — 임명현황. 읽기만, 임명확정만, 번호·메모 없음.
   ministryAppointed: "ministry",
   // 사역신청(3단계) — 신청 현황. 목록은 번호·메모를 담는다(관리 화면 전용). 상태 바꾸기·삭제는 바꾼 기록에 남는다.

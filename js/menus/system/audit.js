@@ -16,6 +16,7 @@ export const LABEL = {
   "ministry.tester": "사역 시험 참여자",
   "ministry.phoneclear": "사역 번호 지움",
   "people.search": "명부 찾기", "people.view": "교인 보기", "people.export": "명부 내려받기", "people.import": "명부 올림",
+  "people.linksync": "기록 잇기 맞추기",
   // 성경필사(암송) — detail 모양은 서버 index.ts 의 audit() 호출과 한 벌(tests/audit.test.mjs 가 못 박는다)
   "event.create": "성경필사 회차 만듦", "event.settings": "성경필사 회차 설정 바꿈",
   "event.add": "성경필사 명단 더함", "event.edit": "성경필사 명단 고침", "event.delete": "성경필사 명단 뺌",
@@ -88,6 +89,8 @@ export function detailText(r) {
     return `${d.count}명${d.q ? ` · ‘${d.q}’` : ""}${f ? " · " + f : ""}`;
   }
   if (r.action === "people.import") return `기준일 ${d.source_date} · 전체 ${d.total} · 새로 ${d.added} · 바뀜 ${d.changed} · 빠짐 ${d.removed} · 사진 ${d.photos}`;
+  if (r.action === "people.linksync") return joinDot(`사역신청 ${d.orders ?? 0}줄`, `성경필사 ${d.signups ?? 0}줄`,
+    `새로 이음 ${d.added ?? 0}`, `바뀜 ${d.changed ?? 0}`, `못 맞춤 ${d.unmatched ?? 0}`);
   if (r.action === "event.create") {
     const a = d.after || {};
     return joinDot(`‘${d.title || a.title || ""}’`, `${a.opens_on || ""} ~ ${a.closes_on || ""}`,
