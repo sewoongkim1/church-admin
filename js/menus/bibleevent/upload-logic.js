@@ -31,7 +31,7 @@ export const sampleLine = (order) => orderOf(order).cols.map((k) => SAMPLE[k]).j
 const TITLE_RE = /^(성명|이름)$/;
 const bare = (s) => String(s || "").replace(/\s+/g, "");
 // CSV 칸의 겉 따옴표를 벗긴다(「"홍길동"」 → 홍길동 · 안의 「""」 → 「"」)
-const unquote = (c) => {
+export const unquote = (c) => {
   const t = String(c ?? "").trim();
   return /^"[\s\S]*"$/.test(t) ? t.slice(1, -1).replace(/""/g, '"').trim() : t;
 };
