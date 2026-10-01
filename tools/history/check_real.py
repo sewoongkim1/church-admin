@@ -62,12 +62,19 @@ def rows():
 def main():
     tmp = tempfile.mkdtemp(prefix="history-check-")       # 저장소 밖
     try:
-        json.dump(people(), open(os.path.join(tmp, "people.json"), "w", encoding="utf-8"), ensure_ascii=False)
-        json.dump(rows(), open(os.path.join(tmp, "rows.json"), "w", encoding="utf-8"), ensure_ascii=False)
+        for name, data in (("people.json", people()), ("rows.json", rows())):
+            with open(os.path.join(tmp, name), "w", encoding="utf-8") as f:   # 닫고 나서 node 가 읽는다(지울 때 잠김 없게)
+                json.dump(data, f, ensure_ascii=False)
         r = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", os.path.join(HERE, "check_real.mjs"), tmp])
         sys.exit(r.returncode)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        # ⚠️ 말없이 넘어가지 않는다 — 진짜 이름·교인ID·세대주 이름과 주소가 든 JSON 이 남는다(백신·색인기가 잠깐 잡고 있으면 못 지운다).
+        #    경로만 찍는다(내용은 찍지 않는다).
+        try:
+            shutil.rmtree(tmp)
+        except OSError:
+            print(f"임시 폴더를 못 지웠어요: {tmp} — 손으로 지워 주세요", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
