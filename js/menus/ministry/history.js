@@ -160,7 +160,9 @@ export async function render(el, { call }) {
     if (!p.rows.length) { await dialog({ title: "📂 넣을 줄이 없어요", text: name, cancel: null }); return; }
     let list = p.rows;
     if (p.needYear) {
-      const y = await pickOne({ anchor: el.querySelector('[data-act="pick"]'), title: `몇 년도 명단인가요? — ${name}`, options: yearOptions() });
+      // mode:"sheet" — anchor 로 자리 잡는 pop 은 화면을 스크롤한 채면(단추가 화면 밖) 음수 top 으로 화면 밖에 뜰 수 있다.
+      // 가운데 판(뒤 막 있음)은 스크롤 위치와 무관하게 늘 화면 안이다.
+      const y = await pickOne({ anchor: el.querySelector('[data-act="pick"]'), mode: "sheet", title: `몇 년도 명단인가요? — ${name}`, options: yearOptions() });
       if (!el.isConnected) return;
       if (!y) { toast("해를 고르지 않아 올리지 않았어요"); return; }
       list = list.map((r) => (r.year ? r : { ...r, year: Number(y) }));
@@ -180,21 +182,25 @@ export async function render(el, { call }) {
     for (const c of checks) {
       if (!c.d.counts.add) continue;
       const d = await busy(el, () => call("historyUploadSave", { rows: c.rows, file_name: name }));
-      if (!el.isConnected) return;
       if (!d.ok) {
-        await dialog({ title: "⚠️ 넣는 중에 멈췄어요", cancel: null,
-          text: `${c.year}년에서 멈췄어요 — ${errorText(d)}\n앞의 해는 들어갔을 수 있어요. 같은 파일을 다시 올리면 들어간 줄은 건너뛰어요.` });
+        // 메뉴를 떠났어도(el.isConnected===false) 남은 해는 계속 넣는다 — 이미 서버로 보낸 쓰기다, 화면이 없다고 멈추지 않는다.
+        // 화면에 보일 것(대화창)만 떠났으면 건너뛴다.
+        if (el.isConnected) {
+          await dialog({ title: "⚠️ 넣는 중에 멈췄어요", cancel: null,
+            text: `${c.year}년에서 멈췄어요 — ${errorText(d)}\n앞의 해는 들어갔을 수 있어요. 같은 파일을 다시 올리면 들어간 줄은 건너뛰어요.` });
+        }
         break;
       }
       saved += d.saved || 0; linked += d.linked || 0; unlinked += d.unlinked || 0; failed += d.failed || 0;
-      notRematched = d.rematched === false;   // 해마다 전체를 다시 맞춘다 — 마지막 답만 본다(앞서 실패해도 뒤에서 되면 그게 맞다)
+      if ("rematched" in d) notRematched = d.rematched === false;   // 필드가 없는 답으로 앞선 참값을 지우지 않는다
     }
-    if (!el.isConnected) return;
-    if (notRematched) {
-      await dialog({ title: "⚠️ 교적 맞추기가 끝나지 않았어요",
-        text: "명단은 들어갔어요. 「🔄 다시 맞추기」를 눌러 교적을 맞춰 주세요.", cancel: null });
-    } else {
-      toast(`${num(saved)}줄 넣었어요 · 교적 이어짐 ${num(linked)} · 못 맞춤 ${num(unlinked)}${failed ? ` · 실패 ${num(failed)}` : ""}`);
+    if (el.isConnected) {
+      if (notRematched) {
+        await dialog({ title: "⚠️ 교적 맞추기가 끝나지 않았어요",
+          text: "명단은 들어갔어요. 「🔄 다시 맞추기」를 눌러 교적을 맞춰 주세요.", cancel: null });
+      } else {
+        toast(`${num(saved)}줄 넣었어요 · 교적 이어짐 ${num(linked)} · 못 맞춤 ${num(unlinked)}${failed ? ` · 실패 ${num(failed)}` : ""}`);
+      }
     }
     f.page = 0;
     if (el.isConnected) await load();
@@ -230,7 +236,7 @@ export async function render(el, { call }) {
     const d = await busy(el, () => call("historyCandidates", { id: r.id }));
     if (!el.isConnected) return;
     if (!d.ok) { if (STALE[d.error]) { toast(STALE[d.error]); await load(); } else toast(errorText(d)); return; }
-    let choice = null, del = false, first = "", staleCode = "", notRematched = false, wrote = false;
+    let choice = null, del = false, first = "", staleCode = "", notRematched = false, wrote = false, withheld = false;
     const row = d.row;
     const out = await openForm({
       title: `${row.name} · ${row.year}년 ${row.team}`, okLabel: "저장",
@@ -265,9 +271,10 @@ export async function render(el, { call }) {
           return x.ok ? { ok: true, value: { deleted: true } } : x;
         }
         const patch = editPatch(row, readFields(root));
-        // 후보 차례(pick)는 historyCandidates 가 준 지문(fp)으로 서버가 지킨다 — 이름·해·직분·목장·팀을 같이 고치면
-        // 그 지문이 안 맞을 수 있으니, 같은 제출에 고치기와 잇기를 함께 보내지 않는다(아래에서 갈라 보낸다).
-        const sensitiveEdit = ["year", "name", "position", "mok", "team"].some((k) => k in patch);
+        // 후보 차례(pick)는 historyCandidates 가 준 지문(fp)으로 서버가 지킨다 — 이름·해·직분·목장·팀·신규/유지를 고치면
+        // 그 지문이 안 맞을 수 있다. 한 번이라도 그런 칸을 고쳤으면(withheld) 같은 창이 열려 있는 동안은 계속 pick 을
+        // 보내지 않는다 — 다음 제출의 patch 가 비어도(이미 저장됐으니) 옛 fp 로 조용히 넘어가지 않게.
+        if (["year", "name", "position", "mok", "team", "renewal"].some((k) => k in patch)) withheld = true;
         let cur = row;
         if (Object.keys(patch).length) {
           const x = await call("historyRowSave", { id: row.id, expect: row.updated_at, patch });
@@ -278,9 +285,9 @@ export async function render(el, { call }) {
           Object.assign(row, x.row);                      // 다음 제출이 새 updated_at 으로 가게(재시도 자기충돌 막기)
           first = JSON.stringify(readFields(root));        // 같은 칸을 다시 보내지 않게
           cur = row;
-          if (choice && choice.op === "pick" && sensitiveEdit) {
-            return { ok: false, message: "칸을 고쳐 후보가 바뀌었을 수 있어요 — 창을 닫고 다시 열어 고른 분을 확인해 주세요" };
-          }
+        }
+        if (choice && choice.op === "pick" && withheld) {
+          return { ok: false, message: "칸을 고쳐 후보가 바뀌었을 수 있어요 — 창을 닫고 다시 열어 고른 분을 확인해 주세요" };
         }
         if (choice) {
           const x = await call("historyLink", { id: row.id, op: choice.op, pick: choice.pick, fp: d.fp });
@@ -295,7 +302,11 @@ export async function render(el, { call }) {
         return { ok: true, value: cur };
       },
     });
-    if (!out) { if (staleCode || wrote) await load(); return; }
+    if (!out) {
+      if (notRematched) toast("교적은 아직 못 맞췄어요 — 「🔄 다시 맞추기」를 눌러 주세요");
+      if (staleCode || wrote) await load();
+      return;
+    }
     if (out === true) return;
     if (out.deleted) { toast("뺐어요"); await load(); return; }
     if (notRematched) toast("교적은 아직 못 맞췄어요 — 「🔄 다시 맞추기」를 눌러 주세요");
