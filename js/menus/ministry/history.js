@@ -13,9 +13,10 @@ import { parseHistorySheet, findHeader, textToAoa, sendParts, yearOptions, linkS
 
 const TITLE = `<h2 class="page-title">📜 사역 이력</h2>`;
 const mqWide = matchMedia("(min-width:1024px)");   // PC 는 표, 폰은 카드
-let unbindMq = null, unbindPaste = null;
+let unbindMq = null, unbindPaste = null, unbindDrag = null;
 const f = { years: [], only: "", q: "", page: 0 };  // 메뉴를 옮겨도 남는 거르기
 const FAMILY_NOTE = "가족은 교인명부 「🔎 교인 찾기」에서 볼 수 있어요";
+const UPLOADING_MSG = "올리는 중이에요 — 끝난 뒤에 다시 해 주세요";
 const num = (n) => Number(n || 0).toLocaleString("ko-KR");
 const STALE = { conflict: "다른 분이 먼저 바꿨어요 — 창을 닫고 다시 열어 주세요", "not-found": "이미 빠진 줄이에요 — 목록을 새로 불러올게요" };
 const FIELD = { year: "해", committee: "부서", team: "팀명", role_title: "직책", name: "이름", position: "직분", mok: "목장",
@@ -81,6 +82,8 @@ export async function render(el, { call }) {
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
   let last = null;          // 마지막 historyList 답
   let rows = [];
+  let loadSeq = 0;          // load() 가 겹쳐 불려도 늦게 돈 답을 버린다(out-of-order)
+  let uploading = false;    // 파일 하나(고르기·붙여넣기·끌어다 놓기)가 parse→pick→check→confirm→save 끝날 때까지
 
   const shell = () => {
     el.innerHTML = TITLE + `
@@ -134,9 +137,14 @@ export async function render(el, { call }) {
     } else pg.innerHTML = "";
   };
   const load = async () => {
+    const mySeq = ++loadSeq;
     const r = await busy(el, () => call("historyList", f));
-    if (!el.isConnected) return;
+    if (!el.isConnected || mySeq !== loadSeq) return;   // 떠났거나, 더 늦게 부른 load() 가 이미 있다(out-of-order)
     if (!r.ok) { el.querySelector(".mh-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`; return; }
+    if (r.total > 0 && f.page * r.pageSize >= r.total) {   // 지운 뒤 등 범위를 벗어난 쪽을 보던 중 — 마지막 쪽으로 한 번만 다시
+      f.page = Math.max(0, Math.ceil(r.total / r.pageSize) - 1);
+      return load();
+    }
     last = r; rows = r.rows || [];
     draw();
   };
@@ -152,8 +160,9 @@ export async function render(el, { call }) {
     if (!p.rows.length) { await dialog({ title: "📂 넣을 줄이 없어요", text: name, cancel: null }); return; }
     let list = p.rows;
     if (p.needYear) {
-      const y = await pickOne({ title: `몇 년도 명단인가요? — ${name}`, options: yearOptions() });
-      if (!y || !el.isConnected) return;
+      const y = await pickOne({ anchor: el.querySelector('[data-act="pick"]'), title: `몇 년도 명단인가요? — ${name}`, options: yearOptions() });
+      if (!el.isConnected) return;
+      if (!y) { toast("해를 고르지 않아 올리지 않았어요"); return; }
       list = list.map((r) => (r.year ? r : { ...r, year: Number(y) }));
     }
     const checks = [];
@@ -171,14 +180,16 @@ export async function render(el, { call }) {
     for (const c of checks) {
       if (!c.d.counts.add) continue;
       const d = await busy(el, () => call("historyUploadSave", { rows: c.rows, file_name: name }));
+      if (!el.isConnected) return;
       if (!d.ok) {
         await dialog({ title: "⚠️ 넣는 중에 멈췄어요", cancel: null,
           text: `${c.year}년에서 멈췄어요 — ${errorText(d)}\n앞의 해는 들어갔을 수 있어요. 같은 파일을 다시 올리면 들어간 줄은 건너뛰어요.` });
         break;
       }
       saved += d.saved || 0; linked += d.linked || 0; unlinked += d.unlinked || 0; failed += d.failed || 0;
-      if (d.rematched === false) notRematched = true;
+      notRematched = d.rematched === false;   // 해마다 전체를 다시 맞춘다 — 마지막 답만 본다(앞서 실패해도 뒤에서 되면 그게 맞다)
     }
+    if (!el.isConnected) return;
     if (notRematched) {
       await dialog({ title: "⚠️ 교적 맞추기가 끝나지 않았어요",
         text: "명단은 들어갔어요. 「🔄 다시 맞추기」를 눌러 교적을 맞춰 주세요.", cancel: null });
@@ -202,17 +213,24 @@ export async function render(el, { call }) {
       if (!aoa) throw new Error("empty");
       await uploadAoa(aoa, file.name);
     } catch (e) {
-      await dialog({ title: "📂 파일을 읽지 못했어요", text: `${file.name}\n${fileErrorText(e && e.message)}`, cancel: null, danger: true });
+      // 이 메뉴는 엑셀만 읽는다 — fileErrorText 의 "kind" 글은 CSV·TXT 도 된다고 해 다른 화면과 어긋난다
+      const msg = e && e.message === "kind" ? "엑셀 파일(.xlsx·.xls)만 올릴 수 있어요" : fileErrorText(e && e.message);
+      await dialog({ title: "📂 파일을 읽지 못했어요", text: `${file.name}\n${msg}`, cancel: null, danger: true });
     }
   }
-  async function readFiles(files) { for (const file of files) { if (!el.isConnected) return; await readFile(file); } }
+  async function readFiles(files) {
+    if (uploading) { toast(UPLOADING_MSG); return; }
+    uploading = true;
+    try { for (const file of files) { if (!el.isConnected) return; await readFile(file); } }
+    finally { uploading = false; }
+  }
 
   // ── 줄 창 ──────────────────────────────────────────────────────────
   async function openRow(r) {
     const d = await busy(el, () => call("historyCandidates", { id: r.id }));
     if (!el.isConnected) return;
     if (!d.ok) { if (STALE[d.error]) { toast(STALE[d.error]); await load(); } else toast(errorText(d)); return; }
-    let choice = null, del = false, first = "", staleCode = "", notRematched = false;
+    let choice = null, del = false, first = "", staleCode = "", notRematched = false, wrote = false;
     const row = d.row;
     const out = await openForm({
       title: `${row.name} · ${row.year}년 ${row.team}`, okLabel: "저장",
@@ -246,25 +264,38 @@ export async function render(el, { call }) {
           if (!x.ok && STALE[x.error]) { staleCode = x.error; return { ok: false, message: STALE[x.error] }; }
           return x.ok ? { ok: true, value: { deleted: true } } : x;
         }
-        let cur = row;
         const patch = editPatch(row, readFields(root));
+        // 후보 차례(pick)는 historyCandidates 가 준 지문(fp)으로 서버가 지킨다 — 이름·해·직분·목장·팀을 같이 고치면
+        // 그 지문이 안 맞을 수 있으니, 같은 제출에 고치기와 잇기를 함께 보내지 않는다(아래에서 갈라 보낸다).
+        const sensitiveEdit = ["year", "name", "position", "mok", "team"].some((k) => k in patch);
+        let cur = row;
         if (Object.keys(patch).length) {
           const x = await call("historyRowSave", { id: row.id, expect: row.updated_at, patch });
           if (!x.ok && STALE[x.error]) { staleCode = x.error; return { ok: false, message: STALE[x.error] }; }
           if (!x.ok) return x;
           if (x.rematched === false) notRematched = true;
-          cur = x.row || cur;
+          wrote = true;
+          Object.assign(row, x.row);                      // 다음 제출이 새 updated_at 으로 가게(재시도 자기충돌 막기)
+          first = JSON.stringify(readFields(root));        // 같은 칸을 다시 보내지 않게
+          cur = row;
+          if (choice && choice.op === "pick" && sensitiveEdit) {
+            return { ok: false, message: "칸을 고쳐 후보가 바뀌었을 수 있어요 — 창을 닫고 다시 열어 고른 분을 확인해 주세요" };
+          }
         }
         if (choice) {
           const x = await call("historyLink", { id: row.id, op: choice.op, pick: choice.pick, fp: d.fp });
-          if (!x.ok) return x;
+          if (!x.ok) {
+            if (STALE[x.error]) { staleCode = x.error; return { ok: false, message: STALE[x.error] }; }
+            return x;
+          }
           if (x.rematched === false) notRematched = true;
+          wrote = true;
           cur = x.row || cur;
         }
         return { ok: true, value: cur };
       },
     });
-    if (!out) { if (staleCode) await load(); return; }
+    if (!out) { if (staleCode || wrote) await load(); return; }
     if (out === true) return;
     if (out.deleted) { toast("뺐어요"); await load(); return; }
     if (notRematched) toast("교적은 아직 못 맞췄어요 — 「🔄 다시 맞추기」를 눌러 주세요");
@@ -327,7 +358,7 @@ export async function render(el, { call }) {
   let qTimer = 0;
   el.querySelector(".search").addEventListener("input", (e) => {
     clearTimeout(qTimer);
-    qTimer = setTimeout(() => { f.q = e.target.value.trim(); f.page = 0; load(); }, 300);
+    qTimer = setTimeout(() => { if (!el.isConnected) return; f.q = e.target.value.trim(); f.page = 0; load(); }, 300);
   });
 
   el.addEventListener("click", async (e) => {
@@ -342,7 +373,7 @@ export async function render(el, { call }) {
     const b = e.target.closest("button[data-act]");
     if (!b) return;
     const act = b.dataset.act;
-    if (act === "pick") fileInput.click();
+    if (act === "pick") { if (uploading) { toast(UPLOADING_MSG); return; } fileInput.click(); }
     else if (act === "add") await openAdd();
     else if (act === "rematch") await rematch();
     else if (act === "export") await exportXlsx();
@@ -350,31 +381,51 @@ export async function render(el, { call }) {
     else if (act === "row") { const r = rows.find((x) => x.id === Number(b.dataset.id)); if (r) await openRow(r); }
   });
 
-  // 끌어다 놓기
+  // 끌어다 놓기 — section 안에서만 받는다. 밖에 떨어뜨려도 브라우저가 그 파일을 열어 화면을 떠나지 않게
+  // window 단계에서도 막는다(bibleevent/upload.js 와 같은 자리 · 이 화면이 떠 있는 동안만 — FE-3).
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
   el.addEventListener("dragover", (e) => { if (hasFiles(e)) { e.preventDefault(); el.classList.add("mh-drop"); } });
-  el.addEventListener("dragleave", () => el.classList.remove("mh-drop"));
+  el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget)) el.classList.remove("mh-drop"); });
   el.addEventListener("drop", async (e) => {
     if (!hasFiles(e)) return;
     e.preventDefault(); el.classList.remove("mh-drop");
+    if (uploading) { toast(UPLOADING_MSG); return; }
     await readFiles([...e.dataTransfer.files]);
   });
+  const detachDrag = () => {
+    window.removeEventListener("dragover", onWinDrag);
+    window.removeEventListener("drop", onWinDrag);
+    if (unbindDrag === detachDrag) unbindDrag = null;
+  };
+  const onWinDrag = (e) => {
+    if (!el.isConnected) return detachDrag();
+    if (!hasFiles(e) || el.contains(e.target)) return;
+    e.preventDefault();
+    if (e.type === "dragover") e.dataTransfer.dropEffect = "none";
+  };
+  unbindDrag?.();
+  unbindDrag = detachDrag;
+  window.addEventListener("dragover", onWinDrag);
+  window.addEventListener("drop", onWinDrag);
 
-  // 붙여넣기 — 입력 칸·창 안이 아닐 때만(엑셀에서 복사한 표 · 탭으로 갈린 글)
+  // 붙여넣기 — 입력 칸·창·고르개 안이 아닐 때만(엑셀에서 복사한 표 · 탭으로 갈린 글)
   const onPaste = async (e) => {
     if (!el.isConnected) { unbindPaste?.(); return; }
+    if (document.querySelector(".pk-dim")) return;   // 고르개(해 고르기 등)가 떠 있으면 받지 않는다
     if (e.target.closest && e.target.closest("input,textarea,.be-modal,.dlg-dim")) return;
     const text = e.clipboardData?.getData("text") || "";
     const aoa = textToAoa(text);
     if (!findHeader(aoa)) return;
     e.preventDefault();
-    await uploadAoa(aoa, "(붙여넣기)");
+    if (uploading) { toast(UPLOADING_MSG); return; }
+    uploading = true;
+    try { await uploadAoa(aoa, "(붙여넣기)"); } finally { uploading = false; }
   };
   unbindPaste?.();
   unbindPaste = () => { document.removeEventListener("paste", onPaste); unbindPaste = null; };
   document.addEventListener("paste", onPaste);
 
-  const unbind = () => { mqWide.removeEventListener("change", onMq); if (unbindMq === unbind) unbindMq = null; };
+  const unbind = () => { mqWide.removeEventListener("change", onMq); clearTimeout(qTimer); if (unbindMq === unbind) unbindMq = null; };
   const onMq = () => { if (!el.isConnected) { unbind(); return; } draw(); };
   unbindMq?.(); unbindMq = unbind; mqWide.addEventListener("change", onMq);
 }

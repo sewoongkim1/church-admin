@@ -124,4 +124,7 @@ test("errorText — 사역 이력 오류 코드 일곱 가지가 각자 문구�
   for (const c of ["history-too-many", "history-too-long", "history-exists", "history-deleted", "bad-year", "candidates-changed", "no-directory"]) {
     assert.notEqual(errorText({ error: c }), "처리하지 못했어요", c);
   }
+  // 화면(history.js)이 이 글로 STALE 안내·고치기-잇기 가르기를 하므로, 적어도 이 둘은 글자 그대로 못 박는다
+  assert.equal(errorText({ error: "history-deleted" }), "같은 줄을 전에 뺐어요 — 빼 둔 줄은 되살리지 않아요(이름·목장 등을 달리 적어 주세요)");
+  assert.equal(errorText({ error: "candidates-changed" }), "그사이 교인명부가 바뀌었어요 — 창을 닫고 다시 열어 주세요");
 });

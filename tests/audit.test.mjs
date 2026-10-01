@@ -166,14 +166,20 @@ test("사역 이력 기록 일곱 가지 — 한국말 이름 · detail 줄(이�
     "2022·2023년 · 올린 줄 1269 · 넣음 1269 · 이미 있음 0 · 교적 이어짐 1240 · 못 맞춤 29");
   assert.equal(detailText(R("history.edit", { year: 2024, fields: ["name", "mok"] })), "2024년 · 이름·목장");
   assert.equal(detailText(R("history.link", { op: "none", year: 2024, by: "directory" })), "2024년 · 이분 아님 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { op: "pick", year: 2024, by: "directory" })), "2024년 · 이분으로 이음 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { op: "auto", year: 2024 })), "2024년 · 자동으로 되돌림");
+  assert.equal(detailText(R("history.add", { year: 2024 })), "2024년");
+  assert.equal(detailText(R("history.delete", { year: 2024 })), "2024년");
   assert.equal(detailText(R("history.rematch", { changed: 3, linked: 4042, total: 4093 })), "바뀐 줄 3 · 교적 이어짐 4042/4093");
   assert.equal(detailText(R("history.export", { count: 10, years: [] })), "10줄 · 모든 해");
+  assert.equal(detailText(R("history.export", { count: 5, years: [2023, 2024] })), "5줄 · 2023·2024년");
   assert.equal(labelOf(R("people.lookup", { q: "가", count: 2, from: "history" })), LOOKUP_HISTORY);
 });
 
-// ⚠️ 2026-10-01 검토 반영(task-5-brief 가 아닌 contract-notes) — 서버가 linked·unlinked 를 안 보내도(rematched:false)
-// 「교적 이어짐·못 맞춤」을 억지로 0 으로 찍지 않는다 · 다시 맞추기가 실패하면(failed:true) 그 사실만
-test("history.upload — linked·unlinked 가 없는 기록(옛 기록 아닌 rematched:false)은 교적 이어짐·못 맞춤을 안 보인다", () => {
+// ⚠️ 2026-10-01 검토 반영(task-5-brief 가 아닌 contract-notes) — 서버는 보통 history.upload 에 linked·unlinked 를 안 싣는다
+// (이게 지금 모양이다 — 위 「기록 일곱 가지」 시험의 linked·unlinked 있는 샘플은 옛 기록 모양). 없으면 「교적 이어짐·못 맞춤」을
+// 억지로 0 으로 찍지 않는다 · 다시 맞추기가 실패하면(failed:true) 그 사실만
+test("history.upload — 지금 모양(linked·unlinked 없음)은 교적 이어짐·못 맞춤을 안 보인다(있으면 옛 기록 모양으로 보인다)", () => {
   assert.equal(detailText(R("history.upload", { years: [2024], rows: 3, saved: 3, same: 0 })),
     "2024년 · 올린 줄 3 · 넣음 3 · 이미 있음 0");
 });
