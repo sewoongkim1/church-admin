@@ -5,6 +5,8 @@
 // 적힌 것이 적으면(.pd-empty·.pd-few) 창 자체를 좁혀 한 단으로 — 폭 판단이 @container 라 창 폭만 바꾸면 된다.
 import { esc } from "../../core/ui.js";
 import { affText, initialOf, detailSections } from "./people-logic.js";
+// 사역·성경필사 탭(2026-10-01) — 서버가 history 를 줄 때만(옛 서버면 예전 창 그대로)
+import { tabsHtml, histPanelHtml, histTotal, tabOf } from "./person-history.js";
 
 const has = (v) => v !== undefined && v !== null && String(v).trim() !== "";
 const t = (v) => esc(String(v ?? "").replace(/[\r\n]+/g, " ").trim());
@@ -33,6 +35,17 @@ const fieldHtml = (x) => `<div class="pd-f${x.wide ? " w" : ""}"><dt>${t(x.label
 // 칸이 이만큼 이하이고 가족 단추도 없으면 창을 좁혀 한 단(사진 옆에 이름)으로 — 넓은 창에 오른쪽이 텅 비지 않게
 export const FEW_FIELDS = 4;
 
+// 오른쪽 칸 — history 가 없으면 예전 그대로(교적 묶음), 있으면 탭 + 칸 셋(교적 · 사역 · 성경필사). 꺼진 칸은 data-off
+// (CSS 가 숨긴다 — PC 의 교적 칸은 자리를 지켜 탭을 바꿔도 창 높이가 그대로다 · css/admin.css 「자세히」 창의 탭).
+function mainHtml(secHtml, hist, on) {
+  const church = secHtml || `<p class="pd-none">더 적힌 내용이 없어요</p>`;
+  if (!hist) return church;
+  const panel = (k, inner) => `<div class="pd-panel" role="tabpanel" id="pd-panel-${k}" aria-labelledby="pd-tab-${k}" ` +
+    `data-pd-panel="${k}" tabindex="0"${k === on ? "" : " data-off"}>${inner}</div>`;
+  return tabsHtml(hist, on) + `<div class="pd-panels">${panel("church", church)}` +
+    `${panel("ministry", histPanelHtml("ministry", hist, null))}${panel("bible", histPanelHtml("bible", hist, null))}</div>`;
+}
+
 function familyHtml(p, family) {
   if (!has(p.household_id) || !family.length) return "";
   const chips = family.map((f) => {
@@ -44,7 +57,7 @@ function familyHtml(p, family) {
     `<span aria-hidden="true">👪</span> 가족 모두 목록으로</button></div>`;
 }
 
-export function personDetailHtml(p, family = []) {
+export function personDetailHtml(p, family = [], history = null, tab = "church") {
   p = p || {};
   family = Array.isArray(family) ? family : [];
   const name = has(p.name) ? String(p.name).trim() : "";
@@ -68,18 +81,20 @@ export function personDetailHtml(p, family = []) {
     }
   }
   const nFields = secs.reduce((n, s) => n + s.fields.length, 0);
-  const shape = !secs.length ? " pd-empty" : !famBody && nFields <= FEW_FIELDS ? " pd-few" : "";
+  const hist = history && typeof history === "object" ? history : null;
+  // 이력이 있으면 좁히지 않는다(좁은 한 단 창에 이력이 길게 늘어지지 않게 · 설계 §4 ⚠️) — 이력 0 이면 예전 규칙 그대로
+  const shape = hist && histTotal(hist) > 0 ? "" : !secs.length ? " pd-empty" : !famBody && nFields <= FEW_FIELDS ? " pd-few" : "";
   const secHtml = secs.map((s) => {
     const count = s.key === "family" && famBody ? `<span class="pd-cnt">${family.length + 1}명</span>` : "";
     const grid = s.fields.length ? `<dl class="pd-grid">${s.fields.map(fieldHtml).join("")}</dl>` : "";
     return `<section class="pd-sec"><h4 class="pd-st">${t(s.title)}${count}</h4>${grid}${s.key === "family" ? famBody : ""}</section>`;
   }).join("");
 
-  return `<div class="pd-wrap${shape}"><div class="pd-side">${photo}<div class="pd-id">` +
+  return `<div class="pd-wrap${shape}${hist ? " pd-tabbed" : ""}"><div class="pd-side">${photo}<div class="pd-id">` +
     `<h3 class="pd-name">${t(name || "이름 없음")}</h3>` +
     (pos ? `<span class="pd-pos">${t(pos)}</span>` : "") +
     (aff ? `<p class="pd-aff">${t(aff)}</p>` : "") +
     (age ? `<p class="pd-age">${t(age)}</p>` : "") +
     `</div><div class="pd-tels">${tels || `<p class="pd-none">연락처 없음</p>`}</div></div>` +
-    `<div class="pd-main">${secHtml || `<p class="pd-none">더 적힌 내용이 없어요</p>`}</div></div>`;
+    `<div class="pd-main">${mainHtml(secHtml, hist, tabOf(tab))}</div></div>`;
 }

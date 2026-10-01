@@ -51,6 +51,18 @@ import { fillRecord } from "./events-upload.ts";
 //   ⚠️ 그래서 위 「성경필사(암송)(Task 5)」 줄의 applicantFromSignup 은 이제 이 파일에서 부르지 않는다 — 기존 import 줄이라 고치지 않고 두었다.
 //      명단 줄의 교적 표시를 applicantFromSignup + churchFor 로 되돌려 짜면 옮겨 적은 줄·아이 빼기가 빠진다 — churchForSignup 을 쓴다.
 import { churchForSignup } from "./events-person.ts";
+// 사역신청 번호 보관(2026-10-01) — 결정 상태 목록(번호 지우기 단추가 같은 목록을 센다)
+import { DECIDED } from "./ministry.ts";
+// 교인명부 — 기록과 교인 잇기(2026-10-01 · people_links) — 이 묶음의 이름은 people-links.ts 에서만 가져온다
+import { orderAutoRecs, signupAutoRecs, syncCounts, toLinkCand, linkRowOf, type AutoRec, type LinkKind, type LinkLook, type LinkRow } from "./people-links.ts";
+// 교인명부 「자세히」 창 사역·성경필사 탭(2026-10-01 · Task 5) — 이 묶음의 이름은 people-links.ts 에서만 가져온다
+import { historyTabs, unlinkedRows, movedOrderIds, parseLink, linkPatch, unlinkRec, missingTable } from "./people-links.ts";
+// b6 「사역 이력」 표 잇기(2026-10-01 · b6 설계 §7 약속) — 잇는 모양·다시 맞추기는 b6 모듈 그대로
+import { historyLinkPatch, historyUnlinkPatch } from "./history-match.ts";
+import { linkNameOk, historyNameMatches } from "./people-links.ts";
+// 탭 자료 읽기가 실패해도 「자세히」 창·잇기 쓰기는 그대로(2026-10-02 가지 마지막 검토)
+import { historyOrNull, withHistory } from "./people-links.ts";
+import { rematchHistoryRows } from "./history-db.ts";
 // 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
 import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, readLoginWho, REQ_OPEN, requestBlock, requestInsert, requestOut, REQUEST_SELECT, sortHistory } from "./history-check.ts";
@@ -413,7 +425,13 @@ async function ministryList() {
     for (const s of (subs ?? []) as any[]) hasPush.add(s.user_id);
   }
   // 교적 표시(교인명부 · 2026-09-29) — { state, reason } 만. 교적 값은 싣지 않는다.
-  const churchIdx = await churchLookup(rows.map((r) => r.name || umap.get(r.user_id)?.name || ""));
+  //   같은 물음에 교인ID 를 함께 읽어 그때그때 잇기에도 쓴다(2026-10-01 · 묻기가 늘지 않는다 · 실패해도 목록은 그대로)
+  const look = await churchLookupLinked(rows.map((r) => r.name || umap.get(r.user_id)?.name || ""));
+  const churchIdx = look ? look.idx : null;
+  await linkOrders(rows.map((r) => {
+    const u = umap.get(r.user_id);
+    return { id: r.id, name: r.name || u?.name || "", who: r.who || (u ? appUserWho(u) : ""), phone: r.phone ?? "" };
+  }), look);
   // 🧪 시험 참여자(app_config.ministryTesters)의 신청인가(2026-10-01) — 신청 기간 전 시험 신청을 진짜와 가른다. 사람으로 맞댄다.
   const testerIds = new Set((await keysToUserIds(await testerKeys())).values());
   return {
@@ -514,6 +532,28 @@ async function ministryDelete(ctx: Ctx, b: any) {
     team: row.team ?? "", status: row.status };
   await audit(ctx, "ministry.delete", String(id), deleted);
   return { ok: true, deleted };
+}
+
+// 결정된 신청 번호 지우기(2026-10-01 · 교인명부 세션 설계 §6) — 그 해(app_config) 결정(임명확정·미채택·취소)이고 번호가 남은 줄만.
+//   count = 화면이 단추에 보인 수. 지금 수와 다르면(그사이 누가 임명·지우기를 했다) 쓰지 않고 conflict + 지금 수 —
+//   담당자가 본 것보다 많이 지우지 않게(시험 PROBE 도 이 길로 아무것도 안 바꾼다).
+//   지운 뒤 교적 표시는 화면이 목록을 다시 불러와(ministryList) 번호 없이 다시 센다. 번호로 이어 둔 교인 잇기(people_links)는 남는다
+//   (지우는 것은 ministry_orders 의 번호뿐 · 그 뒤의 다시 맞추기는 people-links.ts phoneLinkKept 가 번호 줄을 건너뛴다).
+async function ministryPhoneClear(ctx: Ctx, b: any) {
+  const year = await ministryYear();
+  const { count, error } = await db.from("ministry_orders").select("id", { count: "exact", head: true })
+    .eq("year", year).in("status", DECIDED).not("phone", "is", null).neq("phone", "");
+  if (error) throw error;
+  const now = count ?? 0;
+  const want = Number(b.count);
+  if (!Number.isSafeInteger(want) || want !== now) return { ok: false, error: "conflict", count: now };
+  if (!now) return { ok: true, year, count: 0 };
+  const { data, error: e2 } = await db.from("ministry_orders").update({ phone: null, updated_at: new Date().toISOString() })
+    .eq("year", year).in("status", DECIDED).not("phone", "is", null).neq("phone", "").select("id");
+  if (e2) throw e2;
+  const n = (data ?? []).length;
+  await audit(ctx, "ministry.phoneclear", String(year), { count: n });
+  return { ok: true, year, count: n };
 }
 
 // ---------- 사역신청 — 시험 참여자(2026-09-30) ----------
@@ -815,11 +855,12 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
 
   // 올해 신청 전부 — 3개 상한·같은 사역 중복·같은 이름/번호 확인에 쓴다
   const orders = await allRows(() => db.from("ministry_orders")
-    .select("id,user_id,name,phone,team_id,status").eq("year", year));
+    .select("id,user_id,name,who,phone,team_id,status").eq("year", year));
 
   const rows = raws.map((r: any, i: number) => ministryPaperOne(r, i));
   // 교적 표시(교인명부 · 2026-09-29) — 오류 줄에도 붙인다(이름·소속을 고칠 때 도움이 된다). 교적 값은 싣지 않는다.
-  const churchIdx = await churchLookup(rows.map((r: any) => r.name));
+  const look = await churchLookupLinked(rows.map((r: any) => r.name));   // 넣은 뒤 그때그때 잇기에도 쓴다(2026-10-01)
+  const churchIdx = look ? look.idx : null;
   for (const r of rows) r.church = churchFor(churchIdx, applicantFromPaper(r));
 
   // 줄마다 계정 찾기 — 있으면 잇고, 없으면 save 때 만든다
@@ -909,9 +950,10 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
 
   // ── 넣기 ──────────────────────────────────────────────────────
   // ⚠️ 한 줄이 실패해도 나머지는 들어간다 — 담당자가 고친 줄만 다시 올리면 된다.
-  // ⚠️ 결정이 난 상태(임명확정·취소)면 한 건씩 바꿀 때와 같이 휴대폰 번호를 지우고 decided_at 을 찍는다.
+  // ⚠️ 결정이 난 상태(임명확정·취소)면 decided_at 을 찍는다. 번호는 지우지 않는다(2026-10-01 친구 결정 — 「결정된 신청 번호 지우기」 단추·결정 뒤 180일 자동).
   const now = new Date().toISOString();
   let added = 0;
+  const newIds = new Map<number, number>();   // 새로 넣은 신청 id — 그때그때 잇기용(응답엔 싣지 않는다)
   for (const r of good) {
     try {
       const st = r.status || status;
@@ -921,7 +963,7 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
       if (r.dupId) {                                      // 앱 신청이 있다 — 상태만 바꾼다
         // ⚠️ 신청일은 앱에 남은 그대로 둔다 — 성도님이 실제로 낸 날이다. 임명일만 종이 것으로.
         const patch: Record<string, unknown> = { status: st, updated_at: now };
-        if (decided) { patch.decided_at = r.decidedAt || now; patch.phone = null; }
+        if (decided) patch.decided_at = r.decidedAt || now;
         if (why) patch.note = why;
         const { error: e5 } = await db.from("ministry_orders").update(patch).eq("id", r.dupId);
         if (e5) throw e5;
@@ -941,14 +983,15 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
       const insert: Record<string, unknown> = {
         year, user_id: uid, name: r.name,
         who: r.gu + " " + r.mok.replace(/목장$/, "") + "목장",
-        position: r.position, phone: decided ? null : r.phone,
+        position: r.position, phone: r.phone,
         team_id: r.team_id, committee: r.committee, team: r.team, option: r.option || "",
         status: st, source: "paper", note: why || null,
         decided_at: decided ? (r.decidedAt || now) : null, updated_at: now,
       };
       if (r.appliedAt) insert.created_at = r.appliedAt;
-      const { error: e4 } = await db.from("ministry_orders").insert(insert);
+      const { data: ins, error: e4 } = await db.from("ministry_orders").insert(insert).select("id").single();
       if (e4) throw e4;
+      newIds.set(r.i, Number(ins.id));
       r.saved = true; added++;
     } catch (ex) {
       r.ok = false; r.saved = false;
@@ -965,6 +1008,16 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
     errors: rows.filter((r: any) => !r.saved).length,
     byStatus,
   });
+  // 그때그때 잇기(2026-10-01) — 넣거나 바꾼 신청을 교인과 잇는다(읽어 둔 look · 실패해도 넣기 결과는 그대로).
+  //   앱 신청과 겹친 줄(dupId — 바꿨거나 그대로)은 그 신청에 남은 이름·소속·번호로(신청 현황의 교적 표시와 같은 줄).
+  const byId = new Map(orders.map((o: any) => [Number(o.id), o]));
+  await linkOrders(good.filter((r: any) => r.saved).map((r: any) => {
+    if (r.dupId) {
+      const o = byId.get(Number(r.dupId));
+      return { id: Number(r.dupId), name: o?.name ?? "", who: o?.who ?? "", phone: o?.phone ?? "" };
+    }
+    return { id: newIds.get(r.i) ?? 0, name: r.name, who: r.gu + " " + r.mok.replace(/목장$/, "") + "목장", phone: r.phone };
+  }).filter((x: any) => x.id > 0), look);
   return { ok: true, year, rows: paperPublicRows(rows), added,
            changed: good.filter((r: any) => r.changed).length,
            same: good.filter((r: any) => r.same).length,
@@ -985,32 +1038,44 @@ const PEOPLE_ALL_COLS = "person_id,name,position,position_detail,gender,birth,lu
 // 가족(같은 신앙세대주) — 자세히 보기 아래에 이름·관계만. 연락처는 그분을 눌러 열어야 보인다(열람 기록이 남게).
 const FAMILY_COLS = "person_id,name,household_rel,gender,age,position";
 
-// 명부 기준일 — 마지막으로 올린 기록. 한 번도 안 올렸으면 null(화면은 「아직 명부가 없어요」)
-async function peopleSource(): Promise<{ source_date: string; total: number } | null> {
-  const { data, error } = await db.from("church_people_imports").select("source_date,total")
+// 명부 기준 — 마지막으로 올린 기록. 한 번도 안 올렸으면 null(화면은 「아직 명부가 없어요」)
+// id 는 잇기(people_links.import_id — 「어느 명부로 맞췄나」)에만 쓴다 — 응답에는 peopleSource(기준일·인원)만 나간다.
+async function peopleImport(): Promise<{ id: number; source_date: string; total: number } | null> {
+  const { data, error } = await db.from("church_people_imports").select("id,source_date,total")
     .order("id", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
-  return data ? { source_date: data.source_date, total: data.total } : null;
+  return data ? { id: Number(data.id), source_date: data.source_date, total: data.total } : null;
+}
+async function peopleSource(): Promise<{ source_date: string; total: number } | null> {
+  const s = await peopleImport();
+  return s ? { source_date: s.source_date, total: s.total } : null;
 }
 
 // 사역신청 줄을 교적과 맞댄다 — 명부가 한 번도 안 올라왔으면 null(화면이 표시를 아예 그리지 않는다).
 // 신청자 이름으로만 묻는다(200개씩) — 8,672명 전체를 읽지 않게.
 // kind2 — 판정에만 쓴다: 명부의 아이 가리기(people-match.ts candKid — 「남성」 갈래는 사역 줄도) · 성경필사 줄의 「옮겨 적은 줄」(churchForSignup).
 //   ⚠️ 이 칸을 select 에서 빼면 아이를 못 가려 조용히 틀린다(오류가 아니다). 응답엔 { state, reason } 두 칸만 간다.
-async function churchLookup(names: unknown[]): Promise<Map<string, Cand[]> | null> {
-  if (!(await peopleSource())) return null;
+// 같은 물음에 교인ID 한 칸만 더 읽어 그때그때 잇기에도 쓴다(2026-10-01 · 묻기가 늘지 않는다 · person_id 는 잇기에만 — 응답에 싣지 않는다).
+//   asked = 물어본 이름 키(명부에 없는 이름도) — 잇기는 물어본 이름의 줄만 맞춘다(안 물어본 이름을 「못 맞춤」으로 적지 않게).
+async function churchLookupLinked(names: unknown[]): Promise<LinkLook | null> {
+  const imp = await peopleImport();
+  if (!imp) return null;
   const keys = lookupKeys(names);
-  const out = new Map<string, Cand[]>();
+  const idx = new Map<string, ReturnType<typeof toLinkCand>[]>();
   for (let i = 0; i < keys.length; i += 200) {
-    const { data, error } = await db.from("church_people").select("name_key,mok1,mok3,school_dept,phone_digits,kind2")
+    const { data, error } = await db.from("church_people").select("person_id,name_key,mok1,mok3,school_dept,phone_digits,kind2")
       .in("name_key", keys.slice(i, i + 200));
     if (error) throw error;
     for (const r of (data ?? []) as any[]) {
-      if (!out.has(r.name_key)) out.set(r.name_key, []);
-      out.get(r.name_key)!.push(toCand(r));
+      if (!idx.has(r.name_key)) idx.set(r.name_key, []);
+      idx.get(r.name_key)!.push(toLinkCand(r));
     }
   }
-  return out;
+  return { idx, asked: new Set(keys), importId: imp.id };
+}
+async function churchLookup(names: unknown[]): Promise<Map<string, Cand[]> | null> {
+  const look = await churchLookupLinked(names);
+  return look ? look.idx : null;
 }
 
 function peopleFilter(q: any, s: Search) {
@@ -1080,8 +1145,11 @@ async function peoplePerson(ctx: Ctx, b: any) {
     if (e2) throw e2;
     family = fam ?? [];
   }
+  // 사역·성경필사 탭(2026-10-01) — 칸 지도로만(people-links.ts historyTabs) · 기록은 people.view 한 줄 그대로
+  // ⚠️ 탭은 덧붙는 기능 — 읽기가 실패하면 history 를 빼고 예전 창(탭 없이)으로 연다(창 전체를 500 으로 만들지 않는다 · personHistorySafe)
+  const history = await personHistorySafe(id);
   await audit(ctx, "people.view", String(id), { name: data.name });
-  return { ok: true, person: { ...data, photo: urls.get(id) ?? "" }, family };
+  return withHistory({ ok: true, person: { ...data, photo: urls.get(id) ?? "" }, family }, history);
 }
 
 async function peopleStats() {
@@ -1102,6 +1170,285 @@ async function peopleExport(ctx: Ctx, b: any) {
   const rows = await allRows(() => peopleOrder(peopleFilter(db.from("church_people").select(PEOPLE_ALL_COLS), p.s), p.s));
   await audit(ctx, "people.export", "", { q: norm(b.q).slice(0, 40), filters: searchDetail(p.s), count: rows.length });
   return { ok: true, source, rows };
+}
+
+// ---------- 교인명부 — 기록과 교인 잇기(people_links · 2026-10-01) ----------
+// 설계: v2 docs/superpowers/specs/2026-10-01-person-history-tabs-design.md §3 · 규칙은 people-links.ts(순수).
+// ⚠️ 자동 쓰기는 people_links_auto()(SQL 006) 하나로만 — 그 안의 where 가 manual·none 을 덮지 않게 막는다.
+// ⚠️ 그때그때 잇기는 덧붙는 일이다 — 실패해도 던지지 않는다(명단·넣기 결과는 그대로 · 서버 로그로만).
+const LINK_COLS = "kind,row_id,person_id,link_how,match_basis,import_id";
+
+async function linksOf(kind: LinkKind, ids: number[]): Promise<Map<number, LinkRow>> {
+  const out = new Map<number, LinkRow>();
+  const uniq = [...new Set(ids.filter((x) => Number.isSafeInteger(x) && x > 0))];
+  for (let i = 0; i < uniq.length; i += 300) {
+    const { data, error } = await db.from("people_links").select(LINK_COLS).eq("kind", kind).in("row_id", uniq.slice(i, i + 300));
+    if (error) throw error;
+    for (const r of (data ?? []) as any[]) out.set(Number(r.row_id), linkRowOf(r));
+  }
+  return out;
+}
+async function writeAutoLinks(recs: AutoRec[]): Promise<number> {
+  let n = 0;
+  for (let i = 0; i < recs.length; i += 500) {
+    const { data, error } = await db.rpc("people_links_auto", { p_rows: recs.slice(i, i + 500) });
+    if (error) throw error;
+    n += Number(data) || 0;
+  }
+  return n;
+}
+// 이름·소속이 빈 옛 신청 줄은 앱 계정(users)에서 채운다 — ministryList 와 같은 규칙(appUserWho). user_id 는 메모리에만.
+async function fillOrderNames(rows: any[]): Promise<any[]> {
+  const need = [...new Set(rows.filter((r) => !r.name || !r.who).map((r) => r.user_id).filter(Boolean))];
+  const umap = new Map<string, any>();
+  for (let i = 0; i < need.length; i += 200) {
+    const { data, error } = await db.from("users").select("id,type,gu,mok,bu,grade,name").in("id", need.slice(i, i + 200));
+    if (error) throw error;
+    for (const u of (data ?? []) as any[]) umap.set(u.id, u);
+  }
+  return rows.map((r) => {
+    const u = umap.get(r.user_id);
+    return { ...r, name: r.name || u?.name || "", who: r.who || (u ? appUserWho(u) : "") };
+  });
+}
+async function linkOrders(rows: { id: number; name: string; who: string; phone?: string | null }[], look: LinkLook | null, force = false) {
+  if (!look || !rows.length) return;
+  try {
+    const recs = orderAutoRecs(rows, look, await linksOf("order", rows.map((r) => Number(r.id))), force);
+    if (recs.length) await writeAutoLinks(recs);
+  } catch (e) { console.error("linkOrders", e); }
+}
+async function linkSignups(rows: any[], look: LinkLook | null, force = false) {
+  if (!look || !rows.length) return;
+  try {
+    const recs = signupAutoRecs(rows, look, await linksOf("signup", rows.map((r) => Number(r.id))), force);
+    if (recs.length) await writeAutoLinks(recs);
+  } catch (e) { console.error("linkSignups", e); }
+}
+// 교적 후보를 아직 안 읽은 자리(명단 올리기 넣기) — 넣은 줄의 이름으로 한 번 묻고 잇는다
+async function linkSignupsByName(rows: any[], force = false) {
+  if (!rows.length) return;
+  try { await linkSignups(rows, await churchLookupLinked(rows.map((r) => r.name)), force); }
+  catch (e) { console.error("linkSignupsByName", e); }
+}
+
+// 기록 잇기 맞추기(총괄 · 설계 §3.1-1) — 새 명부를 올린 뒤 한 번. 사역신청 줄 전부(모든 해)와 성경필사 줄 전부(초안 회차 빼고)를
+// 지금 명부로 다시 맞춘다(auto·줄 없음만 — manual·none 은 그대로). apply:true 가 아니면 세기만 한다(쓰지도 기록하지도 않는다).
+async function peopleLinkSync(ctx: Ctx, b: any) {
+  const apply = b.apply === true;
+  if (!(await peopleImport())) return { ok: false, error: "no-directory" };
+  const [orders, signups, evs, links] = await Promise.all([
+    allRows(() => db.from("ministry_orders").select("id,user_id,name,who,phone").order("id", { ascending: true })),
+    allRows(() => db.from("event_signups").select("id,event_id,who_type,group_name,sub_name,name").order("id", { ascending: true })),
+    allRows(() => db.from("events").select("id,status").order("id", { ascending: true })),
+    allRows(() => db.from("people_links").select(LINK_COLS).order("kind", { ascending: true }).order("row_id", { ascending: true })),
+  ]);
+  const ord = await fillOrderNames(orders);
+  const draft = new Set(evs.filter((e) => e.status === "draft").map((e) => e.id));
+  const sig = signups.filter((s) => !draft.has(s.event_id));
+  const look = await churchLookupLinked([...ord.map((o) => o.name), ...sig.map((s) => s.name)]);
+  if (!look) return { ok: false, error: "no-directory" };
+  const cur = { order: new Map<number, LinkRow>(), signup: new Map<number, LinkRow>() };
+  for (const l of links) { const r = linkRowOf(l); if (r.kind === "order" || r.kind === "signup") cur[r.kind].set(r.row_id, r); }
+  const oRecs = orderAutoRecs(ord, look, cur.order, true), sRecs = signupAutoRecs(sig, look, cur.signup, true);
+  const oc = syncCounts(cur.order, oRecs), sc = syncCounts(cur.signup, sRecs);
+  const counts = { orders: ord.length, signups: sig.length, added: oc.added + sc.added, changed: oc.changed + sc.changed,
+    unmatched: oc.unmatched + sc.unmatched };
+  if (!apply) return { ok: true, dry: true, ...counts };
+  const written = await writeAutoLinks([...oRecs, ...sRecs]);
+  await audit(ctx, "people.linksync", String(look.importId), { ...counts, written });
+  return { ok: true, dry: false, ...counts, written };
+}
+
+// ---------- 교인명부 — 「자세히」 창의 사역·성경필사 탭(2026-10-01 · 설계 §4·§5) ----------
+// ⚠️ 칸은 아래 목록으로만 읽는다 — 메모(note)·취소 사유·번호(phone)·앱 계정(user_id)·ident_key·memo·answers 는 읽지도 않는다.
+//    응답은 people-links.ts 칸 지도(historyTabs·unlinkedRows) — 시험이 키 집합을 대조한다.
+const ORDER_TAB_COLS = "id,year,committee,team,option,status";
+const SIGNUP_TAB_COLS = "id,event_id,who_type,group_name,sub_name,position";
+const EVENT_TAB_COLS = "id,title,short_title,opens_on,status";
+// b6 「사역 이력」 표(설계 §2.2 · b6 설계 §7) — 읽기만. link_how 는 「사람이 이음」 표시에만.
+const HISTORY_TAB_COLS = "id,year,committee,team,role_title,position,mok,source,link_how";
+
+async function rowsByIds(table: string, cols: string, ids: (number | string)[]): Promise<any[]> {
+  const uniq = [...new Set(ids)];
+  const out: any[] = [];
+  for (let i = 0; i < uniq.length; i += 300) {
+    const { data, error } = await db.from(table).select(cols).in("id", uniq.slice(i, i + 300));
+    if (error) throw error;
+    out.push(...((data ?? []) as any[]));
+  }
+  return out;
+}
+// 사역 이력 표가 아직 없으면(운영 SQL 005 전) 빈 것 — 사역 탭은 신청만 보인다(설계 §2.2)
+async function historyRowsOf(personId: number): Promise<any[]> {
+  const { data, error } = await db.from("ministry_history").select(HISTORY_TAB_COLS)
+    .eq("person_id", personId).is("deleted_at", null).order("year", { ascending: false }).limit(500);
+  if (missingTable(error)) return [];
+  if (error) throw error;
+  return (data ?? []) as any[];
+}
+// 이력으로 넘긴 신청(b6 §8 · order_id) — 빼지 않은 이력 줄이 가리키는 신청은 신청 쪽으로 읽지 않는다(두 번 보이지 않게)
+async function movedOrders(orderIds: number[]): Promise<Set<number>> {
+  const out = new Set<number>();
+  for (let i = 0; i < orderIds.length; i += 300) {
+    const { data, error } = await db.from("ministry_history").select("order_id")
+      .in("order_id", orderIds.slice(i, i + 300)).is("deleted_at", null);
+    if (missingTable(error)) return out;
+    if (error) throw error;
+    for (const id of movedOrderIds((data ?? []) as any[])) out.add(id);
+  }
+  return out;
+}
+async function personHistory(personId: number) {
+  const links = await allRows(() => db.from("people_links").select("kind,row_id,link_how")
+    .eq("person_id", personId).in("link_how", ["auto", "manual"]).order("kind", { ascending: true }).order("row_id", { ascending: true }));
+  const ids = (k: string) => links.filter((l) => l.kind === k).map((l) => Number(l.row_id));
+  const [orders, signups, history, moved] = await Promise.all([
+    rowsByIds("ministry_orders", ORDER_TAB_COLS, ids("order")),
+    rowsByIds("event_signups", SIGNUP_TAB_COLS, ids("signup")),
+    historyRowsOf(personId),
+    movedOrders(ids("order")),
+  ]);
+  const events = await rowsByIds("events", EVENT_TAB_COLS, signups.map((s) => s.event_id));
+  return historyTabs({ links, orders, signups, events, history, moved });
+}
+// 탭 자료 — 실패하면 null(오류는 서버 기록에만). 「자세히」 창·잇기 쓰기 응답이 이것을 쓴다(people-links.ts historyOrNull).
+//   예: 함수가 SQL 006 보다 먼저 나가 people_links 가 없을 때(PGRST205 · 개발 함수는 한 벌을 함께 쓴다) · ministry_history 권한 오류.
+const personHistorySafe = (personId: number) =>
+  historyOrNull(() => personHistory(personId), (e) => console.error("personHistory", personId, e));
+
+// 이름이 같고 아직 안 이어진 기록 — 이름으로 넓게 찾는다(신청·명단 전부를 읽어 메모리에서 nameKey 로 · evHistory 와 같은 방식 · 느리다).
+// 창의 탭을 누를 때 한 번 부른다. 기록은 남기지 않는다(창을 연 people.view 가 이미 있다).
+async function peopleHistory(b: any) {
+  const id = Number(b.id) || 0;
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "not-found" };
+  const { data: p, error } = await db.from("church_people").select("person_id,name_key").eq("person_id", id).maybeSingle();
+  if (error) throw error;
+  if (!p) return { ok: false, error: "not-found" };
+  const key = String(p.name_key ?? "");
+  const [orders, signups, events] = await Promise.all([
+    allRows(() => db.from("ministry_orders").select("id,user_id,year,committee,team,option,status,position,name,who").order("id", { ascending: true })),
+    allRows(() => db.from("event_signups").select("id,event_id,who_type,group_name,sub_name,name,position").order("id", { ascending: true })),
+    allRows(() => db.from("events").select(EVENT_TAB_COLS).order("id", { ascending: true })),
+  ]);
+  // 이름이 빈 옛 신청 줄만 앱 계정 이름을 묻는다(fillOrderNames) — 그다음 이 분 이름만 남긴다
+  const mineO = (await fillOrderNames(orders.filter((o) => !o.name || nameKey(o.name) === key))).filter((o) => nameKey(o.name) === key);
+  const mineS = signups.filter((s) => nameKey(s.name) === key);
+  const [orderLinks, signupLinks, moved] = await Promise.all([
+    linksOf("order", mineO.map((o) => Number(o.id))), linksOf("signup", mineS.map((s) => Number(s.id))),
+    movedOrders(mineO.map((o) => Number(o.id))),
+  ]);
+  // 사역 이력(b6)에서 아무에게도 안 이어진 줄(person_id null — auto 못 맞춤·none) · 표가 없으면 빈 것
+  //   이름은 b6 와 같은 열쇠(historyNameMatches — 끝 영문자·괄호) — 정확한 열쇠로 거르면 「홍길동A」 분의 창에 「홍길동」 줄이 안 뜬다
+  let hist: any[] = [];
+  try {
+    hist = (await allRows(() => db.from("ministry_history").select("id,year,committee,team,role_title,position,mok,name,link_how")
+      .is("deleted_at", null).is("person_id", null).order("id", { ascending: true }))).filter((h) => historyNameMatches(h.name, key));
+  } catch (e) { if (!missingTable(e)) throw e; }
+  return { ok: true, rows: unlinkedRows({ orders: mineO, signups: mineS, events, orderLinks, signupLinks, moved, history: hist }) };
+}
+
+// 「이분 것」(manual) · 「이분 아님」(none) · 「풀기」(auto — auto 로 되돌리고 그 줄만 다시 맞춘다).
+// ⚠️ manual 은 대상 줄의 이름이 이 교인과 같아야 한다(다른 사람 줄을 잇지 못하게 · linkNameOk — 신청·명단 nameKey · 사역 이력 b6 열쇠) ·
+//    그 교인이 지금 명부에 있어야 한다.
+// ⚠️ none·auto 는 그 줄이 지금 이 분께 이어져 있을 때만(not-linked) — 이게 주인 확인이라 이름은 보지 않는다(2026-10-02 가지 마지막 검토:
+//    규칙이 정확한 이름이 아닌 줄을 이었거나 새 명부에서 이름 열쇠가 바뀌면 「풀기」·「이분 아님」이 늘 other-name 으로 막혔다).
+//    화면은 이어진 줄에만 그 단추를 둔다.
+// ⚠️ 사람의 쓰기는 이 표에 바로 upsert(사람이 정한 것이 자동을 이긴다) · 응답에 이 분의 탭 자료를 다시 실어 보낸다(people.view 를 늘리지 않게).
+const ORDER_LINK_COLS = "id,user_id,name,who,phone";
+const SIGNUP_LINK_COLS = "id,event_id,who_type,group_name,sub_name,name";
+async function peopleLink(ctx: Ctx, b: any) {
+  const p = parseLink(b);
+  if (!p.ok) return { ok: false, error: p.error };
+  const { data: person, error: e0 } = await db.from("church_people").select("person_id,name_key").eq("person_id", p.person).maybeSingle();
+  if (e0) throw e0;
+  if (!person) return { ok: false, error: "not-found" };
+  if (p.kind === "history") return await historyLinkFor(ctx, p, person);
+  const kind = p.kind as LinkKind;
+  let row: any = null;
+  if (kind === "order") {
+    const { data, error } = await db.from("ministry_orders").select(ORDER_LINK_COLS).eq("id", p.row).maybeSingle();
+    if (error) throw error;
+    row = data ? (await fillOrderNames([data]))[0] : null;
+  } else {
+    const { data, error } = await db.from("event_signups").select(SIGNUP_LINK_COLS).eq("id", p.row).maybeSingle();
+    if (error) throw error;
+    row = data;
+  }
+  if (!row) return { ok: false, error: "not-found" };
+  if (!linkNameOk(kind, p.how, row.name, person.name_key)) return { ok: false, error: "other-name" };
+  const cur = (await linksOf(kind, [p.row])).get(p.row);
+  if (p.how !== "manual" && cur?.person_id !== p.person) return { ok: false, error: "not-linked" };
+  const now = new Date().toISOString();
+  let relinked = false;
+  if (p.how === "auto") {
+    const look = await churchLookupLinked([row.name]);
+    if (!look) return { ok: false, error: "no-directory" };
+    const rec = (kind === "order" ? orderAutoRecs([row], look, new Map(), true) : signupAutoRecs([row], look, new Map(), true))[0];
+    const l = { person_id: rec?.person_id ?? null, basis: rec?.match_basis ?? "" };
+    const { error } = await db.from("people_links").upsert(unlinkRec(kind, p.row, l, look.importId, now), { onConflict: "kind,row_id" });
+    if (error) throw error;
+    relinked = l.person_id === p.person;
+  } else {
+    const { error } = await db.from("people_links")
+      .upsert(linkPatch(kind, p.row, p.how, p.person, ctx.member?.id ?? null, now), { onConflict: "kind,row_id" });
+    if (error) throw error;
+  }
+  await audit(ctx, "people.link", String(p.row), { kind, row: p.row, how: p.how });
+  // 쓰기·기록은 끝났다 — 탭 자료 다시 읽기가 실패해도 성공으로 알리고 history 만 뺀다(화면이 「창을 다시 열면」을 덧붙인다)
+  return withHistory({ ok: true, how: p.how, relinked }, await personHistorySafe(p.person));
+}
+
+// 쓰기 하나를 거는 자리(검토 지적 2026-10-02 · history-db.ts link() 468~474행과 같은 패턴) — expect 가 있으면
+//   UPDATE 의 WHERE 에도 eq(updated_at) 를 넣어, 그사이(이 함수의 SELECT 뒤 ~ 이 UPDATE 사이) 다른 요청이 먼저 쓴 줄을
+//   조건 없이 덮지 않는다. 0행이면(그사이 바뀜·지워짐) 다시 읽어 conflict(아직 있음)·not-found(지워짐)를 가린다.
+//   ⚠️ 이전엔 비교(앞서 읽은 h.updated_at 과 p.expect)만 앱 코드에서 하고 이 UPDATE 자체는 조건 없이 썼다 — 그 사이의
+//   진짜 경합(TOCTOU)은 안 걸렸다. expect 가 없으면(옛 호출) 전처럼 걸지 않는다.
+async function historyWriteGuarded(row: number, expect: string | null, expectAt: string, patch: Record<string, unknown>) {
+  let upd = db.from("ministry_history").update(patch).eq("id", row).is("deleted_at", null);
+  if (expect !== null) upd = upd.eq("updated_at", expectAt);
+  const { data, error } = await upd.select("id");
+  if (error) throw error;
+  if ((data ?? []).length) return null;
+  const { data: cur, error: ec } = await db.from("ministry_history").select("id,deleted_at").eq("id", row).maybeSingle();
+  if (ec) throw ec;
+  return { ok: false as const, error: (expect !== null && cur && !cur.deleted_at ? "conflict" : "not-found") as const };
+}
+
+// 사역 이력 줄 하나를 이 분께(설계 §5 · b6 §7) — 이름 확인(manual 만 · b6 열쇠)·이어진 줄만 풀기는 신청·명단과 같다(linkNameOk). 쓰는 모양은 b6 의 historyLinkPatch·historyUnlinkPatch,
+// 풀기 뒤 그 줄 다시 맞추기는 b6 의 rematchHistoryRows. 기록 history.link 는 b6 사역 이력 메뉴와 같은 모양({op, year, by}) — 이름·교인ID 없음.
+// ⚠️ 쓰기 차례(b6 약속①): 표 줄 고치기 → 기록(audit) → rematchHistoryRows 는 try/catch(다시 맞추기가 실패해도 넘어간다 — 던지면
+//    이미 바뀐 표 상태와 응답(500)이 어긋난다). ⚠️ expect(b6 약속②) — 실제 잠금은 historyWriteGuarded 의 UPDATE WHERE 가 건다.
+async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: string; expect: string | null }, person: { person_id: number; name_key: string }) {
+  const { data: h, error } = await db.from("ministry_history").select("id,year,name,person_id,link_how,deleted_at,updated_at").eq("id", p.row).maybeSingle();
+  if (missingTable(error)) return { ok: false, error: "bad-kind" };
+  if (error) throw error;
+  if (!h || h.deleted_at) return { ok: false, error: "not-found" };
+  if (!linkNameOk("history", p.how, h.name, person.name_key)) return { ok: false, error: "other-name" };
+  if (p.how !== "manual" && Number(h.person_id) !== p.person) return { ok: false, error: "not-linked" };
+  if (p.expect !== null && p.expect !== h.updated_at) return { ok: false, error: "conflict" };
+  const now = new Date().toISOString();
+  let relinked = false;
+  if (p.how === "auto") {
+    const fail = await historyWriteGuarded(p.row, p.expect, h.updated_at, historyUnlinkPatch(now));
+    if (fail) return fail;
+    await audit(ctx, "history.link", String(p.row), { op: "auto", year: h.year, by: "directory" });
+    try {
+      await rematchHistoryRows(db, [p.row]);
+      const { data: after, error: e2 } = await db.from("ministry_history").select("person_id").eq("id", p.row).maybeSingle();
+      if (e2) throw e2;
+      relinked = Number(after?.person_id) === p.person;
+    } catch (err) {
+      console.error("history rematch after directory link", err);
+      relinked = false;
+    }
+  } else {
+    const patch = historyLinkPatch(p.how === "manual" ? p.person : null, ctx.member?.id ?? null, now);
+    const fail = await historyWriteGuarded(p.row, p.expect, h.updated_at, patch);
+    if (fail) return fail;
+    await audit(ctx, "history.link", String(p.row), { op: p.how === "manual" ? "pick" : "none", year: h.year, by: "directory" });
+  }
+  return withHistory({ ok: true, how: p.how, relinked }, await personHistorySafe(p.person));   // 다시 읽기 실패면 history 만 빠진다(peopleLink 와 같다)
 }
 
 // ---------- 성경필사(암송) — 이벤트 명단 (2026-09-29) ----------
@@ -1188,7 +1535,9 @@ async function evRoster(b: any) {
     peopleSource(),
   ]);
   // 교적 표시 — 명부가 한 번도 안 올라왔으면 null(화면이 표시를 그리지 않는다). 이름으로만 묻는다(200개씩).
-  const idx = await churchLookup(rows.map((r) => r.name));
+  const look = await churchLookupLinked(rows.map((r) => r.name));
+  const idx = look ? look.idx : null;
+  if (ev.status !== "draft") await linkSignups(rows, look);   // 그때그때 잇기(2026-10-01 · 초안 회차는 잇지 않는다)
   return {
     ok: true,
     event: evOut(ev, counts.get(ev.id) ?? 0),
@@ -1435,7 +1784,8 @@ async function evRowAdd(ctx: Ctx, b: any) {
   const warnings: string[] = [];
   if (accounts.length > 1) warnings.push(`같은 이름·소속의 앱 계정이 ${accounts.length}개라 잇지 않았어요`);
   if (oddPosition(row.position)) warnings.push(`직분 「${row.position}」 — 앱 직분 목록에 없어요(적은 그대로 넣었어요)`);
-  const church = await evRowChurch(row);
+  const look = await churchLookupLinked([row.name]);   // 교적 표시와 그때그때 잇기가 같은 후보(2026-10-01)
+  const church = churchForSignup(look ? look.idx : null, row);
   // 지난 회차(마감일 < 오늘 KST)면 낸 날을 그 마감일 한국 자정으로 — 열린·앞날 회차는 DB 기본값 now()(M2 · 2026-09-30 친구 결정)
   const createdAt = pastEventCreatedAt(ev.closes_on, kstToday());
 
@@ -1455,6 +1805,7 @@ async function evRowAdd(ctx: Ctx, b: any) {
     row: { who_type: row.who_type, group: row.group_name, sub: row.sub_name, position: row.position },
     linked: !!userId,
   });
+  if (ev.status !== "draft") await linkSignups([saved], look);
   return { ok: true, row: rowOut(saved, church), linked: !!userId, warnings };
 }
 
@@ -1491,7 +1842,8 @@ async function evRowSave(ctx: Ctx, b: any) {
   for (const f of changed) upd[f] = next[f];
   if (identity) upd.ident_key = identKey(next);
   if (noteChanged) upd.note = note;
-  const church = await evRowChurch(next);
+  const look = await churchLookupLinked([next.name]);
+  const church = churchForSignup(look ? look.idx : null, next);
   // 읽은 뒤 그사이 바뀌었으면 0행 — 지워졌으면 not-found, 고쳐졌으면 conflict
   const { data: saved, error } = await db.from("event_signups").update(upd)
     .eq("id", id).eq("updated_at", cur.updated_at).select(EV_ROW_COLS);
@@ -1504,6 +1856,7 @@ async function evRowSave(ctx: Ctx, b: any) {
   // 기록 화면 audit.js 는 after 에 note 칸이 있는지만 보고 「메모 고침」이라 적는다)
   if (noteChanged) { before.note = true; after.note = true; }
   await audit(ctx, "event.edit", String(id), { event_id: cur.event_id, name: next.name, before, after });
+  if (ev.status !== "draft") await linkSignups([saved[0]], look, true);   // 소속·이름을 고쳤을 수 있다 — auto 줄은 다시 맞춘다
   return { ok: true, row: rowOut(saved[0], church) };
 }
 
@@ -1618,15 +1971,16 @@ async function evUpload(ctx: Ctx, b: any, save: boolean) {
   //   지난 회차(마감일 < 오늘 KST)면 낸 날(created_at)을 그 마감일 한국 자정으로 — 모든 줄에 같은 값(M2 · 2026-09-30 친구 결정)
   const recs = uploadRecords(items, eventId, new Date().toISOString(), pastEventCreatedAt(ev.closes_on, kstToday()));
   let saved = 0;
+  const savedRows: any[] = [];   // 그때그때 잇기용 — 넣은 줄의 id·구분·소속·세부·이름
   const failed: { i: number; error: string }[] = [];
   for (let s = 0; s < recs.length; s += 500) {
     const chunk = recs.slice(s, s + 500);
-    const { error } = await db.from("event_signups").insert(chunk.map((x) => x.rec));
-    if (!error) { saved += chunk.length; continue; }
+    const { data: got, error } = await db.from("event_signups").insert(chunk.map((x) => x.rec)).select("id,who_type,group_name,sub_name,name");
+    if (!error) { saved += chunk.length; savedRows.push(...((got ?? []) as any[])); continue; }
     console.error("evUploadSave chunk", error);
     for (const x of chunk) {
-      const { error: e1 } = await db.from("event_signups").insert(x.rec);
-      if (!e1) { saved++; continue; }
+      const { data: one, error: e1 } = await db.from("event_signups").insert(x.rec).select("id,who_type,group_name,sub_name,name");
+      if (!e1) { saved++; savedRows.push(...((one ?? []) as any[])); continue; }
       // 23505 = 그 사이 같은 계정의 줄이 들어왔다(unique event_id+user_id) → 「이미 있음」. 그 밖은 서버 기록으로만.
       const dup = (e1 as any).code === "23505";
       if (!dup) console.error("evUploadSave row", x.i, e1);
@@ -1634,6 +1988,7 @@ async function evUpload(ctx: Ctx, b: any, save: boolean) {
     }
   }
   // 건수만, 납작하게(CONTRACT 5 「기록 모양」) — 이름을 싣지 않는다(설계 §2 기록 표). failed 는 개수.
+  if (ev.status !== "draft") await linkSignupsByName(savedRows);
   if (raws.length) {
     await audit(ctx, "event.upload", eventId, { rows: raws.length, fillOn: fill, ...counts, saved, failed: failed.length });
   }
@@ -2056,6 +2411,7 @@ Deno.serve(async (req) => {
       case "ministryList":      return json(await ministryList());
       case "ministrySetStatus": return json(await ministrySetStatus(ctx, b));
       case "ministryDelete":    return json(await ministryDelete(ctx, b));
+      case "ministryPhoneClear": return json(await ministryPhoneClear(ctx, b));
       case "ministryCatalogAdmin": return json(await ministryCatalogAdmin());
       case "ministryCatalogSave":  return json(await ministryCatalogSave(ctx, b));
       case "ministryCatalogOrder": return json(await ministryCatalogOrder(ctx, b));
@@ -2068,6 +2424,8 @@ Deno.serve(async (req) => {
       case "peoplePerson": return json(await peoplePerson(ctx, b));
       case "peopleStats":  return json(await peopleStats());
       case "peopleExport": return json(await peopleExport(ctx, b));
+      case "peopleHistory": return json(await peopleHistory(b));
+      case "peopleLink":    return json(await peopleLink(ctx, b));
       case "evEvents":  return json(await evEvents());
       case "evRoster":  return json(await evRoster(b));
       case "evHistory": return json(await evHistory(b));
@@ -2082,6 +2440,7 @@ Deno.serve(async (req) => {
       case "evPeopleLookup": return json(await evPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
+      case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));
       case "historyRequestList": return json(await historyRequestList(b));
       case "historyRequestSet":  return json(await historyRequestSet(ctx, b));
       case "historyRequestDelete": return json(await historyRequestDelete(ctx, b));

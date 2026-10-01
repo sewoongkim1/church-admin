@@ -87,3 +87,9 @@ export function guCardRows(stats) {
 // 고르개(pickMany) 선택지 — [값, 인원] → { value, label, hint:「N명」 } (🔎 교인 찾기와 같은 모양)
 export const pickOptions = (pairs) =>
   (pairs || []).map(([v, n]) => ({ value: v, label: v, hint: `${Number(n || 0).toLocaleString("ko-KR")}명` }));
+
+// 「🔗 기록 잇기 맞추기」(총괄 · peopleLinkSync) 결과 한 줄
+export function linkSyncText(r) {
+  const n = (x) => Number(x || 0).toLocaleString("ko-KR");
+  return `새로 이음 ${n(r?.added)} · 바뀜 ${n(r?.changed)} · 못 맞춤 ${n(r?.unmatched)} (사역신청 ${n(r?.orders)}줄 · 성경필사 ${n(r?.signups)}줄)`;
+}

@@ -59,6 +59,21 @@ let upReady = null;
 const MP = { name: `ca-test-mp-${STAMP}-가`, ids: [990000051, 990000052, 990000053] };
 const mpPhone = (n) => "010-0000-00" + n;
 let mpReady = null;
+// 교인명부 잇기(2026-10-01 · people_links) — 교인명부 세 분(교인ID 990000071~3 고정 · 이름 ca-test-pl-<STAMP>-가 둘 · -나 하나) ·
+//   ⚠️ 990000061~3 은 사역 이력 시험(HI)의 것이다 — 처음엔 둘이 같은 번호를 써서, HI 의 hiClean() 이 PL 의 교인 세 분을 지운 뒤
+//      파일 끝 「사역 이력 잇기」(plOpen · plReady 는 한 번만 심는다)가 not-found 로 깨졌다(2026-10-02 가지 마지막 검토). 번호를 나눴다.
+//   신청 넷(user_id = 신청마다 만든 시험 users 「ca-test-pl-<STAMP>-o1…o4」의 uuid) · 성경필사 회차 하나(archived — 초안은 잇지 않는다)와 줄 셋.
+//   ⚠️ 신청의 user_id 에 글자를 넣지 않는다 — 칸은 text 라 들어가지만 신청 현황(ministryList)이 그 해 신청 줄 전부의 user_id 로
+//      push_subscriptions(user_id uuid)를 물어 22P02 → 500(개발 DB 한 벌 — 모든 세션의 신청 현황이 깨진다). 기존 minTestUserId 와 같은 꼴.
+//   첫 시험이 한 번 만든다(plFixtures) · after() 가 지운다(신청 → users 차례). 번호는 만든다(plPhone).
+const PL = { a: `ca-test-pl-${STAMP}-가`, b: `ca-test-pl-${STAMP}-나`, ids: [990000071, 990000072, 990000073],
+  ev: "ca-test-pl-" + STAMP, orders: {}, signups: {},
+  // 이름 끝 영문자 시험(2026-10-02 가지 마지막 검토) — 교인 「…-다A」 한 분(그 시험이 넣고 지운다) · 사역 이력 줄은 「…-다」
+  sfx: { id: 990000074, name: `ca-test-pl-${STAMP}-다A`, base: `ca-test-pl-${STAMP}-다` } };
+const plPhone = (n) => "010-0000-01" + n;
+const PL_OLD_IDS = [990000061, 990000062, 990000063];   // 나누기 전 PL 번호 — after() 의 고아 줄 쓸기에만 쓴다(교인명부 줄은 HI 것이라 건드리지 않는다)
+let plReady = null;
+const RUN_START = new Date().toISOString();   // 이번 실행이 만든 잇기 줄 찌꺼기 쓸기(after)
 // 성경필사(암송)(2026-09-29) 시험 자료 — 초안(draft) 회차 둘(보통·자격) + 줄 여섯. draft 라 성도님 화면에는 안 보인다.
 //   회차 id 는 모두 ca-test- 로 시작하고 STAMP 를 담는다(Task 6~8 도) — after() 가 이번 실행의 회차를 한꺼번에 지운다(줄은 CASCADE).
 //   앱 줄 하나는 시험 users 에 잇는다(누출 시험용).
@@ -133,6 +148,8 @@ const PROBE = {
   ministryTesterSave: { op: "remove", key: "ca-test-probe-없음" },
   // 이름을 누르면 교적 창(사역신청·담당자 · 2026-09-30) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
   ministryPerson: { name: "" },
+  // 결정된 신청 번호 지우기(2026-10-01) — 보낸 수가 지금 수와 달라(-1) conflict · 아무것도 안 지운다
+  ministryPhoneClear: { count: -1 },
   // 「📮 정정 신청」(2026-10-01) — 목록은 읽기만 · 처리는 id 0 → bad-id(쓰지도 기록하지도 않는다)
   historyRequestList: { status: "open" },
   historyRequestSet: { id: 0, status: "확인 중", expect: "x" },
@@ -142,6 +159,9 @@ const PROBE = {
   peoplePerson: { id: 0 },
   peopleStats: {},
   peopleExport: { q: "ca-test-probe-없음" },
+  // 「자세히」 창 탭(2026-10-01) — 없는 교인 → not-found · 줄 0 → invalid(둘 다 읽지도 쓰지도 기록하지도 않는다)
+  peopleHistory: { id: 0 },
+  peopleLink: { kind: "order", row: 0, person: 0, how: "manual" },
   // 성경필사(암송)(Task 5) — 읽기만. 없는 회차·없는 이름을 가리킨다
   evEvents: {},
   evRoster: { event_id: "ca-test-probe-none" },
@@ -159,6 +179,8 @@ const PROBE = {
   evPeopleLookup: { name: "" },
   // 이름을 누르면 교적 창(Task 16) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
   evPerson: { name: "" },
+  // 교인명부 기록 잇기 맞추기(2026-10-01) — apply 없이 부르면 세기만 한다(쓰지도 기록하지도 않는다)
+  peopleLinkSync: {},
   // 사역 이력(2026-10-01) — 읽기 · 빈 올리기 · 없는 줄(0) · 확인 없는 다시 맞추기 · 없는 해 내려받기 — 아무것도 쓰지도 기록하지도 않는다
   historyList: {},
   historyUploadCheck: { rows: [] },
@@ -359,6 +381,35 @@ after(async () => {
     await rest(`users?name=like.ca-test-up-${STAMP}-*`, "DELETE");
     assert.equal((await rest(`users?select=id&name=like.ca-test-up-${STAMP}-*`, "GET")).length, 0, "올리기 시험 계정이 남았다");
   });
+  // 교인명부 잇기 시험 — 잇기 줄(FK 가 없어 저절로 안 지워진다) · 신청 · 교인명부. 회차는 「성경필사 시험 회차」 단계가 지운다(줄은 CASCADE).
+  await step("잇기 시험", async () => {
+    const oIds = Object.values(PL.orders), sIds = Object.values(PL.signups);
+    if (oIds.length) await rest(`people_links?kind=eq.order&row_id=in.(${oIds.join(",")})`, "DELETE");
+    if (sIds.length) await rest(`people_links?kind=eq.signup&row_id=in.(${sIds.join(",")})`, "DELETE");
+    // 신청 먼저, 그다음 그 신청의 시험 users — plFixtures 가 도중에 멈췄어도(PL.orders 가 비어도) 이름으로 찾아 지운다
+    const us = await rest(`users?select=id&name=like.ca-test-pl-${STAMP}-*`, "GET");
+    if (us.length) await rest(`ministry_orders?user_id=in.(${us.map((u) => u.id).join(",")})`, "DELETE");
+    await rest(`users?name=like.ca-test-pl-${STAMP}-*`, "DELETE");
+    await rest(`church_people?person_id=in.(${[...PL.ids, PL.sfx.id].join(",")})`, "DELETE");
+    // 사역 이력 잇기 시험 줄(src_key ca-test-pl-<STAMP>|…) — 시험이 finally 에서 지우지만, 넣기 도중 멈췄을 때를 위해
+    await rest(`ministry_history?src_key=like.ca-test-pl-${STAMP}*`, "DELETE");
+  });
+  // ⚠️ 이 세 분(PL.ids)은 이 기능 전용 고정 ID 다 — sweepLinks(RUN_START)는 "이번 실행이 건드린" 줄만 보므로,
+  //   어느 실행(지난 실행·겹쳐 돈 실행)이 만들고 못 지운 고아(밑줄이 사라진)는 시각과 상관없이 여기서 모두 치운다
+  //   (검토 후속 — ministryPaperSave 등이 만든 줄의 user_id 가 와일드카드와 안 맞으면 위 단계가 못 지운다).
+  //   PL_OLD_IDS(990000061~3)는 번호를 나누기 전(2026-10-02 전) 실행이 남긴 고아 줄 — 같은 번호를 쓰는 HI 시험은 잇기 표에
+  //   줄을 만들지 않으므로(사역 이력 표만 쓴다) 여기서 지우는 것은 밑줄이 사라진 옛 PL 줄뿐이다.
+  await step("잇기 시험 — 이 세 분의 남은 고아 줄(지난 실행 것 포함)", async () => {
+    const rows = await rest(`people_links?select=kind,row_id&person_id=in.(${[...PL.ids, ...PL_OLD_IDS].join(",")})`, "GET");
+    for (const [kind, table] of [["order", "ministry_orders"], ["signup", "event_signups"]]) {
+      const ids = rows.filter((l) => l.kind === kind).map((l) => l.row_id);
+      if (!ids.length) continue;
+      const alive = new Set((await rest(`${table}?select=id&id=in.(${ids.join(",")})`, "GET")).map((r) => r.id));
+      const gone = ids.filter((id) => !alive.has(id));
+      if (gone.length) await rest(`people_links?kind=eq.${kind}&row_id=in.(${gone.join(",")})`, "DELETE");
+    }
+  });
+  await step("이번 실행이 만든 잇기 찌꺼기", () => sweepLinks(RUN_START));
   if (errs.length) throw new Error("정리 실패 " + errs.length + "건: " + errs.join(" / "));
 });
 
@@ -510,16 +561,14 @@ test("신청 현황: 목록 모양 · 동시 수정 · 취소 사유 · 임명 �
   assert.equal(ap.body.ok, true, JSON.stringify(ap.body));
   assert.equal(ap.body.pushed, 0);
   assert.equal(ap.body.pushError, "not-subscribed");
-  assert.equal(ap.body.phoneCleared, true);
-  // 번호를 지웠으면 교적 표시를 번호 없이 다시 세어 돌려준다(명부가 있으면 {state,reason}, 없으면 null) — 화면이 비우지 않게(2026-09-30)
-  assert.ok("church" in ap.body, "church 칸이 있다");
-  assert.ok(ap.body.church === null || typeof ap.body.church.state === "string", JSON.stringify(ap.body.church));
+  assert.equal(ap.body.phoneCleared, false, "결정 때는 번호를 지우지 않는다(2026-10-01 · 단추·180일로)");
+  assert.equal("church" in ap.body, false);
   // 취소 — 사유 없이는 안 됨
   assert.equal((await call(m, "ministrySetStatus", { id: bRow.id, status: "취소", expect: "신청완료" })).body.error, "cancel-note-required");
   assert.equal((await call(m, "ministrySetStatus", { id: bRow.id, status: "취소", expect: "신청완료", note: "시험 취소" })).body.ok, true);
   const after = (await call(m, "ministryList")).body.list.filter((x) => x.name === "ca-test-min");
   assert.equal(after.find((x) => x.id === bRow.id).note, "시험 취소");
-  assert.equal(after.find((x) => x.id === bRow.id).phone, "");
+  assert.equal(after.find((x) => x.id === bRow.id).phone, "010-0000-0000", "취소해도 번호는 남는다");
   // 삭제
   const del = await call(m, "ministryDelete", { id: bRow.id });
   assert.equal(del.body.ok, true);
@@ -634,7 +683,7 @@ test("사역팀 정보: 목록 모양 · 설명 고치기(원래대로 되돌림
   assert.ok(acts.includes("ministry.order"), JSON.stringify(acts));
 });
 
-test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 생성 · 재업로드는 멱등 · 취소 사유 없음 · 없는 팀 · 4번째 줄 상한 · 결정줄 번호 비움 · 지명 팀 · 바뀐 기록", async () => {
+test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 생성 · 재업로드는 멱등 · 취소 사유 없음 · 없는 팀 · 4번째 줄 상한 · 결정줄 번호 남김 · 지명 팀 · 바뀐 기록", async () => {
   const m = people.ministry.token;
   const cfg = await rest("app_config?select=value&key=eq.ministry", "GET");
   const year = Number(cfg[0]?.value?.year) || 2027;
@@ -657,7 +706,7 @@ test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 
   const before1 = await rest(`users?select=id&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
   assert.equal(before1.length, 0, "살펴보기만으로 계정이 생기면 안 된다");
 
-  // 2) 넣기 — 저장됨 · 계정 생김 · 결정 상태라 번호를 지우고 임명일을 찍는다
+  // 2) 넣기 — 저장됨 · 계정 생김 · 결정 상태라 임명일을 찍는다(번호는 남긴다 · 2026-10-01)
   const save1 = await call(m, "ministryPaperSave", { rows: [rowFor(normal[0])] });
   assert.equal(save1.body.ok, true, JSON.stringify(save1.body));
   for (const r of save1.body.rows) assert.equal("user_id" in r, false);
@@ -668,7 +717,7 @@ test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 
   assert.equal(u1.identity_key, "교구|시험|0|||" + PAPER_NAME);
   const [order1] = await rest(`ministry_orders?select=id,status,phone,decided_at,team_id&user_id=eq.${u1.id}`, "GET");
   assert.equal(order1.status, "임명확정");
-  assert.equal(order1.phone, null, "결정 상태 줄은 번호를 지운다");
+  assert.equal(order1.phone, "010-1234-5678", "결정 상태 줄도 번호를 남긴다(2026-10-01)");
   assert.ok(order1.decided_at, "결정 상태 줄은 임명일을 찍는다");
   assert.equal(order1.team_id, normal[0].id);
 
@@ -2410,8 +2459,312 @@ test("성경필사 친구 결정: 명부에 물었으면 채운 것이 없어도
   assert.deepEqual(nowRows.map((r) => r.note), ["명단 올리기", "담당자가 더함"]);
 });
 
+// ---------- 사역신청 번호 보관 — 결정된 신청 번호 지우기(ministryPhoneClear · 2026-10-01) ----------
+test("결정된 신청 번호 지우기: 수가 다르면 쓰지 않는다 · 결정된 줄만 · 결정 안 된 줄은 그대로 · 바꾼 기록", async () => {
+  const m = people.ministry.token;
+  const DEC = ["임명확정", "미채택", "취소"];
+  const list = (await call(m, "ministryList")).body.list;
+  const decided = list.filter((x) => DEC.includes(x.status) && x.phone);
+  const open = list.filter((x) => !DEC.includes(x.status) && x.phone);
+  assert.ok(decided.length >= 1, "앞 시험(신청 현황)의 임명 줄이 번호를 갖고 있어야 한다");
+  const bad = await call(m, "ministryPhoneClear", { count: decided.length + 1 });
+  assert.deepEqual([bad.body.ok, bad.body.error, bad.body.count], [false, "conflict", decided.length]);
+  const still = (await call(m, "ministryList")).body.list;
+  for (const x of decided) assert.equal(still.find((y) => y.id === x.id)?.phone, x.phone, "conflict 인데 지웠다 " + x.id);
+  const ok = await call(m, "ministryPhoneClear", { count: decided.length });
+  assert.equal(ok.body.ok, true, JSON.stringify(ok.body));
+  assert.equal(ok.body.count, decided.length);
+  const after = (await call(m, "ministryList")).body.list;
+  for (const x of decided) assert.equal(after.find((y) => y.id === x.id)?.phone, "", "결정된 줄의 번호가 남았다 " + x.id);
+  for (const x of open) assert.equal(after.find((y) => y.id === x.id)?.phone, x.phone, "결정 안 된 줄의 번호가 지워졌다 " + x.id);
+  const log = (await call(people.super.token, "auditList", { limit: 30 })).body.rows.find((r) => r.action === "ministry.phoneclear");
+  assert.equal(log?.detail?.count, decided.length, JSON.stringify(log));
+  assert.equal((await call(people.directory.token, "ministryPhoneClear", { count: 0 })).status, 403);
+});
+
+// ---------- 교인명부 — 기록과 교인 잇기(people_links · 2026-10-01) ----------
+function plFixtures() {
+  plReady ??= (async () => {
+    await rest(`church_people?person_id=in.(${PL.ids.join(",")})`, "DELETE");
+    const d = (person_id, name, mok1, mok3, n) => ({ person_id, name, name_key: name, kind2: "장년", mok1, mok3, position: "집사",
+      phone1: plPhone(n), phone_digits: plPhone(n).replace(/\D/g, "") });
+    await rest("church_people", "POST", [d(PL.ids[0], PL.a, "화평", "화평-20목장", 61), d(PL.ids[1], PL.a, "소망", "소망-3목장", 62),
+      d(PL.ids[2], PL.b, "믿음", "믿음-1목장", 63)]);
+    const cfg = await rest("app_config?select=value&key=eq.ministry", "GET");
+    const year = Number(cfg[0]?.value?.year) || 2027;
+    const [cat] = await rest("ministry_catalog?select=id&order=id&limit=1", "GET");
+    // 신청마다 시험 users 한 줄(진짜 uuid — 위 PL 주석 ⚠️) · 기존 신청 현황 시험(minTestUserId)과 같은 꼴
+    const us = await rest("users", "POST", ["o1", "o2", "o3", "o4"].map((k) => ({ type: "교구", gu: "시험", mok: "0",
+      name: `ca-test-pl-${STAMP}-${k}`, identity_key: `교구|시험|0|||ca-test-pl-${STAMP}-${k}` })));
+    const uid = Object.fromEntries(us.map((u) => [u.name.split("-").pop(), u.id]));    // "o1" → uuid
+    const kOf = Object.fromEntries(us.map((u) => [u.id, u.name.split("-").pop()]));    // uuid → "o1"
+    // ⚠️ 배치 insert 는 객체들의 칸이 모두 같아야 한다(PGRST102) — o() 한 모양
+    const o = (k, name, who, phone) => ({ year, user_id: uid[k], team_id: cat.id, committee: "시험부", team: "시험팀",
+      name, who, phone, status: "신청완료", source: "app" });
+    const rows = await rest("ministry_orders", "POST", [o("o1", PL.a, "화평 20목장", null), o("o2", PL.a, "기쁨 5목장", plPhone(62)),
+      o("o3", PL.a, "기쁨 5목장", null), o("o4", PL.b, "사랑 2목장", null)]);
+    for (const r of rows) PL.orders[kOf[r.user_id]] = r.id;
+    await rest("events", "POST", { id: PL.ev, title: "ca-test 잇기 회차 " + STAMP, short_title: "", subtitle: "", season: "",
+      kind: "signup", status: "archived", opens_on: "2000-07-01", closes_on: "2000-07-31", list_until: null,
+      needs: { position: true, phone: false, memo: false, extra: [] } });
+    const s = (k, name, group, sub) => ({ event_id: PL.ev, user_id: null, source: "import", who_type: "교구", group_name: group,
+      sub_name: sub, name, ident_key: `교구|${group}|${sub}|||${name}`, position: "집사", phone: "", memo: "", answers: {}, note: k });
+    const sig = await rest("event_signups", "POST", [s("s1", PL.a, "화평", "20"), s("s2", PL.a, "기쁨", "5"), s("s3", PL.b, "사랑", "2")]);
+    for (const r of sig) PL.signups[r.note] = r.id;
+  })();
+  return plReady;
+}
+const linkOf = async (kind, id) =>
+  (await rest(`people_links?select=person_id,link_how,match_basis,import_id,linked_by&kind=eq.${kind}&row_id=eq.${id}`, "GET"))[0] ?? null;
+// 이번 실행이 만든 잇기 줄 가운데 원래 줄이 지워진 것(시험 신청·명단 줄) — FK 가 없어 저절로 안 지워진다
+async function sweepLinks(since) {
+  const links = await rest(`people_links?select=kind,row_id&updated_at=gte.${encodeURIComponent(since)}&limit=5000`, "GET");
+  for (const [kind, table] of [["order", "ministry_orders"], ["signup", "event_signups"]]) {
+    const ids = links.filter((l) => l.kind === kind).map((l) => l.row_id);
+    for (let i = 0; i < ids.length; i += 200) {
+      const part = ids.slice(i, i + 200);
+      const alive = new Set((await rest(`${table}?select=id&id=in.(${part.join(",")})`, "GET")).map((r) => r.id));
+      const gone = part.filter((id) => !alive.has(id));
+      if (gone.length) await rest(`people_links?kind=eq.${kind}&row_id=in.(${gone.join(",")})`, "DELETE");
+    }
+  }
+}
+
+test("그때그때 잇기: 신청 현황·성경필사 명단을 열면 이어진다 — 맞음·번호 · 이름 한 분뿐은 안 잇는다 · 사람이 정한 줄은 그대로 · 옛 명부 auto 는 다시", async () => {
+  await plFixtures();
+  const list = await call(people.ministry.token, "ministryList");
+  assert.equal(list.body.ok, true, JSON.stringify(list.body));
+  const o = PL.orders;
+  const l1 = await linkOf("order", o.o1), l2 = await linkOf("order", o.o2), l3 = await linkOf("order", o.o3), l4 = await linkOf("order", o.o4);
+  assert.deepEqual([l1?.person_id, l1?.link_how, l1?.match_basis, l1?.linked_by], [PL.ids[0], "auto", "맞음", null]);
+  assert.deepEqual([l2?.person_id, l2?.match_basis], [PL.ids[1], "번호"]);
+  assert.deepEqual([l3?.person_id, l3?.link_how], [null, "auto"], "같은 이름 둘 · 소속 다름 · 번호 없음 — 못 맞춤");
+  assert.deepEqual([l4?.person_id, l4?.link_how], [null, "auto"], "이름이 명부에 한 분뿐이어도 소속이 다르면 잇지 않는다");
+  assert.ok(Number(l1.import_id) > 0);
+  const row1 = list.body.list.find((x) => x.id === o.o1);
+  assert.deepEqual(row1.church, { state: "맞음", reason: "" });
+  assert.equal("person_id" in row1, false, "잇기는 응답에 싣지 않는다");
+  const ro = await call(people.bibleevent.token, "evRoster", { event_id: PL.ev });
+  assert.equal(ro.body.ok, true, JSON.stringify(ro.body));
+  const s1 = await linkOf("signup", PL.signups.s1);
+  assert.deepEqual([s1?.person_id, s1?.match_basis], [PL.ids[0], "맞음"]);
+  assert.deepEqual([(await linkOf("signup", PL.signups.s2))?.person_id, (await linkOf("signup", PL.signups.s3))?.person_id], [null, null]);
+  // 사람이 정한 줄(서비스 키로 심는다)은 다시 열어도 그대로 · 옛 명부로 맞춘 auto 줄은 지금 명부로
+  await rest(`people_links?kind=eq.order&row_id=eq.${o.o3}`, "PATCH", { person_id: PL.ids[1], link_how: "manual", match_basis: "사람이 이음" });
+  await rest(`people_links?kind=eq.signup&row_id=eq.${PL.signups.s1}`, "PATCH", { person_id: null, link_how: "none", match_basis: "" });
+  await rest(`people_links?kind=eq.order&row_id=eq.${o.o1}`, "PATCH", { import_id: 1 });
+  await call(people.ministry.token, "ministryList");
+  await call(people.bibleevent.token, "evRoster", { event_id: PL.ev });
+  const m3 = await linkOf("order", o.o3), n1 = await linkOf("signup", PL.signups.s1);
+  assert.deepEqual([m3?.person_id, m3?.link_how], [PL.ids[1], "manual"]);
+  assert.deepEqual([n1?.person_id, n1?.link_how], [null, "none"]);
+  assert.equal(Number((await linkOf("order", o.o1)).import_id), Number(l1.import_id), "옛 명부 auto 줄은 지금 명부로 다시");
+  // 다음 시험을 위해 되돌린다(o3·s1 을 auto 로 — 다시 열면 규칙대로 맞춘다)
+  await rest(`people_links?kind=eq.order&row_id=eq.${o.o3}`, "PATCH", { person_id: null, link_how: "auto", match_basis: "", import_id: 1 });
+  await rest(`people_links?kind=eq.signup&row_id=eq.${PL.signups.s1}`, "PATCH", { person_id: null, link_how: "auto", match_basis: "", import_id: 1 });
+});
+
+test("기록 잇기 맞추기(peopleLinkSync): apply 없이는 쓰지 않는다 · apply 면 auto 줄만 다시 · 번호로 이은 줄은 번호를 지워도 그대로 · 수만 기록 · 총괄만", async () => {
+  await plFixtures();
+  await rest(`people_links?kind=eq.order&row_id=eq.${PL.orders.o2}`, "DELETE");     // 줄이 없으면 「새로 이음」
+  const dry = await call(people.super.token, "peopleLinkSync", {});
+  assert.equal(dry.body.ok, true, JSON.stringify(dry.body));
+  assert.equal(dry.body.dry, true);
+  for (const k of ["orders", "signups", "added", "changed", "unmatched"]) assert.equal(typeof dry.body[k], "number", k);
+  assert.ok(dry.body.added >= 1, JSON.stringify(dry.body));
+  assert.equal(await linkOf("order", PL.orders.o2), null, "apply 없이 썼다");
+  const ap = await call(people.super.token, "peopleLinkSync", { apply: true });
+  assert.equal(ap.body.ok, true, JSON.stringify(ap.body));
+  assert.equal(ap.body.dry, false);
+  assert.equal((await linkOf("order", PL.orders.o2))?.person_id, PL.ids[1]);
+  assert.equal((await linkOf("signup", PL.signups.s1))?.person_id, PL.ids[0]);
+  const log = (await call(people.super.token, "auditList", { limit: 20, kind: "people" })).body.rows.find((r) => r.action === "people.linksync");
+  assert.ok(log, "people.linksync 기록");
+  assert.deepEqual(Object.keys(log.detail).sort(), ["added", "changed", "orders", "signups", "unmatched", "written"]);
+  // 번호로 이은 줄(o2 → PL.ids[1] · 「번호」)은 그 신청의 번호를 지운 뒤에도 그대로(설계 §3.1-3) — 번호를 지우고(📵 단추·180일 작업 자리)
+  //   새 명부로 바뀐 것처럼(import_id 1) 둔 뒤 「기록 잇기 맞추기」·신청 현황 열기를 해도 끊기지 않는다
+  await rest(`ministry_orders?id=eq.${PL.orders.o2}`, "PATCH", { phone: null });
+  await rest(`people_links?kind=eq.order&row_id=eq.${PL.orders.o2}`, "PATCH", { import_id: 1 });
+  try {
+    assert.equal((await call(people.super.token, "peopleLinkSync", { apply: true })).body.ok, true);
+    await call(people.ministry.token, "ministryList");
+    const k2 = await linkOf("order", PL.orders.o2);
+    assert.deepEqual([k2?.person_id, k2?.link_how, k2?.match_basis], [PL.ids[1], "auto", "번호"], "번호를 지웠더니 잇기가 끊겼다");
+  } finally {
+    await rest(`ministry_orders?id=eq.${PL.orders.o2}`, "PATCH", { phone: plPhone(62) });   // 뒤 시험은 번호가 있는 o2 를 쓴다
+  }
+  assert.equal((await call(people.directory.token, "peopleLinkSync", { apply: true })).status, 403);
+});
+
+// ---------- 교인명부 — 「자세히」 창 사역·성경필사 탭(2026-10-01) ----------
+const TAB_SECRET = /"(user_id|ident_key|memo|phone|answers|note)"\s*:/;
+const MIN_ITEM_KEYS = ["committee", "how", "kind", "option", "role_title", "row", "status", "team", "year"];
+const BIB_ITEM_KEYS = ["event_id", "group", "how", "kind", "opens_on", "position", "row", "short_title", "sub", "title", "who_type"];
+const plOpen = async () => {
+  await plFixtures();
+  await call(people.ministry.token, "ministryList");                          // 그때그때 잇기(앞 시험과 상관없이)
+  await call(people.bibleevent.token, "evRoster", { event_id: PL.ev });
+};
+
+test("「자세히」 창 탭(peoplePerson history): 이어진 기록만 · 칸 지도 · 메모·전화·앱 계정 없음 · people.view 한 줄", async () => {
+  await plOpen();
+  const mark = await auditMark();
+  const r = await call(people.directory.token, "peoplePerson", { id: PL.ids[0] });
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  const h = r.body.history;
+  assert.deepEqual(Object.keys(h).sort(), ["bible", "counts", "ministry"]);
+  assert.deepEqual(h.ministry.map((x) => [x.kind, x.row]), [["order", PL.orders.o1]]);
+  assert.deepEqual(h.bible.map((x) => [x.kind, x.row]), [["signup", PL.signups.s1]]);
+  assert.deepEqual(h.counts, { ministry: 1, bible: 1 });
+  assert.deepEqual(Object.keys(h.ministry[0]).sort(), MIN_ITEM_KEYS);
+  assert.deepEqual(Object.keys(h.bible[0]).sort(), BIB_ITEM_KEYS);
+  assert.deepEqual([h.ministry[0].committee, h.ministry[0].team, h.ministry[0].status, h.ministry[0].how], ["시험부", "시험팀", "신청완료", "auto"]);
+  assert.deepEqual([h.bible[0].event_id, h.bible[0].group, h.bible[0].sub, h.bible[0].opens_on], [PL.ev, "화평", "20", "2000-07-01"]);
+  assert.ok(!TAB_SECRET.test(JSON.stringify(h)), "탭에 실으면 안 되는 칸");
+  assert.ok(!UUID_RE.test(JSON.stringify(h)), "UUID 꼴 값");
+  const views = (await call(people.super.token, "auditList", { limit: 50, kind: "people" })).body.rows
+    .filter((x) => x.id > mark && x.target === String(PL.ids[0]));
+  assert.deepEqual(views.map((x) => x.action), ["people.view"], "탭 때문에 기록이 늘었다");
+});
+
+test("아직 안 이어진 기록(peopleHistory): 같은 이름 · 아무에게도 안 이어진 줄 · 칸 지도 · 기록 없음", async () => {
+  await plOpen();
+  const mark = await auditMark();
+  const pick = (rows) => rows.filter((x) => (x.kind === "order" && Object.values(PL.orders).includes(x.row)) ||
+    (x.kind === "signup" && Object.values(PL.signups).includes(x.row)));
+  const a = await call(people.directory.token, "peopleHistory", { id: PL.ids[0] });
+  assert.equal(a.body.ok, true, JSON.stringify(a.body));
+  assert.deepEqual(Object.keys(a.body).sort(), ["ok", "rows"]);
+  assert.deepEqual(pick(a.body.rows).map((x) => [x.kind, x.row, x.how]), [["order", PL.orders.o3, "auto"], ["signup", PL.signups.s2, "auto"]]);
+  const o3 = pick(a.body.rows)[0];
+  assert.deepEqual(Object.keys(o3).sort(), ["committee", "how", "kind", "option", "position", "row", "status", "team", "who", "year"]);
+  assert.equal(o3.who, "기쁨 5목장");
+  assert.ok(!TAB_SECRET.test(JSON.stringify(a.body)));
+  const b = await call(people.directory.token, "peopleHistory", { id: PL.ids[2] });
+  assert.deepEqual(pick(b.body.rows).map((x) => [x.kind, x.row]), [["order", PL.orders.o4], ["signup", PL.signups.s3]]);
+  assert.equal((await call(people.directory.token, "peopleHistory", { id: 1 })).body.error, "not-found");
+  const logs = (await call(people.super.token, "auditList", { limit: 50, kind: "people" })).body.rows
+    .filter((x) => x.id > mark && [String(PL.ids[0]), String(PL.ids[2])].includes(x.target));
+  assert.equal(logs.length, 0, JSON.stringify(logs));
+});
+
+test("이분 것·이분 아님·풀기(peopleLink): 사람이 정한 줄 · 자동이 덮지 않음 · 이름이 다르면 막음 · 기록 people.link {kind,row,how}", async () => {
+  await plOpen();
+  const d = people.directory;
+  const link = (kind, row, how, person = PL.ids[0]) => call(d.token, "peopleLink", { kind, row, person, how });
+  // ① 이분 것 — 못 맞춘 o3 을 PL.ids[0] 께
+  const m = await link("order", PL.orders.o3, "manual");
+  assert.equal(m.body.ok, true, JSON.stringify(m.body));
+  assert.deepEqual(m.body.history.ministry.map((x) => x.row).sort((x, y) => x - y), [PL.orders.o1, PL.orders.o3].sort((x, y) => x - y));
+  assert.equal(m.body.history.ministry.find((x) => x.row === PL.orders.o3).how, "manual");
+  const lm = await linkOf("order", PL.orders.o3);
+  assert.deepEqual([lm.person_id, lm.link_how, lm.match_basis, lm.linked_by, lm.import_id], [PL.ids[0], "manual", "사람이 이음", d.memberId, null]);
+  await call(people.ministry.token, "ministryList");
+  await call(people.super.token, "peopleLinkSync", { apply: true });
+  assert.equal((await linkOf("order", PL.orders.o3)).link_how, "manual", "자동이 덮었다");
+  // ② 이분 아님 — 이분께 이어진 줄만 · 그 뒤 「아직 안 이어진 기록」에 how none 으로
+  const n = await link("order", PL.orders.o3, "none");
+  assert.equal(n.body.ok, true, JSON.stringify(n.body));
+  const ln = await linkOf("order", PL.orders.o3);
+  assert.deepEqual([ln.person_id, ln.link_how, ln.match_basis], [null, "none", ""]);
+  const un = await call(d.token, "peopleHistory", { id: PL.ids[0] });
+  assert.equal(un.body.rows.find((x) => x.kind === "order" && x.row === PL.orders.o3)?.how, "none");
+  // ③ 풀기 — 규칙이 다시 같은 분께 이으면 relinked(화면이 「이분 아님」을 권한다)
+  const f = await link("signup", PL.signups.s1, "auto");
+  assert.deepEqual([f.body.ok, f.body.relinked], [true, true], JSON.stringify(f.body));
+  const lf = await linkOf("signup", PL.signups.s1);
+  assert.deepEqual([lf.person_id, lf.link_how, lf.match_basis, lf.linked_by], [PL.ids[0], "auto", "맞음", null]);
+  // ④ 막는 것
+  assert.equal((await link("order", PL.orders.o4, "manual")).body.error, "other-name");
+  assert.equal((await link("order", PL.orders.o2, "none")).body.error, "not-linked", "PL.ids[1] 께 이어진 줄을 PL.ids[0] 창에서 「이분 아님」");
+  assert.equal((await link("order", PL.orders.o3, "manual", 999999999)).body.error, "not-found");
+  assert.equal((await link("order", 0, "manual")).body.error, "invalid");
+  assert.equal((await call(d.token, "peopleLink", { kind: "order", row: PL.orders.o3, person: PL.ids[0], how: "delete" })).body.error, "invalid");
+  // ⑤ 기록 — people.link {kind,row,how}(이름·교인ID 없음 · 「교인명부 기록」)
+  const logs = (await call(people.super.token, "auditList", { limit: 80, kind: "people" })).body.rows
+    .filter((r) => r.action === "people.link" && ((r.detail?.kind === "order" && r.detail?.row === PL.orders.o3) ||
+      (r.detail?.kind === "signup" && r.detail?.row === PL.signups.s1)));
+  assert.deepEqual(logs.map((r) => r.detail).reverse(), [{ kind: "order", row: PL.orders.o3, how: "manual" },
+    { kind: "order", row: PL.orders.o3, how: "none" }, { kind: "signup", row: PL.signups.s1, how: "auto" }]);
+  // 되돌린다(o3 을 auto 로)
+  await rest(`people_links?kind=eq.order&row_id=eq.${PL.orders.o3}`, "PATCH", { person_id: null, link_how: "auto", match_basis: "", import_id: 1 });
+});
+
+// 그때그때 잇기 — 나머지 네 자리(검토 지적 · 2026-10-01) — ministryPaperSave(새로 넣기·dupId) ·
+//   evRowAdd(더하기 직후) · evRowSave(소속을 고치면 force 로 다시 맞춘다) · evUploadSave(linkSignupsByName).
+// ⚠️ 위 두 시험(plFixtures 를 쓰는 「그때그때 잇기」·「기록 잇기 맞추기」)은 ministryList·evRoster 만 다졌다 —
+//   나머지 네 자리는 코드만 있고 실행 증거가 없었다(검토 지적). 여기서 그 네 자리를 하나씩 직접 부른다.
+// 새로 만드는 줄은 전부 PL 의 기존 명부 후보(PL.a·PL.b·PL.ids)와 맞대고, 뒷정리는 새로 만들지 않는다 —
+//   ministryPaperSave 가 만드는 계정·신청은 이름이 PL.a(= `ca-test-pl-${STAMP}-가`)라 「잇기 시험」
+//   after() 단계의 `users?name=like.ca-test-pl-${STAMP}-*` 가 그대로 쓸어 간다. evRowAdd·evRowSave 는
+//   PL.ev(기존 회차)에 더하므로 그 회차가 지워질 때(성경필사 시험 회차 단계) 같이 사라지고, evUploadSave 는
+//   이름에 STAMP 가 든 새 회차(ca-test-pl-up-STAMP)를 만들어 같은 단계가 쓴다. 남는 people_links 줄은
+//   모두 sweepLinks(RUN_START)(after() 맨 끝)가 치운다 — 이 시험은 그 둘 다에 **기대어** 따로 지우지 않는다.
+test("그때그때 잇기 — 나머지 네 자리(종이 명단 새로 넣기·dupId · 성경필사 더하기·고치기(강제 다시 맞춤)·올리기)", async () => {
+  await plFixtures();
+  const t = people.bibleevent.token, m = people.ministry.token;
+
+  // ① evRowAdd — 더한 직후 바로 이어진다(「맞음」 · PL.b ↔ 믿음-1목장)
+  const add1 = await call(t, "evRowAdd",
+    { event_id: PL.ev, row: { who_type: "교구", group: "믿음", sub: "1", name: PL.b, position: "", note: "" } });
+  assert.equal(add1.body.ok, true, JSON.stringify(add1.body));
+  const addId = add1.body.row.id;
+  const la1 = await linkOf("signup", addId);
+  assert.deepEqual([la1?.person_id, la1?.link_how, la1?.match_basis], [PL.ids[2], "auto", "맞음"]);
+
+  // ② evRowSave — 소속이 달라 못 맞춘 줄을 고치면(force=true) 즉시 다시 맞춰 이어진다(PL.a ↔ 소망-3목장)
+  const add2 = await call(t, "evRowAdd",
+    { event_id: PL.ev, row: { who_type: "교구", group: "은혜", sub: "8", name: PL.a, position: "", note: "" } });
+  assert.equal(add2.body.ok, true, JSON.stringify(add2.body));
+  const saveId = add2.body.row.id;
+  assert.equal((await linkOf("signup", saveId))?.person_id, null, "소속이 달라 못 맞춰야 한다(은혜-8목장은 명부에 없다)");
+  const save2 = await call(t, "evRowSave", { id: saveId, expect: add2.body.row.updated_at, patch: { group: "소망", sub: "3" } });
+  assert.equal(save2.body.ok, true, JSON.stringify(save2.body));
+  const ls2 = await linkOf("signup", saveId);
+  assert.deepEqual([ls2?.person_id, ls2?.link_how, ls2?.match_basis], [PL.ids[1], "auto", "맞음"],
+    "고치면 강제로 다시 맞춰야 한다(force) — import_id 가 그대로라도 다시 본다");
+
+  // ③ ministryPaperSave — 새로 넣기(newIds)와 dupId(같은 명단 재업로드) 둘 다 이어진다(PL.a ↔ 화평-20목장)
+  const cfg = await rest("app_config?select=value&key=eq.ministry", "GET");
+  const year = Number(cfg[0]?.value?.year) || 2027;
+  const cat = await rest(`ministry_catalog?select=id,committee,team,kind&year=eq.${year}&order=id`, "GET");
+  const team = cat.find((c) => c.kind !== "appoint");
+  assert.ok(team, "지명이 아닌 팀이 있어야 한다(종이 명단 잇기 시험)");
+  const paperRow = { gu: "화평", mok: "20", name: PL.a, position: "집사", phone: "010-0000-0220",
+    committee: team.committee, team: team.team };
+  const ps1 = await call(m, "ministryPaperSave", { rows: [paperRow] });
+  assert.equal(ps1.body.ok, true, JSON.stringify(ps1.body));
+  assert.equal(ps1.body.added, 1, JSON.stringify(ps1.body));
+  const [porder] = await rest(
+    `ministry_orders?select=id&name=eq.${encodeURIComponent(PL.a)}&source=eq.paper&order=id.desc&limit=1`, "GET");
+  assert.ok(porder, "종이로 넣은 신청을 찾아야 한다");
+  const lp1 = await linkOf("order", porder.id);
+  assert.deepEqual([lp1?.person_id, lp1?.link_how, lp1?.match_basis], [PL.ids[0], "auto", "맞음"], "새로 넣은 줄도 이어져야 한다(newIds)");
+
+  const ps2 = await call(m, "ministryPaperSave", { rows: [paperRow] });   // 같은 명단 재업로드 — dupId(이미 그 상태)
+  assert.equal(ps2.body.ok, true, JSON.stringify(ps2.body));
+  assert.equal(ps2.body.added, 0, JSON.stringify(ps2.body));
+  assert.equal(ps2.body.same, 1, JSON.stringify(ps2.body));
+  const lp2 = await linkOf("order", porder.id);
+  assert.deepEqual([lp2?.person_id, lp2?.link_how, lp2?.match_basis], [PL.ids[0], "auto", "맞음"],
+    "dupId 로 다시 이어도 그대로여야 한다(byId 의 이름·소속·번호로 다시 이음)");
+
+  // ④ evUploadSave — 새 회차에 올린 줄도 이어진다(linkSignupsByName · PL.b ↔ 믿음-1목장)
+  const upEv = "ca-test-pl-up-" + STAMP;
+  await rest("events", "POST", { id: upEv, title: "ca-test 잇기 올리기 " + STAMP, short_title: "", subtitle: "", season: "",
+    kind: "signup", status: "archived", opens_on: "2000-08-01", closes_on: "2000-08-31", list_until: null,
+    needs: { position: true, phone: false, memo: false, extra: [] } });
+  const up1 = await call(t, "evUploadSave", { event_id: upEv, rows: [{ name: PL.b, gu: "믿음", mok: "1", pos: "" }], fill: false });
+  assert.equal(up1.body.ok, true, JSON.stringify(up1.body));
+  assert.equal(up1.body.saved, 1, JSON.stringify(up1.body));
+  const [uprow] = await rest(`event_signups?select=id&event_id=eq.${upEv}&name=eq.${encodeURIComponent(PL.b)}`, "GET");
+  assert.ok(uprow, "올린 줄을 찾아야 한다");
+  const lu1 = await linkOf("signup", uprow.id);
+  assert.deepEqual([lu1?.person_id, lu1?.link_how, lu1?.match_basis], [PL.ids[2], "auto", "맞음"]);
+});
+
 // ── 사역 이력(2026-10-01) — 표 둘이 안 열린다 · 올리기→맞춤→가리기→잇기→다시 맞추기→빼기→다시 올리기 ──
-// 고정 교인ID 990000061~63(다른 시험과 겹치지 않는 번위) · 이름은 ca-test-hi-<STAMP><한글 한 글자> · 해는 2001(씨앗·다른 시험과 안 겹침)
+// 고정 교인ID 990000061~63(다른 시험과 겹치지 않는 번위 — 교인명부 잇기 PL 은 990000071~3 · hiClean() 이 이 세 분을 지웠다 다시 넣는다) · 이름은 ca-test-hi-<STAMP><한글 한 글자> · 해는 2001(씨앗·다른 시험과 안 겹침)
 const HI = { ids: [990000061, 990000062, 990000063], name: `ca-test-hi-${STAMP}가`, solo: `ca-test-hi-${STAMP}나`, none: `ca-test-hi-${STAMP}없`, year: 2001 };
 const hiRows = (year) => [
   { year, committee: "찬양부", team: "ca-test 찬양대", name: HI.name, position: "집사", mok: "기쁨-19", renewal: "유지" },
@@ -2623,6 +2976,126 @@ test("사역 이력 — 살펴보기 명부 기록(people.lookup) · 잇기 잠�
   }
 });
 
+// ---------- 사역 이력(b6) 잇기 — peopleLink kind history(2026-10-01 · 계획 Task 10) ----------
+test("사역 이력 잇기: 탭에 붙는다 · 넘긴 신청은 빠진다 · 이분 것·이분 아님·풀기 · 기록 history.link {op,year,by}", async () => {
+  await plOpen();
+  const d = people.directory;
+  const h = (o) => ({ year: 2024, committee: "시험부", team: "시험팀", role_title: "", name: PL.a, position: "집사", mok: "화평-20",
+    person_id: null, link_how: "auto", match_basis: "", source: "excel", order_id: null, src_key: `ca-test-pl-${STAMP}|${o.k}`, ...o.v });
+  const rows = await rest("ministry_history", "POST", [
+    h({ k: "h1", v: { person_id: PL.ids[0], match_basis: "같은 소속" } }),            // 이어진 줄 → 탭에
+    h({ k: "h2", v: { year: 2025, mok: "기쁨-5" } }),                                 // 못 맞춘 줄 → 아직 안 이어진 기록
+    h({ k: "h3", v: { year: 2027, source: "app", order_id: PL.orders.o1, person_id: PL.ids[0], src_key: `app|${PL.orders.o1}` } }),   // 넘긴 신청
+  ]);
+  const [h1, h2, h3] = rows.map((r) => r.id);
+  try {
+    const p = (await call(d.token, "peoplePerson", { id: PL.ids[0] })).body.history;
+    assert.deepEqual(p.ministry.map((x) => [x.kind, x.row]).filter(([k]) => k === "history").map(([, r]) => r).sort((x, y) => x - y), [h1, h3].sort((x, y) => x - y));
+    assert.equal(p.ministry.some((x) => x.kind === "order" && x.row === PL.orders.o1), false, "넘긴 신청이 신청 쪽에도 보인다");
+    assert.equal(p.ministry.find((x) => x.row === h1).status, "임명확정");
+    const un = (await call(d.token, "peopleHistory", { id: PL.ids[0] })).body.rows;
+    const u2 = un.find((x) => x.kind === "history" && x.row === h2);
+    assert.deepEqual(Object.keys(u2).sort(), ["committee", "how", "kind", "mok", "position", "role_title", "row", "team", "year"]);
+    const link = (row, how, person = PL.ids[0]) => call(d.token, "peopleLink", { kind: "history", row, person, how });
+    const m = await link(h2, "manual");
+    assert.equal(m.body.ok, true, JSON.stringify(m.body));
+    let r2 = (await rest(`ministry_history?select=person_id,link_how,match_basis&id=eq.${h2}`, "GET"))[0];
+    assert.deepEqual([r2.person_id, r2.link_how, r2.match_basis], [PL.ids[0], "manual", "사람이 이음"]);
+    assert.equal((await link(h2, "none")).body.ok, true);
+    r2 = (await rest(`ministry_history?select=person_id,link_how&id=eq.${h2}`, "GET"))[0];
+    assert.deepEqual([r2.person_id, r2.link_how], [null, "none"]);
+    const f = await link(h1, "auto");
+    assert.equal(f.body.ok, true, JSON.stringify(f.body));
+    assert.equal(typeof f.body.relinked, "boolean");
+    assert.equal((await link(h2, "auto")).body.error, "not-linked");
+    assert.equal((await link(h1, "manual", PL.ids[2])).body.error, "other-name");
+    // expect(낙관적 잠금 · b6 약속② · history-db.ts link() 456~459행과 같은 패턴) — 낡은 expect → conflict(안 바뀜) · 맞는 expect → 성공
+    const r1 = (await rest(`ministry_history?select=updated_at,person_id,link_how&id=eq.${h1}`, "GET"))[0];
+    const stale = await call(d.token, "peopleLink", { kind: "history", row: h1, person: PL.ids[0], how: "manual", expect: "2000-01-01T00:00:00.000Z" });
+    assert.equal(stale.body.error, "conflict", JSON.stringify(stale.body));
+    assert.deepEqual((await rest(`ministry_history?select=updated_at,person_id,link_how&id=eq.${h1}`, "GET"))[0], r1, "conflict 뒤에도 줄이 안 바뀌어야 한다");
+    const freshOk = await call(d.token, "peopleLink", { kind: "history", row: h1, person: PL.ids[0], how: "manual", expect: r1.updated_at });
+    assert.equal(freshOk.body.ok, true, JSON.stringify(freshOk.body));
+    const r1b = (await rest(`ministry_history?select=person_id,link_how,match_basis&id=eq.${h1}`, "GET"))[0];
+    assert.deepEqual([r1b.person_id, r1b.link_how, r1b.match_basis], [PL.ids[0], "manual", "사람이 이음"]);
+    // 진짜 경합(검토 지적 2026-10-02) — 위 stale 은 "다른 값을 보내면 거절" 만 본다(순서대로 불러 비교값만 틀리게 준 것).
+    //   여기는 같은 expect 로 두 쓰기를 동시에 보내 UPDATE 의 WHERE eq(updated_at) 가 실제로 거는지를 본다
+    //   (성경필사 "같은 분을 동시에 셋" 시험과 같은 결 — Promise.all 로 진짜 경합을 낸다). PL.ids[0]·PL.ids[1] 은 같은 이름(PL.a).
+    const r1c = (await rest(`ministry_history?select=updated_at&id=eq.${h1}`, "GET"))[0];
+    const [raceA, raceB] = await Promise.all([
+      call(d.token, "peopleLink", { kind: "history", row: h1, person: PL.ids[0], how: "manual", expect: r1c.updated_at }),
+      call(d.token, "peopleLink", { kind: "history", row: h1, person: PL.ids[1], how: "manual", expect: r1c.updated_at }),
+    ]);
+    const bothBodies = JSON.stringify([raceA.body, raceB.body]);
+    const oks = [raceA, raceB].filter((r) => r.body.ok);
+    const fails = [raceA, raceB].filter((r) => !r.body.ok);
+    assert.equal(oks.length, 1, "같은 expect 로 동시에 쓴 둘 중 하나만 성공해야 한다 — " + bothBodies);
+    assert.equal(fails.length, 1, bothBodies);
+    assert.equal(fails[0].body.error, "conflict", bothBodies);
+    const r1e = (await rest(`ministry_history?select=person_id,link_how&id=eq.${h1}`, "GET"))[0];
+    assert.ok([PL.ids[0], PL.ids[1]].includes(r1e.person_id), "줄은 이긴 쪽 한 사람으로만 바뀌어야 한다 — " + bothBodies);
+    assert.equal(r1e.link_how, "manual");
+    const logs = (await call(people.super.token, "auditList", { limit: 50 })).body.rows
+      .filter((r) => r.action === "history.link" && r.target === String(h2));
+    assert.deepEqual(logs.map((r) => r.detail).reverse(), [{ op: "pick", year: 2025, by: "directory" }, { op: "none", year: 2025, by: "directory" }]);
+  } finally {
+    await rest(`ministry_history?id=in.(${[h1, h2, h3].join(",")})`, "DELETE");
+  }
+});
+
+// ---------- 이름 확인은 「이분 것」만(2026-10-02 가지 마지막 검토) ----------
+// b6 맞춤은 정확한 이름이 아닌 줄도 잇는다(동명이인 끝 영문자 · 괄호 · 오타) — 그 줄이 사역 탭에 「풀기」와 함께 뜨는데, 예전엔
+// peopleLink 가 이름(nameKey)을 not-linked 보다 먼저 봐서 풀기·이분 아님이 늘 other-name 으로 막혔다. 신청·명단도 새 명부에서
+// 그분 이름 열쇠가 바뀌면 같았다. 지금: none·auto 는 「지금 이 분께 이어진 줄인가」만 · manual 은 이름(사역 이력은 b6 열쇠).
+test("이름이 정확히 같지 않게 이어진 줄(끝 영문자 「…다A」 · 이름 열쇠가 바뀐 분) — 풀기·이분 아님이 된다 · 이분 것은 같은 이름만 · 아직 안 이어진 이력에 같은 이름 줄", async () => {
+  await plOpen();
+  const d = people.directory, X = PL.sfx;
+  await rest(`church_people?person_id=eq.${X.id}`, "DELETE");
+  await rest("church_people", "POST", { person_id: X.id, name: X.name, name_key: X.name, kind2: "장년", mok1: "화평", mok3: "화평-21목장", position: "집사" });
+  const h = (k, v) => ({ year: 2024, committee: "시험부", team: "시험팀", role_title: "", name: X.base, position: "집사", mok: "화평-21",
+    person_id: null, link_how: "auto", match_basis: "", source: "excel", order_id: null, src_key: `ca-test-pl-${STAMP}|sfx-${k}`, ...v });
+  const rows = await rest("ministry_history", "POST", [
+    h("a", { person_id: X.id, match_basis: "같은 소속 · 이름 끝 영문자 떼고" }),             // 규칙이 이은 줄(「…다」 줄 → 「…다A」 분)
+    h("b", { year: 2025 }),                                                                 // 아직 아무에게도 안 이어진 같은 이름 줄
+    h("c", { year: 2023, person_id: X.id, match_basis: "같은 소속 · 이름 끝 영문자 떼고" }),
+  ]);
+  const [a, b, c] = rows.map((r) => r.id);
+  const link = (kind, row, how, person = X.id) => call(d.token, "peopleLink", { kind, row, person, how });
+  const hRow = async (id) => (await rest(`ministry_history?select=person_id,link_how&id=eq.${id}`, "GET"))[0];
+  try {
+    const p = (await call(d.token, "peoplePerson", { id: X.id })).body.history;
+    assert.deepEqual(p.ministry.filter((x) => x.kind === "history").map((x) => x.row).sort((x, y) => x - y), [a, c].sort((x, y) => x - y));
+    const un = (await call(d.token, "peopleHistory", { id: X.id })).body.rows;
+    assert.ok(un.some((x) => x.kind === "history" && x.row === b), "끝 영문자가 붙은 분의 창에 이름이 같은 안 이어진 이력 줄이 없다: " + JSON.stringify(un));
+    // 이분 아님 · 풀기 — 이름 열쇠가 달라도(…다 ↔ …다A) 지금 이 분께 이어진 줄이면 된다
+    const no = await link("history", a, "none");
+    assert.equal(no.body.ok, true, JSON.stringify(no.body));
+    const ra = await hRow(a);
+    assert.deepEqual([ra.person_id, ra.link_how], [null, "none"]);
+    const f = await link("history", c, "auto");
+    assert.equal(f.body.ok, true, JSON.stringify(f.body));
+    assert.equal(typeof f.body.relinked, "boolean");
+    assert.equal((await hRow(c)).link_how, "auto");
+    // 이분 것 — b6 열쇠로 같은 이름이면 된다(「…다」 줄을 「…다A」 분께) · 이름이 다른 분께는 여전히 막는다
+    const m = await link("history", b, "manual");
+    assert.equal(m.body.ok, true, JSON.stringify(m.body));
+    const rb = await hRow(b);
+    assert.deepEqual([rb.person_id, rb.link_how], [X.id, "manual"]);
+    assert.equal((await link("history", b, "manual", PL.ids[2])).body.error, "other-name");
+    // 신청 줄 — 이 분께 이어진 뒤 이름 열쇠가 달라진 경우(새 명부) — 「이분 아님」은 되고 「이분 것」은 nameKey 가 같아야 한다
+    const pl = await rest(`people_links?kind=eq.order&row_id=eq.${PL.orders.o3}`, "PATCH", { person_id: X.id, link_how: "manual", match_basis: "사람이 이음" });
+    assert.equal(pl.length, 1, "o3 의 잇기 줄이 있어야 한다(앞 시험·ministryList 가 만든다)");
+    const on = await link("order", PL.orders.o3, "none");
+    assert.equal(on.body.ok, true, JSON.stringify(on.body));
+    const lo = await linkOf("order", PL.orders.o3);
+    assert.deepEqual([lo.person_id, lo.link_how], [null, "none"]);
+    assert.equal((await link("order", PL.orders.o3, "manual")).body.error, "other-name", "신청·명단의 이분 것은 nameKey 가 같아야 한다");
+  } finally {
+    await rest(`ministry_history?id=in.(${[a, b, c].join(",")})`, "DELETE");
+    await rest(`people_links?kind=eq.order&row_id=eq.${PL.orders.o3}`, "PATCH", { person_id: null, link_how: "auto", match_basis: "", import_id: 1 });
+    await rest(`church_people?person_id=eq.${X.id}`, "DELETE");
+  }
+});
 
 // ── 「📮 정정 신청」 빠진 사역을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) ──
 //   신청은 성경암송 api 가 쓰는 내부 갈래(x-internal-key · internalHistoryRequest)로 낸다 — 앱에서 낸 것과 같은 줄(교인ID 를 신청 때 찾는다).

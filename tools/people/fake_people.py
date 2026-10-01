@@ -31,10 +31,15 @@ def blank(pid):
     return r
 
 
+# 같은 이름 — 소속이 다른 동명이인(교적 표시 「확인 필요」 · 「자세히」 창 잇기 · 2026-10-01 에 둘 더함).
+# 교구·목장은 person() 이 가족 머리(head)로 정한다 — 23·47·31·64 는 서로 다른 교구다.
+SAME_NAME = {5: "김하늘", 12: "김하늘", 23: "이바다", 47: "이바다", 31: "최온유", 64: "최온유"}
+
+
 def name_of(i):
     # ⚠️ 사람마다 따로 뽑는다 — 한 줄기로 이어 뽑으면 2판에서 몇 명만 빠져도 뒤의 모두가 「바뀜」이 된다
-    if i in (5, 12):
-        return "김하늘"          # 5·12 는 같은 이름(확인 필요 시험)
+    if i in SAME_NAME:
+        return SAME_NAME[i]
     rnd = random.Random(f"name-{i}")
     return rnd.choice(SURNAMES) + rnd.choice(GIVEN)
 

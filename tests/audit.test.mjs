@@ -157,6 +157,24 @@ test("ministry.tester — 더함/뺌 · 이름 · 소속", () => {
   assert.equal(detailText(R("ministry.tester", { op: "remove", name: "홍길동", who: "" })), "뺌 · 홍길동");
 });
 
+test("ministry.phoneclear — 「사역 번호 지움」 · 지운 수", () => {
+  assert.match(LABEL["ministry.phoneclear"], /[가-힣]/);
+  assert.equal(detailText(R("ministry.phoneclear", { count: 12 }, "2027")), "결정된 신청 12건의 번호");
+});
+
+test("people.linksync — 「기록 잇기 맞추기」 · 수만", () => {
+  assert.match(LABEL["people.linksync"], /[가-힣]/);
+  assert.equal(detailText(R("people.linksync", { orders: 1200, signups: 2834, added: 3, changed: 1, unmatched: 12, written: 4034 }, "8")),
+    "사역신청 1200줄 · 성경필사 2834줄 · 새로 이음 3 · 바뀜 1 · 못 맞춤 12");
+});
+
+test("people.link — 「교적 잇기」 · 줄 종류 · 줄 번호 · 어떻게(이름·교인ID 없음)", () => {
+  assert.match(LABEL["people.link"], /[가-힣]/);
+  assert.equal(detailText(R("people.link", { kind: "order", row: 12, how: "manual" }, "12")), "사역신청 줄 12 · 이분 것");
+  assert.equal(detailText(R("people.link", { kind: "signup", row: 7, how: "none" }, "7")), "성경필사 줄 7 · 이분 아님");
+  assert.equal(detailText(R("people.link", { kind: "signup", row: 7, how: "auto" }, "7")), "성경필사 줄 7 · 잇기 풀기");
+});
+
 // ── 사역 이력(2026-10-01) — 기록 일곱 가지 · people.lookup(from:"history") ──
 test("사역 이력 기록 일곱 가지 — 한국말 이름 · detail 줄(이름·교인ID 없이 해·수만)", () => {
   for (const a of ["history.upload", "history.add", "history.edit", "history.delete", "history.link", "history.rematch", "history.export"]) {

@@ -18,6 +18,9 @@ import { sourceLine, affText, csvText, searchPayload, initialOf, exportName, pag
   FILTER_KEYS, pickSummary, filterChoices, sameSet, nextSort, sortMark, SORTS } from "./people-logic.js";
 import { personDetailHtml } from "./person-detail.js";
 import { pickMany } from "../../core/picker.js";
+// 「자세히」 창의 사역·성경필사 탭(2026-10-01) — 손잡이는 person-tabs.js · 마지막 창이 보던 탭(detailTab)은 person-popup.js 도 쓴다
+import { bindPersonTabs, detailTab } from "./person-tabs.js";
+export { detailTab } from "./person-tabs.js";
 
 const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
 // 앞 「자세히」 창을 아직 여는 중(peoplePerson 을 기다림)에 또 누르면 — 말없이 버리지 않는다(FE1-M2)
@@ -101,7 +104,8 @@ function download(text, name) {
 // 「가족 모두 목록으로」는 onFamily(세대주 교인ID, 세대주 이름) — 목록을 그 가족으로 바꾼다.
 // back — 창을 닫으면 초점을 돌려줄 줄(창이 뜨면 초점은 「닫기」 단추로 간다).
 // 성경필사(암송) 「이름을 누르면 교적 창」(js/menus/bibleevent/person-popup.js)도 이것을 부른다 — 이름·인자·가족 단추(data-fam·data-fam-all)를 바꾸면 그쪽도.
-export async function openPerson(call, id, onFamily, back) {
+// opts.tab — 처음 열 탭(가족으로 넘어갈 때 보던 탭 · 없으면 교적).
+export async function openPerson(call, id, onFamily, back, opts = {}) {
   if (opening) { toast(OPENING_NOTE); return; }
   opening = true;
   let handedOff = false;                // 가족으로 넘어가면 opening·초점은 그쪽 호출이 맡는다(아래)
@@ -111,9 +115,10 @@ export async function openPerson(call, id, onFamily, back) {
     const p = r.person;
     const fam = familyOrder(r.family || [], p.household_id);
     // 본문(사진·이름·전화 | 묶음·가족)은 person-detail.js — 이름이 본문 안에 있어 창 제목은 비운다(ui.js 가 숨긴다)
-    const closed = dialog({ title: "", html: personDetailHtml(p, fam), ok: "닫기", cancel: null, cls: "pd" });
+    const closed = dialog({ title: "", html: personDetailHtml(p, fam, r.history || null, opts.tab), ok: "닫기", cancel: null, cls: "pd" });
     const dlg = [...document.querySelectorAll(".dlg-dim")].pop();   // dialog 는 창을 곧바로(동기로) 붙인다
     dlg.querySelector(".dlg").setAttribute("aria-label", `${p.name || "이름 없음"} 자세히`);
+    if (r.history) bindPersonTabs({ dlg, call, personId: Number(p.person_id), history: r.history, tab: opts.tab });
     // 사진 주소가 그사이 만료됐거나 못 불러오면 같은 크기의 첫 글자 칸으로
     const img = dlg.querySelector("img.pd-photo");
     if (img) img.addEventListener("error", () => {
@@ -131,7 +136,7 @@ export async function openPerson(call, id, onFamily, back) {
       handedOff = true;
       okBtn.click();                                                // 이 창을 닫고
       opening = false;                                              // 다음 창(가족)은 새로 연다
-      if (f) openPerson(call, f.dataset.fam, onFamily, back);
+      if (f) openPerson(call, f.dataset.fam, onFamily, back, { tab: detailTab() });
       else onFamily(Number(all.dataset.famAll), p.household_head || "");
     });
     await closed;

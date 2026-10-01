@@ -16,8 +16,11 @@ export const LABEL = {
   "ministry.catalog": "사역팀 정보 고침", "ministry.order": "사역팀 차례 바꿈",
   "ministry.paper": "종이 명단 넣음",
   "ministry.tester": "사역 시험 참여자",
+  "ministry.phoneclear": "사역 번호 지움",
   "history.request": "사역 이력 정정 신청 처리", "history.request.delete": "사역 이력 정정 신청 삭제",
   "people.search": "명부 찾기", "people.view": "교인 보기", "people.export": "명부 내려받기", "people.import": "명부 올림",
+  "people.linksync": "기록 잇기 맞추기",
+  "people.link": "교적 잇기",
   // 성경필사(암송) — detail 모양은 서버 index.ts 의 audit() 호출과 한 벌(tests/audit.test.mjs 가 못 박는다)
   "event.create": "성경필사 회차 만듦", "event.settings": "성경필사 회차 설정 바꿈",
   "event.add": "성경필사 명단 더함", "event.edit": "성경필사 명단 고침", "event.delete": "성경필사 명단 뺌",
@@ -61,6 +64,8 @@ const EV_FIELD = { title: "이름", short_title: "짧은 이름", subtitle: "부
   opens_on: "시작일", closes_on: "마감일", status: "상태", list_until: "공개 종료일", sort_order: "차례" };
 const ROW_FIELD = { who_type: "구분", group: "소속", sub: "세부", name: "이름", position: "직분" };
 const SRC = { app: "📱 앱", import: "📋 이관" };                                           // 📋 회차·명단의 출처 표시와 같다
+const LINK_KIND = { order: "사역신청", signup: "성경필사", history: "사역 이력" };
+const LINK_HOW = { manual: "이분 것", none: "이분 아님", auto: "잇기 풀기" };
 const joinDot = (...parts) => parts.filter(Boolean).join(" · ");
 // 정정 신청 종류(requests-logic.js KIND_TEXT 와 같은 글자 · 이 파일은 그 메뉴를 import 하지 않는다)
 const REQ_KIND = { not_mine: "내 것이 아니에요", wrong_team: "팀·부서가 틀려요", other: "그 밖에", missing: "빠진 사역", find_me: "내 기록 찾아 주세요" };
@@ -98,6 +103,7 @@ export function detailText(r) {
   if (r.action === "ministry.order") return `${(d.ids || []).length}팀`;
   if (r.action === "ministry.paper") return `저장 ${d.saved} · 새 계정 ${d.created} · 그대로 ${d.same} · 오류 ${d.errors}`;
   if (r.action === "ministry.tester") return [d.op === "add" ? "더함" : "뺌", d.name, d.who].filter(Boolean).join(" · ");
+  if (r.action === "ministry.phoneclear") return `결정된 신청 ${d.count ?? 0}건의 번호`;
   if (r.action === "history.request") {
     return [`#${d.id ?? r.target}`, REQ_KIND[d.kind] || d.kind || "", `${d.from || ""} → ${d.to || ""}`, d.verified ? "본인 확인" : ""].filter(Boolean).join(" · ");
   }
@@ -115,6 +121,9 @@ export function detailText(r) {
     return `${d.count}명${d.q ? ` · ‘${d.q}’` : ""}${f ? " · " + f : ""}`;
   }
   if (r.action === "people.import") return `기준일 ${d.source_date} · 전체 ${d.total} · 새로 ${d.added} · 바뀜 ${d.changed} · 빠짐 ${d.removed} · 사진 ${d.photos}`;
+  if (r.action === "people.linksync") return joinDot(`사역신청 ${d.orders ?? 0}줄`, `성경필사 ${d.signups ?? 0}줄`,
+    `새로 이음 ${d.added ?? 0}`, `바뀜 ${d.changed ?? 0}`, `못 맞춤 ${d.unmatched ?? 0}`);
+  if (r.action === "people.link") return joinDot(`${LINK_KIND[d.kind] || d.kind || ""} 줄 ${d.row ?? ""}`, LINK_HOW[d.how] || d.how || "");
   if (r.action === "event.create") {
     const a = d.after || {};
     return joinDot(`‘${d.title || a.title || ""}’`, `${a.opens_on || ""} ~ ${a.closes_on || ""}`,

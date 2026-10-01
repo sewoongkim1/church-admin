@@ -14,6 +14,9 @@ export const ACTION_ROLES: Record<string, string | null> = {
   membersSetRoles: "super",
   membersSetStatus: "super",
   auditList: "super",
+  // 교인명부(2026-10-01) — 새 명부를 올린 뒤 사역신청·성경필사 기록을 교인과 다시 잇는다(auto 줄만 · 사람이 정한 줄은 그대로).
+  //   apply:true 가 아니면 세기만 한다(시험 PROBE 가 아무것도 안 바꾸게). 기록 people.linksync(수만).
+  peopleLinkSync: "super",
   // 사역신청(2단계 · 2026-09-28) — 임명현황. 읽기만, 임명확정만, 번호·메모 없음.
   ministryAppointed: "ministry",
   // 사역신청(3단계) — 신청 현황. 목록은 번호·메모를 담는다(관리 화면 전용). 상태 바꾸기·삭제는 바꾼 기록에 남는다.
@@ -43,6 +46,10 @@ export const ACTION_ROLES: Record<string, string | null> = {
   peoplePerson: "directory",
   peopleStats: "directory",
   peopleExport: "directory",
+  // 교인명부 「자세히」 창 사역·성경필사 탭(2026-10-01) — 이름이 같고 아직 안 이어진 기록(읽기만 · 기록 없음 — 창을 연 people.view 가 있다) ·
+  //   「이분 것」·「이분 아님」·「풀기」(줄 이름 = 교인 이름일 때만 · 바꾼 기록 people.link). 메모·사유·전화·앱 계정은 싣지 않는다.
+  peopleHistory: "directory",
+  peopleLink: "directory",
   // 성경필사(암송)(2026-09-29) — 성경암송 앱의 이벤트 명단(events·event_signups). 여기는 읽기 넷
   // (회차 목록·명단·사람별 이력·통계). 줄은 이름·소속·직분·담당자 메모·교적 표시만 — user_id·신원 키·
   // 성도님 전화·메모·답은 싣지 않는다. 쓰기(회차 설정·줄 고치기·올리기)는 Task 6~8 이 이 아래에 더한다.
@@ -72,6 +79,9 @@ export const ACTION_ROLES: Record<string, string | null> = {
   ministryTesters: "ministry",
   ministryTesterFind: "ministry",
   ministryTesterSave: "ministry",
+  // 사역신청 번호 보관(2026-10-01 · 교인명부 세션 설계 §6) — 결정 때 번호를 지우지 않고, 신청 현황 「결정된 신청 번호 지우기(N건)」로.
+  //   보낸 수(count)가 지금 수와 같을 때만 지운다(그사이 바뀌었으면 conflict · 시험 PROBE 도 이 길로 아무것도 안 바꾼다). 바꾼 기록 ministry.phoneclear.
+  ministryPhoneClear: "ministry",
   // 사역 이력(2026-10-01) — 지난 해 사역 임명 명단(엑셀)과 교인ID 잇기(표 ministry_history · history-db.ts). 응답의 person_id 는
   // 교인명부·총괄 역할일 때만(서버가 ctx.roles 로). 후보 보기는 「교인명부 기록」 people.lookup(from:"history") · 쓰기는 「바꾼 기록」 history.*.
   historyList: "ministry",

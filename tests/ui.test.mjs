@@ -65,3 +65,7 @@ test("성경필사(암송) 오류 코드 — 모두 한국말(「처리하지 �
   // 서버 checkRow 는 교구 줄에도 no-group 을 준다(소속이 비면) — 「부서」만 말하지 않는다
   assert.match(errorText({ error: "no-group" }), /교구/);
 });
+
+test("교인명부 잇기 오류 코드 — 한국말(2026-10-01)", () => {
+  for (const c of ["no-directory", "other-name", "not-linked", "bad-kind"]) assert.notEqual(errorText({ error: c }), "처리하지 못했어요", c);
+});

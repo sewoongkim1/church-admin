@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { STATES, SHORT, kstToday, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts }
+import { STATES, SHORT, kstToday, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts, phoneClearCount }
   from "../js/menus/ministry/status-logic.js";
 
 const R = (o) => ({ id: 1, name: "", who: "", position: "", committee: "", team: "", option: "", status: "신청완료", at: "2026-09-20", phone: "", ...o });
@@ -55,4 +55,12 @@ test("팀별 수(많은 순) · 상태별 수", () => {
   const rows = [R({ committee: "찬양부", team: "A" }), R({ committee: "찬양부", team: "A" }), R({ committee: "전도부", team: "B", status: "취소" })];
   assert.deepEqual(teamCounts(rows), [["찬양부 · A", 2], ["전도부 · B", 1]]);
   assert.deepEqual(statusCounts(rows), { 신청완료: 2, 접수완료: 0, 임명확정: 0, 취소: 1 });
+});
+
+test("phoneClearCount — 결정된(임명·미채택·취소) 신청 가운데 번호가 남은 것(서버 ministryPhoneClear 와 같은 셈)", () => {
+  const rows = [{ status: "임명확정", phone: "010-0000-0001" }, { status: "취소", phone: "" }, { status: "접수완료", phone: "010-0000-0002" },
+    { status: "미채택", phone: "x" }, { status: "취소", phone: "010-0000-0003" }, { status: "신청완료", phone: "" }];
+  assert.equal(phoneClearCount(rows), 3);
+  assert.equal(phoneClearCount([]), 0);
+  assert.equal(phoneClearCount(null), 0);
 });
