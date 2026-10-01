@@ -3,7 +3,8 @@
 -- ⚠️ 서버(church-admin 함수의 service role)만 읽고 쓴다. 공개 키·로그인 사용자(카카오 계정만 있으면 누구나) 모두 막는다.
 --    RLS 를 켜고 정책을 두지 않으며 anon·authenticated 권한을 뺀다. 맞춤 결과를 한꺼번에 쓰는 함수도 service_role 만 부른다.
 -- ⚠️ person_id 에 FK 를 걸지 않는다 — 12월 새 교인명부에서 빠진 분의 줄도 남아야 한다(명부에 없으면 화면이 「명부에 없음」).
--- ⚠️ 교인명부 세션(자세히 창)은 이 표를 person_id 로 **읽기만** 한다 — 칸 이름을 바꾸면 그쪽 설계(2026-10-01-person-history-tabs)도.
+-- ⚠️ 교인명부 세션(자세히 창)은 이 표를 person_id 로 읽고, 「이분 것」으로 한 줄씩 고친다(history-match.ts historyLinkPatch·historyUnlinkPatch
+--    + history-db.ts rematchHistoryRows · 설계 §7) — 칸 이름을 바꾸면 그쪽 설계(2026-10-01-person-history-tabs)도.
 -- 여러 번 돌려도 안전하다(if not exists · create or replace).
 -- 실행: supabase --workdir <작업 폴더> db query --linked -f C:/Projects/church-admin/supabase/sql/005_ministry_history.sql
 begin;
@@ -60,8 +61,11 @@ revoke all on ministry_history, ministry_history_imports from anon, authenticate
 revoke all on sequence ministry_history_id_seq, ministry_history_imports_id_seq from anon, authenticated;
 
 -- 맞춤 결과 한꺼번에 쓰기(다시 맞추기) — 자동 줄만, 그사이 사람이 고친 줄(updated_at 이 다름)은 건너뛴다.
---   p = [{ "id": 1, "expect": "<updated_at 그대로>", "person_id": 123 | null, "match_basis": "…", "match_reason": "…" }, …]
+--   p = [{ "id": 1, "expect": "<updated_at 그대로>", "old_person_id": 45 | null, "old_basis": "…", "old_reason": "…",
+--          "person_id": 123 | null, "match_basis": "…", "match_reason": "…" }, …]
 --   updated_at 은 올리지 않는다(맞춤만 바뀌었다 — 열려 있는 고치기 창이 conflict 로 막히지 않게).
+--   그래서 읽었던 맞춤 상태(old_*)도 맞아야 쓴다 — 동시에 돈 두 다시 맞추기 중 낡은 쪽이 더 새 결과를 덮지 않게(2026-10-01 최종 검토).
+--   old_* 를 안 보낸 옛 부름(씨앗 등)은 「아직 맞춘 적 없는 줄」(교인ID 없음 · 근거·사유 빈칸)에만 쓴다.
 create or replace function public.ministry_history_apply(p jsonb)
 returns integer language plpgsql set search_path = public as $$
 declare n integer;
@@ -74,7 +78,10 @@ begin
    where h.id = (x->>'id')::bigint
      and h.link_how = 'auto'
      and h.deleted_at is null
-     and h.updated_at = (x->>'expect')::timestamptz;
+     and h.updated_at = (x->>'expect')::timestamptz
+     and h.person_id is not distinct from nullif(x->>'old_person_id', '')::int
+     and h.match_basis = coalesce(x->>'old_basis', '')
+     and h.match_reason = coalesce(x->>'old_reason', '');
   get diagnostics n = row_count;
   return n;
 end $$;

@@ -4,13 +4,16 @@
 //   딱 이 두 자리(쓴 뒤 기록 · 갱신 0행)만 확인한다. 더 큰 흐름(올리기 한 바퀴·고르기·오타 후보)은 개발 서버 시험(과제 7)에서.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tidyHistoryRow, rowOut, makeHistory, HISTORY_FIELD_MAX } from "../supabase/functions/church-admin/history-db.ts";
+import { tidyHistoryRow, rowOut, makeHistory, HISTORY_FIELD_MAX, HISTORY_UNMATCHED_YET, historyFilter, rematchHistoryRows, erasedKey }
+  from "../supabase/functions/church-admin/history-db.ts";
+import { srcKey } from "../supabase/functions/church-admin/history-match.ts";
 
 // 아주 작은 가짜 쿼리빌더 — supabase-js 체인(.select().eq()... await)을 흉내만 낸다.
-// resolver(table, 부른 메서드 이름 배열) 가 {data,error} 를 돌려주거나 던진다(DB 오류를 흉내).
+// resolver(table, 부른 메서드 이름 배열, qb) 가 {data,error} 를 돌려주거나 던진다(DB 오류를 흉내).
+//   qb.log = [[메서드, 인자 배열], …] — 쪽 넘기기(range 의 시작)·잠금(eq updated_at)을 보려는 시험만 쓴다.
 class FakeQB {
-  constructor(table, resolver) { this.table = table; this.resolver = resolver; this.calls = []; }
-  _push(name, args) { this.calls.push(name); return this; }
+  constructor(table, resolver) { this.table = table; this.resolver = resolver; this.calls = []; this.log = []; }
+  _push(name, args = []) { this.calls.push(name); this.log.push([name, args]); return this; }
   select(...a) { return this._push("select", a); }
   insert(...a) { return this._push("insert", a); }
   update(...a) { return this._push("update", a); }
@@ -22,9 +25,15 @@ class FakeQB {
   range(...a) { return this._push("range", a); }
   maybeSingle() { return this._push("maybeSingle"); }
   single() { return this._push("single"); }
-  then(onRes, onRej) { return Promise.resolve().then(() => this.resolver(this.table, this.calls)).then(onRes, onRej); }
+  then(onRes, onRej) { return Promise.resolve().then(() => this.resolver(this.table, this.calls, this)).then(onRes, onRej); }
 }
-const fakeDb = (resolver) => ({ from: (t) => new FakeQB(t, resolver), rpc: async () => { throw new Error("이 시험은 rpc 를 쓰지 않는다"); } });
+const fakeDb = (resolver, rpc = async () => { throw new Error("이 시험은 rpc 를 쓰지 않는다"); }) =>
+  ({ from: (t) => new FakeQB(t, resolver), rpc });
+// all() 의 쪽 넘기기 — 첫 쪽(range 시작 0)에만 자료, 다음 쪽은 빈 배열(끝)
+const page0 = (qb, rows) => ({ data: qb.log.find(([n]) => n === "range")[1][0] === 0 ? rows : [], error: null });
+// 가짜 명부 한 분(교구 기쁨 19목장 집사) · HISTORY_PEOPLE_COLS 모양
+const PERSON = { person_id: 11, name: "가나다", gender: "여", kind2: "장년", mok1: "기쁨", mok3: "기쁨-19목장", school_dept: "",
+  position: "집사", position_detail: "", birth: "", birth_date: null, registered: "", registered_date: null, household_id: null };
 
 test("tidyHistoryRow — 해·이름 검사 · 칸 다듬기(NFC·빈칸 접기)", () => {
   assert.equal(tidyHistoryRow({ year: 1900, name: "가" }).error, "bad-year");
@@ -114,4 +123,227 @@ test("잇기 — 그사이 빠진 줄(갱신 0행)은 not-found · 기록을 남
   assert.equal(res.ok, false);
   assert.equal(res.error, "not-found");
   assert.equal(audits.length, 0);
+});
+
+// ── 2026-10-01 최종 검토 반영 ──────────────────────────────────────────
+
+// 살펴보기도 교인명부에 물은 것이다(생년·등록연도·성별의 답이 된다) — 명부를 실제로 읽었을 때만 people.lookup 한 줄
+test("살펴보기 — 새 줄이 있고 명부가 있으면 people.lookup(from:history-check · 물은 이름 · 이어진 수) 한 줄 · 쓰지는 않는다", async () => {
+  const audits = [];
+  const db = fakeDb((table, calls, qb) => {
+    if (calls.includes("insert") || calls.includes("update")) throw new Error("살펴보기가 썼다: " + table);
+    if (table === "church_people" && !calls.includes("range")) return { count: 1, error: null };   // hasDirectory
+    if (table === "church_people") return page0(qb, [PERSON]);                                     // loadPeople
+    if (table === "ministry_history") return page0(qb, []);                                        // judgeUpload · loadHistory(빈 표)
+    throw new Error("이 시험이 다루지 않는 호출: " + table + " " + JSON.stringify(calls));
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const ctx = { member: { id: "m" }, roles: ["ministry"] };
+  const rows = [
+    { year: 2024, name: "가나다", team: "가 찬양대", mok: "기쁨-19", position: "집사" },
+    { year: 2024, name: "가 나다", team: "나 찬양대", mok: "기쁨-19", position: "집사" },   // 같은 이름 열쇠 — 물은 이름은 하나로
+    { year: 2024, name: "라마바", team: "가 찬양대", mok: "기쁨-19", position: "집사" },
+    { year: 2024, name: "", team: "가 찬양대" },                                              // 틀린 줄 — 묻지 않는다
+  ];
+  const res = await H.upload(ctx, { rows, file_name: "x.xlsx" }, false);
+  assert.equal(res.ok, true);
+  assert.deepEqual([res.counts.add, res.counts.bad, res.preview.linked, res.preview.unlinked], [3, 1, 2, 1]);
+  assert.equal(audits.length, 1);
+  const [, action, target, detail] = audits[0];
+  assert.deepEqual([action, target], ["people.lookup", ""]);
+  assert.deepEqual(detail, { from: "history-check", asked: 2, askedNames: ["가나다", "라마바"], count: 2 });
+});
+
+test("살펴보기 — 물은 이름은 50개까지만 싣고 asked 는 전부 센다", async () => {
+  const audits = [];
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "church_people" && !calls.includes("range")) return { count: 1, error: null };
+    if (table === "church_people") return page0(qb, [PERSON]);
+    if (table === "ministry_history") return page0(qb, []);
+    throw new Error("이 시험이 다루지 않는 호출: " + table);
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const rows = Array.from({ length: 60 }, (_, i) => ({ year: 2024, name: "가나다" + String.fromCharCode(0xAC00 + i), team: "가" }));
+  await H.upload({ member: null, roles: ["ministry"] }, { rows }, false);
+  assert.equal(audits[0][3].asked, 60);
+  assert.equal(audits[0][3].askedNames.length, 50);
+});
+
+test("살펴보기 — 빈 올리기·명부 없음은 명부를 읽지 않으니 기록도 없다(noDirectory)", async () => {
+  const audits = [];
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "church_people" && !calls.includes("range")) return { count: 0, error: null };   // 명부 없음
+    if (table === "church_people") throw new Error("명부 없음인데 명부를 읽었다");
+    if (table === "ministry_history") return page0(qb, []);
+    throw new Error("이 시험이 다루지 않는 호출: " + table);
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const ctx = { member: { id: "m" }, roles: ["ministry"] };
+  assert.equal((await H.upload(ctx, { rows: [] }, false)).ok, true);
+  const r = await H.upload(ctx, { rows: [{ year: 2024, name: "가나다", team: "가" }] }, false);
+  assert.equal(r.preview.noDirectory, true);
+  assert.deepEqual(audits, []);
+});
+
+test("올리기(저장) — 새 줄에 자리 표시 사유 · 기록은 넣은 바로 뒤(올린 기록 표 고치기가 실패해도) · 명부 없음이면 rematched:false", async () => {
+  const audits = [], order = [];
+  let inserted = null;
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "ministry_history_imports" && calls.includes("insert")) return { data: { id: 1 }, error: null };
+    if (table === "ministry_history_imports" && calls.includes("update")) { order.push("imports"); return { error: { message: "시험 — 갱신 실패" } }; }
+    if (table === "ministry_history" && calls.includes("insert")) { inserted = qb.log.find(([n]) => n === "insert")[1][0]; return { error: null }; }
+    if (table === "ministry_history") return page0(qb, []);
+    if (table === "church_people") return { count: 0, error: null };                               // 명부 없음
+    throw new Error("이 시험이 다루지 않는 호출: " + table + " " + JSON.stringify(calls));
+  });
+  const H = makeHistory({ db, audit: async (...a) => { order.push("audit"); audits.push(a); } });
+  const err = console.error; console.error = () => {};
+  let res;
+  try {
+    res = await H.upload({ member: { id: "m" }, roles: ["ministry"] }, { rows: [{ year: 2024, name: "가나다", team: "가" }] }, true);
+  } finally { console.error = err; }
+  assert.deepEqual([res.ok, res.saved, res.rematched], [true, 1, false]);
+  assert.equal("linked" in res, false);
+  assert.equal(inserted[0].match_reason, HISTORY_UNMATCHED_YET);
+  assert.deepEqual(order, ["audit", "imports"]);                   // 기록이 먼저 · 갱신 실패가 기록을 막지 않는다
+  assert.equal(audits[0][1], "history.upload");
+});
+
+test("올리기(저장) — 한 줄도 못 넣었으면(saved 0) 다시 맞추지 않고 rematched:false · 기록은 남는다", async () => {
+  const audits = [];
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "ministry_history_imports" && calls.includes("insert")) return { data: { id: 1 }, error: null };
+    if (table === "ministry_history_imports" && calls.includes("update")) return { error: null };
+    if (table === "ministry_history" && calls.includes("insert")) return { error: { code: "23502", message: "시험 — 넣기 실패" } };
+    if (table === "ministry_history") return page0(qb, []);
+    throw new Error("이 시험이 다루지 않는 호출(다시 맞추기를 돌렸다?): " + table + " " + JSON.stringify(calls));
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const err = console.error; console.error = () => {};
+  let res;
+  try {
+    res = await H.upload({ member: { id: "m" }, roles: ["ministry"] }, { rows: [{ year: 2024, name: "가나다", team: "가" }] }, true);
+  } finally { console.error = err; }
+  assert.deepEqual([res.saved, res.failed, res.rematched], [0, 1, false]);
+  assert.deepEqual(audits.map((a) => [a[1], a[3].saved, a[3].failed]), [["history.upload", 0, 1]]);
+});
+
+test("rematchHistoryRows — 패치에 읽었던 맞춤 상태(old_person_id·old_basis·old_reason)를 싣는다 · 명부 차례로 읽는다", async () => {
+  const sent = [];
+  const row = { id: 5, year: 2024, committee: "", team: "가", name: "가나다", position: "집사", mok: "기쁨-19", renewal: "",
+    link_how: "auto", person_id: null, match_basis: "", match_reason: HISTORY_UNMATCHED_YET, updated_at: "T" };
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "church_people" && !calls.includes("range")) return { count: 1, error: null };
+    if (table === "church_people") { assert.ok(calls.includes("order")); return page0(qb, [PERSON]); }
+    if (table === "ministry_history") return page0(qb, [row]);
+    throw new Error("이 시험이 다루지 않는 호출: " + table);
+  }, async (fn, args) => { sent.push([fn, args]); return { data: 1, error: null }; });
+  const m = await rematchHistoryRows(db, null);
+  assert.deepEqual([m.changed, m.linked, m.total], [1, 1, 1]);
+  assert.equal(sent[0][0], "ministry_history_apply");
+  assert.deepEqual(sent[0][1].p, [{ id: 5, expect: "T", old_person_id: null, old_basis: "", old_reason: HISTORY_UNMATCHED_YET,
+    person_id: 11, match_basis: "같은 소속", match_reason: "" }]);
+});
+
+test("잇기 — expect(줄의 updated_at)가 다르면 conflict · 쓰지도 기록하지도 않는다 · 같아도 그사이 바뀌어 0행이면 conflict", async () => {
+  const audits = [];
+  let updates = 0;
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "ministry_history" && calls.includes("maybeSingle"))
+      return { data: { id: 7, year: 2024, person_id: null, deleted_at: null, updated_at: "T1" }, error: null };
+    if (table === "ministry_history" && calls.includes("update")) {
+      updates++;
+      assert.ok(qb.log.some(([n, a]) => n === "eq" && a[0] === "updated_at" && a[1] === "T1"), "갱신에 updated_at 잠금이 없다");
+      return { data: [], error: null };                              // 그사이 누가 바꿨다
+    }
+    throw new Error("이 시험이 다루지 않는 호출: " + table + " " + JSON.stringify(calls));
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const ctx = { member: { id: "m" }, roles: ["ministry"] };
+  assert.equal((await H.link(ctx, { id: 7, op: "none", expect: "T0" })).error, "conflict");
+  assert.equal(updates, 0);
+  assert.equal((await H.link(ctx, { id: 7, op: "none", expect: "T1" })).error, "conflict");
+  assert.equal(updates, 1);
+  assert.equal(audits.length, 0);
+});
+
+test("후보 — 지금 이어진 분이 이름 열쇠 밖(오타 규칙 등)이라 끝에 더했으면 기록에 extra:1", async () => {
+  const audits = [];
+  const row = { id: 9, year: 2024, committee: "", team: "가", role_title: "", name: "가나닥", position: "집사", mok: "기쁨-19",
+    renewal: "", src_note: "", person_id: 11, link_how: "auto", match_basis: "이름 한 글자 다름(오타로 봄)", match_reason: "",
+    source: "excel", source_file: "", linked_at: null, updated_at: "T", deleted_at: null };
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "ministry_history" && calls.includes("maybeSingle")) return { data: row, error: null };
+    if (table === "ministry_history") return page0(qb, []);          // 다른 해 같은 팀 횟수
+    if (table === "church_people" && calls.includes("maybeSingle")) return { data: PERSON, error: null };   // 지금 이어진 분
+    if (table === "church_people" && calls.includes("range")) return page0(qb, []);                         // 이름 열쇠 — 없음
+    if (table === "church_people" && calls.includes("in")) return { data: [{ person_id: 11 }], error: null }; // 명부에 있는지
+    throw new Error("이 시험이 다루지 않는 호출: " + table + " " + JSON.stringify(calls));
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const res = await H.candidates({ member: { id: "m" }, roles: ["ministry"] }, { id: 9 });
+  assert.equal(res.candidates.length, 1);
+  assert.equal(res.candidates[0].current, true);
+  assert.deepEqual(audits[0].slice(1), ["people.lookup", "", { q: "가나닥", count: 1, from: "history", extra: 1 }]);
+});
+
+// 지워 달라는 요청으로 이름까지 지운 줄(CLAUDE.md 비상 절차 ②-1) — SQL 이 src_key 를 'erased:'||sha256 으로 바꾼다.
+// 같은 원본을 다시 올려도 되살아나지 않아야 한다(「빼 둔 줄과 같음」).
+test("erasedKey — SQL 의 'erased:' || encode(sha256(convert_to(src_key,'UTF8')),'hex') 와 같은 값 · 다시 올리면 「빼 둔 줄과 같음」", async () => {
+  const { createHash } = await import("node:crypto");
+  const key = srcKey({ year: 2024, committee: "찬양부", team: "가", name: "가나다", mok: "기쁨-19", position: "집사" });
+  assert.equal(await erasedKey(key), "erased:" + createHash("sha256").update(key, "utf8").digest("hex"));
+  const tomb = await erasedKey(key);
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "ministry_history") return page0(qb, [{ id: 1, src_key: tomb, deleted_at: "D" }]);
+    if (table === "church_people") return { count: 0, error: null };
+    throw new Error("이 시험이 다루지 않는 호출: " + table);
+  });
+  const H = makeHistory({ db, audit: async () => {} });
+  const r = await H.upload({ member: null, roles: ["ministry"] },
+    { rows: [{ year: 2024, committee: "찬양부", team: "가", name: "가나다", mok: "기쁨-19", position: "집사" }] }, false);
+  assert.deepEqual([r.counts.add, r.counts.deleted], [0, 1]);
+});
+
+test("historyFilter — 목록·내려받기 공용(해 · 못 맞춤/근거 약함 · 이름·팀·부서 찾기)", () => {
+  const rows = [
+    { id: 1, year: 2024, name: "가나다", team: "가 찬양대", committee: "찬양부", person_id: 11, match_basis: "같은 소속" },
+    { id: 2, year: 2024, name: "라마바", team: "가 찬양대", committee: "찬양부", person_id: 12, match_basis: "같은 교구(목장 다름)" },
+    { id: 3, year: 2023, name: "사아자", team: "나 전도대", committee: "전도부", person_id: null, match_basis: "" },
+  ];
+  const ids = (b) => historyFilter(rows, b).hit.map((r) => r.id);
+  assert.deepEqual(ids({}), [1, 2, 3]);
+  assert.deepEqual(ids({ years: [2024] }), [1, 2]);
+  assert.deepEqual(ids({ only: "none" }), [3]);
+  assert.deepEqual(ids({ only: "weak" }), [2]);
+  assert.deepEqual(ids({ q: "가 나" }), [1]);
+  assert.deepEqual(ids({ q: "전도" }), [3]);
+  assert.deepEqual(ids({ only: "bogus", years: ["x"] }), [1, 2, 3]);
+});
+
+test("내려받기 — 화면의 거르기(only·q)를 따른다 · 기록에 찾은 글자는 없다(search:true 만) · 명부는 차례로 읽는다", async () => {
+  const audits = [];
+  const rows = [
+    { id: 1, year: 2024, committee: "찬양부", team: "가", role_title: "", name: "가나다", position: "집사", mok: "기쁨-19", renewal: "",
+      src_note: "", person_id: 11, link_how: "auto", match_basis: "같은 소속", match_reason: "", source: "excel", source_file: "a", linked_at: null, updated_at: "T" },
+    { id: 2, year: 2024, committee: "찬양부", team: "가", role_title: "", name: "라마바", position: "집사", mok: "기쁨-19", renewal: "",
+      src_note: "", person_id: null, link_how: "auto", match_basis: "", match_reason: "교인명부에 같은 이름이 없음", source: "excel", source_file: "a", linked_at: null, updated_at: "T" },
+  ];
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "ministry_history") return page0(qb, rows);
+    if (table === "church_people") { assert.ok(calls.includes("order"), "allDirectoryIds 에 정렬이 없다"); return page0(qb, [{ person_id: 11 }]); }
+    throw new Error("이 시험이 다루지 않는 호출: " + table);
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const ctx = { member: { id: "m" }, roles: ["ministry"] };
+  const a = await H.exportRows(ctx, { only: "none" });
+  assert.deepEqual(a.rows.map((r) => r.id), [2]);
+  const b = await H.exportRows(ctx, { q: "가나" });
+  assert.deepEqual(b.rows.map((r) => r.id), [1]);
+  assert.equal(b.rows[0].in_directory, true);
+  assert.deepEqual(audits.map((x) => x[3]), [{ count: 1, years: [], only: "none" }, { count: 1, years: [], search: true }]);
+  assert.ok(!JSON.stringify(audits).includes("가나"), "기록에 찾은 글자가 실렸다");
+  // 거른 결과가 없으면 기록 없이 빈 줄(PROBE 와 같은 길)
+  assert.deepEqual((await H.exportRows(ctx, { years: [1951] })).rows, []);
+  assert.equal(audits.length, 2);
 });

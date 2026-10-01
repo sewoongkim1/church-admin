@@ -48,6 +48,9 @@ const ins = [];
 for (let i = 0; i < rows.length; i += 500) ins.push(...(await rest("ministry_history", "POST", rows.slice(i, i + 500))));
 const res = matchAll(ins.map((r) => ({ ...r, id: Number(r.id) })), dir.map(toHPerson));
 const byId = new Map(ins.map((r) => [Number(r.id), r]));
-const p = res.map((x) => ({ id: x.id, expect: byId.get(x.id).updated_at, person_id: x.person_id, match_basis: x.match_basis, match_reason: x.match_reason }));
+// old_* — apply 는 읽었던 맞춤 상태 그대로인 줄에만 쓴다(SQL 005 · 2026-10-01 최종 검토)
+const p = res.map((x) => { const r = byId.get(x.id);
+  return { id: x.id, expect: r.updated_at, old_person_id: r.person_id ?? null, old_basis: r.match_basis ?? "", old_reason: r.match_reason ?? "",
+    person_id: x.person_id, match_basis: x.match_basis, match_reason: x.match_reason }; });
 const n = await rest("rpc/ministry_history_apply", "POST", { p });
 console.log(`씨앗 ${ins.length}줄 · 교적 이어짐 ${res.filter((x) => x.person_id !== null).length} · 맞춤 쓴 줄 ${n}`);

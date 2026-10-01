@@ -2,7 +2,8 @@
 //   규칙은 history-match.ts(순수), 여기는 표 읽기·쓰기·응답 모양. index.ts 의 switch 가 makeHistory(...) 의 함수를 부른다.
 // ⚠️ npm import 를 두지 않는다 — db(supabase 클라이언트)를 받아 쓴다(Node 시험·교인명부 세션이 이 파일을 import 한다).
 // ⚠️ 응답은 칸 지도(rowOut·candOut)로만. person_id 는 full(교인명부·총괄 역할)일 때만 싣는다 — 사역신청 역할에게는 없다.
-// ⚠️ 기록(audit) detail 에 이름·교인ID 를 싣지 않는다(줄 id·해·수만). people.lookup 만 이름(q)을 싣는다(교인명부 기록 · 다른 화면과 같다).
+// ⚠️ 기록(audit) detail 에 이름·교인ID 를 싣지 않는다(줄 id·해·수만). people.lookup 만 이름을 싣는다(교인명부 기록 · 다른 화면과 같다) —
+//   줄 창 후보는 q(찾은 이름) · 올리기 살펴보기는 askedNames(명부에 맞춰 본 이름 · from:"history-check" · 2026-10-01 최종 검토).
 // 교인명부 세션(자세히 창 「이분 것」)이 쓰는 것: rematchHistoryRows(db, ids) · history-match.ts 의 historyLinkPatch·historyUnlinkPatch.
 import { matchAll, srcKey, hKey, teamKey, historyLinkPatch, historyUnlinkPatch, toHPerson, candFp, nameKeyVariants,
   HISTORY_PEOPLE_COLS, WEAK_RE, nfc } from "./history-match.ts";
@@ -19,6 +20,13 @@ const ROW_COLS = "id,year,committee,team,role_title,name,position,mok,renewal,sr
 const MATCH_COLS = "id,year,committee,team,name,position,mok,renewal,link_how,person_id,match_basis,match_reason,updated_at";
 const TEXT_KEYS = ["committee", "team", "role_title", "name", "position", "mok", "renewal"] as const;
 export const HISTORY_EDIT_KEYS = ["year", ...TEXT_KEYS, "src_note"] as const;
+// 고치면 다시 맞추기가 도는 칸 — 신규/유지(renewal)도 방아쇠다(§4.4 「다른 해 같은 팀」이 뒤쪽 해 줄의 신규/유지를 읽는다).
+//   화면(history-logic.js REMATCH_KEYS)이 같은 목록으로 「고른 분 보내기」를 막는다 — 시험이 맞댄다.
+export const HISTORY_REMATCH_KEYS = ["year", "name", "position", "mok", "team", "renewal"] as const;
+// 새 줄의 자리 표시 사유 — 넣은 뒤 다시 맞추기가 덮는다. 맞추지 못하고 남은 줄(중간에 멈춤·명부 없음)이 화면에서 스스로 드러나게.
+export const HISTORY_UNMATCHED_YET = "아직 맞추지 않음 — 🔄 다시 맞추기";
+// 올리기 살펴보기 기록(people.lookup · from:"history-check")에 싣는 이름 수 상한(물은 수 asked 는 전부 센다)
+const ASKED_NAMES_MAX = 50;
 
 type Db = any;
 export type HCtx = { member: { id: string } | null; roles: string[] };
@@ -80,8 +88,9 @@ async function directorySet(db: Db, ids: number[]): Promise<Set<number>> {
   return out;
 }
 // 모든 person_id — exportRows 처럼 수천 줄을 한 번에 가릴 때(수천 번 .in() 대신 전체를 한 번 페이지로)
+//   ⚠️ 정렬을 꼭 둔다 — 정렬 없이 쪽을 넘기면 그사이 고쳐진 행이 물리 순서상 옮겨져 교인ID 가 빠지거나 겹친다(「명부에 없음」이 거짓으로).
 async function allDirectoryIds(db: Db): Promise<Set<number>> {
-  const rows = await all(() => db.from("church_people").select("person_id"));
+  const rows = await all(() => db.from("church_people").select("person_id").order("person_id", { ascending: true }));
   return new Set(rows.map((r: any) => Number(r.person_id)));
 }
 
@@ -104,6 +113,8 @@ const asHRow = (r: any): HRow => ({
 
 // 다시 맞추기 — ids 가 null 이면 auto 줄 전부, 아니면 그 줄들만 고친다(계산은 늘 모든 해를 함께 — 다른 해 줄이 근거다 · 설계 §3.3)
 //   명부가 비었으면(올린 적 없음) 아무것도 고치지 않는다 — 맞춘 것을 모두 지우지 않게.
+//   패치에는 읽었던 맞춤 상태(old_person_id·old_basis·old_reason)도 싣는다 — apply 는 그 상태 그대로인 줄에만 쓴다.
+//   다시 맞추기는 updated_at 을 올리지 않으므로, 이게 없으면 동시에 돈 두 다시 맞추기 중 늦게 끝난 낡은 쪽이 새 결과를 덮는다.
 export async function rematchHistoryRows(db: Db, ids: number[] | null): Promise<{ changed: number; linked: number; total: number; noDirectory?: boolean }> {
   if (!(await hasDirectory(db))) return { changed: 0, linked: 0, total: 0, noDirectory: true };
   const [rows, people] = await Promise.all([loadHistory(db), loadPeople(db)]);
@@ -115,7 +126,8 @@ export async function rematchHistoryRows(db: Db, ids: number[] | null): Promise<
     const r = byId.get(x.id)!;
     if (r.link_how !== "auto" || (want && !want.has(x.id))) continue;
     if ((r.person_id ?? null) === x.person_id && r.match_basis === x.match_basis && r.match_reason === x.match_reason) continue;
-    patches.push({ id: x.id, expect: r.updated_at, person_id: x.person_id, match_basis: x.match_basis, match_reason: x.match_reason });
+    patches.push({ id: x.id, expect: r.updated_at, old_person_id: r.person_id ?? null, old_basis: r.match_basis ?? "",
+      old_reason: r.match_reason ?? "", person_id: x.person_id, match_basis: x.match_basis, match_reason: x.match_reason });
   }
   let changed = 0;
   for (let i = 0; i < patches.length; i += 500) {
@@ -138,12 +150,13 @@ async function candidatesFor(db: Db, row: any) {
   // 「이름 한 글자 다름(오타로 봄)」같이 다른 이름 규칙으로 이어진 줄은 지금 이어진 분이 이름 열쇠 후보에 없을 수 있다 —
   // 그분을 빼고 보여 주면 담당자가 지금 이어진 분을 확인할 수 없으니 끝에 더한다(설계 §4.5·§5 줄 창).
   const pid = row.person_id !== null && row.person_id !== undefined ? Number(row.person_id) : null;
+  let extra = false;                                     // 지금 이어진 분을 끝에 더했는가(기록에 extra:1 · 이름 열쇠로 찾은 분이 아니다)
   if (pid !== null && !people.some((p) => Number(p.person_id) === pid)) {
     const { data, error } = await db.from("church_people").select(HISTORY_PEOPLE_COLS + ",name_key").eq("person_id", pid).maybeSingle();
     if (error) throw error;
-    if (data) people.push(data);
+    if (data) { people.push(data); extra = true; }
   }
-  if (!people.length) return { list: [], fp: candFp([]) };
+  if (!people.length) return { list: [], fp: candFp([]), extra };
   const tk = teamKey(row.team);
   const ids = people.map((p) => Number(p.person_id));
   const served = new Map<number, number>();
@@ -157,7 +170,7 @@ async function candidatesFor(db: Db, row: any) {
     church_mok: churchMok(p), served: served.get(Number(p.person_id)) ?? 0,
   }));
   const fp = candFp(list.map((c) => [c.name, c.label, c.position, c.church_mok].join("|")));
-  return { list, fp };
+  return { list, fp, extra };
 }
 const candOut = (c: any, full: boolean, current: number | null) => {
   const o: Record<string, unknown> = { name: c.name, label: c.label, position: c.position, church_mok: c.church_mok,
@@ -180,6 +193,13 @@ async function outOrNull(db: Db, r: any, full: boolean) {
 }
 const idOf = (v: unknown): number => { const n = Number(v) || 0; return Number.isSafeInteger(n) && n > 0 ? n : 0; };
 
+// 지워 달라는 요청으로 이름을 지운 줄(CLAUDE.md 비상 절차 ②-1)의 열쇠 — 원래 src_key(이름이 든다)의 SHA-256(16진) 앞에 「erased:」.
+//   SQL 로 지울 때와 같은 값: 'erased:' || encode(sha256(convert_to(src_key, 'UTF8')), 'hex') — 같은 원본을 다시 올려도 「빼 둔 줄과 같음」.
+export async function erasedKey(key: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+  return "erased:" + [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 // 올리기 판정(살펴보기·넣기 공용) — 새 줄 · 이미 있음 · 빼 둔 줄과 같음 · 파일 안 겹침 · 틀림
 async function judgeUpload(db: Db, raws: unknown[]) {
   const items = raws.map((x, i) => {
@@ -194,9 +214,11 @@ async function judgeUpload(db: Db, raws: unknown[]) {
     for (const r of rows) existing.set(r.src_key, !!r.deleted_at);
   }
   const seen = new Set<string>();
+  const anyErased = [...existing.keys()].some((k) => String(k).startsWith("erased:"));   // 지운 줄이 있을 때만 열쇠를 해시해 본다
   for (const x of items) {
     if (!x.row) continue;
     if (existing.has(x.key)) x.mark = existing.get(x.key) ? "deleted" : "same";
+    else if (anyErased && existing.has(await erasedKey(x.key))) x.mark = "deleted";
     else if (seen.has(x.key)) x.mark = "dup";
     seen.add(x.key);
   }
@@ -206,7 +228,31 @@ async function judgeUpload(db: Db, raws: unknown[]) {
 }
 const reasonKey = (s: string): string => s.replace(/\d+명/, "N명").replace(/ \(.*\)$/, "");
 
+// 목록·내려받기 공용 거르기(해 · 못 맞춤/근거 약함 · 이름·팀·부서 찾기) — 둘이 따로 거르면 화면에 보인 줄과 내려받은 줄이 어긋난다
+export function historyFilter(rows: any[], b: any): { hit: any[]; years: number[]; q: string; only: "" | "none" | "weak" } {
+  const years = Array.isArray(b?.years) ? b.years.map(Number).filter(Number.isInteger) : [];
+  const q = cut(b?.q, 40).replace(/\s+/g, "");
+  const only = b?.only === "none" || b?.only === "weak" ? b.only : "";
+  let hit = rows.filter((r) => !years.length || years.includes(r.year));
+  if (only === "none") hit = hit.filter((r) => r.person_id === null);
+  if (only === "weak") hit = hit.filter((r) => r.person_id !== null && r.match_basis && WEAK_RE.test(r.match_basis));
+  if (q) hit = hit.filter((r) => hKey(r.name).includes(hKey(q)) || nfc(r.team).replace(/\s+/g, "").includes(q) ||
+    nfc(r.committee).replace(/\s+/g, "").includes(q));
+  return { hit, years, q, only };
+}
+
 export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
+  // 쓴 뒤 다시 맞추기 — 실패하거나 명부가 없어 못 맞췄으면 false(응답 rematched:false → 화면이 「🔄 다시 맞추기」를 권한다)
+  async function tryRematch(ids: number[], what: string): Promise<boolean> {
+    try {
+      const m = await rematchHistoryRows(db, ids);
+      return !m.noDirectory;
+    } catch (err) {
+      console.error("history rematch after " + what, err);
+      return false;
+    }
+  }
+
   async function list(ctx: HCtx, b: any) {
     const full = isFull(ctx);
     const rows = await all(() => db.from("ministry_history").select(ROW_COLS).is("deleted_at", null).order("id", { ascending: true }));
@@ -217,14 +263,7 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
       if (r.person_id !== null) { y.linked++; if (r.match_basis && WEAK_RE.test(r.match_basis)) y.weak++; } else y.none++;
       yearsAll.set(r.year, y);
     }
-    const years = Array.isArray(b.years) ? b.years.map(Number).filter(Number.isInteger) : [];
-    const q = cut(b.q, 40).replace(/\s+/g, "");
-    const only = b.only === "none" || b.only === "weak" ? b.only : "";
-    let hit = rows.filter((r) => !years.length || years.includes(r.year));
-    if (only === "none") hit = hit.filter((r) => r.person_id === null);
-    if (only === "weak") hit = hit.filter((r) => r.person_id !== null && r.match_basis && WEAK_RE.test(r.match_basis));
-    if (q) hit = hit.filter((r) => hKey(r.name).includes(hKey(q)) || nfc(r.team).replace(/\s+/g, "").includes(q) ||
-      nfc(r.committee).replace(/\s+/g, "").includes(q));
+    const { hit } = historyFilter(rows, b);
     hit.sort((a, b2) => b2.year - a.year || String(a.committee).localeCompare(b2.committee, "ko") ||
       String(a.team).localeCompare(b2.team, "ko") || String(a.name).localeCompare(b2.name, "ko") || a.id - b2.id);
     const page = Math.max(0, Math.floor(Number(b.page) || 0));
@@ -257,6 +296,18 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
           for (const r of res) if (r.person_id === null) rc.set(reasonKey(r.match_reason), (rc.get(reasonKey(r.match_reason)) ?? 0) + 1);
           preview = { linked: res.filter((r) => r.person_id !== null).length, unlinked: res.filter((r) => r.person_id === null).length,
             reasons: [...rc.entries()].sort((a, c) => c[1] - a[1]) };
+          // ⚠️ 살펴보기도 교인명부에 물은 것이다 — 이어진 수가 생년·등록연도·성별의 답이 된다(최종 검토 · 성경필사 people.fill 과 같은 규칙).
+          //   명부를 실제로 읽은 때만(새 줄 있음 · 명부 있음) 「교인명부 기록」에 한 줄. 이름은 이름 열쇠마다 하나 · 50개까지.
+          const seen = new Set<string>();
+          const askedNames: string[] = [];
+          for (const x of adds) {
+            const k = hKey(x.row!.name);
+            if (!k || seen.has(k)) continue;
+            seen.add(k);
+            askedNames.push(String(x.row!.name));
+          }
+          await audit(ctx, "people.lookup", "", { from: "history-check", asked: askedNames.length,
+            askedNames: askedNames.slice(0, ASKED_NAMES_MAX), count: preview.linked });
         }
       }
       return { ok: true, counts: j.counts, bad, preview };
@@ -267,7 +318,8 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
       skipped_same: j.counts.same, skipped_deleted: j.counts.deleted, skipped_dup: j.counts.dup,
     }).select("id").single();
     if (e1) throw e1;
-    const recs = adds.map((x) => ({ ...(x.row as any), src_key: x.key, source: "excel", source_file: fileName, import_id: imp.id, link_how: "auto" }));
+    const recs = adds.map((x) => ({ ...(x.row as any), src_key: x.key, source: "excel", source_file: fileName, import_id: imp.id,
+      link_how: "auto", match_reason: HISTORY_UNMATCHED_YET }));
     let saved = 0, failed = 0;
     for (let i = 0; i < recs.length; i += 500) {
       const part = recs.slice(i, i + 500);
@@ -281,15 +333,22 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
         else { failed++; console.error("history insert", e2); }
       }
     }
-    const { error: e3 } = await db.from("ministry_history_imports")
-      .update({ added: saved, skipped_same: j.counts.same }).eq("id", imp.id);
-    if (e3) throw e3;
-    // ⚠️ 기록은 쓴 바로 뒤에 — 다시 맞추기가 실패해도(아래) 「넣었는데 기록이 없다」가 되지 않게
+    // ⚠️ 기록은 넣은 바로 뒤에 — 올린 기록 표 고치기·다시 맞추기가 실패해도(아래) 「넣었는데 기록이 없다」가 되지 않게
     await audit(ctx, "history.upload", String(imp.id), { years: j.years, rows: raws.length, ...j.counts, saved, failed });
+    try {
+      const { error: e3 } = await db.from("ministry_history_imports")
+        .update({ added: saved, skipped_same: j.counts.same }).eq("id", imp.id);
+      if (e3) throw e3;
+    } catch (err) {
+      console.error("history import row update", err);   // 올린 기록 표의 수만 어긋난다 — 줄은 들어갔고 기록도 남았다
+    }
+    // 한 줄도 못 넣었으면 다시 맞추지 않는다 — rematched:false · 화면은 saved 로 갈라 「명단은 들어갔어요」라고 말하지 않는다
+    if (!saved) return { ok: true, counts: j.counts, bad, saved, failed, rematched: false };
     let rematched = true;
     let linked = 0, unlinked = saved;
     try {
-      await rematchHistoryRows(db, null);
+      const m = await rematchHistoryRows(db, null);
+      if (m.noDirectory) throw new Error("no-directory");   // 명부가 없어 맞추지 못했다 — 줄은 자리 표시 사유 그대로
       const { count, error: e4 } = await db.from("ministry_history").select("id", { count: "exact", head: true })
         .eq("import_id", imp.id).not("person_id", "is", null);
       if (e4) throw e4;
@@ -309,7 +368,7 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     if (!t.row) return { ok: false, error: t.error };
     const key = srcKey(t.row as any);
     const { data, error } = await db.from("ministry_history").insert({ ...t.row, src_key: key, source: "admin",
-      source_file: "(화면에서 더함)", link_how: "auto" }).select("id").single();
+      source_file: "(화면에서 더함)", link_how: "auto", match_reason: HISTORY_UNMATCHED_YET }).select("id").single();
     if (error) {
       if ((error as any).code === "23505") {
         const { data: clash, error: e0 } = await db.from("ministry_history").select("deleted_at").eq("src_key", key).maybeSingle();
@@ -319,8 +378,7 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
       throw error;
     }
     await audit(ctx, "history.add", String(data.id), { year: t.row.year });
-    let rematched = true;
-    try { await rematchHistoryRows(db, [data.id]); } catch (err) { console.error("history rematch after add", err); rematched = false; }
+    const rematched = await tryRematch([Number(data.id)], "add");
     return { ok: true, rematched, row: await outOrNull(db, await readRow(db, data.id), isFull(ctx)) };
   }
 
@@ -343,12 +401,9 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     if (error) throw error;
     if (!(data ?? []).length) return { ok: false, error: (await readRow(db, id)) ? "conflict" : "not-found" };
     await audit(ctx, "history.edit", String(id), { year: t.row.year, fields: Object.keys(upd).filter((k) => k !== "updated_at") });
-    // 신규/유지(renewal) 도 다시 맞추기 방아쇠다 — §4.4 「다른 해 같은 팀」이 뒤쪽 해 줄의 신규/유지를 읽는다
-    const needRematch = ["year", "name", "position", "mok", "team", "renewal"].some((k) => k in upd) && cur.link_how === "auto";
-    let rematched = true;
-    if (needRematch) {
-      try { await rematchHistoryRows(db, [id]); } catch (err) { console.error("history rematch after edit", err); rematched = false; }
-    }
+    // 신규/유지(renewal) 도 다시 맞추기 방아쇠다 — §4.4 「다른 해 같은 팀」이 뒤쪽 해 줄의 신규/유지를 읽는다(HISTORY_REMATCH_KEYS)
+    const needRematch = HISTORY_REMATCH_KEYS.some((k) => k in upd) && cur.link_how === "auto";
+    const rematched = needRematch ? await tryRematch([id], "edit") : true;
     const out: Record<string, unknown> = { ok: true, row: await outOrNull(db, await readRow(db, id), isFull(ctx)) };
     if (needRematch) out.rematched = rematched;
     return out;
@@ -374,8 +429,9 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     const row = id ? await readRow(db, id) : null;
     if (!row) return { ok: false, error: "not-found" };
     const full = isFull(ctx);
-    const { list, fp } = await candidatesFor(db, row);
-    await audit(ctx, "people.lookup", "", { q: row.name, count: list.length, from: "history" });
+    const { list, fp, extra } = await candidatesFor(db, row);
+    // extra:1 — 이름 열쇠로 찾은 분 말고 지금 이어진 분(오타 규칙 등 다른 이름)도 끝에 보였다(count 에 든다)
+    await audit(ctx, "people.lookup", "", { q: row.name, count: list.length, from: "history", ...(extra ? { extra: 1 } : {}) });
     return { ok: true, full, fp, row: await outOrNull(db, row, full), candidates: list.map((c) => candOut(c, full, row.person_id ?? null)) };
   }
 
@@ -386,6 +442,10 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     const now = new Date().toISOString();
     const op = b.op === "pick" || b.op === "none" || b.op === "auto" ? b.op : "";
     if (!op) return { ok: false, error: "invalid" };
+    // 낙관적 잠금(화면은 줄의 updated_at 을 expect 로 보낸다) — 창을 연 뒤 다른 분(또는 교인명부 「이분 것」)이 이은 것을 말없이 덮지 않게.
+    //   expect 가 없으면(교인명부 세션 등 옛 부름) 예전처럼 잠그지 않는다.
+    const expect = b.expect === undefined || b.expect === null || b.expect === "" ? null : String(b.expect);
+    if (expect !== null && expect !== row.updated_at) return { ok: false, error: "conflict" };
     let patch: Record<string, unknown>;
     if (op === "pick") {
       const { list, fp } = await candidatesFor(db, row);
@@ -395,14 +455,14 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     } else if (op === "none") patch = historyLinkPatch(null, ctx.member?.id ?? null, now);
     else patch = historyUnlinkPatch(now);
     // .select("id") 로 실제로 살아 있는 줄을 건드렸는지 본다 — 그사이 빠졌으면(deleted_at) 쓰지 않은 것과 같다(기록도 안 남긴다)
-    const { data, error } = await db.from("ministry_history").update(patch).eq("id", id).is("deleted_at", null).select("id");
+    //   expect 가 있으면 그사이 바뀐 줄(updated_at 다름)도 0행 — 줄이 아직 있으면 conflict, 없으면 not-found
+    let upd = db.from("ministry_history").update(patch).eq("id", id).is("deleted_at", null);
+    if (expect !== null) upd = upd.eq("updated_at", row.updated_at);
+    const { data, error } = await upd.select("id");
     if (error) throw error;
-    if (!(data ?? []).length) return { ok: false, error: "not-found" };
+    if (!(data ?? []).length) return { ok: false, error: expect !== null && (await readRow(db, id)) ? "conflict" : "not-found" };
     await audit(ctx, "history.link", String(id), { op, year: row.year, by: "ministry" });
-    let rematched = true;
-    if (op === "auto") {
-      try { await rematchHistoryRows(db, [id]); } catch (err) { console.error("history rematch after link", err); rematched = false; }
-    }
+    const rematched = op === "auto" ? await tryRematch([id], "link") : true;
     const out: Record<string, unknown> = { ok: true, row: await outOrNull(db, await readRow(db, id), isFull(ctx)) };
     if (op === "auto") out.rematched = rematched;
     return out;
@@ -425,14 +485,15 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
 
   async function exportRows(ctx: HCtx, b: any) {
     const full = isFull(ctx);
-    const years = Array.isArray(b.years) ? b.years.map(Number).filter(Number.isInteger) : [];
-    let rows = await all(() => db.from("ministry_history").select(ROW_COLS).is("deleted_at", null).order("id", { ascending: true }));
-    if (years.length) rows = rows.filter((r) => years.includes(r.year));
+    const every = await all(() => db.from("ministry_history").select(ROW_COLS).is("deleted_at", null).order("id", { ascending: true }));
+    // 목록과 같은 거르기(해 · 못 맞춘 줄만/근거 약한 줄만 · 찾기) — 화면에서 거른 그대로 내려받는다
+    const { hit: rows, years, q, only } = historyFilter(every, b);
     if (!rows.length) return { ok: true, full, rows: [] };
     rows.sort((a, c) => a.year - c.year || a.id - c.id);
     // 명부 전체를 한 번만 읽는다(내보내는 줄마다 .in() 을 부르지 않게 — 수천 줄이면 수천 번이 된다)
     const dirIds = await allDirectoryIds(db);
-    await audit(ctx, "history.export", "", { count: rows.length, years });
+    // 찾은 글자(q)는 이름일 수 있어 싣지 않는다 — 찾기로 걸렀다는 것만
+    await audit(ctx, "history.export", "", { count: rows.length, years, ...(only ? { only } : {}), ...(q ? { search: true } : {}) });
     return { ok: true, full, rows: rows.map((r) => ({
       ...rowOut(r, full, r.person_id === null ? undefined : dirIds.has(Number(r.person_id))), source_file: r.source_file,
     })) };
