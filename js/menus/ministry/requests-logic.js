@@ -72,6 +72,7 @@ export function formHtml(q) {
       ${q.detail ? `<p class="hr-detail">「${esc(q.detail)}」</p>` : ""}
       <a class="btn" href="${esc(linkOf(q))}" target="_blank" rel="noopener">📜 그 줄 열기(새 탭)</a>
       ${q.kind === "find_me" ? `<p class="muted">대개 앱 로그인 목장이 교적과 달라서예요 — 답에 「앱 설정 → 로그인 정보변경에서 목장을 ○○로 바꿔 주세요」를 적고 「반영」해 주세요.</p>` : ""}
+      ${q.kind === "missing" ? `<p class="muted">「반영」하면 ${esc(q.year ?? "")}년 「📜 사역 이력」에 이 사역을 한 줄 더해요(신청하신 분 교적에 이어서 · 글에서 부서·팀·직분을 읽어요). 「반영」에서 바꾸면 그 줄만 빠져요.</p>` : ""}
     </div>
     <div class="hr-sts" role="group" aria-label="처리 상태">${sts}</div>
     ${["반영", "반영 안 함"].includes(q.status) ? `<p class="muted">끝난 신청은 [확인 중]을 눌러 다시 열 수 있어요.</p>` : ""}
@@ -79,6 +80,24 @@ export function formHtml(q) {
     <textarea id="hr-ans" class="hr-ans" rows="3" maxlength="${ANSWER_MAX}">${esc(q.answer)}</textarea>
     <p class="muted">답은 같은 이름·소속으로 앱에 들어오는 사람에게도 보여요 — 다른 분 이름·사적인 사정은 적지 마세요.</p>
     ${q.kind === "not_mine" ? `<label class="hr-verify"><input type="checkbox" id="hr-ver"> 본인에게 확인했어요(전화·대면) — 「반영」할 때 꼭</label>` : ""}`;
+}
+
+// 빠진 사역의 「반영」은 상태·답이 같아도 보낸다 — 그 해 사역 이력에 이 신청의 줄이 없으면 서버가 채운다(반영을 한 번 더 누르면 채움)
+export const resendSame = (q, f) => q.kind === "missing" && f.status === "반영";
+
+// 저장 뒤 사역 이력 줄 안내(서버 응답 r.history · 빠진 사역만 온다) → { toast } · { dialog } · null(평소 안내)
+//   f.status 가 「반영」이면 더하는 쪽, 아니면 「반영」에서 벗어나 빼는 쪽이다. r.same 이면 상태는 그대로(채우기만 했다).
+export function historyNote(r, q, f) {
+  const h = r?.history;
+  if (!h) return null;
+  if (h.error === "history-deleted") return { dialog: "지워 달라는 요청으로 이름까지 지운 줄이라 사역 이력에 다시 더하지 않았어요." };
+  if (h.error) {
+    if (f.status !== "반영") return { dialog: "상태는 바꿨지만 사역 이력에서 빼지 못했어요 — 「📜 사역 이력」에서 그 줄을 빼 주세요" };
+    return { dialog: (r.same ? "" : "상태는 바꿨지만 ") + "사역 이력에 더하지 못했어요 — 「📜 사역 이력」에서 「＋ 한 줄 더하기」로 넣어 주세요" };
+  }
+  if (h.created || h.restored) return { toast: `사역 이력 ${h.year ?? q.year ?? ""}년에 더했어요` };
+  if (h.removed) return { toast: "사역 이력에서 뺐어요" };
+  return null;
 }
 
 // 저장 전 검사 — 서버 history-check.ts requestSetBlock·parseRequestSet 과 같은 규칙(정하는 것은 서버)

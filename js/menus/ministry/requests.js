@@ -2,10 +2,10 @@
 //   설계: v2 docs/superpowers/specs/2026-10-01-ministry-history-requests-admin-design.md
 //   실제 기록 고침은 「📜 사역 이력」의 줄 창에서 한다([그 줄 열기]). 여기는 상태·답만.
 //   막는 것은 서버다(역할 ministry · 반영 안 함 답 · 내 것이 아니에요 본인 확인 · 충돌).
-import { esc, toast, busy, errorText } from "../../core/ui.js";
+import { esc, toast, busy, errorText, dialog } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne } from "../../core/picker.js";
-import { FILTERS, countsText, rowHtml, formHtml, formCheck, msgOf } from "./requests-logic.js";
+import { FILTERS, countsText, rowHtml, formHtml, formCheck, msgOf, resendSame, historyNote } from "./requests-logic.js";
 
 const TITLE = `<h2 class="page-title">📮 정정 신청</h2>`;
 
@@ -65,15 +65,19 @@ export async function render(el, { call }) {
         const f = { status: picked, answer: box.querySelector("#hr-ans").value, verified: !!box.querySelector("#hr-ver")?.checked };
         const bad = formCheck(q, f);
         if (bad) return { ok: false, message: msgOf({ error: bad }) };
-        if (f.status === q.status && f.answer.trim() === q.answer) return { ok: true, value: "same" };   // 바뀐 것이 없으면 보내지도 않는다
+        // 바뀐 것이 없으면 보내지도 않는다 — 빠진 사역의 「반영」만 예외(사역 이력에 줄이 없으면 서버가 채운다 · resendSame)
+        if (!resendSame(q, f) && f.status === q.status && f.answer.trim() === q.answer) return { ok: true, value: "same" };
         const r = await call("historyRequestSet", { id: q.id, ...f, expect: q.updated_at });
-        if (r.ok) return { ok: true, value: r.same ? "same" : "saved" };
+        if (r.ok) return { ok: true, value: { kind: r.same ? "same" : "saved", note: historyNote(r, q, f) } };
         if (r.error === "conflict" || r.error === "not-found") return { ok: true, value: r.error };   // 창을 닫고 새로 불러온다
         return msgOf(r) ? { ok: false, message: msgOf(r) } : r;
       },
     });
     if (res == null) return;
-    toast(res === "saved" ? "저장했어요" : res === "same" ? "바뀐 것이 없어요" : msgOf({ error: res }));
+    const v = typeof res === "string" ? { kind: res, note: null } : res;
+    // 빠진 사역의 사역 이력 줄 — 더했어요·뺐어요는 toast, 못 했으면 놓치지 않게 창(상태는 이미 바뀌었다)
+    if (v.note?.dialog) await dialog({ title: "사역 이력", text: v.note.dialog, cancel: null });
+    else toast(v.note?.toast || (v.kind === "saved" ? "저장했어요" : v.kind === "same" ? "바뀐 것이 없어요" : msgOf({ error: v.kind })));
     await load();
   }
 

@@ -58,6 +58,8 @@ import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, r
 import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, requestAdminOut, requestAuditDetail, requestCounts, requestSetBlock, requestSetNoop, requestSetPatch, ROW_ADMIN_SELECT } from "./history-check.ts";
 // 사역 이력(2026-10-01 · 설계 v2 docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md) — 표 읽기·쓰기는 history-db.ts 한 곳
 import { makeHistory } from "./history-db.ts";
+// 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
+import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1799,6 +1801,32 @@ async function historyRequestList(b: any) {
   };
 }
 
+// 「빠진 사역」(kind missing) 신청의 사역 이력 줄 — 「반영」이 되면 그 해 이력에 더하고(applyMissingRequest), 「반영」에서 벗어나면 뺀다.
+//   신청 상태는 이미 바뀌었다 — 여기서 실패해도 상태 바꾼 것을 되돌리지 않는다(응답 history:{error} → 화면이 「＋ 한 줄 더하기」를 권한다).
+//   기록: history.add(더함·되살림)·history.delete(뺌) — detail 은 {year, from:"request", request: 신청 id} 만(이름·교인ID 없음).
+//   돌려주는 것: null(할 일 없음) · {id, year, created|restored|removed} · {error}
+async function missingRequestHistory(ctx: Ctx, req: any, from: string, to: string): Promise<Record<string, unknown> | null> {
+  if (to !== "반영" && from !== "반영") return null;
+  const now = new Date().toISOString();
+  const mid = ctx.member?.id ?? null;
+  const detail = (year: unknown) => ({ year: Number(year), from: "request", request: Number(req.id) });
+  try {
+    if (to === "반영") {
+      const r = await applyMissingRequest(db, req, mid, now);
+      if (r.error) return { error: r.error };
+      if (r.created || r.restored) await audit(ctx, "history.add", String(r.id), detail(r.year ?? req.year));
+      return r.restored ? { id: r.id, year: r.year, restored: true } : { id: r.id, year: r.year, created: !!r.created };
+    }
+    const u = await undoMissingRequest(db, req.id, mid, now);
+    if (!u.removed) return { removed: false };
+    await audit(ctx, "history.delete", String(u.id), detail(u.year ?? req.year));
+    return { id: u.id, year: u.year, removed: true };
+  } catch (err) {
+    console.error("history request → ministry_history", err);
+    return { error: "history-failed" };
+  }
+}
+
 async function historyRequestSet(ctx: Ctx, b: any) {
   const p = parseRequestSet(b);
   if (!p.ok) return p;
@@ -1806,7 +1834,15 @@ async function historyRequestSet(ctx: Ctx, b: any) {
     .eq("id", p.set.id).maybeSingle();
   if (error) throw error;
   if (!cur) return { ok: false, error: "not-found" };
-  if (requestSetNoop(p.set, cur)) return { ok: true, same: true };   // 바뀐 것이 없으면 쓰지도 기록하지도 않는다
+  if (requestSetNoop(p.set, cur)) {
+    // 이미 「반영」된 빠진 사역 신청을 「반영」으로 한 번 더 — 그 해 이력에 이 신청의 줄이 없으면(이 기능 전에 반영했거나 그사이 뺐다) 채운다.
+    //   줄이 살아 있으면 예전처럼 쓰지도 기록하지도 않는다({ok, same}).
+    if (cur.kind === "missing" && p.set.status === "반영") {
+      const h = await missingRequestHistory(ctx, cur, "반영", "반영");
+      if (h && (h.created || h.restored || h.error)) return { ok: true, same: true, history: h };
+    }
+    return { ok: true, same: true };   // 바뀐 것이 없으면 쓰지도 기록하지도 않는다
+  }
   const block = requestSetBlock(p.set, cur);
   if (block) return { ok: false, error: block };
   // 본 뒤로 아무도 안 바꿨을 때만 쓴다(updated_at 조건) — 0행이면 그사이 누가 바꿨다
@@ -1819,8 +1855,12 @@ async function historyRequestSet(ctx: Ctx, b: any) {
   }
   if (!upd) return { ok: false, error: "conflict" };
   await audit(ctx, "history.request", String(p.set.id), requestAuditDetail(cur, p.set));
+  // 빠진 사역 — 「반영」이 되면 그 해 이력에 줄을 더하고, 「반영」에서 벗어나면 그 줄만 뺀다(상태는 이미 바뀌었다 · 실패는 history.error 로만)
+  const h = cur.kind === "missing" ? await missingRequestHistory(ctx, cur, String(cur.status), p.set.status) : null;
   const rows = await hrRows(upd.history_id == null ? [] : [Number(upd.history_id)]);
-  return { ok: true, row: requestAdminOut(upd, upd.history_id == null ? null : rows.get(Number(upd.history_id)) ?? null) };
+  const out: Record<string, unknown> = { ok: true, row: requestAdminOut(upd, upd.history_id == null ? null : rows.get(Number(upd.history_id)) ?? null) };
+  if (h) out.history = h;
+  return out;
 }
 
 async function internalRoute(req: Request): Promise<Response> {

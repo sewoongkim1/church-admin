@@ -2620,3 +2620,115 @@ test("사역 이력 — 살펴보기 명부 기록(people.lookup) · 잇기 잠�
     await hiClean();
   }
 });
+
+
+// ── 「📮 정정 신청」 빠진 사역을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) ──
+//   신청은 성경암송 api 가 쓰는 내부 갈래(x-internal-key · internalHistoryRequest)로 낸다 — 앱에서 낸 것과 같은 줄(교인ID 를 신청 때 찾는다).
+//   고정 교인ID 990000091(다른 시험과 겹치지 않는 번위) · 이름 ca-test-hrq-<STAMP>가 · 해 2002 · 앱 계정 자리는 지어낸 uuid(이 표는 users 를 잇지 않는다).
+const HRQ = { pid: 990000091, name: `ca-test-hrq-${STAMP}가`, uid: crypto.randomUUID(), year: 2002 };
+const HRQ_WHO = { type: "교구", gu: "기쁨", mok: "12", bu: "", grade: "", name: HRQ.name };
+const hrqInternal = async (payload) => body(await fetch(FN, { method: "POST",
+  headers: { "Content-Type": "application/json", "x-internal-key": SERVICE }, body: JSON.stringify(payload) }));
+const hrqReq = async () => (await rest(`ministry_history_requests?select=id,updated_at,status,person_id&user_id=eq.${HRQ.uid}`, "GET"))[0];
+const hrqRows = (id) => rest(`ministry_history?select=id,year,committee,team,role_title,name,position,mok,renewal,src_note,person_id,link_how,match_basis,match_reason,source,source_file,linked_by,deleted_at,deleted_by&src_key=eq.req:${id}`, "GET");
+
+test("정정 신청 빠진 사역 — 「반영」하면 그 해 이력에 한 줄(본인 교인ID · 사람이 이음) · 다시 반영은 그대로 · 되돌리면 뺌 · 다시 반영은 되살림 · 줄이 없으면 반영 한 번 더로 채움 · 앱에 보인다", async () => {
+  const m = people.ministry.token;
+  const mid = people.ministry.memberId;
+  const rowIds = new Set();
+  let reqId = null;
+  try {
+    await rest(`church_people?person_id=eq.${HRQ.pid}`, "DELETE");     // 지난번 찌꺼기(고정 ID)
+    await rest("church_people", "POST", { person_id: HRQ.pid, name: HRQ.name, name_key: HRQ.name, kind2: "장년",
+      mok1: "기쁨", mok3: "기쁨-12목장", position: "권사" });
+    const made = await hrqInternal({ action: "internalHistoryRequest", who: HRQ_WHO, user_id: HRQ.uid,
+      kind: "missing", year: HRQ.year, team_text: "찬양위원회 시온성가대" });
+    assert.deepEqual(made, { ok: true });
+    let cur = await hrqReq();
+    reqId = cur.id;
+    assert.equal(cur.person_id, HRQ.pid, "신청 때 교인ID 를 찾아 두어야 한다");
+
+    // ① 신청 → 반영 — 줄 하나 · 본인 교인ID · manual · 근거 「본인 정정 신청」 · 직분은 교인명부(글에 없음) · 목장은 로그인 소속
+    const a = (await call(m, "historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.equal(a.ok, true, JSON.stringify(a));
+    assert.equal(a.row.status, "반영");
+    assert.equal(a.history.created, true, JSON.stringify(a));
+    assert.equal(a.history.year, HRQ.year);
+    assert.ok(!JSON.stringify(a).includes(String(HRQ.pid)), "응답에 교인ID 가 실렸다");
+    assert.ok(!UUID_RE.test(JSON.stringify(a)), "응답에 uuid 가 실렸다");
+    let rows = await hrqRows(reqId);
+    assert.equal(rows.length, 1);
+    rowIds.add(rows[0].id);
+    assert.equal(rows[0].id, a.history.id);
+    assert.deepEqual(
+      [rows[0].year, rows[0].committee, rows[0].team, rows[0].role_title, rows[0].name, rows[0].position, rows[0].mok, rows[0].renewal, rows[0].src_note],
+      [HRQ.year, "찬양위원회", "시온성가대", "", HRQ.name, "권사", "기쁨-12", "", `정정 신청 #${reqId}`]);
+    assert.deepEqual(
+      [rows[0].person_id, rows[0].link_how, rows[0].match_basis, rows[0].match_reason, rows[0].source, rows[0].source_file, rows[0].linked_by, rows[0].deleted_at],
+      [HRQ.pid, "manual", "본인 정정 신청", "", "admin", "(정정 신청)", mid, null]);
+    const [addLog] = await rest(`admin_audit?select=member_id,detail&action=eq.history.add&target=eq.${rows[0].id}&order=id.desc&limit=1`, "GET");
+    assert.equal(addLog.member_id, mid);
+    assert.deepEqual(addLog.detail, { year: HRQ.year, from: "request", request: reqId });
+
+    // ② 반영 → 반영(같은 답) — 쓰지도 기록하지도 않는다 · 둘째 줄이 생기지 않는다
+    cur = await hrqReq();
+    const b = (await call(m, "historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.deepEqual(b, { ok: true, same: true });
+    assert.equal((await hrqRows(reqId)).length, 1);
+
+    // ③ 반영 → 확인 중 — 그 줄만 뺀다(표시만) · history.delete
+    cur = await hrqReq();
+    const c = (await call(m, "historyRequestSet", { id: reqId, status: "확인 중", answer: "", expect: cur.updated_at })).body;
+    assert.equal(c.ok, true, JSON.stringify(c));
+    assert.deepEqual(c.history, { id: a.history.id, year: HRQ.year, removed: true });
+    rows = await hrqRows(reqId);
+    assert.equal(rows.length, 1);
+    assert.ok(rows[0].deleted_at, "확인 중으로 되돌렸는데 줄이 빠지지 않았다");
+    assert.equal(rows[0].deleted_by, mid);
+    const [delLog] = await rest(`admin_audit?select=detail&action=eq.history.delete&target=eq.${rows[0].id}&order=id.desc&limit=1`, "GET");
+    assert.deepEqual(delLog.detail, { year: HRQ.year, from: "request", request: reqId });
+    // 앱(성경암송 내 기록)에서도 빠졌다
+    const mineGone = await hrqInternal({ action: "internalMyHistory", who: HRQ_WHO, user_id: HRQ.uid });
+    assert.ok(!mineGone.rows.some((r) => r.id === a.history.id), "뺀 줄이 앱에 보인다");
+
+    // ④ 확인 중 → 반영 — 새 줄 없이 되살린다
+    cur = await hrqReq();
+    const d = (await call(m, "historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.equal(d.ok, true, JSON.stringify(d));
+    assert.deepEqual(d.history, { id: a.history.id, year: HRQ.year, restored: true });
+    rows = await hrqRows(reqId);
+    assert.deepEqual([rows.length, rows[0].deleted_at, rows[0].deleted_by], [1, null, null]);
+
+    // ⑤ 줄이 없는데 신청은 「반영」(이 기능 전에 반영한 신청과 같은 꼴) — 「반영」을 한 번 더 누르면 채운다(same:true + history)
+    await rest(`ministry_history?src_key=eq.req:${reqId}`, "DELETE");
+    cur = await hrqReq();
+    const e = (await call(m, "historyRequestSet", { id: reqId, status: "반영", answer: "", expect: cur.updated_at })).body;
+    assert.equal(e.same, true, JSON.stringify(e));
+    assert.equal(e.history.created, true, JSON.stringify(e));
+    rows = await hrqRows(reqId);
+    assert.deepEqual([rows.length, rows[0].person_id, rows[0].link_how, rows[0].deleted_at], [1, HRQ.pid, "manual", null]);
+    rowIds.add(rows[0].id);
+    assert.equal((await hrqReq()).updated_at, cur.updated_at, "채우기만 했는데 신청 줄이 바뀌었다");
+
+    // ⑥ 성도님 앱(내 기록)에 그 해 사역이 보인다
+    const mine = await hrqInternal({ action: "internalMyHistory", who: HRQ_WHO, user_id: HRQ.uid });
+    assert.equal(mine.ok, true, JSON.stringify(mine));
+    assert.ok(mine.rows.some((r) => r.id === rows[0].id && r.year === HRQ.year && r.committee === "찬양위원회" && r.team === "시온성가대"),
+      "더한 줄이 앱에 안 보인다: " + JSON.stringify(mine.rows));
+    // 기록에 이름이 실리지 않는다
+    const logs = await rest(`admin_audit?select=detail&action=in.(history.add,history.delete)&target=in.(${[...rowIds].join(",")})`, "GET");
+    assert.ok(logs.length >= 3);
+    assert.ok(!JSON.stringify(logs).includes(HRQ.name) && !JSON.stringify(logs).includes(String(HRQ.pid)), "기록에 이름·교인ID 가 실렸다");
+  } finally {
+    const errs = [];
+    const step = async (label, fn) => { try { await fn(); } catch (err) { errs.push(label + " — " + (err?.message ?? err)); } };
+    if (reqId) {
+      await step("이력 줄", () => rest(`ministry_history?src_key=eq.req:${reqId}`, "DELETE"));
+      await step("신청 기록", () => rest(`admin_audit?action=eq.history.request&target=eq.${reqId}`, "DELETE"));
+    }
+    if (rowIds.size) await step("이력 기록", () => rest(`admin_audit?action=in.(history.add,history.delete)&target=in.(${[...rowIds].join(",")})`, "DELETE"));
+    await step("신청", () => rest(`ministry_history_requests?user_id=eq.${HRQ.uid}`, "DELETE"));
+    await step("교인명부", () => rest(`church_people?person_id=eq.${HRQ.pid}`, "DELETE"));
+    if (errs.length) throw new Error("정리 실패 " + errs.length + "건: " + errs.join(" / "));
+  }
+});

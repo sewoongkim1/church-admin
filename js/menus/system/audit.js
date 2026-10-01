@@ -145,6 +145,10 @@ export function detailText(r) {
   }
   // erased — 지워 달라는 요청으로 이름까지 지운 줄(CLAUDE.md 비상 절차 ②-1 · SQL 로 남긴다)
   if (r.action === "history.delete" && d.erased === true) return "지워 달라는 요청 — 이름까지 지움";
+  // 「📮 정정 신청」의 빠진 사역을 「반영」해 더한 줄 · 반영을 되돌려 뺀 줄(from:"request" · request = 신청 번호 · 2026-10-01)
+  if ((r.action === "history.add" || r.action === "history.delete") && d.from === "request") {
+    return joinDot(d.year ? `${d.year}년` : "", d.request != null ? `정정 신청 #${d.request}` : "정정 신청");
+  }
   if (r.action === "history.add" || r.action === "history.delete") return d.year ? `${d.year}년` : "";
   if (r.action === "history.edit") return joinDot(`${d.year ?? ""}년`, (d.fields || []).map((k) => HIST_FIELD[k] || k).join("·"));
   if (r.action === "history.link") {

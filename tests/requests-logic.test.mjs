@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { KIND_TEXT, FILTERS, SET_STATUS, ANSWER_MAX, whoText, targetText, dayText, rowHtml, formHtml, formCheck, linkOf, countsText, msgOf }
   from "../js/menus/ministry/requests-logic.js";
+import { resendSame, historyNote } from "../js/menus/ministry/requests-logic.js";
 import { REQ_SET_STATUS, REQ_ANSWER_MAX, REQ_KINDS } from "../supabase/functions/church-admin/history-check.ts";
 
 const Q = (o) => ({ id: 5, kind: "wrong_team", detail: "", year: null, team_text: "", status: "신청", answer: "", created_at: "2026-09-30T16:30:00Z",
@@ -71,4 +72,34 @@ test("화면↔서버 규칙 맞대기 — SET_STATUS·ANSWER_MAX·종류가 서
   assert.deepEqual(SET_STATUS, REQ_SET_STATUS);
   assert.equal(ANSWER_MAX, REQ_ANSWER_MAX);
   assert.deepEqual(Object.keys(KIND_TEXT).sort(), [...REQ_KINDS].sort());
+});
+
+// 빠진 사역을 「반영」하면 그 해 사역 이력에 줄을 더한다(2026-10-01) — 저장 뒤 안내 · 같아도 보내는 경우
+test("formHtml — 빠진 사역에만 「반영하면 그 해 사역 이력에 한 줄」 안내", () => {
+  assert.ok(formHtml(Q({ kind: "missing", row: null, year: 2023, team_text: "호산나찬양대" })).includes("「반영」하면 2023년 「📜 사역 이력」에 이 사역을 한 줄 더해요"));
+  assert.ok(!formHtml(Q({})).includes("사역을 한 줄 더해요"));
+});
+
+test("resendSame — 빠진 사역의 「반영」만 상태·답이 같아도 보낸다(이력 줄이 없으면 서버가 채운다)", () => {
+  assert.equal(resendSame(Q({ kind: "missing", status: "반영" }), { status: "반영" }), true);
+  assert.equal(resendSame(Q({ kind: "missing", status: "반영" }), { status: "확인 중" }), false);
+  assert.equal(resendSame(Q({ kind: "not_mine", status: "반영" }), { status: "반영" }), false);
+});
+
+test("historyNote — 더했어요(해) · 뺐어요 · 못 했으면 창(더하기·빼기·채우기) · 지운 줄 · 이력 칸 없으면 null", () => {
+  const q = Q({ kind: "missing", row: null, year: 2023, team_text: "찬양위원회 시온성가대" });
+  const add = { status: "반영" }, back = { status: "확인 중" };
+  assert.equal(historyNote({ ok: true }, q, add), null);
+  assert.deepEqual(historyNote({ ok: true, history: { id: 3, year: 2023, created: true } }, q, add), { toast: "사역 이력 2023년에 더했어요" });
+  assert.deepEqual(historyNote({ ok: true, history: { id: 3, year: 2024, restored: true } }, q, add), { toast: "사역 이력 2024년에 더했어요" });
+  assert.deepEqual(historyNote({ ok: true, history: { id: 3, created: true } }, q, add), { toast: "사역 이력 2023년에 더했어요" });
+  assert.deepEqual(historyNote({ ok: true, history: { id: 3, year: 2023, removed: true } }, q, back), { toast: "사역 이력에서 뺐어요" });
+  assert.equal(historyNote({ ok: true, history: { id: 3, year: 2023, created: false } }, q, add), null);   // 이미 있음 — 평소 안내
+  assert.equal(historyNote({ ok: true, history: { removed: false } }, q, back), null);
+  assert.deepEqual(historyNote({ ok: true, history: { error: "history-failed" } }, q, add),
+    { dialog: "상태는 바꿨지만 사역 이력에 더하지 못했어요 — 「📜 사역 이력」에서 「＋ 한 줄 더하기」로 넣어 주세요" });
+  assert.deepEqual(historyNote({ ok: true, same: true, history: { error: "history-failed" } }, q, add),
+    { dialog: "사역 이력에 더하지 못했어요 — 「📜 사역 이력」에서 「＋ 한 줄 더하기」로 넣어 주세요" });
+  assert.match(historyNote({ ok: true, history: { error: "history-failed" } }, q, back).dialog, /빼지 못했어요/);
+  assert.match(historyNote({ ok: true, history: { error: "history-deleted" } }, q, add).dialog, /지워 달라는 요청/);
 });

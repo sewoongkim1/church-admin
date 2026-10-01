@@ -234,3 +234,12 @@ test("history.export — 화면에서 거른 것(못 맞춘 줄만·근거 약�
   assert.equal(detailText(R("history.export", { count: 3, years: [2024], only: "weak", search: true })), "3줄 · 2024년 · 근거 약한 줄만 · 찾기로 거름");
   assert.equal(detailText(R("history.export", { count: 10, years: [] })), "10줄 · 모든 해");
 });
+
+// 「📮 정정 신청」의 빠진 사역을 「반영」해 사역 이력에 더한 줄 · 반영을 되돌려 뺀 줄(2026-10-01) — 해와 신청 번호만(이름·교인ID 없음)
+test("history.add·history.delete — from:request 는 「2026년 · 정정 신청 #1」 · 그 밖의 기록은 그대로", () => {
+  assert.equal(detailText(R("history.add", { year: 2026, from: "request", request: 1 }, "55")), "2026년 · 정정 신청 #1");
+  assert.equal(detailText(R("history.delete", { year: 2023, from: "request", request: 12 }, "55")), "2023년 · 정정 신청 #12");
+  assert.equal(detailText(R("history.add", { from: "request" }, "55")), "정정 신청");
+  assert.equal(detailText(R("history.add", { year: 2024 })), "2024년");
+  assert.equal(detailText(R("history.delete", { erased: true }, "12")), "지워 달라는 요청 — 이름까지 지움");
+});
