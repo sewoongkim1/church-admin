@@ -51,6 +51,8 @@ import { fillRecord } from "./events-upload.ts";
 //   ⚠️ 그래서 위 「성경필사(암송)(Task 5)」 줄의 applicantFromSignup 은 이제 이 파일에서 부르지 않는다 — 기존 import 줄이라 고치지 않고 두었다.
 //      명단 줄의 교적 표시를 applicantFromSignup + churchFor 로 되돌려 짜면 옮겨 적은 줄·아이 빼기가 빠진다 — churchForSignup 을 쓴다.
 import { churchForSignup } from "./events-person.ts";
+// 사역신청 번호 보관(2026-10-01) — 결정 상태 목록(번호 지우기 단추가 같은 목록을 센다)
+import { DECIDED } from "./ministry.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -502,6 +504,28 @@ async function ministryDelete(ctx: Ctx, b: any) {
   return { ok: true, deleted };
 }
 
+// 결정된 신청 번호 지우기(2026-10-01 · 교인명부 세션 설계 §6) — 그 해(app_config) 결정(임명확정·미채택·취소)이고 번호가 남은 줄만.
+//   count = 화면이 단추에 보인 수. 지금 수와 다르면(그사이 누가 임명·지우기를 했다) 쓰지 않고 conflict + 지금 수 —
+//   담당자가 본 것보다 많이 지우지 않게(시험 PROBE 도 이 길로 아무것도 안 바꾼다).
+//   지운 뒤 교적 표시는 화면이 목록을 다시 불러와(ministryList) 번호 없이 다시 센다. 번호로 이어 둔 교인 잇기(people_links)는 남는다
+//   (지우는 것은 ministry_orders 의 번호뿐 · 그 뒤의 다시 맞추기는 people-links.ts phoneLinkKept 가 번호 줄을 건너뛴다).
+async function ministryPhoneClear(ctx: Ctx, b: any) {
+  const year = await ministryYear();
+  const { count, error } = await db.from("ministry_orders").select("id", { count: "exact", head: true })
+    .eq("year", year).in("status", DECIDED).not("phone", "is", null).neq("phone", "");
+  if (error) throw error;
+  const now = count ?? 0;
+  const want = Number(b.count);
+  if (!Number.isSafeInteger(want) || want !== now) return { ok: false, error: "conflict", count: now };
+  if (!now) return { ok: true, year, count: 0 };
+  const { data, error: e2 } = await db.from("ministry_orders").update({ phone: null, updated_at: new Date().toISOString() })
+    .eq("year", year).in("status", DECIDED).not("phone", "is", null).neq("phone", "").select("id");
+  if (e2) throw e2;
+  const n = (data ?? []).length;
+  await audit(ctx, "ministry.phoneclear", String(year), { count: n });
+  return { ok: true, year, count: n };
+}
+
 // ---------- 사역신청 — 시험 참여자(2026-09-30) ----------
 // 명단에 오른 앱 계정은 기간 밖에도 성경암송 첫 화면에 🤝 사역신청이 보이고 신청·취소가 된다(그쪽 api ministryTester·ministryApply).
 // 명단은 app_config.ministryTesters = identity_key 배열(ministryAdmins 와 같은 모양). ⚠️ 성경암송 PUBLIC_CONFIG_KEYS 에 넣지 않는다(이름이 든다).
@@ -895,7 +919,7 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
 
   // ── 넣기 ──────────────────────────────────────────────────────
   // ⚠️ 한 줄이 실패해도 나머지는 들어간다 — 담당자가 고친 줄만 다시 올리면 된다.
-  // ⚠️ 결정이 난 상태(임명확정·취소)면 한 건씩 바꿀 때와 같이 휴대폰 번호를 지우고 decided_at 을 찍는다.
+  // ⚠️ 결정이 난 상태(임명확정·취소)면 decided_at 을 찍는다. 번호는 지우지 않는다(2026-10-01 친구 결정 — 「결정된 신청 번호 지우기」 단추·결정 뒤 180일 자동).
   const now = new Date().toISOString();
   let added = 0;
   for (const r of good) {
@@ -907,7 +931,7 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
       if (r.dupId) {                                      // 앱 신청이 있다 — 상태만 바꾼다
         // ⚠️ 신청일은 앱에 남은 그대로 둔다 — 성도님이 실제로 낸 날이다. 임명일만 종이 것으로.
         const patch: Record<string, unknown> = { status: st, updated_at: now };
-        if (decided) { patch.decided_at = r.decidedAt || now; patch.phone = null; }
+        if (decided) patch.decided_at = r.decidedAt || now;
         if (why) patch.note = why;
         const { error: e5 } = await db.from("ministry_orders").update(patch).eq("id", r.dupId);
         if (e5) throw e5;
@@ -927,7 +951,7 @@ async function ministryPaper(ctx: Ctx, b: any, save: boolean) {
       const insert: Record<string, unknown> = {
         year, user_id: uid, name: r.name,
         who: r.gu + " " + r.mok.replace(/목장$/, "") + "목장",
-        position: r.position, phone: decided ? null : r.phone,
+        position: r.position, phone: r.phone,
         team_id: r.team_id, committee: r.committee, team: r.team, option: r.option || "",
         status: st, source: "paper", note: why || null,
         decided_at: decided ? (r.decidedAt || now) : null, updated_at: now,
@@ -1734,6 +1758,7 @@ Deno.serve(async (req) => {
       case "ministryList":      return json(await ministryList());
       case "ministrySetStatus": return json(await ministrySetStatus(ctx, b));
       case "ministryDelete":    return json(await ministryDelete(ctx, b));
+      case "ministryPhoneClear": return json(await ministryPhoneClear(ctx, b));
       case "ministryCatalogAdmin": return json(await ministryCatalogAdmin());
       case "ministryCatalogSave":  return json(await ministryCatalogSave(ctx, b));
       case "ministryCatalogOrder": return json(await ministryCatalogOrder(ctx, b));

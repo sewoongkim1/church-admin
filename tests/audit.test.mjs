@@ -156,3 +156,8 @@ test("ministry.tester — 더함/뺌 · 이름 · 소속", () => {
   assert.equal(detailText(R("ministry.tester", { op: "add", name: "홍길동", who: "화평 20목장" })), "더함 · 홍길동 · 화평 20목장");
   assert.equal(detailText(R("ministry.tester", { op: "remove", name: "홍길동", who: "" })), "뺌 · 홍길동");
 });
+
+test("ministry.phoneclear — 「사역 번호 지움」 · 지운 수", () => {
+  assert.match(LABEL["ministry.phoneclear"], /[가-힣]/);
+  assert.equal(detailText(R("ministry.phoneclear", { count: 12 }, "2027")), "결정된 신청 12건의 번호");
+});

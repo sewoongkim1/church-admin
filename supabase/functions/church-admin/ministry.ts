@@ -3,9 +3,10 @@
 
 // 담당자가 새로 매길 수 있는 상태. 「미채택」은 2026-09-17 에 뺐다(DB CHECK 에는 옛 값이 남아 있다).
 export const MINISTRY_STATUS = ["신청완료", "접수완료", "임명확정", "취소"];
-// 결정 상태 — 이리로 바뀌면 결정일을 찍고 휴대폰 번호를 지운다(교적 대조가 끝난 자리.
-// 사람이 기억해서 지우는 약속은 언젠가 안 지켜지니 상태를 바꾸는 그 자리에서 지운다).
-const DECIDED = ["임명확정", "미채택", "취소"];
+// 결정 상태 — 이리로 바뀌면 결정일(decided_at)을 찍는다. 휴대폰 번호는 **지우지 않는다**(2026-10-01 친구 결정 —
+// 결정 뒤에도 연락·교적 대조에 쓰고, 신청 현황 「결정된 신청 번호 지우기」 단추나 결정 뒤 180일 자동 작업(SQL 007)이 지운다).
+// 번호 지우기 단추(index.ts ministryPhoneClear)도 이 목록을 쓴다.
+export const DECIDED = ["임명확정", "미채택", "취소"];
 const NOTE_MAX = 500;
 
 export type StatusPatchResult =
@@ -20,7 +21,7 @@ export function statusPatch(current: string, next: unknown, note: unknown, nowIs
   if (status === "취소" && !noteText) return { ok: false, error: "cancel-note-required" };
   if (noteText && noteText.length > NOTE_MAX) return { ok: false, error: "note-too-long" };
   const patch: Record<string, unknown> = { status, updated_at: nowIso };
-  if (DECIDED.includes(status)) { patch.decided_at = nowIso; patch.phone = null; }
+  if (DECIDED.includes(status)) patch.decided_at = nowIso;
   // 임명에서 물러나면 그 행의 「알림 보냈음」도 지운다(이미 나간 알림을 무를 수는 없다)
   if (current === "임명확정" && status !== "임명확정") patch.notified_at = null;
   // 메모는 보내온 때만 고친다(안 보내면 그대로)

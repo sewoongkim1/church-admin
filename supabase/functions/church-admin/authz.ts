@@ -66,6 +66,9 @@ export const ACTION_ROLES: Record<string, string | null> = {
   ministryTesters: "ministry",
   ministryTesterFind: "ministry",
   ministryTesterSave: "ministry",
+  // 사역신청 번호 보관(2026-10-01 · 교인명부 세션 설계 §6) — 결정 때 번호를 지우지 않고, 신청 현황 「결정된 신청 번호 지우기(N건)」로.
+  //   보낸 수(count)가 지금 수와 같을 때만 지운다(그사이 바뀌었으면 conflict · 시험 PROBE 도 이 길로 아무것도 안 바꾼다). 바꾼 기록 ministry.phoneclear.
+  ministryPhoneClear: "ministry",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

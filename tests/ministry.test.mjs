@@ -16,9 +16,9 @@ test("접수 — 결정이 아니라 번호·결정일을 건드리지 않는다
   assert.deepEqual(r, { ok: true, patch: { status: "접수완료", updated_at: NOW }, notify: false });
 });
 
-test("임명 — 결정일을 찍고 번호를 지우고 알림을 요청", () => {
+test("임명 — 결정일을 찍고 알림을 요청 · 번호는 남긴다(2026-10-01 · 단추·180일로 지운다)", () => {
   const r = statusPatch("접수완료", "임명확정", undefined, NOW);
-  assert.deepEqual(r, { ok: true, patch: { status: "임명확정", updated_at: NOW, decided_at: NOW, phone: null }, notify: true });
+  assert.deepEqual(r, { ok: true, patch: { status: "임명확정", updated_at: NOW, decided_at: NOW }, notify: true });
 });
 
 test("이미 임명인데 다시 임명 — 알림 판단은 서버(api)가 한 사람 한 해 한 번으로 거른다", () => {
@@ -29,7 +29,7 @@ test("취소는 사유가 있어야 — 공백만은 없는 것", () => {
   assert.deepEqual(statusPatch("신청완료", "취소", undefined, NOW), { ok: false, error: "cancel-note-required" });
   assert.deepEqual(statusPatch("신청완료", "취소", "   ", NOW), { ok: false, error: "cancel-note-required" });
   const r = statusPatch("신청완료", "취소", "  부서장 요청  ", NOW);
-  assert.deepEqual(r, { ok: true, patch: { status: "취소", updated_at: NOW, decided_at: NOW, phone: null, note: "부서장 요청" }, notify: false });
+  assert.deepEqual(r, { ok: true, patch: { status: "취소", updated_at: NOW, decided_at: NOW, note: "부서장 요청" }, notify: false });
 });
 
 test("임명에서 물러나면 알림 기록을 지운다(다시 임명하면 다시 보낼 수 있게)", () => {
@@ -41,4 +41,10 @@ test("메모는 보내온 때만 고친다 · 500자까지", () => {
   assert.equal("note" in statusPatch("신청완료", "접수완료", undefined, NOW).patch, false);
   assert.equal(statusPatch("신청완료", "접수완료", "", NOW).patch.note, "");
   assert.deepEqual(statusPatch("신청완료", "취소", "가".repeat(501), NOW), { ok: false, error: "note-too-long" });
+});
+
+test("DECIDED — 결정 상태 셋(번호 지우기 단추·180일 작업이 같은 목록을 쓴다)", async () => {
+  const { DECIDED } = await import("../supabase/functions/church-admin/ministry.ts");
+  assert.deepEqual(DECIDED, ["임명확정", "미채택", "취소"]);
+  for (const st of ["임명확정", "취소"]) assert.equal("phone" in statusPatch("접수완료", st, "사유", NOW).patch, false, st);
 });

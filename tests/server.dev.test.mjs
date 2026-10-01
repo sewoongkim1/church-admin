@@ -132,6 +132,8 @@ const PROBE = {
   ministryTesterSave: { op: "remove", key: "ca-test-probe-없음" },
   // 이름을 누르면 교적 창(사역신청·담당자 · 2026-09-30) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
   ministryPerson: { name: "" },
+  // 결정된 신청 번호 지우기(2026-10-01) — 보낸 수가 지금 수와 달라(-1) conflict · 아무것도 안 지운다
+  ministryPhoneClear: { count: -1 },
   peopleSearch: { q: "ca-test-probe-없음" },
   peoplePerson: { id: 0 },
   peopleStats: {},
@@ -493,16 +495,14 @@ test("신청 현황: 목록 모양 · 동시 수정 · 취소 사유 · 임명 �
   assert.equal(ap.body.ok, true, JSON.stringify(ap.body));
   assert.equal(ap.body.pushed, 0);
   assert.equal(ap.body.pushError, "not-subscribed");
-  assert.equal(ap.body.phoneCleared, true);
-  // 번호를 지웠으면 교적 표시를 번호 없이 다시 세어 돌려준다(명부가 있으면 {state,reason}, 없으면 null) — 화면이 비우지 않게(2026-09-30)
-  assert.ok("church" in ap.body, "church 칸이 있다");
-  assert.ok(ap.body.church === null || typeof ap.body.church.state === "string", JSON.stringify(ap.body.church));
+  assert.equal(ap.body.phoneCleared, false, "결정 때는 번호를 지우지 않는다(2026-10-01 · 단추·180일로)");
+  assert.equal("church" in ap.body, false);
   // 취소 — 사유 없이는 안 됨
   assert.equal((await call(m, "ministrySetStatus", { id: bRow.id, status: "취소", expect: "신청완료" })).body.error, "cancel-note-required");
   assert.equal((await call(m, "ministrySetStatus", { id: bRow.id, status: "취소", expect: "신청완료", note: "시험 취소" })).body.ok, true);
   const after = (await call(m, "ministryList")).body.list.filter((x) => x.name === "ca-test-min");
   assert.equal(after.find((x) => x.id === bRow.id).note, "시험 취소");
-  assert.equal(after.find((x) => x.id === bRow.id).phone, "");
+  assert.equal(after.find((x) => x.id === bRow.id).phone, "010-0000-0000", "취소해도 번호는 남는다");
   // 삭제
   const del = await call(m, "ministryDelete", { id: bRow.id });
   assert.equal(del.body.ok, true);
@@ -617,7 +617,7 @@ test("사역팀 정보: 목록 모양 · 설명 고치기(원래대로 되돌림
   assert.ok(acts.includes("ministry.order"), JSON.stringify(acts));
 });
 
-test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 생성 · 재업로드는 멱등 · 취소 사유 없음 · 없는 팀 · 4번째 줄 상한 · 결정줄 번호 비움 · 지명 팀 · 바뀐 기록", async () => {
+test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 생성 · 재업로드는 멱등 · 취소 사유 없음 · 없는 팀 · 4번째 줄 상한 · 결정줄 번호 남김 · 지명 팀 · 바뀐 기록", async () => {
   const m = people.ministry.token;
   const cfg = await rest("app_config?select=value&key=eq.ministry", "GET");
   const year = Number(cfg[0]?.value?.year) || 2027;
@@ -640,7 +640,7 @@ test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 
   const before1 = await rest(`users?select=id&name=eq.${encodeURIComponent(PAPER_NAME)}`, "GET");
   assert.equal(before1.length, 0, "살펴보기만으로 계정이 생기면 안 된다");
 
-  // 2) 넣기 — 저장됨 · 계정 생김 · 결정 상태라 번호를 지우고 임명일을 찍는다
+  // 2) 넣기 — 저장됨 · 계정 생김 · 결정 상태라 임명일을 찍는다(번호는 남긴다 · 2026-10-01)
   const save1 = await call(m, "ministryPaperSave", { rows: [rowFor(normal[0])] });
   assert.equal(save1.body.ok, true, JSON.stringify(save1.body));
   for (const r of save1.body.rows) assert.equal("user_id" in r, false);
@@ -651,7 +651,7 @@ test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 
   assert.equal(u1.identity_key, "교구|시험|0|||" + PAPER_NAME);
   const [order1] = await rest(`ministry_orders?select=id,status,phone,decided_at,team_id&user_id=eq.${u1.id}`, "GET");
   assert.equal(order1.status, "임명확정");
-  assert.equal(order1.phone, null, "결정 상태 줄은 번호를 지운다");
+  assert.equal(order1.phone, "010-1234-5678", "결정 상태 줄도 번호를 남긴다(2026-10-01)");
   assert.ok(order1.decided_at, "결정 상태 줄은 임명일을 찍는다");
   assert.equal(order1.team_id, normal[0].id);
 
@@ -2391,4 +2391,27 @@ test("성경필사 친구 결정: 명부에 물었으면 채운 것이 없어도
   assert.equal(nowRows.length, 2);
   for (const r of nowRows) assert.ok(Math.abs(Date.parse(r.created_at) - Date.now()) < 10 * 60 * 1000, "열린 회차는 지금: " + JSON.stringify(r));
   assert.deepEqual(nowRows.map((r) => r.note), ["명단 올리기", "담당자가 더함"]);
+});
+
+// ---------- 사역신청 번호 보관 — 결정된 신청 번호 지우기(ministryPhoneClear · 2026-10-01) ----------
+test("결정된 신청 번호 지우기: 수가 다르면 쓰지 않는다 · 결정된 줄만 · 결정 안 된 줄은 그대로 · 바꾼 기록", async () => {
+  const m = people.ministry.token;
+  const DEC = ["임명확정", "미채택", "취소"];
+  const list = (await call(m, "ministryList")).body.list;
+  const decided = list.filter((x) => DEC.includes(x.status) && x.phone);
+  const open = list.filter((x) => !DEC.includes(x.status) && x.phone);
+  assert.ok(decided.length >= 1, "앞 시험(신청 현황)의 임명 줄이 번호를 갖고 있어야 한다");
+  const bad = await call(m, "ministryPhoneClear", { count: decided.length + 1 });
+  assert.deepEqual([bad.body.ok, bad.body.error, bad.body.count], [false, "conflict", decided.length]);
+  const still = (await call(m, "ministryList")).body.list;
+  for (const x of decided) assert.equal(still.find((y) => y.id === x.id)?.phone, x.phone, "conflict 인데 지웠다 " + x.id);
+  const ok = await call(m, "ministryPhoneClear", { count: decided.length });
+  assert.equal(ok.body.ok, true, JSON.stringify(ok.body));
+  assert.equal(ok.body.count, decided.length);
+  const after = (await call(m, "ministryList")).body.list;
+  for (const x of decided) assert.equal(after.find((y) => y.id === x.id)?.phone, "", "결정된 줄의 번호가 남았다 " + x.id);
+  for (const x of open) assert.equal(after.find((y) => y.id === x.id)?.phone, x.phone, "결정 안 된 줄의 번호가 지워졌다 " + x.id);
+  const log = (await call(people.super.token, "auditList", { limit: 30 })).body.rows.find((r) => r.action === "ministry.phoneclear");
+  assert.equal(log?.detail?.count, decided.length, JSON.stringify(log));
+  assert.equal((await call(people.directory.token, "ministryPhoneClear", { count: 0 })).status, 403);
 });
