@@ -51,6 +51,9 @@ import { fillRecord } from "./events-upload.ts";
 //   ⚠️ 그래서 위 「성경필사(암송)(Task 5)」 줄의 applicantFromSignup 은 이제 이 파일에서 부르지 않는다 — 기존 import 줄이라 고치지 않고 두었다.
 //      명단 줄의 교적 표시를 applicantFromSignup + churchFor 로 되돌려 짜면 옮겨 적은 줄·아이 빼기가 빠진다 — churchForSignup 을 쓴다.
 import { churchForSignup } from "./events-person.ts";
+// 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
+import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
+import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, readLoginWho, REQ_OPEN, requestBlock, requestInsert, requestOut, REQUEST_SELECT, sortHistory } from "./history-check.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1704,9 +1707,88 @@ async function ministryPerson(ctx: Ctx, b: any) {
   return { ok: true, ...out };
 }
 
+// ── 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) ─────────────────
+//   성경암송 api 가 서비스 키(x-internal-key)로만 부른다 — 카카오 토큰 길이 아니다(Deno.serve 맨 앞 갈래).
+//   설계: v2 docs/superpowers/specs/2026-10-01-ministry-history-check-design.md §5
+//   ⚠️ 응답 모양은 history-check.ts(historyRowOut·requestOut)가 정한다 — 교인ID·user_id·맞춤 근거·그때 목장을 싣지 않는다.
+//   ⚠️ 이 두 액션은 authz.ts ACTION_ROLES 에 넣지 않는다 — 토큰으로 부르면 canCall 이 unknown-action 으로 막는다(시험이 본다).
+async function hcFindPerson(w: LoginWho): Promise<number | null> {
+  const k = loginNameKey(w);
+  if (!k) return null;
+  const { data, error } = await db.from("church_people").select("person_id,kind2,mok1,mok3,school_dept")
+    .eq("name_key", k).order("person_id", { ascending: true });
+  if (error) throw error;
+  return matchLoginPerson(data ?? [], w).personId;
+}
+
+// 이 계정의 신청 — .in("status", …) 대신 받아서 거른다(「확인 중」의 빈칸을 PostgREST 목록 글자로 넘기지 않으려고)
+async function hcRequests(uid: string): Promise<any[]> {
+  const { data, error } = await db.from("ministry_history_requests").select(REQUEST_SELECT)
+    .eq("user_id", uid).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(500);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function internalMyHistory(b: any) {
+  const w = readLoginWho(b.who), uid = hcUserId(b.user_id);
+  if (!w || !uid) return { ok: false, error: "bad-who" };
+  const pid = await hcFindPerson(w);
+  const rows = pid === null ? [] : await allRows(() => db.from("ministry_history").select(HISTORY_SELECT)
+    .eq("person_id", pid).is("deleted_at", null).order("id", { ascending: true }));
+  const reqs = await hcRequests(uid);
+  return { ok: true, found: pid !== null, rows: sortHistory(rows.map(historyRowOut)), requests: reqs.slice(0, 100).map(requestOut) };
+}
+
+async function internalHistoryRequest(b: any) {
+  const w = readLoginWho(b.who), uid = hcUserId(b.user_id);
+  if (!w || !uid) return { ok: false, error: "bad-who" };
+  const p = parseRequest(b);
+  if (!p.ok) return p;
+  const pid = await hcFindPerson(w);
+  const mine = new Set<number>();
+  if (pid !== null && p.req.history_id !== null) {
+    const { data, error } = await db.from("ministry_history").select("id")
+      .eq("id", p.req.history_id).eq("person_id", pid).is("deleted_at", null).maybeSingle();
+    if (error) throw error;
+    if (data) mine.add(Number(data.id));
+  }
+  const open = (await hcRequests(uid)).filter((r: any) => REQ_OPEN.includes(r.status))
+    .map((r: any) => ({ history_id: r.history_id == null ? null : Number(r.history_id), kind: String(r.kind) }));
+  const block = requestBlock(p.req, pid !== null, mine, open);
+  if (block) return { ok: false, error: block };
+  const { error: ie } = await db.from("ministry_history_requests").insert(requestInsert(p.req, uid, pid, w));
+  if (ie) {
+    if ((ie as any).code === "23505") return { ok: false, error: "already-open" };   // 같은 때 두 번 — 부분 unique 색인이 막았다
+    throw ie;
+  }
+  return { ok: true };
+}
+
+async function internalRoute(req: Request): Promise<Response> {
+  if (!internalKeyOk(req.headers.get("x-internal-key"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")) {
+    return json({ ok: false, error: "unauthorized" }, 401);
+  }
+  let b: any;
+  try { b = await req.json(); } catch { return json({ ok: false, error: "bad-json" }, 400); }
+  if (!b || typeof b !== "object" || Array.isArray(b)) return json({ ok: false, error: "bad-json" }, 400);
+  const action = String(b.action ?? "");
+  try {
+    switch (action) {
+      case "internalMyHistory":      return json(await internalMyHistory(b));
+      case "internalHistoryRequest": return json(await internalHistoryRequest(b));
+    }
+    return json({ ok: false, error: "unknown-action" }, 400);
+  } catch (e) {
+    console.error(action, e);
+    return json({ ok: false, error: "server" }, 500);   // e.message 를 싣지 않는다(아래 토큰 갈래와 같은 까닭)
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "method" }, 405);
+  // 성경암송 api 가 서비스 키로 부르는 길(사역 이력 확인 · 2026-10-01) — 머리가 있으면 이 갈래로만 간다(토큰 검사로 넘어가지 않는다)
+  if (req.headers.has("x-internal-key")) return internalRoute(req);
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return json({ ok: false, error: "unauthenticated" }, 401);
   const { data: ud, error: ue } = await db.auth.getUser(token);
