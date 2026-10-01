@@ -2553,3 +2553,76 @@ test("기록 잇기 맞추기(peopleLinkSync): apply 없이는 쓰지 않는다 
   }
   assert.equal((await call(people.directory.token, "peopleLinkSync", { apply: true })).status, 403);
 });
+
+// 그때그때 잇기 — 나머지 네 자리(검토 지적 · 2026-10-01) — ministryPaperSave(새로 넣기·dupId) ·
+//   evRowAdd(더하기 직후) · evRowSave(소속을 고치면 force 로 다시 맞춘다) · evUploadSave(linkSignupsByName).
+// ⚠️ 위 두 시험(plFixtures 를 쓰는 「그때그때 잇기」·「기록 잇기 맞추기」)은 ministryList·evRoster 만 다졌다 —
+//   나머지 네 자리는 코드만 있고 실행 증거가 없었다(검토 지적). 여기서 그 네 자리를 하나씩 직접 부른다.
+// 새로 만드는 줄은 전부 PL 의 기존 명부 후보(PL.a·PL.b·PL.ids)와 맞대고, 뒷정리는 새로 만들지 않는다 —
+//   ministryPaperSave 가 만드는 계정·신청은 이름이 PL.a(= `ca-test-pl-${STAMP}-가`)라 「잇기 시험」
+//   after() 단계의 `users?name=like.ca-test-pl-${STAMP}-*` 가 그대로 쓸어 간다. evRowAdd·evRowSave 는
+//   PL.ev(기존 회차)에 더하므로 그 회차가 지워질 때(성경필사 시험 회차 단계) 같이 사라지고, evUploadSave 는
+//   이름에 STAMP 가 든 새 회차(ca-test-pl-up-STAMP)를 만들어 같은 단계가 쓴다. 남는 people_links 줄은
+//   모두 sweepLinks(RUN_START)(after() 맨 끝)가 치운다 — 이 시험은 그 둘 다에 **기대어** 따로 지우지 않는다.
+test("그때그때 잇기 — 나머지 네 자리(종이 명단 새로 넣기·dupId · 성경필사 더하기·고치기(강제 다시 맞춤)·올리기)", async () => {
+  await plFixtures();
+  const t = people.bibleevent.token, m = people.ministry.token;
+
+  // ① evRowAdd — 더한 직후 바로 이어진다(「맞음」 · PL.b ↔ 믿음-1목장)
+  const add1 = await call(t, "evRowAdd",
+    { event_id: PL.ev, row: { who_type: "교구", group: "믿음", sub: "1", name: PL.b, position: "", note: "" } });
+  assert.equal(add1.body.ok, true, JSON.stringify(add1.body));
+  const addId = add1.body.row.id;
+  const la1 = await linkOf("signup", addId);
+  assert.deepEqual([la1?.person_id, la1?.link_how, la1?.match_basis], [PL.ids[2], "auto", "맞음"]);
+
+  // ② evRowSave — 소속이 달라 못 맞춘 줄을 고치면(force=true) 즉시 다시 맞춰 이어진다(PL.a ↔ 소망-3목장)
+  const add2 = await call(t, "evRowAdd",
+    { event_id: PL.ev, row: { who_type: "교구", group: "은혜", sub: "8", name: PL.a, position: "", note: "" } });
+  assert.equal(add2.body.ok, true, JSON.stringify(add2.body));
+  const saveId = add2.body.row.id;
+  assert.equal((await linkOf("signup", saveId))?.person_id, null, "소속이 달라 못 맞춰야 한다(은혜-8목장은 명부에 없다)");
+  const save2 = await call(t, "evRowSave", { id: saveId, expect: add2.body.row.updated_at, patch: { group: "소망", sub: "3" } });
+  assert.equal(save2.body.ok, true, JSON.stringify(save2.body));
+  const ls2 = await linkOf("signup", saveId);
+  assert.deepEqual([ls2?.person_id, ls2?.link_how, ls2?.match_basis], [PL.ids[1], "auto", "맞음"],
+    "고치면 강제로 다시 맞춰야 한다(force) — import_id 가 그대로라도 다시 본다");
+
+  // ③ ministryPaperSave — 새로 넣기(newIds)와 dupId(같은 명단 재업로드) 둘 다 이어진다(PL.a ↔ 화평-20목장)
+  const cfg = await rest("app_config?select=value&key=eq.ministry", "GET");
+  const year = Number(cfg[0]?.value?.year) || 2027;
+  const cat = await rest(`ministry_catalog?select=id,committee,team,kind&year=eq.${year}&order=id`, "GET");
+  const team = cat.find((c) => c.kind !== "appoint");
+  assert.ok(team, "지명이 아닌 팀이 있어야 한다(종이 명단 잇기 시험)");
+  const paperRow = { gu: "화평", mok: "20", name: PL.a, position: "집사", phone: "010-0000-0220",
+    committee: team.committee, team: team.team };
+  const ps1 = await call(m, "ministryPaperSave", { rows: [paperRow] });
+  assert.equal(ps1.body.ok, true, JSON.stringify(ps1.body));
+  assert.equal(ps1.body.added, 1, JSON.stringify(ps1.body));
+  const [porder] = await rest(
+    `ministry_orders?select=id&name=eq.${encodeURIComponent(PL.a)}&source=eq.paper&order=id.desc&limit=1`, "GET");
+  assert.ok(porder, "종이로 넣은 신청을 찾아야 한다");
+  const lp1 = await linkOf("order", porder.id);
+  assert.deepEqual([lp1?.person_id, lp1?.link_how, lp1?.match_basis], [PL.ids[0], "auto", "맞음"], "새로 넣은 줄도 이어져야 한다(newIds)");
+
+  const ps2 = await call(m, "ministryPaperSave", { rows: [paperRow] });   // 같은 명단 재업로드 — dupId(이미 그 상태)
+  assert.equal(ps2.body.ok, true, JSON.stringify(ps2.body));
+  assert.equal(ps2.body.added, 0, JSON.stringify(ps2.body));
+  assert.equal(ps2.body.same, 1, JSON.stringify(ps2.body));
+  const lp2 = await linkOf("order", porder.id);
+  assert.deepEqual([lp2?.person_id, lp2?.link_how, lp2?.match_basis], [PL.ids[0], "auto", "맞음"],
+    "dupId 로 다시 이어도 그대로여야 한다(byId 의 이름·소속·번호로 다시 이음)");
+
+  // ④ evUploadSave — 새 회차에 올린 줄도 이어진다(linkSignupsByName · PL.b ↔ 믿음-1목장)
+  const upEv = "ca-test-pl-up-" + STAMP;
+  await rest("events", "POST", { id: upEv, title: "ca-test 잇기 올리기 " + STAMP, short_title: "", subtitle: "", season: "",
+    kind: "signup", status: "archived", opens_on: "2000-08-01", closes_on: "2000-08-31", list_until: null,
+    needs: { position: true, phone: false, memo: false, extra: [] } });
+  const up1 = await call(t, "evUploadSave", { event_id: upEv, rows: [{ name: PL.b, gu: "믿음", mok: "1", pos: "" }], fill: false });
+  assert.equal(up1.body.ok, true, JSON.stringify(up1.body));
+  assert.equal(up1.body.saved, 1, JSON.stringify(up1.body));
+  const [uprow] = await rest(`event_signups?select=id&event_id=eq.${upEv}&name=eq.${encodeURIComponent(PL.b)}`, "GET");
+  assert.ok(uprow, "올린 줄을 찾아야 한다");
+  const lu1 = await linkOf("signup", uprow.id);
+  assert.deepEqual([lu1?.person_id, lu1?.link_how, lu1?.match_basis], [PL.ids[2], "auto", "맞음"]);
+});
