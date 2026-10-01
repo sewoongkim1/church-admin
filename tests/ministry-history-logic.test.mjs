@@ -7,6 +7,7 @@ import {
 } from "../js/menus/ministry/history-logic.js";
 import { WEAK_RE as SERVER_WEAK_RE } from "../supabase/functions/church-admin/history-match.ts";
 import { HISTORY_MAX_UPLOAD, HISTORY_EDIT_KEYS } from "../supabase/functions/church-admin/history-db.ts";
+import { errorText } from "../js/core/ui.js";
 
 // 원본 해마다 파일의 꼴 — 1행 제목 · 2행 빈 줄 · 3행 머리(A열은 빈칸) · H열 메모는 머리 없음
 const raw2022 = [
@@ -110,4 +111,17 @@ test("mergeChecks — noDirectory(명부가 아직 없음)", () => {
     { d: { counts: { total: 1, add: 1, same: 0, deleted: 0, dup: 0, bad: 0 }, preview: { linked: 0, unlinked: 1, reasons: [], noDirectory: true } } },
   ]);
   assert.equal(mixed.noDirectory, true);
+});
+
+test("화면 모듈 — render 를 내보낸다(문법·import 경로)", async () => {
+  globalThis.matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  const m = await import("../js/menus/ministry/history.js");
+  assert.equal(typeof m.render, "function");
+});
+
+// ⚠️ 2026-10-01 검토 반영(task-5-brief 가 아닌 contract-notes) — 오류 문구 일곱 가지가 「처리하지 못했어요」로 안 떨어지는지
+test("errorText — 사역 이력 오류 코드 일곱 가지가 각자 문구를 낸다(모르는 코드 뜻풀이로 안 떨어진다)", () => {
+  for (const c of ["history-too-many", "history-too-long", "history-exists", "history-deleted", "bad-year", "candidates-changed", "no-directory"]) {
+    assert.notEqual(errorText({ error: c }), "처리하지 못했어요", c);
+  }
 });

@@ -20,12 +20,18 @@ export const LABEL = {
   "event.add": "성경필사 명단 더함", "event.edit": "성경필사 명단 고침", "event.delete": "성경필사 명단 뺌",
   "event.upload": "성경필사 명단 올림",
   "people.lookup": "명부 찾기(성경필사)", "people.fill": "명부로 빈칸 채움(성경필사)",
+  // 사역 이력(2026-10-01) — detail 모양은 서버 history-db.ts 의 audit() 호출과 한 벌(tests/audit.test.mjs 가 못 박는다)
+  "history.upload": "사역 이력 올림", "history.add": "사역 이력 줄 더함", "history.edit": "사역 이력 줄 고침",
+  "history.delete": "사역 이력 줄 뺌", "history.link": "사역 이력 교적 잇기", "history.rematch": "사역 이력 다시 맞춤",
+  "history.export": "사역 이력 내려받음",
 };
 // detail 로 가르는 이름 — 같은 action 을 여러 화면이 남길 때(칸 이름·값은 서버 events-person.ts ministryLookupLog 와 한 벌)
 export const LOOKUP_MINISTRY = "명부 찾기(사역신청·담당자)";
+export const LOOKUP_HISTORY = "명부 찾기(사역 이력)";
 export function labelOf(r) {
   const a = (r && r.action) || "";
   if (a === "people.lookup" && r.detail && r.detail.from === "ministry") return LOOKUP_MINISTRY;
+  if (a === "people.lookup" && r.detail && r.detail.from === "history") return LOOKUP_HISTORY;
   return LABEL[a] || a;
 }
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };
@@ -47,6 +53,9 @@ const EV_FIELD = { title: "이름", short_title: "짧은 이름", subtitle: "부
 const ROW_FIELD = { who_type: "구분", group: "소속", sub: "세부", name: "이름", position: "직분" };
 const SRC = { app: "📱 앱", import: "📋 이관" };                                           // 📋 회차·명단의 출처 표시와 같다
 const joinDot = (...parts) => parts.filter(Boolean).join(" · ");
+const HIST_FIELD = { year: "해", committee: "부서", team: "팀명", role_title: "직책", name: "이름", position: "직분", mok: "목장",
+  renewal: "신규/유지", src_note: "원본 메모" };
+const HIST_OP = { pick: "이분으로 이음", none: "이분 아님", auto: "자동으로 되돌림" };
 const evVal = (k, v) => (v == null || v === "") ? (k === "list_until" ? "기한 없음" : "(없음)")
   : k === "status" ? (EV_STATUS[v] || String(v)) : String(v);
 const rowVal = (v) => (v == null || v === "") ? "(없음)" : String(v);
@@ -113,6 +122,20 @@ export function detailText(r) {
       `틀림 ${d.bad ?? 0}`, d.fillOn ? `교인명부로 채움 ${d.fill ?? 0}` : "", d.sameName ? `동명이인 ${d.sameName}` : "",
       d.oddPosition ? `목록 밖 직분 ${d.oddPosition}` : "", d.failed ? `실패 ${d.failed}` : "");
   }
+  // 사역 이력(2026-10-01) — 이름·교인ID 는 싣지 않는다(줄 id 는 target · 해·수만)
+  if (r.action === "history.upload") {
+    return joinDot(`${(d.years || []).join("·")}년`, `올린 줄 ${d.rows ?? 0}`, `넣음 ${d.saved ?? 0}`, `이미 있음 ${d.same ?? 0}`,
+      d.deleted ? `빼 둔 줄과 같음 ${d.deleted}` : "", d.dup ? `파일 안 겹침 ${d.dup}` : "", d.bad ? `틀림 ${d.bad}` : "",
+      d.linked != null ? `교적 이어짐 ${d.linked}` : "", d.unlinked != null ? `못 맞춤 ${d.unlinked}` : "", d.failed ? `실패 ${d.failed}` : "");
+  }
+  if (r.action === "history.add" || r.action === "history.delete") return `${d.year ?? ""}년`;
+  if (r.action === "history.edit") return joinDot(`${d.year ?? ""}년`, (d.fields || []).map((k) => HIST_FIELD[k] || k).join("·"));
+  if (r.action === "history.link") return joinDot(`${d.year ?? ""}년`, HIST_OP[d.op] || d.op, d.by === "directory" ? "교적 창에서" : "");
+  if (r.action === "history.rematch") {
+    if (d.failed === true) return "다시 맞추기 실패";
+    return joinDot(`바뀐 줄 ${d.changed ?? 0}`, `교적 이어짐 ${d.linked ?? 0}/${d.total ?? 0}`);
+  }
+  if (r.action === "history.export") return joinDot(`${d.count ?? 0}줄`, (d.years || []).length ? `${d.years.join("·")}년` : "모든 해");
   // 사역신청·담당자 화면이 명부 번호로 한 분을 가렸으면 byPhone(번호 자체는 서버가 싣지 않는다)
   if (r.action === "people.lookup") return `‘${d.q || ""}’ · ${d.count ?? 0}명${d.byPhone === true ? " · 번호로 고름" : ""}`;
   // people.fill — 2026-09-30 부터 명부에 물은 이름(asked·askedNames)도 남는다(SEC-2 · 채운 것이 없어도 한 줄). 그 전 기록은 옛 모양 그대로.

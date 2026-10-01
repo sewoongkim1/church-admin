@@ -1182,3 +1182,26 @@ body:has(#view > section[aria-busy="true"]){cursor:progress}
 .mt-warn{margin-top:14px}
 /* 🧪 시험 참여자의 신청(2026-10-01) — 종이 딱지(.mn-paper)와 같은 꼴, 색만 주황으로 가른다 */
 .mn-test{color:#8a4b00;background:#fff4e0;border-color:#f5d6a3}
+
+/* 📜 사역 이력(2026-10-01) — 다른 메뉴 모양을 흔들지 않게 mh- 로 */
+.mh-how{margin:-4px 0 10px;line-height:1.6}
+.mh-acts2{margin-bottom:12px}
+.mh-years,.mh-only{margin-bottom:8px}
+.mh-sum{margin:2px 0 10px}
+.mh-why{margin-top:3px;font-size:12px;line-height:1.5;color:var(--gray)}
+.mh-table td{vertical-align:top}
+.mh-file{font-weight:800;color:var(--navy);margin-bottom:6px;word-break:break-all}
+.mh-ul{margin:0 0 8px;padding-left:18px;font-size:14px;line-height:1.7}
+.mh-reasons{font-size:13px;color:#41506b}
+.mh-pre{margin:6px 0;font-size:14px}
+.mh-bad{color:var(--error);font-weight:700}
+.mh-h{margin:12px 0 6px;font-size:14px;color:var(--navy)}
+.mh-h small{font-weight:400;color:var(--gray)}
+.mh-cands .be-cand.on{border-color:var(--navy);background:#eef2fb;box-shadow:inset 0 0 0 1px var(--navy)}
+.mh-served{display:block;font-size:12px;color:#2f7a4f;font-weight:700}
+.mh-pid{display:block;font-size:12px;color:var(--gray)}
+.mh-detail{min-height:36px;font-size:13px;margin:-2px 0 6px}
+.mh-edit{margin-top:12px}
+.mh-delbox{margin-top:14px}
+.mh-delbox [data-step2]{margin-top:8px}
+section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:12px}

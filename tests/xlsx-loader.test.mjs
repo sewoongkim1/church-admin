@@ -70,7 +70,7 @@ test("두 화면이 한 곳만 부른다 — 사본 loadXlsx·옛 CDN 주소(jsd
     assert.ok(!/https:\/\/cdn\.jsdelivr\.net\/npm\/xlsx/.test(t) && !/\bXLSX_CDN\b/.test(t), rel + " 에 옛 CDN 주소가 남았다");
     if (rel !== "js/core/xlsx.js") assert.ok(!/function\s+loadXlsx\b/.test(t), rel + " 에 loadXlsx 사본이 있다");
   }
-  for (const rel of ["js/menus/bibleevent/upload.js", "js/menus/ministry/paper.js"]) {
+  for (const rel of ["js/menus/bibleevent/upload.js", "js/menus/ministry/paper.js", "js/menus/ministry/history.js"]) {
     assert.match(read(rel), /import \{ loadXlsx \} from "\.\.\/\.\.\/core\/xlsx\.js";/, rel + " 이 core/xlsx.js 를 부르지 않는다");
   }
 });
