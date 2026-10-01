@@ -59,6 +59,7 @@ import { orderAutoRecs, signupAutoRecs, syncCounts, toLinkCand, linkRowOf, type 
 import { historyTabs, unlinkedRows, movedOrderIds, parseLink, linkPatch, unlinkRec, missingTable } from "./people-links.ts";
 // b6 「사역 이력」 표 잇기(2026-10-01 · b6 설계 §7 약속) — 잇는 모양·다시 맞추기는 b6 모듈 그대로
 import { historyLinkPatch, historyUnlinkPatch } from "./history-match.ts";
+import { linkNameOk, historyNameMatches } from "./people-links.ts";
 import { rematchHistoryRows } from "./history-db.ts";
 // 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
@@ -1326,17 +1327,21 @@ async function peopleHistory(b: any) {
     movedOrders(mineO.map((o) => Number(o.id))),
   ]);
   // 사역 이력(b6)에서 아무에게도 안 이어진 줄(person_id null — auto 못 맞춤·none) · 표가 없으면 빈 것
+  //   이름은 b6 와 같은 열쇠(historyNameMatches — 끝 영문자·괄호) — 정확한 열쇠로 거르면 「홍길동A」 분의 창에 「홍길동」 줄이 안 뜬다
   let hist: any[] = [];
   try {
     hist = (await allRows(() => db.from("ministry_history").select("id,year,committee,team,role_title,position,mok,name,link_how")
-      .is("deleted_at", null).is("person_id", null).order("id", { ascending: true }))).filter((h) => nameKey(h.name) === key);
+      .is("deleted_at", null).is("person_id", null).order("id", { ascending: true }))).filter((h) => historyNameMatches(h.name, key));
   } catch (e) { if (!missingTable(e)) throw e; }
   return { ok: true, rows: unlinkedRows({ orders: mineO, signups: mineS, events, orderLinks, signupLinks, moved, history: hist }) };
 }
 
 // 「이분 것」(manual) · 「이분 아님」(none) · 「풀기」(auto — auto 로 되돌리고 그 줄만 다시 맞춘다).
-// ⚠️ 대상 줄의 이름이 이 교인 이름(nameKey)과 같아야 한다(다른 사람 줄을 잇지 못하게) · manual 은 그 교인이 지금 명부에 있어야 한다.
-// ⚠️ none·auto 는 그 줄이 지금 이 분께 이어져 있을 때만(not-linked) — 화면은 이어진 줄에만 그 단추를 둔다.
+// ⚠️ manual 은 대상 줄의 이름이 이 교인과 같아야 한다(다른 사람 줄을 잇지 못하게 · linkNameOk — 신청·명단 nameKey · 사역 이력 b6 열쇠) ·
+//    그 교인이 지금 명부에 있어야 한다.
+// ⚠️ none·auto 는 그 줄이 지금 이 분께 이어져 있을 때만(not-linked) — 이게 주인 확인이라 이름은 보지 않는다(2026-10-02 가지 마지막 검토:
+//    규칙이 정확한 이름이 아닌 줄을 이었거나 새 명부에서 이름 열쇠가 바뀌면 「풀기」·「이분 아님」이 늘 other-name 으로 막혔다).
+//    화면은 이어진 줄에만 그 단추를 둔다.
 // ⚠️ 사람의 쓰기는 이 표에 바로 upsert(사람이 정한 것이 자동을 이긴다) · 응답에 이 분의 탭 자료를 다시 실어 보낸다(people.view 를 늘리지 않게).
 const ORDER_LINK_COLS = "id,user_id,name,who,phone";
 const SIGNUP_LINK_COLS = "id,event_id,who_type,group_name,sub_name,name";
@@ -1359,7 +1364,7 @@ async function peopleLink(ctx: Ctx, b: any) {
     row = data;
   }
   if (!row) return { ok: false, error: "not-found" };
-  if (nameKey(row.name) !== person.name_key) return { ok: false, error: "other-name" };
+  if (!linkNameOk(kind, p.how, row.name, person.name_key)) return { ok: false, error: "other-name" };
   const cur = (await linksOf(kind, [p.row])).get(p.row);
   if (p.how !== "manual" && cur?.person_id !== p.person) return { ok: false, error: "not-linked" };
   const now = new Date().toISOString();
@@ -1397,7 +1402,7 @@ async function historyWriteGuarded(row: number, expect: string | null, expectAt:
   return { ok: false as const, error: (expect !== null && cur && !cur.deleted_at ? "conflict" : "not-found") as const };
 }
 
-// 사역 이력 줄 하나를 이 분께(설계 §5 · b6 §7) — 이름 확인·이어진 줄만 풀기는 신청·명단과 같다. 쓰는 모양은 b6 의 historyLinkPatch·historyUnlinkPatch,
+// 사역 이력 줄 하나를 이 분께(설계 §5 · b6 §7) — 이름 확인(manual 만 · b6 열쇠)·이어진 줄만 풀기는 신청·명단과 같다(linkNameOk). 쓰는 모양은 b6 의 historyLinkPatch·historyUnlinkPatch,
 // 풀기 뒤 그 줄 다시 맞추기는 b6 의 rematchHistoryRows. 기록 history.link 는 b6 사역 이력 메뉴와 같은 모양({op, year, by}) — 이름·교인ID 없음.
 // ⚠️ 쓰기 차례(b6 약속①): 표 줄 고치기 → 기록(audit) → rematchHistoryRows 는 try/catch(다시 맞추기가 실패해도 넘어간다 — 던지면
 //    이미 바뀐 표 상태와 응답(500)이 어긋난다). ⚠️ expect(b6 약속②) — 실제 잠금은 historyWriteGuarded 의 UPDATE WHERE 가 건다.
@@ -1406,7 +1411,7 @@ async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: s
   if (missingTable(error)) return { ok: false, error: "bad-kind" };
   if (error) throw error;
   if (!h || h.deleted_at) return { ok: false, error: "not-found" };
-  if (nameKey(h.name) !== person.name_key) return { ok: false, error: "other-name" };
+  if (!linkNameOk("history", p.how, h.name, person.name_key)) return { ok: false, error: "other-name" };
   if (p.how !== "manual" && Number(h.person_id) !== p.person) return { ok: false, error: "not-linked" };
   if (p.expect !== null && p.expect !== h.updated_at) return { ok: false, error: "conflict" };
   const now = new Date().toISOString();

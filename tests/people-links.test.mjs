@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { autoLink, needsAuto, phoneLinkKept, orderAutoRecs, signupAutoRecs, syncCounts, toLinkCand, linkRowOf, movedOrderIds,
-  historyTabs, unlinkedRows, parseLink, linkPatch, unlinkRec, missingTable, BASIS_SAME, BASIS_PHONE, BASIS_MANUAL }
+  historyTabs, unlinkedRows, parseLink, linkPatch, unlinkRec, missingTable, linkNameOk, historyNameMatches, BASIS_SAME, BASIS_PHONE, BASIS_MANUAL }
   from "../supabase/functions/church-admin/people-links.ts";
 import { applicantFromWho, applicantFromSignup } from "../supabase/functions/church-admin/people-match.ts";
 import { signupSame } from "../supabase/functions/church-admin/events-person.ts";
@@ -212,4 +212,33 @@ test("missingTable — 표가 없을 때(운영 SQL 005 전 사역 이력) 두 �
   assert.equal(missingTable({ code: "PGRST205" }), true);
   assert.equal(missingTable({ code: "42501" }), false);
   assert.equal(missingTable(null), false);
+});
+
+// 2026-10-02 가지 마지막 검토 — b6 맞춤은 정확한 이름이 아닌 줄도 잇는다(끝 영문자·괄호·오타). 그 줄의 「풀기」·「이분 아님」이
+// 이름 때문에 막히지 않게 이름은 「이분 것」만 보고, 사역 이력은 b6 후보 창(nameKeyVariants)과 같은 열쇠로 본다.
+test("historyNameMatches — 사역 이력 이름은 b6 열쇠(끝 영문자 양쪽 · 소문자 · 괄호 · 띄어쓰기) · 다른 이름·빈 이름은 아니다", () => {
+  assert.equal(historyNameMatches("홍길동", "홍길동"), true);
+  assert.equal(historyNameMatches("홍길동", "홍길동A"), true, "「홍길동」 줄 ↔ 교인 「홍길동A」(b6 bySuffixBase)");
+  assert.equal(historyNameMatches("홍길동", "홍길동b"), true, "명부 열쇠의 끝 영문자는 원본 그대로(소문자)");
+  assert.equal(historyNameMatches("홍길동A", "홍길동"), true, "줄에 붙은 끝 영문자를 떼고");
+  assert.equal(historyNameMatches("홍길동a", "홍길동A"), true);
+  assert.equal(historyNameMatches("홍길동(큰)", "홍길동"), true, "괄호 떼고");
+  assert.equal(historyNameMatches(" 홍 길동 ", "홍길동"), true, "띄어쓰기");
+  assert.equal(historyNameMatches("홍길동", "홍길순"), false);
+  assert.equal(historyNameMatches("홍길동", "홍길동이"), false, "끝 영문자만 — 한글이 더 붙으면 다른 이름");
+  assert.equal(historyNameMatches("홍길동", ""), false);
+  assert.equal(historyNameMatches("", "홍길동"), false);
+});
+
+test("linkNameOk — 이름은 「이분 것」(manual)만 · 「이분 아님」·「풀기」는 이름을 보지 않는다(not-linked 가 주인 확인)", () => {
+  for (const kind of ["order", "signup", "history"]) {
+    for (const how of ["none", "auto"]) assert.equal(linkNameOk(kind, how, "홍길동", "홍길순"), true, kind + " " + how);
+    assert.equal(linkNameOk(kind, "manual", "홍길동", "홍길순"), false, kind + " manual 다른 이름");
+    assert.equal(linkNameOk(kind, "manual", "홍 길동", "홍길동"), true, kind + " manual 같은 이름");
+  }
+  // 신청·명단 manual 은 nameKey 가 정확히 같아야(자동 잇기·「아직 안 이어진 기록」과 같은 열쇠) · 사역 이력은 b6 열쇠
+  assert.equal(linkNameOk("order", "manual", "홍길동", "홍길동A"), false);
+  assert.equal(linkNameOk("signup", "manual", "홍길동", "홍길동A"), false);
+  assert.equal(linkNameOk("history", "manual", "홍길동", "홍길동A"), true);
+  assert.equal(linkNameOk("history", "manual", "홍길동(큰)", "홍길동"), true);
 });

@@ -11,6 +11,7 @@
 import { applicantFromSignup, applicantFromWho, mokToConfirm, nameKey, phoneDigits, sameAffiliation, toCand,
   type Applicant, type Cand } from "./people-match.ts";
 import { signupSame, type SignupRow } from "./events-person.ts";
+import { nameKeyVariants } from "./history-match.ts";
 
 export const LINK_KINDS = ["order", "signup", "history"];   // peopleLink 이 받는 kind — history 는 b6 사역 이력 표(계획 Task 10)
 export const LINK_HOWS = ["manual", "none", "auto"];
@@ -205,6 +206,25 @@ export function parseLink(b: unknown): { ok: true; kind: string; row: number; pe
   if (!Number.isSafeInteger(row) || row <= 0 || !Number.isSafeInteger(person) || person <= 0) return { ok: false, error: "invalid" };
   const expect = o.expect === undefined || o.expect === null || o.expect === "" ? null : String(o.expect);
   return { ok: true, kind, row, person, how: how as LinkHow, expect };
+}
+// 사역 이력 줄 이름이 이 교인과 「같은 이름」인가 — b6 맞춤(history-match.ts candidatesOf)·후보 창(nameKeyVariants)과 같은 열쇠.
+//   동명이인 끝 영문자(「홍길동」 줄 ↔ 교인 「홍길동A」 · 반대도) · 괄호 뗀 이름까지 같다고 본다. personKey 는 church_people.name_key.
+//   「아직 안 이어진 기록」의 사역 이력 거르기(peopleHistory)와 「이분 것」의 이름 확인(peopleLink)이 이 하나를 쓴다 — 둘이 어긋나면
+//   목록에 뜬 줄을 눌러도 other-name 이 된다.
+export function historyNameMatches(rowName: unknown, personKey: unknown): boolean {
+  const k = nameKey(personKey);
+  return !!k && nameKeyVariants(rowName).includes(k);
+}
+// peopleLink 의 이름 확인(2026-10-02 가지 마지막 검토) — **「이분 것」(manual)만** 본다(다른 사람 줄을 이 분께 잇지 못하게).
+//   「이분 아님」(none)·「풀기」(auto)는 이름을 보지 않는다 — 「지금 이 분께 이어진 줄인가」(not-linked)가 이미 주인 확인이다.
+//   ⚠️ 거기에 이름까지 걸면, 규칙이 정확한 이름이 아닌 줄을 이은 경우(사역 이력: 끝 영문자·괄호·「이름 한 글자 다름(오타로 봄)」 /
+//      신청·명단: 새 명부에서 그분 이름 열쇠가 바뀐 경우) 창에 「풀기」가 보이는데 늘 other-name 으로 막히고, 창을 다시 열어도 같다.
+//   manual: 신청·명단은 nameKey 가 같아야(자동 잇기·「아직 안 이어진 기록」과 같은 열쇠) · 사역 이력은 historyNameMatches.
+export function linkNameOk(kind: string, how: string, rowName: unknown, personKey: unknown): boolean {
+  if (how !== "manual") return true;
+  if (kind === "history") return historyNameMatches(rowName, personKey);
+  const k = nameKey(personKey);
+  return !!k && nameKey(rowName) === k;
 }
 // 사람이 정한 줄 — manual(이분 것) · none(이분 아님). 자동이 다시 덮지 않는다(link_how).
 export function linkPatch(kind: LinkKind, row: number, how: "manual" | "none", personId: number, memberId: string | null, nowIso: string) {
