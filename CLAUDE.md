@@ -108,6 +108,21 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 개인정보 안내는 `privacy.html` 7번(+6번 쓰는 곳·보는 사람·기록). 성경암송 `privacy/` 는 손대지 않았다(친구 결정 — 앱이 새로 모으는 것이 없다).
 - 개발 화면 확인용 가짜 회차: `node --experimental-strip-types tests/seed-bible-events-dev.mjs`(`--clean` 으로 지움 · 회차 id `ca-demo-` · 명단 이름은 음절 표로 지어내고 찾기 이름은 개발 가짜 명부에서 고른다).
 
+## 사역 이력 (2026-10-01)
+지난 해 사역 임명 명단(엑셀 · 2022~2026, 더 오래된 해도)을 올려 교인명부의 교인ID 와 잇는다. 메뉴 「📜 사역 이력」(`js/menus/ministry/history.js` · 역할 `ministry`).
+설계 v2 `docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md` · 계획 v2 `docs/superpowers/plans/2026-10-01-church-admin-ministry-history.md`.
+- 표 `ministry_history`·`ministry_history_imports`·함수 `ministry_history_apply`(SQL 005) — 서버만. 맞춤 규칙은 `history-match.ts`(순수), 표 쪽은 `history-db.ts`(`makeHistory` · npm import 없음 — 교인명부 세션이 import 한다).
+- ⚠️ **교인명부 세션(자세히 창 사역 탭)이 이 표를 person_id 로 읽고 「이분 것」으로 고친다** — 칸 이름·`historyLinkPatch`·`historyUnlinkPatch`·`rematchHistoryRows(db, ids)` 를 바꾸면 그쪽도(설계 §7).
+- ⚠️ `person_id` 는 `directory`·`super` 응답에만(`rowOut(r, full)`). 사역신청 역할의 「이분」은 후보 차례 번호 + 지문 `fp`(화면 글자로 만든 FNV — 교인ID 로 만들지 않는다).
+- ⚠️ `link_how` `manual`·`none` 은 자동 맞춤이 덮지 않는다. 다시 맞추기는 **모든 해를 함께** 계산한다(다른 해 같은 팀 「유지」가 근거라 해 하나만 돌리면 결과가 달라진다).
+- 같은 줄 열쇠 `src_key`(해|부서|팀|이름|목장|직분)는 올린 그대로 — 고쳐도 안 바뀐다. 빼기는 `deleted_at` 표시만(다시 올려도 안 되살아난다).
+- 2025년 이전 명단의 「기쁨-1」은 목장 모름으로 읽는다(검증 추정 · 친구 확인 대기) — 바뀌면 `parseRow` 한 줄과 시험만.
+- 규칙을 바꾸면 이 PC 에서 `python tools/history/check_real.py` — 진짜 명부·통합 엑셀로 수와 검증 지적 64줄을 맞대 본다(2026-09-29 명부 기준 4,042 · 51 · 수만 찍는다).
+- 개발 DB 씨앗: `node --experimental-strip-types tests/seed-history-dev.mjs [--clean]`(source_file `ca-demo-seed`).
+- 쓰기 액션은 쓴 뒤 바로 기록하고, 다시 맞추기는 try/catch — 실패하면 응답 rematched:false(화면이 「🔄 다시 맞추기」를 권한다).
+- 줄 응답의 in_directory(true/false/null) — 이어 둔 분이 지금 명부에 없으면 화면에 「⚠ 명부에 없음」. 12월 새 명부 뒤 「🔄 다시 맞추기」.
+- 나중: 「이력으로 넘기기」(2027 임명확정 → 이 표 · `order_id` · 교인ID 는 교인명부 세션의 `people_links` 에서) — 설계 §8.
+
 ## 비상 절차
 ① **유일한 총괄 관리자가 카카오 계정을 잃었을 때** — 새 카카오로 로그인·등록 → 작업 폴더에서
 `select id,name,gu,mok,kakao_nickname from admin_members where status='pending'` 로 id 확인 →
