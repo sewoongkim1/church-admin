@@ -63,7 +63,7 @@ export function parseRow(year: number, mokText: unknown, position: unknown): Aff
     const rest = m[2];
     if (rest.includes("남성")) { a.men = true; a.mok = mokNumber(rest); }
     else if (/^\d+(목장)?$/.test(rest)) a.mok = Number(/^\d+/.exec(rest)![0]);
-    // ⚠️ 2025년 이전 명단의 「기쁨-1」은 목장을 모를 때 쓰던 자리 표시로 본다(교구도 모름 · 2026-10-01 검증 — 친구 확인 대기)
+    // ⚠️ 2025년 이전 명단의 「기쁨-1」은 목장을 모를 때 쓰던 자리 표시로 본다(교구도 모름 · 2026-10-01 검증 · 친구 확인)
     if (year <= 2025 && a.gu === "기쁨" && a.mok === 1 && !a.men) {
       a.kind = "모름"; a.gu = ""; a.mok = null; notes.push("옛 「기쁨-1」은 목장 모름");
     }
