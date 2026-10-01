@@ -114,6 +114,24 @@ export function exportName(years, now = new Date()) {
 
 // 고치기 창 칸 — 서버 HISTORY_EDIT_KEYS 와 같은 칸
 export const EDIT_KEYS = ["year", "committee", "team", "role_title", "name", "position", "mok", "renewal", "src_note"];
+// 고치면 서버가 다시 맞추는 칸 — 서버 HISTORY_REMATCH_KEYS 와 같은 목록(시험이 맞댄다).
+//   줄 창은 이 칸을 고친 뒤에는 「고른 분(pick)」을 보내지 않는다 — 후보 지문(fp)이 바뀌었을 수 있다.
+export const REMATCH_KEYS = ["year", "name", "position", "mok", "team", "renewal"];
+
+const num = (n) => Number(n || 0).toLocaleString("ko-KR");
+// 넣은 뒤 알림 — 올린 해 전체의 **최종** 수(넣은 뒤 다시 불러온 historyList 의 해마다 요약)로 센다.
+//   넣을 때마다 받은 수를 더하면, 뒤의 해를 넣을 때 다른 해 근거로 이어진 앞의 해 줄을 못 센다(2026-10-01 최종 검토).
+//   yearsSummary 가 없으면(다시 불러오기 실패) 넣은 줄 수만.
+export function uploadSummary(years, saved, failed, yearsSummary) {
+  const want = new Set(years);
+  const pick = (yearsSummary || []).filter((y) => want.has(y.year)).sort((a, b) => a.year - b.year);
+  const fail = failed ? ` · 실패 ${num(failed)}` : "";
+  if (!pick.length) return `${num(saved)}줄 넣었어요${fail}`;
+  const s = pick.reduce((a, y) => ({ total: a.total + y.total, linked: a.linked + y.linked, none: a.none + y.none }),
+    { total: 0, linked: 0, none: 0 });
+  return `${num(saved)}줄 넣었어요 — 올린 해 전체: 교적 이어짐 ${num(s.linked)} · 못 맞춤 ${num(s.none)}${fail}\n` +
+    `(${pick.map((y) => y.year).join("·")}년 · 모두 ${num(s.total)}줄)`;
+}
 export function editPatch(before, after) {
   const p = {};
   for (const k of EDIT_KEYS) {

@@ -9,7 +9,7 @@ import { loadXlsx } from "../../core/xlsx.js";
 import { fileErrorText } from "../bibleevent/upload-logic.js";
 import { openPerson } from "../people/search.js";
 import { parseHistorySheet, findHeader, textToAoa, sendParts, yearOptions, linkState, STATE_TEXT, STATE_CLASS, whyText,
-  mergeChecks, exportAoa, exportName, EDIT_KEYS, editPatch } from "./history-logic.js";
+  mergeChecks, exportAoa, exportName, EDIT_KEYS, REMATCH_KEYS, editPatch, uploadSummary } from "./history-logic.js";
 
 const TITLE = `<h2 class="page-title">📜 사역 이력</h2>`;
 const mqWide = matchMedia("(min-width:1024px)");   // PC 는 표, 폰은 카드
@@ -21,6 +21,9 @@ const num = (n) => Number(n || 0).toLocaleString("ko-KR");
 const STALE = { conflict: "다른 분이 먼저 바꿨어요 — 창을 닫고 다시 열어 주세요", "not-found": "이미 빠진 줄이에요 — 목록을 새로 불러올게요" };
 const FIELD = { year: "해", committee: "부서", team: "팀명", role_title: "직책", name: "이름", position: "직분", mok: "목장",
   renewal: "신규/유지", src_note: "원본 메모" };
+// 표 머리를 못 찾았을 때 — 붙여넣기·파일 둘 다 같은 안내(진짜 규칙: 「이름」+「팀명」이 앞 열다섯 줄 안 · findHeader)
+const NO_HEADER = { title: "📂 표 머리를 찾지 못했어요", text: "「이름」과 「팀명」 칸 이름이 함께 적힌 줄이 앞쪽 열다섯 줄 안에 있어야 해요." };
+const noHeaderDialog = (name) => dialog({ title: NO_HEADER.title, danger: true, cancel: null, text: `${name}\n${NO_HEADER.text}` });
 
 const badge = (r) => { const s = linkState(r); return `<em class="cb ${STATE_CLASS[s]}">${STATE_TEXT[s]}</em>`; };
 const sub = (r) => [`${r.year}년`, r.committee, r.team, r.mok].filter(Boolean).join(" · ");
@@ -49,7 +52,8 @@ function checkHtml(name, checks) {
   const reasons = t.reasons.slice(0, 6).map(([w, n]) => `<li>${esc(w)} — ${num(n)}줄</li>`).join("");
   return `<p class="mh-file">${esc(name)}</p><ul class="mh-ul">${years}</ul>` +
     (t.add ? (t.noDirectory ? `<p class="be-note">교인명부가 아직 올라오지 않아 교적은 넣은 뒤 맞춰요.</p>`
-      : `<p class="mh-pre">새 줄을 미리 맞춰 보면 교적이 붙는 줄 <b>${num(t.linked)}</b> · 못 맞추는 줄 <b>${num(t.unlinked)}</b></p>`) : "") +
+      : `<p class="mh-pre">새 줄을 미리 맞춰 보면 교적이 붙는 줄 <b>${num(t.linked)}</b> · 못 맞추는 줄 <b>${num(t.unlinked)}</b></p>` +
+        `<p class="muted mh-pre-note">해마다 따로 미리 맞춘 수예요 — 여러 해를 함께 넣으면 더 붙을 수 있어요</p>`) : "") +
     (reasons ? `<ul class="mh-ul mh-reasons">${reasons}</ul>` : "") +
     (t.bad ? `<p class="be-warn">틀린 줄(해·이름 없음 · 칸이 너무 김)은 넣지 않아요.</p>` : "");
 }
@@ -71,7 +75,7 @@ function candHtml(d) {
     (c.church_mok ? `<span class="be-cand-mok">교적: ${esc(c.church_mok)}</span>` : "") +
     (c.served ? `<span class="mh-served">다른 해에 이 팀 ${c.served}번</span>` : "") +
     (d.full ? `<span class="mh-pid">교인ID ${c.person_id}</span>` : "") + `</button>` +
-    (d.full ? `<button type="button" class="btn mh-detail" data-detail="${i}">🔎 자세히</button>` : "")).join("");
+    (d.full ? `<button type="button" class="btn mh-detail" data-detail="${i}" aria-label="${esc(c.name)} 자세히">🔎 자세히</button>` : "")).join("");
   return `<h4 class="mh-h">교인명부의 같은 이름 ${list.length}명 <small>— 이분이면 눌러 고른 뒤 「저장」</small></h4>` +
     `<div class="be-cands mh-cands">${items || `<p class="muted">같은 이름이 교인명부에 없어요</p>`}` +
     `<button type="button" class="be-cand${d.row.link_how === "none" ? " on" : ""}" data-cand="none" aria-pressed="${d.row.link_how === "none"}">이분 아님 <small>(교인명부에 없는 분 · 비워 둠)</small></button>` +
@@ -139,24 +143,24 @@ export async function render(el, { call }) {
   const load = async () => {
     const mySeq = ++loadSeq;
     const r = await busy(el, () => call("historyList", f));
-    if (!el.isConnected || mySeq !== loadSeq) return;   // 떠났거나, 더 늦게 부른 load() 가 이미 있다(out-of-order)
-    if (!r.ok) { el.querySelector(".mh-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`; return; }
+    if (!el.isConnected || mySeq !== loadSeq) return false;   // 떠났거나, 더 늦게 부른 load() 가 이미 있다(out-of-order)
+    if (!r.ok) { el.querySelector(".mh-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`; return false; }
     if (r.total > 0 && f.page * r.pageSize >= r.total) {   // 지운 뒤 등 범위를 벗어난 쪽을 보던 중 — 마지막 쪽으로 한 번만 다시
       f.page = Math.max(0, Math.ceil(r.total / r.pageSize) - 1);
       return load();
     }
     last = r; rows = r.rows || [];
     draw();
+    return true;                                       // 이 답으로 last 를 새로 받았다(올린 뒤 최종 수를 여기서 읽는다)
   };
+  // 다시 그린 뒤 초점 돌려주기 — 줄 창을 연 ⋯ 단추·누른 해 칩은 다시 그리면 새 단추가 된다(키보드로 쓰는 분이 자리를 잃지 않게).
+  // 그 단추가 아직 있으면(같은 쪽·같은 줄) 그리로.
+  const refocus = (sel) => { if (!el.isConnected) return; const x = el.querySelector(sel); if (x) x.focus({ preventScroll: true }); };
 
   // ── 올리기 ────────────────────────────────────────────────────────
   async function uploadAoa(aoa, name) {
     const p = parseHistorySheet(aoa, name);
-    if (p.error) {
-      await dialog({ title: "📂 표 머리를 찾지 못했어요", danger: true, cancel: null,
-        text: `${name}\n「이름」과 「팀명」 칸 이름이 함께 적힌 줄이 앞쪽 열다섯 줄 안에 있어야 해요.` });
-      return;
-    }
+    if (p.error) { await noHeaderDialog(name); return; }
     if (!p.rows.length) { await dialog({ title: "📂 넣을 줄이 없어요", text: name, cancel: null }); return; }
     let list = p.rows;
     if (p.needYear) {
@@ -178,32 +182,43 @@ export async function render(el, { call }) {
     if (!t.add) { await dialog({ title: "새로 넣을 줄이 없어요", html: checkHtml(name, checks), cancel: null }); return; }
     const yes = await dialog({ title: "📥 사역 이력을 넣습니다", html: checkHtml(name, checks), ok: `${num(t.add)}줄 넣기`, cancel: "그만두기" });
     if (!yes || !el.isConnected) return;
-    let saved = 0, linked = 0, unlinked = 0, failed = 0, notRematched = false;
+    let saved = 0, failed = 0, okParts = 0, notRematched = false, stopped = false;
     for (const c of checks) {
       if (!c.d.counts.add) continue;
       const d = await busy(el, () => call("historyUploadSave", { rows: c.rows, file_name: name }));
       if (!d.ok) {
+        stopped = true;
         // 메뉴를 떠났어도(el.isConnected===false) 남은 해는 계속 넣는다 — 이미 서버로 보낸 쓰기다, 화면이 없다고 멈추지 않는다.
         // 화면에 보일 것(대화창)만 떠났으면 건너뛴다.
+        // ⚠️ 멈춘 해도 들어갔을 수 있다(넣기·기록이 끝난 뒤 답만 끊긴 경우 · upload-logic.js SEC-5 와 같은 자리) —
+        //   그러면 다시 올려도 「새로 넣을 줄이 없어요」라 다시 맞추기가 안 돈다. 그 줄은 「아직 맞추지 않음」 사유로 남는다.
         if (el.isConnected) {
           await dialog({ title: "⚠️ 넣는 중에 멈췄어요", cancel: null,
-            text: `${c.year}년에서 멈췄어요 — ${errorText(d)}\n앞의 해는 들어갔을 수 있어요. 같은 파일을 다시 올리면 들어간 줄은 건너뛰어요.` });
+            text: `${c.year}년에서 멈췄어요 — ${errorText(d)}\n${okParts ? "앞의 해는 들어갔어요. " : ""}이 해도 들어갔을 수 있어요. ` +
+              "같은 파일을 다시 올려 「새로 넣을 줄이 없어요」가 나오면 「🔄 다시 맞추기」를 눌러 주세요." });
         }
         break;
       }
-      saved += d.saved || 0; linked += d.linked || 0; unlinked += d.unlinked || 0; failed += d.failed || 0;
-      if ("rematched" in d) notRematched = d.rematched === false;   // 필드가 없는 답으로 앞선 참값을 지우지 않는다
-    }
-    if (el.isConnected) {
-      if (notRematched) {
-        await dialog({ title: "⚠️ 교적 맞추기가 끝나지 않았어요",
-          text: "명단은 들어갔어요. 「🔄 다시 맞추기」를 눌러 교적을 맞춰 주세요.", cancel: null });
-      } else {
-        toast(`${num(saved)}줄 넣었어요 · 교적 이어짐 ${num(linked)} · 못 맞춤 ${num(unlinked)}${failed ? ` · 실패 ${num(failed)}` : ""}`);
-      }
+      okParts++;
+      saved += d.saved || 0; failed += d.failed || 0;
+      // 한 줄이라도 넣은 묶음의 답만 본다(못 넣은 묶음은 다시 맞추지 않아 늘 rematched:false) · 마지막 것이 이긴다 —
+      // 다시 맞추기는 늘 모든 해를 함께 하므로 뒤 묶음이 맞췄으면 앞 묶음 줄도 맞춰졌다
+      if (d.saved && "rematched" in d) notRematched = d.rematched === false;
     }
     f.page = 0;
-    if (el.isConnected) await load();
+    if (!el.isConnected) return;
+    const fresh = await load();                       // 해마다 요약 — 최종 수는 여기서(묶음마다 받은 수는 다른 해로 이어진 줄을 못 센다)
+    if (stopped || !el.isConnected) return;
+    if (!saved) {
+      await dialog({ title: "⚠️ 넣은 줄이 없어요", cancel: null, danger: true,
+        text: failed ? `${num(failed)}줄을 넣지 못했어요 — 잠시 뒤 같은 파일을 다시 올려 주세요.` : "그사이 같은 줄이 먼저 들어왔어요." });
+    } else if (notRematched) {
+      await dialog({ title: "⚠️ 교적 맞추기가 끝나지 않았어요", cancel: null,
+        text: `명단은 들어갔어요(${num(saved)}줄${failed ? ` · 실패 ${num(failed)}` : ""}). 「🔄 다시 맞추기」를 눌러 교적을 맞춰 주세요.` });
+    } else {
+      await dialog({ title: "📥 넣었어요", cancel: null,
+        text: uploadSummary([...new Set(checks.map((c) => c.year))], saved, failed, fresh === true && last ? last.years : null) });
+    }
   }
   async function readFile(file) {
     try {
@@ -216,7 +231,8 @@ export async function render(el, { call }) {
         const a = XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1, blankrows: false, raw: true });
         if (findHeader(a)) { aoa = a; break; }
       }
-      if (!aoa) throw new Error("empty");
+      // 머리가 있는 시트가 없다 — 「명단 시트」 안내(fileErrorText "empty")가 아니라 진짜 규칙(이름+팀명)을 붙여넣기와 같은 글로
+      if (!aoa) { await noHeaderDialog(file.name); return; }
       await uploadAoa(aoa, file.name);
     } catch (e) {
       // 이 메뉴는 엑셀만 읽는다 — fileErrorText 의 "kind" 글은 CSV·TXT 도 된다고 해 다른 화면과 어긋난다
@@ -274,7 +290,7 @@ export async function render(el, { call }) {
         // 후보 차례(pick)는 historyCandidates 가 준 지문(fp)으로 서버가 지킨다 — 이름·해·직분·목장·팀·신규/유지를 고치면
         // 그 지문이 안 맞을 수 있다. 한 번이라도 그런 칸을 고쳤으면(withheld) 같은 창이 열려 있는 동안은 계속 pick 을
         // 보내지 않는다 — 다음 제출의 patch 가 비어도(이미 저장됐으니) 옛 fp 로 조용히 넘어가지 않게.
-        if (["year", "name", "position", "mok", "team", "renewal"].some((k) => k in patch)) withheld = true;
+        if (REMATCH_KEYS.some((k) => k in patch)) withheld = true;
         let cur = row;
         if (Object.keys(patch).length) {
           const x = await call("historyRowSave", { id: row.id, expect: row.updated_at, patch });
@@ -290,7 +306,8 @@ export async function render(el, { call }) {
           return { ok: false, message: "칸을 고쳐 후보가 바뀌었을 수 있어요 — 창을 닫고 다시 열어 고른 분을 확인해 주세요" };
         }
         if (choice) {
-          const x = await call("historyLink", { id: row.id, op: choice.op, pick: choice.pick, fp: d.fp });
+          // expect — 창을 연 뒤(또는 위에서 고친 뒤 받은 새 줄의) updated_at. 그사이 다른 분이 이었으면 서버가 conflict 로 막는다.
+          const x = await call("historyLink", { id: row.id, op: choice.op, pick: choice.pick, fp: d.fp, expect: row.updated_at });
           if (!x.ok) {
             if (STALE[x.error]) { staleCode = x.error; return { ok: false, message: STALE[x.error] }; }
             return x;
@@ -302,9 +319,10 @@ export async function render(el, { call }) {
         return { ok: true, value: cur };
       },
     });
+    const back = `[data-act="row"][data-id="${r.id}"]`;   // 다시 그린 뒤 이 줄의 ⋯ 로 초점(있으면)
     if (!out) {
       if (notRematched) toast("교적은 아직 못 맞췄어요 — 「🔄 다시 맞추기」를 눌러 주세요");
-      if (staleCode || wrote) await load();
+      if (staleCode || wrote) { await load(); refocus(back); }
       return;
     }
     if (out === true) return;
@@ -313,6 +331,7 @@ export async function render(el, { call }) {
     const i = rows.findIndex((x) => x.id === r.id);
     if (i >= 0) rows[i] = out;
     await load();    // 요약 수·근거 약함이 바뀌었을 수 있다
+    refocus(back);
   }
 
   async function openAdd() {
@@ -348,7 +367,8 @@ export async function render(el, { call }) {
   }
 
   async function exportXlsx() {
-    const r = await busy(el, () => call("historyExport", { years: f.years }));
+    // 화면의 거르기 그대로(해 · 못 맞춘 줄만/근거 약한 줄만 · 찾기) — 서버가 목록과 같은 historyFilter 로 거른다
+    const r = await busy(el, () => call("historyExport", { years: f.years, only: f.only, q: f.q }));
     if (!r.ok) { toast(errorText(r)); return; }
     if (!r.rows.length) { toast("내려받을 줄이 없어요"); return; }
     try {
@@ -377,10 +397,12 @@ export async function render(el, { call }) {
     if (yb) {
       const y = Number(yb.dataset.year);
       f.years = !yb.dataset.year ? [] : f.years.includes(y) ? f.years.filter((x) => x !== y) : [...f.years, y];
-      f.page = 0; await load(); return;
+      f.page = 0; await load();
+      refocus(`.mh-years [data-year="${yb.dataset.year}"]`);   // 해 칩 줄은 다시 그려진다 — 누른 칩으로 초점
+      return;
     }
     const ob = e.target.closest("[data-only]");
-    if (ob) { f.only = ob.dataset.only; f.page = 0; await load(); return; }
+    if (ob) { f.only = ob.dataset.only; f.page = 0; await load(); refocus(`.mh-only [data-only="${ob.dataset.only}"]`); return; }
     const b = e.target.closest("button[data-act]");
     if (!b) return;
     const act = b.dataset.act;

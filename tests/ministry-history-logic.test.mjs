@@ -3,10 +3,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   findHeader, parseHistorySheet, yearFromName, sendParts, textToAoa, linkState, mergeChecks, exportAoa, exportName,
-  editPatch, WEAK_RE, MAX_SEND, EXPORT_HEAD, EDIT_KEYS, STATE_TEXT, STATE_CLASS,
+  editPatch, WEAK_RE, MAX_SEND, EXPORT_HEAD, EDIT_KEYS, REMATCH_KEYS, STATE_TEXT, STATE_CLASS, uploadSummary,
 } from "../js/menus/ministry/history-logic.js";
 import { WEAK_RE as SERVER_WEAK_RE } from "../supabase/functions/church-admin/history-match.ts";
-import { HISTORY_MAX_UPLOAD, HISTORY_EDIT_KEYS } from "../supabase/functions/church-admin/history-db.ts";
+import { HISTORY_MAX_UPLOAD, HISTORY_EDIT_KEYS, HISTORY_REMATCH_KEYS } from "../supabase/functions/church-admin/history-db.ts";
 import { errorText } from "../js/core/ui.js";
 
 // 원본 해마다 파일의 꼴 — 1행 제목 · 2행 빈 줄 · 3행 머리(A열은 빈칸) · H열 메모는 머리 없음
@@ -56,9 +56,12 @@ test("sendParts — 해마다 · 3,000줄씩(서버 상한과 같다)", () => {
   assert.deepEqual(sendParts(rows).map((p) => [p.year, p.rows.length]), [[2022, 1], [2024, 3000], [2024, 1]]);
 });
 
-test("WEAK_RE·고치기 칸 — 화면과 서버가 같은 글", () => {
+test("WEAK_RE·고치기 칸·다시 맞추는 칸 — 화면과 서버가 같은 글", () => {
   assert.equal(WEAK_RE.source, SERVER_WEAK_RE.source);
   assert.deepEqual([...EDIT_KEYS], [...HISTORY_EDIT_KEYS]);
+  // 줄 창이 「고른 분」을 막는 칸 = 서버가 고친 뒤 다시 맞추는 칸(서버에만 더하면 화면이 낡은 지문으로 고른다)
+  assert.deepEqual([...REMATCH_KEYS], [...HISTORY_REMATCH_KEYS]);
+  assert.ok(REMATCH_KEYS.every((k) => EDIT_KEYS.includes(k)));
 });
 
 test("linkState · mergeChecks · editPatch", () => {
@@ -128,4 +131,18 @@ test("errorText — 사역 이력 오류 코드 일곱 가지가 각자 문구�
   // 사용자가 그대로 읽는 안내문이라, 적어도 이 둘은 글자 그대로 못 박는다
   assert.equal(errorText({ error: "history-deleted" }), "같은 줄을 전에 뺐어요 — 빼 둔 줄은 되살리지 않아요(이름·목장 등을 달리 적어 주세요)");
   assert.equal(errorText({ error: "candidates-changed" }), "그사이 교인명부가 바뀌었어요 — 창을 닫고 다시 열어 주세요");
+});
+
+// ⚠️ 2026-10-01 최종 검토 — 여러 해를 넣으면 묶음마다 받은 수는 다른 해로 이어진 줄을 못 센다 → 넣은 뒤 해마다 요약(최종)으로
+test("uploadSummary — 올린 해 전체의 최종 수(해마다 요약에서) · 실패 · 요약이 없으면 넣은 줄 수만", () => {
+  const ys = [
+    { year: 2024, total: 900, linked: 890, none: 10, weak: 3 },
+    { year: 2023, total: 800, linked: 780, none: 20, weak: 5 },
+    { year: 2022, total: 700, linked: 650, none: 50, weak: 9 },
+  ];
+  assert.equal(uploadSummary([2023, 2022], 1500, 0, ys),
+    "1,500줄 넣었어요 — 올린 해 전체: 교적 이어짐 1,430 · 못 맞춤 70\n(2022·2023년 · 모두 1,500줄)");
+  assert.equal(uploadSummary([2024], 5, 2, ys), "5줄 넣었어요 — 올린 해 전체: 교적 이어짐 890 · 못 맞춤 10 · 실패 2\n(2024년 · 모두 900줄)");
+  assert.equal(uploadSummary([2024], 5, 0, null), "5줄 넣었어요");
+  assert.equal(uploadSummary([2021], 5, 1, ys), "5줄 넣었어요 · 실패 1");
 });

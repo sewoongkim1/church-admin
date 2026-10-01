@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, detailText, labelOf } from "../js/menus/system/audit.js";
+import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, LOOKUP_HISTORY_CHECK, detailText, labelOf } from "../js/menus/system/audit.js";
 import { ministryApplicant, ministryLookupLog, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
 
 // 기록 한 줄 — 서버 auditList 가 주는 모양({action, target, detail})
@@ -185,4 +185,44 @@ test("history.upload — 지금 모양(linked·unlinked 없음)은 교적 이어
 });
 test("history.rematch — failed:true 면 「다시 맞추기 실패」", () => {
   assert.equal(detailText(R("history.rematch", { failed: true })), "다시 맞추기 실패");
+});
+
+// ── 2026-10-01 최종 검토 반영 ──
+// 올리기 살펴보기도 교인명부에 물은 것 — 서버 history-db.ts upload(save=false) 가 남기는 모양 그대로
+test("people.lookup(from:history-check) — 「명부 찾기(사역 이력 살펴보기)」 · 물은 이름 N(이름, …) · 이어짐 M", () => {
+  const d = { from: "history-check", asked: 2, askedNames: ["홍길동", "홍길순"], count: 1 };
+  assert.equal(labelOf(R("people.lookup", d)), LOOKUP_HISTORY_CHECK);
+  assert.equal(LOOKUP_HISTORY_CHECK, "명부 찾기(사역 이력 살펴보기)");
+  assert.equal(detailText(R("people.lookup", d)), "물은 이름 2(홍길동, 홍길순) · 이어짐 1");
+  // 쉰 분까지 실려도 화면은 스무 분까지 적고 나머지는 수로(someNames) · asked 는 실린 이름보다 클 수 있다
+  const many = Array.from({ length: 50 }, (_, i) => "홍길동" + i);
+  assert.equal(detailText(R("people.lookup", { from: "history-check", asked: 70, askedNames: many, count: 40 })),
+    `물은 이름 70(${many.slice(0, 20).join(", ")} 외 30명) · 이어짐 40`);
+});
+
+test("people.lookup(from:history) — 지금 이어진 분을 끝에 더해 보였으면(extra:1) 「지금 이어진 분 함께」", () => {
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 3, from: "history", extra: 1 })), "‘홍길동’ · 3명 · 지금 이어진 분 함께");
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 2, from: "history" })), "‘홍길동’ · 2명");
+});
+
+// 교인명부 세션(자세히 창 「이분 것」)이 남길 수 있는 모양 — 해가 없거나 op 대신 how(manual·none·auto)
+test("history.link — 해가 없으면 「년」을 안 붙인다 · how 도 읽는다(manual→이분으로 이음 · none→이분 아님 · auto→자동으로 되돌림)", () => {
+  assert.equal(detailText(R("history.link", { id: 3, by: "directory", how: "manual" }, "3")), "이분으로 이음 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { id: 3, by: "directory", how: "none" })), "이분 아님 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { id: 3, by: "directory", how: "auto" })), "자동으로 되돌림 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { op: "manual", year: 2023, by: "directory" })), "2023년 · 이분으로 이음 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { id: 3, by: "directory" })), "교적 창에서");
+  assert.ok(!detailText(R("history.link", { by: "directory", how: "manual" })).includes("manual"));
+});
+
+test("history.delete — 지워 달라는 요청(CLAUDE.md 비상 절차 ②-1 의 {erased:true})은 따로 적는다 · 해가 없으면 「년」을 안 붙인다", () => {
+  assert.equal(detailText(R("history.delete", { erased: true }, "12")), "지워 달라는 요청 — 이름까지 지움");
+  assert.equal(detailText(R("history.delete", {})), "");
+  assert.equal(detailText(R("history.delete", { year: 2024 })), "2024년");
+});
+
+test("history.export — 화면에서 거른 것(못 맞춘 줄만·근거 약한 줄만 · 찾기)을 적는다 · 찾은 글자는 서버가 싣지 않는다", () => {
+  assert.equal(detailText(R("history.export", { count: 51, years: [], only: "none" })), "51줄 · 모든 해 · 못 맞춘 줄만");
+  assert.equal(detailText(R("history.export", { count: 3, years: [2024], only: "weak", search: true })), "3줄 · 2024년 · 근거 약한 줄만 · 찾기로 거름");
+  assert.equal(detailText(R("history.export", { count: 10, years: [] })), "10줄 · 모든 해");
 });
