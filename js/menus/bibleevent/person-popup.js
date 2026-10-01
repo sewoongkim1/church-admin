@@ -31,7 +31,7 @@
 // ⚠️ 이 파일은 Node 시험(tests/be-person-logic.test.mjs)이 불러 본다 — 맨 위에서 document·window·history 를 만지지 않는다(bind 는 처음 누를 때).
 import { toast, dialog, errorText } from "../../core/ui.js";
 import { pickOne } from "../../core/picker.js";
-import { openPerson } from "../people/search.js";
+import { openPerson, detailTab } from "../people/search.js";
 import { NOT_FOUND, NO_DIRECTORY, FAMILY_NOTE, personDecision, candOptions, chooseTitle, basicHtml } from "./person-logic.js";
 
 // 「자세히」 창 — 교인명부 openPerson 이 ui.js dialog 에 주는 cls(pd). .dlg-dim 바로 아래.
@@ -219,6 +219,7 @@ export async function openChurchPerson({ call, action = "evPerson", name = "", w
     }
     // 「자세히」 창 — 사진·연락처·주소·가족은 peoplePerson 이 교인명부 역할을 다시 확인하고 준다(people.view 기록 · 초점은 그쪽이 돌려준다).
     // 가족 이름을 누르면(④) 그 창이 닫히고 s.next 에 그분 교인ID 가 남는다 — 같은 칸에서 이어 연다.
+    let tab;   // 가족으로 넘어가면 보던 탭 그대로(2026-10-01 · 처음은 교적)
     while (id != null && !gone()) {
       s.next = null;
       s.detail = true;
@@ -228,8 +229,9 @@ export async function openChurchPerson({ call, action = "evPerson", name = "", w
       // openPerson 은 창이 닫히면 back.isConnected 일 때만 back.focus() 한다. 뒤로 가기는 「창을 기다리는 사이」(늦게 뜬 창 · s.late)만
       // 막는다 — 떠 있던 창을 뒤로 가기로 닫았을 때는 그사이 연 것이 없으니 전처럼 이름 단추로 돌려준다.
       const back = anchor ? { get isConnected() { return anchor.isConnected && !s.cancelled && !s.late; }, focus: (o) => anchor.focus(o) } : null;
-      try { await openPerson(call, id, () => toast(FAMILY_NOTE), back); }
+      try { await openPerson(call, id, () => toast(FAMILY_NOTE), back, { tab }); }
       finally { watch(s, false); s.detail = false; s.dlg = null; setWait(s, false); }
+      tab = detailTab();
       id = s.next;
     }
   } finally {

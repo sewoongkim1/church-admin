@@ -772,6 +772,51 @@ a.mn-tel.sm{padding:2px 8px}
   .dlg.pd .pd-chip,.dlg.pd .pd-fam-all{min-height:var(--chip)}
 }
 
+/* 「자세히」 창의 탭(2026-10-01) — 교적 · 🤝 사역 N · ✍️ 성경필사 N. 본문 js/menus/people/person-history.js · 손잡이 person-tabs.js
+   ⚠️ PC(창 안쪽 720px 이상)는 창 높이를 왼쪽 단(사진)과 교적 칸이 정한다 — 사역·성경필사 칸은 contain:size 로 높이에 끼지 않고
+      그 높이 안에서만 스크롤한다(1366×657 무스크롤 · 설계 §4). 교적 칸은 꺼져도 자리를 지켜(visibility) 탭을 바꿔도 창 높이가 그대로다.
+   ⚠️ 폰(좁은 창)은 고른 칸만 보이고 창 전체가 세로로 스크롤한다.
+   ⚠️ 탭 줄 높이(약 46px)만큼 사진을 줄여 교적 칸이 꽉 찬 분도 1366×657 에서 넘치지 않게 한다(아래 .pd-tabbed .pd-photo — 재고 정한 값) */
+.dlg.pd .pd-tabbed .pd-main{gap:0}
+.dlg.pd .pd-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.dlg.pd .pd-tab{display:inline-flex;align-items:center;gap:4px;min-height:var(--chip);padding:0 14px;border-radius:999px;
+  border:1px solid var(--border);background:var(--paper);color:var(--ink);font-size:14px;font-weight:700;cursor:pointer}
+.dlg.pd .pd-tab em{font-style:normal;font-weight:800;color:var(--navy)}
+.dlg.pd .pd-tab.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.dlg.pd .pd-tab.on em{color:#fff}
+.dlg.pd .pd-panel{display:flex;flex-direction:column;gap:20px;min-width:0}
+.dlg.pd .pd-panel[data-off]{display:none}
+.dlg.pd .pd-panel>.pd-none{text-align:center}
+.dlg.pd .pd-hl{list-style:none;margin:0;padding:0}
+.dlg.pd .pd-hr{display:grid;grid-template-columns:3.2em minmax(0,1fr) auto auto;align-items:baseline;gap:4px 8px;
+  padding:8px 0;border-top:1px solid var(--light)}
+.dlg.pd .pd-hr:first-child{border-top:0}
+.dlg.pd .pd-hl-b .pd-hr{grid-template-columns:minmax(0,1fr) auto}
+.dlg.pd .pd-ur{grid-template-columns:minmax(0,1fr) auto auto}
+.dlg.pd .pd-hy{font-size:14px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums}
+.dlg.pd .pd-ht{font-size:15px;line-height:1.4;color:var(--ink);word-break:keep-all;overflow-wrap:anywhere}
+.dlg.pd .pd-hm{margin-left:6px;font-size:13px;color:var(--ink-2)}
+.dlg.pd .pd-hx,.dlg.pd .pd-hb{min-height:var(--chip);padding:0 12px;border-radius:999px;border:1px solid var(--ghost-bd);
+  background:var(--paper);color:var(--navy);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.dlg.pd .pd-hb.warn{color:var(--error);border-color:currentColor}
+.dlg.pd .pd-hc{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
+.dlg.pd .pd-hc small{margin-right:auto;font-size:13px;color:var(--ink-2)}
+.dlg.pd .pd-un{margin-top:4px;padding-top:10px;border-top:1px dashed var(--border);font-size:14px;color:var(--ink-2)}
+.dlg.pd .pd-un-b{display:inline-flex;align-items:center;gap:6px;min-height:var(--tap);padding:0;border:0;background:transparent;
+  color:var(--navy);font-size:14px;font-weight:700;cursor:pointer}
+.dlg.pd .pd-un-sub{margin:10px 0 0;font-size:13px;color:var(--ink-2)}
+@container (min-width:720px){
+  .dlg.pd .pd-tabbed{align-items:stretch}
+  .dlg.pd .pd-tabbed .pd-main{min-height:0}
+  .dlg.pd .pd-tabbed .pd-photo{height:clamp(170px,100cqh - 466px,260px)}
+  .dlg.pd .pd-panels{flex:1 1 auto;min-height:0;display:grid}
+  .dlg.pd .pd-panels>.pd-panel{grid-area:1/1;min-height:0;gap:0}
+  .dlg.pd .pd-panel[data-pd-panel="church"][data-off]{display:flex;visibility:hidden}
+  .dlg.pd .pd-panel[data-pd-panel="ministry"],.dlg.pd .pd-panel[data-pd-panel="bible"]{display:block;contain:size;
+    overflow-y:auto;overscroll-behavior:contain}
+  .dlg.pd .pd-panel[data-pd-panel="ministry"][data-off],.dlg.pd .pd-panel[data-pd-panel="bible"][data-off]{display:none}
+}
+
 /* 공용 고르개(js/core/picker.js · 2026-09-29) — 시스템 <select>·날짜·시각 창 대신.
    좁은 화면(≤719px) = 바텀 시트 · 넓은 화면 = 단추 아래 작은 판. z-index 는 확인 창(50) 위 · 알림(60) 아래 */
 .pk-field{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:var(--tap);
