@@ -16,7 +16,7 @@ export const LABEL = {
   "ministry.catalog": "사역팀 정보 고침", "ministry.order": "사역팀 차례 바꿈",
   "ministry.paper": "종이 명단 넣음",
   "ministry.tester": "사역 시험 참여자",
-  "history.request": "사역 이력 정정 신청 처리",
+  "history.request": "사역 이력 정정 신청 처리", "history.request.delete": "사역 이력 정정 신청 삭제",
   "people.search": "명부 찾기", "people.view": "교인 보기", "people.export": "명부 내려받기", "people.import": "명부 올림",
   // 성경필사(암송) — detail 모양은 서버 index.ts 의 audit() 호출과 한 벌(tests/audit.test.mjs 가 못 박는다)
   "event.create": "성경필사 회차 만듦", "event.settings": "성경필사 회차 설정 바꿈",
@@ -62,6 +62,8 @@ const EV_FIELD = { title: "이름", short_title: "짧은 이름", subtitle: "부
 const ROW_FIELD = { who_type: "구분", group: "소속", sub: "세부", name: "이름", position: "직분" };
 const SRC = { app: "📱 앱", import: "📋 이관" };                                           // 📋 회차·명단의 출처 표시와 같다
 const joinDot = (...parts) => parts.filter(Boolean).join(" · ");
+// 정정 신청 종류(requests-logic.js KIND_TEXT 와 같은 글자 · 이 파일은 그 메뉴를 import 하지 않는다)
+const REQ_KIND = { not_mine: "내 것이 아니에요", wrong_team: "팀·부서가 틀려요", other: "그 밖에", missing: "빠진 사역", find_me: "내 기록 찾아 주세요" };
 const HIST_FIELD = { year: "해", committee: "부서", team: "팀명", role_title: "직책", name: "이름", position: "직분", mok: "목장",
   renewal: "신규/유지", src_note: "원본 메모" };
 // 교인명부 세션(자세히 창 「이분 것」)은 op 대신 how(link_how 값 manual·none·auto)를 남길 수 있다 — 둘 다 읽는다
@@ -97,8 +99,11 @@ export function detailText(r) {
   if (r.action === "ministry.paper") return `저장 ${d.saved} · 새 계정 ${d.created} · 그대로 ${d.same} · 오류 ${d.errors}`;
   if (r.action === "ministry.tester") return [d.op === "add" ? "더함" : "뺌", d.name, d.who].filter(Boolean).join(" · ");
   if (r.action === "history.request") {
-    const K = { not_mine: "내 것이 아니에요", wrong_team: "팀·부서가 틀려요", other: "그 밖에", missing: "빠진 사역", find_me: "내 기록 찾아 주세요" };
-    return [`#${d.id ?? r.target}`, K[d.kind] || d.kind || "", `${d.from || ""} → ${d.to || ""}`, d.verified ? "본인 확인" : ""].filter(Boolean).join(" · ");
+    return [`#${d.id ?? r.target}`, REQ_KIND[d.kind] || d.kind || "", `${d.from || ""} → ${d.to || ""}`, d.verified ? "본인 확인" : ""].filter(Boolean).join(" · ");
+  }
+  // 신청 삭제(2026-10-02) — 번호·종류·지운 때의 상태만(이름·글·답은 남기지 않는다)
+  if (r.action === "history.request.delete") {
+    return [`#${d.id ?? r.target}`, REQ_KIND[d.kind] || d.kind || "", d.status || ""].filter(Boolean).join(" · ");
   }
   if (r.action === "people.search") {
     const f = filtersText(d.filters);
@@ -145,9 +150,13 @@ export function detailText(r) {
   }
   // erased — 지워 달라는 요청으로 이름까지 지운 줄(CLAUDE.md 비상 절차 ②-1 · SQL 로 남긴다)
   if (r.action === "history.delete" && d.erased === true) return "지워 달라는 요청 — 이름까지 지움";
-  // 「📮 정정 신청」의 빠진 사역을 「반영」해 더한 줄 · 반영을 되돌려 뺀 줄(from:"request" · request = 신청 번호 · 2026-10-01)
-  if ((r.action === "history.add" || r.action === "history.delete") && d.from === "request") {
-    return joinDot(d.year ? `${d.year}년` : "", d.request != null ? `정정 신청 #${d.request}` : "정정 신청");
+  // 「📮 정정 신청」의 빠진 사역을 「반영」해 더한 줄 · 되살린 줄(restored) · 고친 줄(history.edit) · 반영을 되돌려 뺀 줄 ·
+  //   신청을 지워 뺀 줄(why:"request-deleted") — from:"request" · request = 신청 번호(2026-10-01 · 2026-10-02)
+  if ((r.action === "history.add" || r.action === "history.delete" || r.action === "history.edit") && d.from === "request") {
+    return joinDot(d.year ? `${d.year}년` : "", d.request != null ? `정정 신청 #${d.request}` : "정정 신청",
+      r.action === "history.edit" ? (d.fields || []).map((k) => HIST_FIELD[k] || k).join("·") : "",
+      r.action === "history.add" && d.restored === true ? "되살림" : "",
+      r.action === "history.delete" && d.why === "request-deleted" ? "신청 삭제로 뺌" : "");
   }
   if (r.action === "history.add" || r.action === "history.delete") return d.year ? `${d.year}년` : "";
   if (r.action === "history.edit") return joinDot(`${d.year ?? ""}년`, (d.fields || []).map((k) => HIST_FIELD[k] || k).join("·"));

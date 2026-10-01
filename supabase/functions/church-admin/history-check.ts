@@ -127,7 +127,8 @@ export const REQ_LIST_MAX = 500;
 export const REQUEST_ADMIN_SELECT =
   "id,kind,detail,year,team_text,status,answer,created_at,updated_at,handled_at,who_type,who_group,who_sub,who_name,person_id,history_id";
 export const ROW_ADMIN_SELECT = "id,year,committee,team,role_title,position,deleted_at";
-export const REQUEST_ADMIN_OUT_KEYS = ["answer", "created_at", "detail", "found", "handled_at", "id", "kind", "row", "status",
+// line — 빠진 사역의 「사역 이력에 넣을 내용」 미리 채움(2026-10-02 · history-db.ts requestLineOut · 다른 종류는 null)
+export const REQUEST_ADMIN_OUT_KEYS = ["answer", "created_at", "detail", "found", "handled_at", "id", "kind", "line", "row", "status",
   "team_text", "updated_at", "who", "year"];
 
 export type ReqSet = { id: number; status: string; answer: string; verified: boolean; expect: string };
@@ -168,7 +169,8 @@ export function requestAuditDetail(cur: { kind: string; status: string }, set: R
   return { id: set.id, kind: cur.kind, from: cur.status, to: set.status, verified: set.verified };
 }
 
-export function requestAdminOut(r: any, row: any | null) {
+// line: 빠진 사역이면 requestLineOut 의 모양 — 여기서 일곱 칸만 다시 고른다(교인ID·이름·목장이 끼어들 수 없게)
+export function requestAdminOut(r: any, row: any | null, line: any | null = null) {
   return {
     id: Number(r.id), kind: String(r.kind ?? ""), detail: String(r.detail ?? ""), year: r.year == null ? null : Number(r.year),
     team_text: String(r.team_text ?? ""), status: String(r.status ?? ""), answer: String(r.answer ?? ""),
@@ -178,6 +180,11 @@ export function requestAdminOut(r: any, row: any | null) {
     row: row ? {
       id: Number(row.id), year: Number(row.year), committee: String(row.committee ?? ""), team: String(row.team ?? ""),
       role_title: String(row.role_title ?? ""), position: String(row.position ?? ""), deleted: !!row.deleted_at,
+    } : null,
+    line: line ? {
+      state: String(line.state ?? ""), year: line.year == null ? null : Number(line.year), committee: String(line.committee ?? ""),
+      team: String(line.team ?? ""), role_title: String(line.role_title ?? ""), position: String(line.position ?? ""),
+      expect: String(line.expect ?? ""),
     } : null,
   };
 }

@@ -136,6 +136,8 @@ const PROBE = {
   // 「📮 정정 신청」(2026-10-01) — 목록은 읽기만 · 처리는 id 0 → bad-id(쓰지도 기록하지도 않는다)
   historyRequestList: { status: "open" },
   historyRequestSet: { id: 0, status: "확인 중", expect: "x" },
+  // 신청 삭제(2026-10-02) — id 0 → bad-id(읽지도 지우지도 기록하지도 않는다)
+  historyRequestDelete: { id: 0, expect: "x" },
   peopleSearch: { q: "ca-test-probe-없음" },
   peoplePerson: { id: 0 },
   peopleStats: {},

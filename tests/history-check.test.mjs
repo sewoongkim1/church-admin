@@ -243,6 +243,24 @@ test("requestAdminOut — 정해진 칸만(user_id·person_id·handled_by 없음
   assert.ok(!JSON.stringify(o).includes("990000001") && !JSON.stringify(o).includes("0f8fad5b") && !JSON.stringify(o).includes("기쁨-12"));
   assert.equal(requestAdminOut({ ...r, person_id: null }, null).found, false);
   assert.equal(requestAdminOut(r, null).row, null);
+  assert.equal(requestAdminOut(r, null).line, null);
+});
+
+// 2026-10-02 — 빠진 사역의 「사역 이력에 넣을 내용」 미리 채움(line) · 정해진 칸만(교인ID·user_id·이름·목장이 끼어들 수 없다)
+test("requestAdminOut — 빠진 사역의 line 을 싣는다(정해진 일곱 칸만) · 그래도 person_id·user_id 없음 · 칸 집합에 line", () => {
+  assert.ok(REQUEST_ADMIN_OUT_KEYS.includes("line"));
+  assert.deepEqual([...REQUEST_ADMIN_OUT_KEYS].sort(), REQUEST_ADMIN_OUT_KEYS, "칸 집합은 차례대로 적는다(시험이 sort 와 맞댄다)");
+  const r = { id: 7, kind: "missing", detail: "", year: 2023, team_text: "찬양위원회 시온성가대", status: "반영", answer: "", created_at: "C",
+    updated_at: "U", handled_at: "H", who_type: "교구", who_group: "기쁨", who_sub: "12", who_name: "홍길동", person_id: 990000001,
+    history_id: null, user_id: "0f8fad5b-d9cb-469f-a165-70867728950e" };
+  const line = { state: "in", year: 2023, committee: "찬양위원회", team: "시온성가대", role_title: "", position: "권사", expect: "U1",
+    person_id: 990000001, user_id: "0f8fad5b-d9cb-469f-a165-70867728950e", name: "홍길동", mok: "기쁨-12" };
+  const o = requestAdminOut(r, null, line);
+  assert.deepEqual(Object.keys(o).sort(), REQUEST_ADMIN_OUT_KEYS);
+  assert.deepEqual(o.line, { state: "in", year: 2023, committee: "찬양위원회", team: "시온성가대", role_title: "", position: "권사", expect: "U1" });
+  const j = JSON.stringify(o);
+  assert.ok(!j.includes("990000001") && !j.includes("0f8fad5b") && !j.includes("기쁨-12"), j);
+  assert.equal(requestAdminOut(r, null, { state: "draft", year: null, committee: "", team: "가", role_title: "", position: "", expect: "" }).line.year, null);
 });
 
 test("filterRequests·requestCounts — 끝나지 않은 것은 오래된 것부터 · 끝난 것·전부는 최근 것부터", () => {

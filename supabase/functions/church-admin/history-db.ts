@@ -239,19 +239,25 @@ export function historyFilter(rows: any[], b: any): { hit: any[]; years: number[
   return { hit, years, q, only };
 }
 
-// ── 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01 · index.ts historyRequestSet 이 부른다) ──
-//   성도님이 성경암송 앱 「🗂️ 사역 이력 확인」에서 낸 글(team_text · 칸 이름표 「부서 · 팀」 · 보기 「찬양위원회 시온성가대」)을 부서·팀·직분으로 읽는다.
+/// ── 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01 · index.ts historyRequestSet 이 부른다) ──
+//   성도님이 성경암송 앱 「🗂️ 사역 이력 확인」에서 낸 글(team_text · 칸 이름표 「부서 · 팀」 · 보기 「찬양위원회 시온성가대」)을 부서·팀으로 읽어
+//   창에 미리 채우고(requestLineOut · draft), 담당자가 연도·부서·팀·직책을 고쳐 「반영」하면 그 내용(line)으로 넣는다(2026-10-02 친구 요청).
+//   ⚠️ 성도님 신청 글(year·team_text)은 바꾸지 않는다 — 고친 값은 사역 이력 줄에만 들어간다.
+//   ⚠️ 직분은 교적(교인명부)의 직분이다(친구 2026-10-01 「직분은 교적 기준」) — 글에 적힌 직분은 줄에 쓰지 않는다(떼어 내기만 한다).
 //   ⚠️ 이 줄의 열쇠는 srcKey 가 아니라 `req:<신청 id>` 다 — 신청 하나에 줄 하나(두 번 반영해도 하나 · 되돌리면 그 줄만 뺀다).
 //      그래서 나중에 그 해 엑셀 명단을 올렸는데 같은 사역이 들어 있으면 엑셀 줄은 **따로 한 줄**로 들어간다(열쇠가 달라 「이미 있음」이 아니다)
 //      — 겹치면 담당자가 📜 사역 이력에서 하나를 뺀다.
 //   ⚠️ SQL 008 mhr_line_chk 가 빠진 사역 신청에 history_id 를 막는다 — 신청 ↔ 줄은 이 열쇠로만 잇는다(SQL 을 바꾸지 않는다).
 export const requestKey = (reqId: unknown): string => `req:${Number(reqId)}`;
 const REQ_SEP_RE = /[·•\/|]/;
-// 직분으로 볼 끝말 — 「포함」이 아니라 「끝」으로 본다(「권사회」·「안수집사회」·「청년부」·「학생부」는 직분이 아니라 부서·팀 이름이다) · 끝의 「님」은 뗀다
-const REQ_POS_RE = /(집사|권사|장로|목사|전도사|사모|성도|청년|학생)(님)?$/;
+// 직분으로 볼 끝 낱말 — 낱말 **전체**가 (앞말)직분(님)일 때만(2026-10-02 리뷰 D5 · 「대학청년」·「중고등학생」·「권사회」·「청년부」는 팀 이름이다) · 끝의 「님」은 뗀다
+const REQ_POS_RE = /^(부|담임|협동|시무|안수|명예|은퇴|원로)?(집사|권사|장로|목사|전도사|사모|성도|청년|학생)(님)?$/;
+// 창에서 고칠 수 있는 칸 — 이 넷만 줄에 들어간다(이름·목장은 신청에서, 직분은 교적에서)
+const LINE_KEYS = ["year", "committee", "team", "role_title"] as const;
 
 // 글 → 부서·팀·직분. 「·」「•」「/」「|」로 나눈다 → 끝 조각(또는 끝 조각의 마지막 낱말)이 직분이면 떼고 →
 //   조각이 하나뿐이고 빈칸이 있으면 첫 빈칸에서 둘로 → 둘 이상이면 부서 = 첫 조각, 팀 = 나머지(「 · 」로 잇기) · 하나면 팀만.
+//   position 은 읽어 둘 뿐이다 — 줄의 직분은 교적에서(missingRowFromRequest).
 export function parseTeamText(text: unknown): { committee: string; team: string; position: string } {
   let parts = nfc(text).split(REQ_SEP_RE).map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
   let position = "";
@@ -273,16 +279,49 @@ export function parseTeamText(text: unknown): { committee: string; team: string;
   return { committee: "", team: parts[0] ?? "", position };
 }
 
-// 신청 한 줄 → 사역 이력 한 줄(다듬기·검사는 tidyHistoryRow 그대로). 직분은 글에서 읽은 것, 없으면 fallbackPosition(교인명부 직분).
-//   목장: 교구 「교구-목장」(목장이 비었으면 교구만) · 교회학교 「부서」 · 이름은 신청 때의 로그인 이름.
-export function missingRowFromRequest(req: any, fallbackPosition: unknown): { row: Record<string, any> | null; error: string } {
+// 창이 고쳐 보낸 「사역 이력에 넣을 내용」 — 연도·부서·팀·직책 + expect(창이 본 줄의 updated_at · 줄이 없던 때는 "").
+export type ReqLine = { year: number; committee: string; team: string; role_title: string; expect: string };
+
+// 화면(requests-logic.js lineCheck)과 같은 검사 — 정하는 것은 여기. 오류는 코드 하나(bad-year · need-team · history-too-long).
+//   글은 NFC · 빈칸 접기 · 앞뒤 자르기(nfc·cut — 줄 칸 다듬기 tidyHistoryRow 와 같은 식).
+export function parseRequestLine(x: any): { line: ReqLine | null; error: string } {
+  const y = nfc(x?.year), year = Number(y);
+  if (!y || !Number.isInteger(year) || year < 1950 || year > 2100) return { line: null, error: "bad-year" };
+  const committee = cut(x?.committee, HISTORY_FIELD_MAX + 1), team = cut(x?.team, HISTORY_FIELD_MAX + 1);
+  const role_title = cut(x?.role_title, HISTORY_FIELD_MAX + 1);
+  if (!committee && !team) return { line: null, error: "need-team" };
+  if ([committee, team, role_title].some((v) => v.length > HISTORY_FIELD_MAX)) return { line: null, error: "history-too-long" };
+  return { line: { year, committee, team, role_title, expect: String(x?.expect ?? "").trim() }, error: "" };
+}
+
+// 줄이 없을 때 창에 채울 내용 — 성도님 글(team_text)에서 읽은 부서·팀 · 신청 해(직책은 비움)
+function requestDraftLine(req: any): { year: number | null; committee: string; team: string; role_title: string } {
   const p = parseTeamText(req?.team_text);
-  if (!p.team) return { row: null, error: "need-team" };
+  return { year: req?.year == null ? null : Number(req.year), committee: p.committee, team: p.team, role_title: "" };
+}
+
+// 목록(historyRequestList)이 빠진 사역 신청마다 싣는 line — 정해진 일곱 칸만(이름·목장·교인ID 를 싣지 않는다 · history-check.ts requestAdminOut 이 한 번 더 고른다)
+//   row: 이 신청의 req:<id> 줄(없으면 null) — 살아 있으면 in · 빼 두었으면 out · 없으면 draft(성도님 글에서 읽음)
+export function requestLineOut(req: any, row: any | null) {
+  if (row) {
+    return { state: row.deleted_at ? "out" : "in", year: Number(row.year), committee: String(row.committee ?? ""), team: String(row.team ?? ""),
+      role_title: String(row.role_title ?? ""), position: String(row.position ?? ""), expect: String(row.updated_at ?? "") };
+  }
+  const d = requestDraftLine(req);
+  return { state: "draft", year: d.year, committee: d.committee, team: d.team, role_title: "", position: "", expect: "" };
+}
+
+// 신청 한 줄 → 사역 이력 한 줄(다듬기·검사는 tidyHistoryRow 그대로).
+//   line: 창이 고쳐 보낸 연도·부서·팀·직책(없으면 성도님 글에서 읽은 draft) · position: 교적(교인명부)의 직분(D4 — 글의 직분은 쓰지 않는다)
+//   목장: 교구 「교구-목장」(목장이 99·빈칸이면 교구만 — requests-logic.js whoText 와 같은 규칙 · D3) · 교회학교 「부서」 · 이름은 신청 때의 로그인 이름.
+export function missingRowFromRequest(req: any, line: Partial<ReqLine> | null, position: unknown): { row: Record<string, any> | null; error: string } {
+  const l: any = line ?? requestDraftLine(req);
+  if (!nfc(l?.committee) && !nfc(l?.team)) return { row: null, error: "need-team" };
   const group = nfc(req?.who_group), sub = nfc(req?.who_sub);
-  const mok = nfc(req?.who_type) === "교회학교" ? group : (sub ? `${group}-${sub}` : group);
+  const mok = nfc(req?.who_type) === "교회학교" ? group : (sub && sub !== "99" ? `${group}-${sub}` : group);
   const t = tidyHistoryRow({
-    year: req?.year, committee: p.committee, team: p.team, role_title: "", name: req?.who_name,
-    position: p.position || nfc(fallbackPosition), mok, renewal: "", src_note: `정정 신청 #${Number(req?.id)}`,
+    year: l?.year, committee: l?.committee, team: l?.team, role_title: l?.role_title, name: req?.who_name,
+    position: nfc(position), mok, renewal: "", src_note: `정정 신청 #${Number(req?.id)}`,
   });
   if (!t.row) return { row: null, error: t.error };
   return { row: { ...t.row, src_key: requestKey(req?.id) }, error: "" };
@@ -295,40 +334,94 @@ async function churchPosition(db: Db, personId: number): Promise<string> {
   return data ? positionFromChurch(data) : "";
 }
 
-export type MissingApply = { id?: number; year?: number; created?: boolean; restored?: boolean; error?: string };
+// 그 줄의 마지막 「빼기」 기록(detail) — 정정 신청 쪽이 뺐으면 {from:"request"} 가 있다(「📜 사역 이력」에서 손으로 뺀 rowDelete 는 {year} 만)
+async function lastDeleteDetail(db: Db, rowId: number): Promise<Record<string, unknown> | null> {
+  const { data, error } = await db.from("admin_audit").select("detail").eq("action", "history.delete").eq("target", String(rowId))
+    .order("id", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw error;
+  return data?.detail ?? null;
+}
 
-// 「반영」 — 이 신청의 줄이 살아 있으면 그대로(created:false) · 빼 둔 줄이면 되살린다(restored) · 없으면 넣는다(created).
-//   본인 교인ID(신청 때 찾은 분)가 있으면 사람이 이은 줄(manual · 근거 「본인 정정 신청」)로 넣는다 — 다시 맞추기가 덮지 않는다.
-//   교인ID 가 없으면(신청 때 못 찾음) 자동 줄로 넣고 그 줄만 다시 맞춘다(실패해도 줄은 들어갔다 — 자리 표시 사유가 남아 화면이 스스로 드러난다).
-//   positionLookup — 시험이 명부 읽기를 바꿔 끼운다(없으면 church_people 에서).
-export async function applyMissingRequest(db: Db, req: any, memberId: string | null, nowIso: string,
-  positionLookup?: (personId: number) => Promise<string>): Promise<MissingApply> {
+// 줄과 고친 내용이 다른 칸(연도·부서·팀·직책) — 칸 차례는 LINE_KEYS(기록 fields 의 차례)
+function lineDiff(line: ReqLine | null, row: any): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  if (!line) return patch;
+  for (const k of LINE_KEYS) {
+    const want = k === "year" ? Number(line.year) : String(line[k] ?? "");
+    const cur = k === "year" ? Number(row.year) : String(row[k] ?? "");
+    if (want !== cur) patch[k] = want;
+  }
+  return patch;
+}
+
+export type MissingApply = { id?: number; year?: number; created?: boolean; restored?: boolean; edited?: boolean; fields?: string[]; error?: string };
+export type MissingApplyOpts = {
+  line?: ReqLine | null; memberId: string | null; nowIso: string;
+  mayRestore: boolean;                                                            // 상태가 다른 데서 「반영」으로 들어올 때만 참(반영에 머물면 거짓)
+  positionLookup?: (personId: number) => Promise<string>;                         // 시험이 교적 직분 읽기를 바꿔 끼운다(없으면 church_people)
+  lastDeleteLookup?: (rowId: number) => Promise<Record<string, unknown> | null>;  // 시험이 마지막 빼기 기록 읽기를 바꿔 끼운다(없으면 admin_audit)
+};
+
+// 「반영」 — 이 신청의 줄(req:<id>)이
+//   살아 있으면: 고친 내용(line)이 다를 때만, 창이 본 그대로(updated_at = line.expect)일 때 고친다(edited · fields) — 아니면 line-conflict · 같으면 그대로(created:false)
+//   빼 두었으면: 「반영」으로 들어올 때(mayRestore)만, 그리고 마지막 빼기가 정정 신청 쪽(from:"request")이었을 때만 되살린다(restored · 고친 내용도 함께).
+//               「📜 사역 이력」에서 손으로 뺀 줄은 되살리지 않는다(history-removed · 2026-10-02 리뷰 D2).
+//   없으면: 넣는다(created) — 본인 교인ID 로 사람이 이은 줄(manual · 근거 「본인 정정 신청」 · 다시 맞추기가 덮지 않는다).
+//   교인ID 가 없는 신청은 넣지 않는다(no-person) — 서버(requestBlock)가 빠진 사역은 교적을 찾은 분에게만 받는다.
+export async function applyMissingRequest(db: Db, req: any, opts: MissingApplyOpts): Promise<MissingApply> {
+  const { line = null, memberId, nowIso, mayRestore, positionLookup, lastDeleteLookup } = opts;
+  const pid = req?.person_id !== null && req?.person_id !== undefined && Number(req.person_id) > 0 ? Number(req.person_id) : null;
+  if (pid === null) return { error: "no-person" };
   const key = requestKey(req?.id);
-  const { data: ex, error: e0 } = await db.from("ministry_history").select("id,year,deleted_at").eq("src_key", key).maybeSingle();
+  const { data: ex, error: e0 } = await db.from("ministry_history").select("id,year,committee,team,role_title,deleted_at,updated_at")
+    .eq("src_key", key).maybeSingle();
   if (e0) throw e0;
-  if (ex && !ex.deleted_at) return { id: Number(ex.id), year: ex.year, created: false };
-  if (ex) {
-    const { data, error } = await db.from("ministry_history").update({ deleted_at: null, deleted_by: null, updated_at: nowIso })
-      .eq("id", ex.id).not("deleted_at", "is", null).select("id,year");
+  if (ex && !ex.deleted_at) {
+    const patch = lineDiff(line, ex);
+    const fields = Object.keys(patch);
+    if (!fields.length) return { id: Number(ex.id), year: ex.year, created: false };
+    // 창이 본 뒤로 그 줄이 바뀌었다(「📜 사역 이력」에서 고침 · 다른 분이 먼저 고침 · 창은 줄이 없던 때를 봤다) — 덮지 않는다
+    if (String(ex.updated_at ?? "") !== line!.expect) return { error: "line-conflict" };
+    const { data, error } = await db.from("ministry_history").update({ ...patch, updated_at: nowIso })
+      .eq("id", ex.id).eq("updated_at", line!.expect).is("deleted_at", null).select("id,year");
     if (error) throw error;
-    // 0행 — 그사이 다른 분이 먼저 되살렸다
-    return (data ?? []).length ? { id: Number(ex.id), year: ex.year, restored: true } : { id: Number(ex.id), year: ex.year, created: false };
+    if (!(data ?? []).length) return { error: "line-conflict" };   // 그사이 바뀌었거나 빠졌다
+    return { id: Number(ex.id), year: Number(patch.year ?? ex.year), edited: true, fields };
+  }
+  if (ex) {
+    if (!mayRestore) return { error: "history-removed", id: Number(ex.id) };
+    const last = await (lastDeleteLookup ?? ((x: number) => lastDeleteDetail(db, x)))(Number(ex.id));
+    if (last?.from !== "request") return { error: "history-removed", id: Number(ex.id) };
+    // 창이 빼 둔 그 줄을 보고 고쳤다면 그대로일 때만(줄이 없던 때를 봤으면 잠그지 않는다 — 고친 내용은 그래도 넣는다)
+    const expect = line?.expect ?? "";
+    if (expect && String(ex.updated_at ?? "") !== expect) return { error: "line-conflict" };
+    const patch = lineDiff(line, ex);
+    let q = db.from("ministry_history").update({ ...patch, deleted_at: null, deleted_by: null, updated_at: nowIso })
+      .eq("id", ex.id).not("deleted_at", "is", null);
+    if (expect) q = q.eq("updated_at", expect);
+    const { data, error } = await q.select("id,year");
+    if (error) throw error;
+    // 0행 — 그사이 바뀌었다(expect 가 있으면) · 다른 분이 먼저 되살렸다(없으면)
+    if (!(data ?? []).length) return expect ? { error: "line-conflict" } : { id: Number(ex.id), year: ex.year, created: false };
+    return { id: Number(ex.id), year: Number(patch.year ?? ex.year), restored: true, fields: Object.keys(patch) };
   }
   // 지워 달라는 요청으로 이름까지 지운 줄(CLAUDE.md 비상 절차 ②-1 — 열쇠가 해시)이면 되살리지 않는다(rowAdd 와 같은 까닭)
   const { data: erased, error: e1 } = await db.from("ministry_history").select("id").eq("src_key", await erasedKey(key)).maybeSingle();
   if (e1) throw e1;
   if (erased) return { error: "history-deleted" };
-  const pid = req?.person_id !== null && req?.person_id !== undefined && Number(req.person_id) > 0 ? Number(req.person_id) : null;
-  const parsed = parseTeamText(req?.team_text);
-  const fallback = !parsed.position && pid !== null ? await (positionLookup ?? ((x: number) => churchPosition(db, x)))(pid) : "";
-  const t = missingRowFromRequest(req, fallback);
+  // 직분은 교적에서 — 읽기가 실패해도 줄은 넣는다(직분만 빈칸 · 담당자가 「📜 사역 이력」에서 채울 수 있다)
+  let position = "";
+  try {
+    position = await (positionLookup ?? ((x: number) => churchPosition(db, x)))(pid);
+  } catch (err) {
+    console.error("history request church position", err);
+    position = "";
+  }
+  const t = missingRowFromRequest(req, line, position);
   if (!t.row) return { error: t.error };
   const rec = {
-    ...t.row, source: "admin", source_file: "(정정 신청)", person_id: pid,
-    link_how: pid !== null ? "manual" : "auto",
-    linked_by: pid !== null ? memberId : null, linked_at: pid !== null ? nowIso : null,   // 자동 줄은 「이은 사람」이 없다(historyUnlinkPatch 와 같게)
-    match_basis: pid !== null ? "본인 정정 신청" : "", match_reason: pid !== null ? "" : HISTORY_UNMATCHED_YET,
-    updated_at: nowIso,
+    ...t.row, source: "admin", source_file: "(정정 신청)", person_id: pid, link_how: "manual",
+    linked_by: memberId, linked_at: nowIso, match_basis: "본인 정정 신청", match_reason: "", updated_at: nowIso,
   };
   const { data, error } = await db.from("ministry_history").insert(rec).select("id,year").single();
   if (error) {
@@ -339,14 +432,10 @@ export async function applyMissingRequest(db: Db, req: any, memberId: string | n
     if (!again) throw error;
     return { id: Number(again.id), year: again.year, created: false };
   }
-  const id = Number(data.id);
-  if (pid === null) {
-    try { await rematchHistoryRows(db, [id]); } catch (err) { console.error("history rematch after request", err); }
-  }
-  return { id, year: data.year, created: true };
+  return { id: Number(data.id), year: data.year, created: true };
 }
 
-// 「반영」을 되돌렸다(확인 중·반영 안 함으로) — 이 신청의 살아 있는 줄만 뺀다(표시만 · 다시 반영하면 되살아난다)
+// 「반영」을 되돌렸다(확인 중·반영 안 함으로) · 신청을 지웠다 — 이 신청의 살아 있는 줄만 뺀다(표시만 · 다시 반영하면 되살아난다)
 export async function undoMissingRequest(db: Db, reqId: unknown, memberId: string | null, nowIso: string):
   Promise<{ id?: number; year?: number; removed: boolean }> {
   const { data, error } = await db.from("ministry_history").update({ deleted_at: nowIso, deleted_by: memberId, updated_at: nowIso })
