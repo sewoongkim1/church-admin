@@ -153,6 +153,17 @@ const PROBE = {
   evPeopleLookup: { name: "" },
   // 이름을 누르면 교적 창(Task 16) — 빈 이름 → no-name(명부에 묻지도 기록하지도 않는다)
   evPerson: { name: "" },
+  // 사역 이력(2026-10-01) — 읽기 · 빈 올리기 · 없는 줄(0) · 확인 없는 다시 맞추기 · 없는 해 내려받기 — 아무것도 쓰지도 기록하지도 않는다
+  historyList: {},
+  historyUploadCheck: { rows: [] },
+  historyUploadSave: { rows: [] },
+  historyRowAdd: { row: {} },
+  historyRowSave: { id: 0, expect: "", patch: {} },
+  historyRowDelete: { id: 0, expect: "" },
+  historyCandidates: { id: 0 },
+  historyLink: { id: 0, op: "none" },
+  historyRematch: {},
+  historyExport: { years: [1951] },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
@@ -2391,4 +2402,138 @@ test("성경필사 친구 결정: 명부에 물었으면 채운 것이 없어도
   assert.equal(nowRows.length, 2);
   for (const r of nowRows) assert.ok(Math.abs(Date.parse(r.created_at) - Date.now()) < 10 * 60 * 1000, "열린 회차는 지금: " + JSON.stringify(r));
   assert.deepEqual(nowRows.map((r) => r.note), ["명단 올리기", "담당자가 더함"]);
+});
+
+// ── 사역 이력(2026-10-01) — 표 둘이 안 열린다 · 올리기→맞춤→가리기→잇기→다시 맞추기→빼기→다시 올리기 ──
+// 고정 교인ID 990000061~63(다른 시험과 겹치지 않는 번위) · 이름은 ca-test-hi-<STAMP><한글 한 글자> · 해는 2001(씨앗·다른 시험과 안 겹침)
+const HI = { ids: [990000061, 990000062, 990000063], name: `ca-test-hi-${STAMP}가`, solo: `ca-test-hi-${STAMP}나`, none: `ca-test-hi-${STAMP}없`, year: 2001 };
+const hiRows = (year) => [
+  { year, committee: "찬양부", team: "ca-test 찬양대", name: HI.name, position: "집사", mok: "기쁨-19", renewal: "유지" },
+  { year, committee: "찬양부", team: "ca-test 찬양대", name: HI.name, position: "집사", mok: "기쁨-19", renewal: "유지" },   // 파일 안 겹침
+  { year, committee: "전도부", team: "ca-test 전도대", name: HI.solo, position: "안수집사", mok: "소망-2", renewal: "신규" },
+  { year, committee: "전도부", team: "ca-test 전도대", name: HI.none, position: "집사", mok: "사랑-3", renewal: "신규" },
+  { year: 1900, name: "ca-test-hi-틀림" },                                                                             // 틀림(bad-year)
+];
+async function hiClean() {
+  await rest("ministry_history?name=like.ca-test-hi-*", "DELETE");
+  await rest("ministry_history_imports?file_name=eq.ca-test-hi.xlsx", "DELETE");
+  await rest(`church_people?person_id=in.(${HI.ids.join(",")})`, "DELETE");
+}
+async function hiFixtures() {
+  await hiClean();                                         // 지난번 찌꺼기(고정 ID · 이름 앞말이 이 시험 것뿐이다)
+  // ⚠️ 배치 insert 는 객체들의 칸이 모두 같아야 한다(PGRST102) — d() 한 모양으로만
+  const d = (person_id, name, gender, mok1, mok3, position) => ({ person_id, name, name_key: name, gender, kind2: "장년", mok1, mok3, position });
+  await rest("church_people", "POST", [
+    d(HI.ids[0], HI.name, "여", "기쁨", "기쁨-19목장", "집사"),
+    d(HI.ids[1], HI.name, "여", "은혜", "은혜-03목장", "권사"),
+    d(HI.ids[2], HI.solo, "남", "화평", "화평-05목장", "안수집사"),
+  ]);
+}
+const hiDb = (q) => rest(`ministry_history?select=id,name,person_id,link_how,match_basis,match_reason,updated_at&${q}&order=id`, "GET");
+
+test("사역 이력 — 표 둘(ministry_history·ministry_history_imports)은 공개 키·로그인 사용자로 안 열린다", async () => {
+  for (const t of ["ministry_history", "ministry_history_imports"]) {
+    const a = await fetch(`${URL_}/rest/v1/${t}?select=*&limit=1`, { headers: { apikey: ANON } });
+    assert.notEqual(a.status, 200, "공개 키로 열림: " + t);
+    const b = await fetch(`${URL_}/rest/v1/${t}?select=*&limit=1`, { headers: { apikey: ANON, Authorization: "Bearer " + people.super.token } });
+    assert.notEqual(b.status, 200, "로그인 사용자로 열림: " + t);
+  }
+  const r = await fetch(`${URL_}/rest/v1/rpc/ministry_history_apply`, { method: "POST",
+    headers: { apikey: ANON, Authorization: "Bearer " + people.super.token, "Content-Type": "application/json" }, body: JSON.stringify({ p: [] }) });
+  assert.notEqual(r.status, 200, "로그인 사용자가 ministry_history_apply 를 부름");
+});
+
+test("사역 이력 — 올리기(살펴보기·넣기) · 맞춤 · 교인ID 가리기 · 잇기(지문) · 다시 맞추기 · 되돌리기 · 빼기 · 다시 올리기", async () => {
+  await hiFixtures();
+  const m = people.ministry.token;
+  const md = (await mindirPerson()).token;
+  const year = HI.year;
+  try {
+    const chk = (await call(m, "historyUploadCheck", { rows: hiRows(year), file_name: "ca-test-hi.xlsx" })).body;
+    assert.equal(chk.ok, true, JSON.stringify(chk));
+    assert.deepEqual([chk.counts.add, chk.counts.dup, chk.counts.bad], [3, 1, 1]);
+    assert.deepEqual([chk.preview.linked, chk.preview.unlinked], [2, 1]);
+    assert.equal((await hiDb(`year=eq.${year}&name=like.ca-test-hi-*`)).length, 0, "살펴보기가 썼다");
+
+    const sv = (await call(m, "historyUploadSave", { rows: hiRows(year), file_name: "ca-test-hi.xlsx" })).body;
+    assert.deepEqual([sv.ok, sv.saved, sv.linked, sv.unlinked], [true, 3, 2, 1], JSON.stringify(sv));
+    assert.equal(sv.rematched, true, JSON.stringify(sv));   // 계약 변경(0b37789) — 올린 뒤 맞춤이 끝났다
+    const rows = await hiDb(`year=eq.${year}&name=like.ca-test-hi-*`);
+    const by = Object.fromEntries(rows.map((r) => [r.name, r]));
+    assert.deepEqual([by[HI.name].person_id, by[HI.name].match_basis], [HI.ids[0], "같은 소속"]);
+    assert.equal(by[HI.solo].person_id, HI.ids[2]);
+    assert.deepEqual([by[HI.none].person_id, by[HI.none].match_reason], [null, "교인명부에 같은 이름이 없음"]);
+
+    // 목록 — 사역신청 역할에게는 교인ID 칸 자체가 없다 · 교인명부도 있는 분에게는 있다
+    const lm = (await call(m, "historyList", { years: [year], q: "ca-test-hi-" })).body;
+    assert.equal(lm.total, 3);
+    assert.ok(lm.rows.every((r) => !("person_id" in r)), "사역신청 역할에게 person_id 가 실렸다");
+    for (const id of HI.ids) assert.ok(!JSON.stringify(lm).includes(String(id)), "교인ID 가 실렸다: " + id);
+    const ld = (await call(md, "historyList", { years: [year], q: "ca-test-hi-" })).body;
+    assert.ok(ld.rows.some((r) => r.person_id === HI.ids[0]));
+
+    // 후보 — 같은 이름 두 분 · 사역신청 역할에게 교인ID 없음 · 지문 · people.lookup(from:"history")
+    const id0 = by[HI.name].id;
+    const cm = (await call(m, "historyCandidates", { id: id0 })).body;
+    assert.equal(cm.candidates.length, 2);
+    for (const id of HI.ids) assert.ok(!JSON.stringify(cm).includes(String(id)), "후보에 교인ID: " + id);
+    assert.match(cm.fp, /^[0-9a-f]{8}$/);
+    const cd = (await call(md, "historyCandidates", { id: id0 })).body;
+    assert.deepEqual(cd.candidates.map((c) => c.person_id), [HI.ids[0], HI.ids[1]]);
+    assert.equal(cd.fp, cm.fp, "지문은 역할과 상관없이 같다(화면 글자로만 만든다)");
+
+    // 잇기 — 지문이 틀리면 막힘 · 맞으면 두 번째 분(권사)으로 · manual
+    assert.equal((await call(m, "historyLink", { id: id0, op: "pick", pick: 1, fp: "00000000" })).body.error, "candidates-changed");
+    assert.equal((await call(m, "historyLink", { id: id0, op: "pick", pick: 1, fp: cm.fp })).body.ok, true);
+    // 다시 맞추기 — 확인 없으면 안 돈다 · 돌아도 사람이 이은 줄은 그대로
+    assert.equal((await call(m, "historyRematch", {})).body.error, "needs-confirm");
+    assert.equal((await call(m, "historyRematch", { confirm: true })).body.ok, true);
+    const after = (await hiDb(`id=eq.${id0}`))[0];
+    assert.deepEqual([after.person_id, after.link_how, after.match_basis], [HI.ids[1], "manual", "사람이 이음"]);
+    // 자동으로 되돌리기 → 다시 같은 소속 분
+    assert.equal((await call(m, "historyLink", { id: id0, op: "auto" })).body.ok, true);
+    const back = (await hiDb(`id=eq.${id0}`))[0];
+    assert.deepEqual([back.person_id, back.link_how], [HI.ids[0], "auto"]);
+
+    // (계약 변경 b) 신규/유지만 바꿔도 — auto 줄이면 다시 맞추기가 돈다 → rematched: true
+    const rsv = (await call(m, "historyRowSave", { id: id0, expect: back.updated_at, patch: { renewal: "신규" } })).body;
+    assert.equal(rsv.ok, true, JSON.stringify(rsv));
+    assert.equal(rsv.rematched, true, JSON.stringify(rsv));
+
+    // (계약 변경 c) 다른 이름으로 이어진 줄 — 후보에 지금 이어진 분이 current:true 로 남는다(§4.5)
+    const add2 = (await call(m, "historyRowAdd", {
+      row: { year, committee: "찬양부", team: "ca-test 찬양대2", name: HI.name, position: "집사", mok: "기쁨-19", renewal: "유지" },
+    })).body;
+    assert.equal(add2.ok, true, JSON.stringify(add2));
+    const id2 = add2.row.id;
+    const cm2 = (await call(m, "historyCandidates", { id: id2 })).body;
+    assert.equal(cm2.candidates.length, 2, "같은 이름 두 분이 후보여야 한다: " + JSON.stringify(cm2));
+    assert.equal((await call(m, "historyLink", { id: id2, op: "pick", pick: 1, fp: cm2.fp })).body.ok, true);
+    const row2 = (await hiDb(`id=eq.${id2}`))[0];
+    assert.equal(row2.person_id, HI.ids[1]);
+    const renamed = `${HI.name}-x`;   // 「ca-test-hi-」로 시작해야 hiClean() 이 지운다
+    const sv2 = (await call(m, "historyRowSave", { id: id2, expect: row2.updated_at, patch: { name: renamed } })).body;
+    assert.equal(sv2.ok, true, JSON.stringify(sv2));
+    assert.ok(!("rematched" in sv2), "manual 줄의 이름만 바꿨는데 다시 맞췄다: " + JSON.stringify(sv2));
+    const cc2 = (await call(m, "historyCandidates", { id: id2 })).body;
+    assert.equal(cc2.candidates.length, 1, "다른 이름이 됐으니 이름으로는 후보가 없어야 한다: " + JSON.stringify(cc2));
+    assert.equal(cc2.candidates[0].current, true, "지금 이어진 분이 current 로 안 남았다: " + JSON.stringify(cc2));
+
+    // (계약 변경 a) 빼 둔 줄과 같은 src_key 로 한 줄 더하기 → history-deleted(되살리지 않는다)
+    const nr = by[HI.none];
+    assert.equal((await call(m, "historyRowDelete", { id: nr.id, expect: nr.updated_at })).body.ok, true);
+    const addDel = (await call(m, "historyRowAdd", { row: hiRows(year)[3] })).body;
+    assert.equal(addDel.error, "history-deleted", JSON.stringify(addDel));
+
+    // 빼기 → 다시 올리면 「빼 둔 줄과 같음」 · 나머지는 「이미 있음」 · 아무것도 더하지 않는다
+    const again = (await call(m, "historyUploadSave", { rows: hiRows(year), file_name: "ca-test-hi.xlsx" })).body;
+    assert.deepEqual([again.saved, again.counts.same, again.counts.deleted, again.counts.bad], [0, 3, 1, 1]);
+
+    // 기록 — history.upload 에 이름이 없다
+    const logs = await rest(`admin_audit?select=action,detail&action=eq.history.upload&member_id=eq.${people.ministry.memberId}&order=id.desc&limit=2`, "GET");
+    assert.ok(logs.length >= 1);
+    assert.ok(!JSON.stringify(logs).includes("ca-test-hi-"), "기록에 이름이 실렸다");
+  } finally {
+    await hiClean();
+  }
 });
