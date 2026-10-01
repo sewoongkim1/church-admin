@@ -22,7 +22,7 @@ export function filterRows(rows, { stOn, range, from, to, q }, now) {
     if (on.length && !on.includes(r.status)) return false;
     if (f && r.at < f) return false;
     if (t && r.at > t) return false;
-    if (s && ![r.name, r.who, r.position, r.team, r.committee].join(" ").includes(s)) return false;
+    if (s && ![r.name, r.who, r.position, r.team, r.committee, r.tester ? "시험" : ""].join(" ").includes(s)) return false;   // 「시험」 = 🧪 시험 참여자의 신청
     return true;
   });
 }

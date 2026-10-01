@@ -31,7 +31,7 @@ const openSet = new Set();             // 펼쳐 둔 묶음 — 다시 그려도
 const normalize = (x) => ({
   id: x.id, at: String(x.at || "").replace(/\./g, "-"), who: x.who || "", name: x.name || "", church: x.church || null,
   status: x.status, canPush: !!x.canPush, notified_at: x.notified_at || null,
-  phone: x.phone || "", position: x.position || "", note: x.note || "", source: x.source || "app",
+  phone: x.phone || "", position: x.position || "", note: x.note || "", source: x.source || "app", tester: !!x.tester,
   committee: x.committee || "", team: x.team || "", option: x.option || "",
 });
 
@@ -60,7 +60,7 @@ export async function render(el, { call }) {
       <div class="mn-vlb">지금 보이는 것</div>
       <div class="mn-view" role="tablist">${VIEWS.map(([v, t, u]) =>
         `<button type="button" role="tab" data-act="view" data-v="${v}">${t} <em data-vcnt="${v}">0</em>${u}</button>`).join("")}</div>
-      <input type="search" class="search mn-q" placeholder="🔍 이름 · 소속 · 사역팀" autocomplete="off" aria-label="찾기">
+      <input type="search" class="search mn-q" placeholder="🔍 이름 · 소속 · 사역팀 · 시험" autocomplete="off" aria-label="찾기">
       <div class="mn-cond" id="mn-cond"${condOpen ? "" : " hidden"}>
         <div class="mn-range"><span class="mn-range-lb">신청일</span>${RANGES.map(([k, t]) =>
           `<button type="button" data-act="range" data-range="${k}">${t}</button>`).join("")}</div>

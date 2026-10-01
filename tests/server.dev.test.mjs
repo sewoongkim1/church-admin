@@ -479,6 +479,7 @@ test("신청 현황: 목록 모양 · 동시 수정 · 취소 사유 · 임명 �
     assert.equal("user_id" in x, false);
     assert.equal(x.phone, "010-0000-0000");
     assert.equal(x.canPush, false);
+    assert.equal(x.tester, false);   // 🧪 시험 참여자 명단에 없는 분(2026-10-01)
   }
   for (const x of mine) assert.equal(x.who, "시험 0목장");
   const [a, bRow] = mine.sort((x, y) => x.team.localeCompare(y.team));
@@ -2304,6 +2305,10 @@ test("시험 참여자: 찾기 → 더하기 → 명단 → 다시 더하기(alr
     assert.ok(t && t.name === "ca-test-min" && t.missing === false, JSON.stringify(a.body.testers));
     assert.ok(!UUID_RE.test(JSON.stringify(a.body)), "명단 응답에 UUID");
 
+    // 신청 현황 줄에 🧪 — 명단에 든 분의 신청은 tester:true(2026-10-01). 앞 시험이 지우고 남은 줄만 본다.
+    const l1 = (await call(tok, "ministryList")).body.list.filter((x) => x.name === "ca-test-min");
+    for (const x of l1) assert.equal(x.tester, true);
+
     const again = await call(tok, "ministryTesterSave", { op: "add", key });
     assert.equal(again.body.already, true);
     assert.equal(again.body.testers.filter((x) => x.key === key).length, 1);
@@ -2319,6 +2324,7 @@ test("시험 참여자: 찾기 → 더하기 → 명단 → 다시 더하기(alr
     const r = await call(tok, "ministryTesterSave", { op: "remove", key });
     assert.equal(r.body.ok, true);
     assert.equal(r.body.testers.some((x) => x.key === key), false);
+    for (const x of (await call(tok, "ministryList")).body.list.filter((y) => y.name === "ca-test-min")) assert.equal(x.tester, false);
 
     const log = await rest(`admin_audit?select=action,detail&action=eq.ministry.tester&member_id=eq.${people.ministry.memberId}&order=id.desc&limit=2`, "GET");
     assert.deepEqual(log.map((x) => x.detail.op), ["remove", "add"]);

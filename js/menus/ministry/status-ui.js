@@ -10,6 +10,11 @@ import { personLinkHtml } from "./person-link.js";
 
 const short = (st) => SHORT[st] || st;
 
+// 🧪 시험 참여자의 신청(2026-10-01) — 교회 어드민 「🧪 시험 참여자」 명단에 오른 분의 신청(서버 ministryList 의 tester).
+// 신청 기간 전에 시험 삼아 낸 것이라 진짜 신청과 가른다 — 12/13 전에 지운다. 찾기에 「시험」을 치면 이것만 걸린다(filterRows).
+const TESTER_HTML = `<em class="mn-paper mn-test" title="시험 참여자의 신청 — 신청 기간 전에 지워 주세요">🧪 시험</em>`;
+const testerHtml = (r) => (r && r.tester ? TESTER_HTML : "");
+
 // 전화번호 — 누르면 전화(tel:). 번호가 없으면 안내만. small=true 는 묶음 머리 줄 목록용 작은 꼴.
 // status 를 주면 까닭을 가른다 — 결정(임명·취소) 뒤면 서버가 지운 것, 그 전이면 처음부터 없는 것
 // (결정 전 건에 「결정 후 삭제」라고 쓰면 사실이 아니다 — 2026-09-29 표에서 보임).
@@ -60,7 +65,7 @@ export function cardHtml(r, inView, dupHtml) {
   const nm = inView === "person"
     ? `<div class="mn-in-team"><b>${esc(r.team)}</b>${opt}</div>` +
       `<span class="mn-sub"><i>${esc(r.committee)}</i><span class="mn-date" title="신청일">${at} 신청</span></span>`
-    : `${personLinkHtml(r.id, r.name)}${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${paper}${churchBadgeHtml(r.church)}` +
+    : `${personLinkHtml(r.id, r.name)}${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${paper}${testerHtml(r)}${churchBadgeHtml(r.church)}` +
       `<span class="mn-sub"><i>${esc(r.who)}</i>${inView === "team" && r.option ? `<i class="mn-in-opt">(${esc(r.option)})</i>` : ""}<span class="mn-date" title="신청일">${at}</span></span>`;
   return `<div class="pl-card ${cls}${inView ? " mn-in" : ""}">
     <div class="pl-hd">
@@ -87,7 +92,7 @@ export function tableHtml(rows, dupM) {
     const at = esc(String(r.at || "").replace(/-/g, "."));
     const dupHtml = dupBadgeHtml(dupOthers(dupM, r));
     return `<tr class="${cls}">
-      <td class="mn-tbl-nm">${personLinkHtml(r.id, r.name)}${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${push}${paper}${churchBadgeHtml(r.church)}</td>
+      <td class="mn-tbl-nm">${personLinkHtml(r.id, r.name)}${r.position ? `<em class="mn-pos">${esc(r.position)}</em>` : ""}${push}${paper}${testerHtml(r)}${churchBadgeHtml(r.church)}</td>
       <td>${esc(r.who)}</td>
       <td class="mn-tbl-team"><i>${esc(r.committee)}</i> › <b>${esc(r.team)}</b>${opt}</td>
       <td class="mn-date">${at}</td>
@@ -143,7 +148,7 @@ export function groupsHtml(rows, view, openSet, dupM) {
       //    창도 그 건(번호 포함)으로 묻는다. 전처럼 표시는 r0(번호 지운 건 · 「같은 이름 N명」), 열쇠는 번호 건이면 창이 「소속 다름」을 연다.
       //    머리의 번호(phone)도 같은 건의 것이다(list 에서 처음 찾은 번호).
       const kr = list.find((r) => r.phone) || r0;
-      title = `<span class="mn-grp-t">${personLinkHtml(kr.id, r0.name)}${churchBadgeHtml(kr.church)}${pos ? ` <em>${esc(pos)}</em>` : ""}<i>${esc(r0.who)}</i></span>` +
+      title = `<span class="mn-grp-t">${personLinkHtml(kr.id, r0.name)}${list.some((r) => r.tester) ? TESTER_HTML : ""}${churchBadgeHtml(kr.church)}${pos ? ` <em>${esc(pos)}</em>` : ""}<i>${esc(r0.who)}</i></span>` +
         `<span class="mn-grp-n">${teams}개 사역</span>` +
         ((phone || dup.length) ? `<span class="mn-grp-sub mn-phone-line">${phone ? phoneHtml(phone) : ""}${dupBadgeHtml(dup)}</span>` : "") +
         rowsHtml(list, (r) => r.team, (r) => r.committee);

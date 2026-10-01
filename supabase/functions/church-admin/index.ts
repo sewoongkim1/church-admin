@@ -400,6 +400,8 @@ async function ministryList() {
   }
   // 교적 표시(교인명부 · 2026-09-29) — { state, reason } 만. 교적 값은 싣지 않는다.
   const churchIdx = await churchLookup(rows.map((r) => r.name || umap.get(r.user_id)?.name || ""));
+  // 🧪 시험 참여자(app_config.ministryTesters)의 신청인가(2026-10-01) — 신청 기간 전 시험 신청을 진짜와 가른다. 사람으로 맞댄다.
+  const testerIds = new Set((await keysToUserIds(await testerKeys())).values());
   return {
     ok: true,
     year,
@@ -413,6 +415,7 @@ async function ministryList() {
         note: r.note ?? "", notified_at: r.notified_at ?? null, canPush: hasPush.has(r.user_id),
         phone: r.phone ?? "", source: r.source === "paper" ? "paper" : "app",
         church: churchFor(churchIdx, applicantFromWho(r.name || u?.name || "", r.who || uWho, r.phone ?? "")),
+        tester: testerIds.has(r.user_id),
       };
     }),
   };
