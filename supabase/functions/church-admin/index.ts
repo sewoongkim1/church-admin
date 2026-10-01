@@ -51,6 +51,8 @@ import { fillRecord } from "./events-upload.ts";
 //   ⚠️ 그래서 위 「성경필사(암송)(Task 5)」 줄의 applicantFromSignup 은 이제 이 파일에서 부르지 않는다 — 기존 import 줄이라 고치지 않고 두었다.
 //      명단 줄의 교적 표시를 applicantFromSignup + churchFor 로 되돌려 짜면 옮겨 적은 줄·아이 빼기가 빠진다 — churchForSignup 을 쓴다.
 import { churchForSignup } from "./events-person.ts";
+// 사역 이력(2026-10-01 · 설계 v2 docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md) — 표 읽기·쓰기는 history-db.ts 한 곳
+import { makeHistory } from "./history-db.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -92,6 +94,9 @@ async function audit(ctx: Ctx, action: string, target: string, detail: Record<st
   const { error } = await db.from("admin_audit").insert({ member_id: ctx.member?.id ?? null, action, target, detail });
   if (error) throw error;
 }
+
+// 사역 이력 액션 열(history-db.ts makeHistory) — db·audit 를 넘겨 만든다(이름은 historyApi — 「history」는 브라우저 전역과 헷갈린다)
+const historyApi = makeHistory({ db, audit });
 
 async function knownRoleIds(): Promise<string[]> {
   const { data, error } = await db.from("admin_roles").select("id");
@@ -1760,6 +1765,16 @@ Deno.serve(async (req) => {
       case "evPeopleLookup": return json(await evPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
+      case "historyList":        return json(await historyApi.list(ctx, b));
+      case "historyUploadCheck": return json(await historyApi.upload(ctx, b, false));
+      case "historyUploadSave":  return json(await historyApi.upload(ctx, b, true));
+      case "historyRowAdd":      return json(await historyApi.rowAdd(ctx, b));
+      case "historyRowSave":     return json(await historyApi.rowSave(ctx, b));
+      case "historyRowDelete":   return json(await historyApi.rowDelete(ctx, b));
+      case "historyCandidates":  return json(await historyApi.candidates(ctx, b));
+      case "historyLink":        return json(await historyApi.link(ctx, b));
+      case "historyRematch":     return json(await historyApi.rematch(ctx, b));
+      case "historyExport":      return json(await historyApi.exportRows(ctx, b));
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);
