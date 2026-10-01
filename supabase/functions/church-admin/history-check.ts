@@ -13,9 +13,10 @@ export const REQ_OPEN = ["신청", "확인 중"];
 export const REQ_DETAIL_MAX = 200;
 export const REQ_TEAM_MAX = 100;
 export const REQ_OPEN_MAX = 20;
-export const HISTORY_SELECT = "id,year,committee,team,role_title,position";
+// 직분은 성도님 앱에 보내지 않는다(2026-10-01 친구 요청 · 화면에서도 뺐다).
+export const HISTORY_SELECT = "id,year,committee,team,role_title";
 export const REQUEST_SELECT = "id,history_id,kind,detail,year,team_text,status,answer,created_at";
-export const HISTORY_OUT_KEYS = ["committee", "id", "position", "role_title", "team", "year"];
+export const HISTORY_OUT_KEYS = ["committee", "id", "role_title", "team", "year"];
 export const REQUEST_OUT_KEYS = ["answer", "created_at", "detail", "history_id", "id", "kind", "status", "team_text", "year"];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -99,7 +100,7 @@ export function requestInsert(req: ReqIn, userId: string, personId: number | nul
 export function historyRowOut(r: any) {
   return {
     id: Number(r.id), year: Number(r.year), committee: String(r.committee ?? ""), team: String(r.team ?? ""),
-    role_title: String(r.role_title ?? ""), position: String(r.position ?? ""),
+    role_title: String(r.role_title ?? ""),
   };
 }
 

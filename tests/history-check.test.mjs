@@ -159,6 +159,7 @@ test("historyRowOut·requestOut — 정해진 칸만(교인ID·user_id·그때 �
     person_id: 990000001, mok: "기쁨-12", match_basis: "맞음", link_how: "auto", src_note: "x", name: "홍길동" });
   assert.deepEqual(Object.keys(h).sort(), HISTORY_OUT_KEYS);
   assert.equal(h.id, 3);
+  assert.ok(!("position" in h), "직분은 성도님 앱에 보내지 않는다(2026-10-01)");
   const q = requestOut({ id: 1, history_id: null, kind: "find_me", detail: "", year: null, team_text: "", status: "신청",
     answer: "", created_at: "2026-10-01T00:00:00Z", user_id: "u", person_id: 5, handled_by: "m", who_name: "홍길동" });
   assert.deepEqual(Object.keys(q).sort(), REQUEST_OUT_KEYS);
