@@ -87,6 +87,7 @@ export async function render(el, { call, query }) {
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
   let last = null;          // 마지막 historyList 답
   let rows = [];
+  let lastErr = null;       // 마지막 historyList 가 오류였으면 그 답 — 화면을 다시 그려도(돌리기·창 크기) 옛 줄을 되살리지 않게
   let loadSeq = 0;          // load() 가 겹쳐 불려도 늦게 돈 답을 버린다(out-of-order)
   let uploading = false;    // 파일 하나(고르기·붙여넣기·끌어다 놓기)가 parse→pick→check→confirm→save 끝날 때까지
 
@@ -135,6 +136,11 @@ export async function render(el, { call, query }) {
     if (!el.isConnected) return;
     drawFilters();
     const list = el.querySelector(".mh-list");
+    if (lastErr) {
+      list.innerHTML = `<p class="empty">${esc(errorText(lastErr))}</p>`;
+      el.querySelector(".mh-pager").innerHTML = "";
+      return;
+    }
     if (!last || !last.years.length) {
       list.innerHTML = `<p class="empty">아직 올린 명단이 없어요 — 「📤 엑셀 올리기」로 시작해 주세요</p>`;
     } else if (!rows.length) list.innerHTML = `<p class="empty">조건에 맞는 줄이 없어요</p>`;
@@ -152,15 +158,15 @@ export async function render(el, { call, query }) {
     const r = await busy(el, () => call("historyList", f));
     if (!el.isConnected || mySeq !== loadSeq) return false;   // 떠났거나, 더 늦게 부른 load() 가 이미 있다(out-of-order)
     if (!r.ok) {   // 오류(#교인ID 를 사역신청 역할이 찾은 need-directory 포함)는 목록 자리에 — 앞 답의 쪽 넘기기는 거둔다
-      el.querySelector(".mh-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`;
-      el.querySelector(".mh-pager").innerHTML = "";
+      lastErr = r; rows = [];
+      draw();
       return false;
     }
     if (r.total > 0 && f.page * r.pageSize >= r.total) {   // 지운 뒤 등 범위를 벗어난 쪽을 보던 중 — 마지막 쪽으로 한 번만 다시
       f.page = Math.max(0, Math.ceil(r.total / r.pageSize) - 1);
       return load();
     }
-    last = r; rows = r.rows || [];
+    last = r; rows = r.rows || []; lastErr = null;
     draw();
     return true;                                       // 이 답으로 last 를 새로 받았다(올린 뒤 최종 수를 여기서 읽는다)
   };

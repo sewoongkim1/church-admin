@@ -253,9 +253,10 @@ export function historyFilter(rows: any[], b: any, opt: { full?: boolean } = {})
   const years = Array.isArray(b?.years) ? b.years.map(Number).filter(Number.isInteger) : [];
   const only = b?.only === "none" || b?.only === "weak" ? b.only : "";
   const words: string[] = [], pids: number[] = [];
-  for (const raw of cut(b?.q, 40).split(Q_SEP_RE)) {
+  // 「# 123」(# 뒤 빈칸)은 「#123」으로 붙인다 · 「#」 하나만(치는 중)은 버린다 — 그 낱말이 아무 줄에도 안 맞아 목록이 까닭 없이 비지 않게
+  for (const raw of cut(b?.q, 40).replace(/#\s+(?=\d)/g, "#").split(Q_SEP_RE)) {
     const w = fold(raw);
-    if (!w) continue;
+    if (!w || w === "#") continue;
     const m = Q_ID_RE.exec(w);
     if (m) pids.push(Number(m[1])); else words.push(w);
   }

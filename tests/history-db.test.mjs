@@ -481,9 +481,13 @@ test("historyFilter 찾기 — 띄어 쓴 낱말을 함께(이름·목장·부�
   assert.deepEqual(ids("12"), [3]);
   assert.deepEqual(ids("12", true), [3]);
   assert.equal(run("12").error, undefined);
-  // 「#」 뒤가 숫자가 아니면 글자 그대로(어느 칸에도 없으니 빈 결과 · 오류 없음)
-  assert.deepEqual(ids("#"), []);
+  // 「#」 하나만(치는 중)은 버린다 — 목록이 까닭 없이 비지 않게(찾지 않은 것과 같다 · 오류 없음)
+  assert.deepEqual(ids("#"), ids(""));
   assert.equal(run("#").error, undefined);
+  // 「# 101」(# 뒤 빈칸)은 「#101」 — 교인명부·총괄은 그분 줄만, 사역신청 역할은 need-directory
+  assert.deepEqual(ids("# 101", true), ids("#101", true));
+  assert.equal(run("# 101").error, "need-directory");
+  // 「#」 뒤가 숫자가 아니면 글자 그대로(어느 칸에도 없으니 빈 결과 · 오류 없음)
   assert.deepEqual(ids("#가나"), []);
   assert.equal(run("#가나").error, undefined);
 });
