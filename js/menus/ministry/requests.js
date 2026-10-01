@@ -8,7 +8,8 @@ import { esc, toast, busy, errorText, dialog } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne } from "../../core/picker.js";
 import { FILTERS, countsText, rowHtml, formHtml, formCheck, msgOf, resendSame, historyNote } from "./requests-logic.js";
-import { lineOf, lineRead, lineCheck, lineDirty, deleteConfirmText, deleteNote } from "./requests-logic.js";
+import { lineRead, lineCheck, lineDirty, deleteConfirmText, deleteNote } from "./requests-logic.js";
+import { lineBody } from "./requests-logic.js";
 
 const TITLE = `<h2 class="page-title">📮 정정 신청</h2>`;
 
@@ -72,10 +73,13 @@ export async function render(el, { call }) {
         });
         // submit 은 그 자리에서(동기로) onSubmit 을 부른다 — 받아들였으면 onSubmit 이 이미 깃발을 내렸다.
         //   보내는 중·「닫을까요?」를 묻는 중이라 openForm 이 받지 않았으면 여기서 내린다(다음 「저장」이 삭제로 읽히지 않게).
+        //   ⚠️ 던져도 깃발은 내린다(finally) · requestSubmit 은 사파리 16 부터라 없으면 submit 을 직접 보낸다 — openForm 의 submit 듣기는
+        //      isTrusted 를 보지 않는다(2026-10-02 최종 검토 #5 · iOS 15 에 묶인 아이폰에서 「삭제」가 안 되고 다음 「저장」이 삭제 확인이 됐다).
         box.querySelector(".hr-del").addEventListener("click", () => {
           deleting = true;
-          box.requestSubmit();
-          deleting = false;
+          try {
+            box.requestSubmit ? box.requestSubmit() : box.dispatchEvent(new Event("submit", { cancelable: true }));
+          } finally { deleting = false; }
         });
       },
       isDirty: (box) => picked !== start || box.querySelector("#hr-ans").value !== q.answer || !!box.querySelector("#hr-ver")?.checked ||
@@ -84,6 +88,8 @@ export async function render(el, { call }) {
         if (deleting) {
           deleting = false;
           const yes = await dialog({ title: "신청 삭제", text: deleteConfirmText(q), ok: "삭제", cancel: "두기", danger: true });
+          // 확인 창이 떠 있는 사이 창이 닫혔다(메뉴 옮김·다시 부팅) — 「삭제」를 눌렀어도 지우지 않는다(결과를 보일 곳이 없다 · FE-4 · 2026-10-02 최종 검토 #8)
+          if (!box.isConnected) return { ok: false };
           if (!yes) return { ok: false };   // 두기 — 창은 그대로(줄 없이)
           const r = await call("historyRequestDelete", { id: q.id, expect: q.updated_at });
           if (r.ok) return { ok: true, value: { kind: "deleted", note: deleteNote(r) } };
@@ -94,12 +100,13 @@ export async function render(el, { call }) {
         const line = lineShown() ? lineRead(box) : null;
         const bad = formCheck(q, f) || (line ? lineCheck(line) : null);
         if (bad) return badOf(bad);
-        // 바뀐 것이 없으면 보내지도 않는다 — 빠진 사역의 「반영」만 예외(사역 이력 줄을 채우거나 고친다 · resendSame)
+        // 바뀐 것이 없으면 보내지도 않는다 — 빠진 사역만 예외(반영이면 사역 이력 줄을 채우거나 고치고 · 아니면 남은 줄을 다시 뺀다 · resendSame)
         if (!resendSame(q, f) && f.status === q.status && f.answer.trim() === q.answer) return { ok: true, value: "same" };
-        const r = await call("historyRequestSet", { id: q.id, ...f, expect: q.updated_at,
-          ...(line ? { line: { ...line, expect: lineOf(q).expect } } : {}) });
+        // 「사역 이력에 넣을 내용」은 고쳤을 때만 싣는다(lineBody — 검사 lineCheck 는 보이면 늘)
+        const r = await call("historyRequestSet", { id: q.id, ...f, expect: q.updated_at, ...lineBody(q, line) });
         if (r.ok) return { ok: true, value: { kind: r.same ? "same" : "saved", note: historyNote(r, q, f) } };
-        if (r.error === "conflict" || r.error === "not-found") return { ok: true, value: r.error };   // 창을 닫고 새로 불러온다
+        // 창을 닫고 새로 불러온다 — 「반영 한 번 더」 사이에 신청이 지워졌는데 넣은 줄을 다시 빼지 못했으면 창으로(historyNote)
+        if (r.error === "conflict" || r.error === "not-found") return { ok: true, value: { kind: r.error, note: historyNote(r, q, f) } };
         return msgOf(r) ? { ok: false, message: msgOf(r) } : r;
       },
     });

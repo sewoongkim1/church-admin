@@ -337,3 +337,47 @@ test("기록 history.request — 한국말 이름 · 내용에 이름·답이 �
   assert.equal(detailText({ action: "history.request", target: "4", detail: { id: 4, kind: "find_me", from: "확인 중", to: "반영 안 함", verified: false } }),
     "#4 · 내 기록 찾아 주세요 · 확인 중 → 반영 안 함");
 });
+
+// ── 2026-10-02 최종 검토 #1·#2 — index.ts(Deno · node 로는 못 불러온다)의 정정 신청 갈래를 글자로 맞댄다 ──
+import { readFileSync } from "node:fs";
+const INDEX_SRC = readFileSync(new URL("../supabase/functions/church-admin/index.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const fnBody = (name) => {
+  const at = INDEX_SRC.indexOf(`async function ${name}(`);
+  assert.ok(at > 0, `index.ts 에 ${name} 가 없다`);
+  return INDEX_SRC.slice(at, INDEX_SRC.indexOf("\n}\n", at));
+};
+
+test("index.ts 빠진 사역 줄 — 「반영」이 아니면 어디서 왔든 뺀다(빼다 실패한 뒤 같은 상태로 한 번 더 저장하면 다시 뺀다 · #1)", () => {
+  const mrh = fnBody("missingRequestHistory");
+  assert.ok(!mrh.includes('from !== "반영"'), "「반영」에서 벗어날 때만 빼는 조건이 남았다");
+  assert.ok(mrh.includes("undoMissingRequest("), mrh);
+  const set = fnBody("historyRequestSet");
+  const noop = set.slice(set.indexOf("if (requestSetNoop("), set.indexOf("const block = requestSetBlock("));
+  // 같은 상태·같은 답이어도 빠진 사역이면 상태와 상관없이 줄을 맞춘다(반영 — 채우기·고치기 · 그 밖 — 남은 줄 빼기)
+  assert.match(noop, /if \(cur\.kind === "missing"\) \{/, noop);
+  assert.ok(noop.includes("h.removed"), "같은 상태로 다시 저장해 뺀 것을 돌려주지 않는다");
+});
+
+test("index.ts 신청 삭제 — 두 쓰기(신청 지우기·줄 빼기)를 먼저, 기록은 그 뒤 · 「반영 한 번 더」는 넣은 뒤 신청이 아직 있는지 다시 본다(#2)", () => {
+  const del = fnBody("historyRequestDelete");
+  const undoAt = del.indexOf("undoMissingRequest("), reqAuditAt = del.indexOf('audit(ctx, "history.request.delete"');
+  assert.ok(undoAt > 0 && reqAuditAt > 0, del);
+  assert.ok(undoAt < reqAuditAt, "줄 빼기가 신청 삭제 기록보다 뒤다 — 기록이 실패하면 지운 신청의 줄이 살아 남는다");
+  assert.ok(del.indexOf(".delete()") < undoAt, "신청을 지우기 전에 줄을 뺀다");
+  const set = fnBody("historyRequestSet");
+  const noop = set.slice(set.indexOf("if (requestSetNoop("), set.indexOf("const block = requestSetBlock("));
+  assert.match(noop, /h\.created \|\| h\.restored\)[\s\S]*missingRequestGone\(ctx, /, noop);
+  const gone = fnBody("missingRequestGone");
+  assert.ok(gone.includes('from("ministry_history_requests")') && gone.includes("undoMissingRequest("), gone);
+  assert.ok(gone.includes('why: "request-deleted"') && gone.includes('error: "not-found"'), gone);
+});
+
+test("개인정보 안내 — 「빠진 사역」 반영 줄의 직분을 교인명부에서 채우는 것을 6번(쓰는 곳)·8번(담는 것)에도 적는다(2026-10-02 최종 검토 #4)", () => {
+  const pv = readFileSync(new URL("../privacy.html", import.meta.url), "utf8");
+  const s6 = pv.indexOf("<h3>6. "), s7 = pv.indexOf("<h3>7. "), s8 = pv.indexOf("<h3>8. "), s9 = pv.indexOf("<h3>9. ");
+  assert.ok(s6 > 0 && s7 > s6 && s8 > s7 && s9 > s8);
+  const p6 = pv.slice(s6, s7), p8 = pv.slice(s8, s9);
+  assert.ok(p6.includes("「빠진 사역」 정정 신청을 반영한 줄의 직분을 채우는 데(9번)"), "6번 쓰는 곳에 직분 채우기가 없다");
+  assert.ok(p6.includes("「사역 이력 확인」을 여신 분을 찾고"), "6번 쓰는 곳에 앱에서 그분을 찾는 것이 없다");
+  assert.ok(p8.includes("정정 신청으로 더한 줄은 신청 때의 로그인 이름·소속과 교인명부의 직분"), "8번 담는 것에 정정 신청 줄이 없다");
+});

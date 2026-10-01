@@ -129,6 +129,11 @@ export function lineDirty(q, v) {
   return ["year", "committee", "team", "role_title"].some((k) => String(v[k] ?? "") !== String(L[k] ?? ""));
 }
 
+// historyRequestSet 에 더할 것 — 네 칸을 고쳤을 때만 line(+ 창이 본 줄의 expect)을 싣는다(v: 보이는 상자의 값 · 숨었으면 null).
+//   안 고쳤으면 싣지 않는다 — 서버가 같은 일을 한다(살아 있는 줄은 그대로 · 빼 둔 줄은 칸 그대로 되살림 · 줄이 없으면 신청 글 requestDraft = 미리 채운 값).
+//   늘 싣던 때는 「📜 사역 이력」에서 그 줄을 고치고 돌아와 답만 저장해도 낡은 값·expect 때문에 「그사이 바뀌었어요」 창이 떴다(2026-10-02 최종 검토 #6).
+export const lineBody = (q, v) => (v && lineDirty(q, v) ? { line: { ...v, expect: lineOf(q).expect } } : {});
+
 // ── 신청 삭제(2026-10-02 친구 요청) — 「반영 안 함」 옆 「삭제」 · 확인 창 글 · 지운 뒤 안내 ──
 export function deleteConfirmText(q) {
   const base = "이 신청을 완전히 지워요. 성도님 앱 「내 정정 신청」에서도 사라지고 되돌릴 수 없어요.";
@@ -162,8 +167,9 @@ export function formHtml(q) {
     ${q.kind === "not_mine" ? `<label class="hr-verify"><input type="checkbox" id="hr-ver"> 본인에게 확인했어요(전화·대면) — 「반영」할 때 꼭</label>` : ""}`;
 }
 
-// 빠진 사역의 「반영」은 상태·답이 같아도 보낸다 — 그 해 사역 이력에 이 신청의 줄이 없으면 서버가 채운다(반영을 한 번 더 누르면 채움)
-export const resendSame = (q, f) => q.kind === "missing" && f.status === "반영";
+// 빠진 사역은 상태·답이 같아도 보낸다 — 「반영」이면 그 해 사역 이력에 이 신청의 줄이 없을 때 서버가 채우고(반영을 한 번 더 누르면 채움),
+//   「확인 중」·「반영 안 함」이면 남아 있는 줄을 서버가 다시 뺀다(「반영」에서 벗어나다 빼기가 실패한 뒤 · 2026-10-02 최종 검토 #1)
+export const resendSame = (q, f) => q.kind === "missing" && SET_STATUS.includes(f.status);
 
 // 저장 뒤 사역 이력 줄 안내(서버 응답 r.history · 빠진 사역만 온다) → { toast } · { dialog } · null(평소 안내)
 //   f.status 가 「반영」이면 더하는 쪽, 아니면 「반영」에서 벗어나 빼는 쪽이다. r.same 이면 상태는 그대로(채우기만 했다).
@@ -174,16 +180,27 @@ const HISTORY_DIALOG = {
   "line-conflict": "그사이 「📜 사역 이력」에서 그 줄이 바뀌었어요 — 새로 불러와 다시 고쳐 주세요",
   "no-person": "교적을 찾지 못한 신청이라 사역 이력에 넣지 않았어요 — 「📜 사역 이력」에서 「＋ 한 줄 더하기」로 넣어 주세요",
 };
+//   not-found + history.error — 「반영 한 번 더」 사이에 다른 분이 신청을 지웠고, 서버가 방금 넣은 줄을 다시 빼지 못했다(2026-10-02 최종 검토 #2).
+//     신청이 없으니 다시 저장할 길이 없다 — 이때만 「📜 사역 이력」에서 손으로 빼 달라고 한다.
+//   positionFailed — 넣었지만 교적 직분을 못 읽어 직분이 빈칸이다(놓치지 않게 창 · 2026-10-02 최종 검토 #9).
 export function historyNote(r, q, f) {
   const h = r?.history;
   if (!h) return null;
+  if (r.error === "not-found") {
+    return h.error ? { dialog: "그사이 다른 분이 이 신청을 지웠는데, 사역 이력에 넣은 줄을 빼지 못했어요 — 「📜 사역 이력」에서 그 줄을 빼 주세요" } : null;
+  }
   if (HISTORY_DIALOG[h.error]) return { dialog: HISTORY_DIALOG[h.error] };
   if (h.error) {
-    if (f.status !== "반영") return { dialog: "상태는 바꿨지만 사역 이력에서 빼지 못했어요 — 「📜 사역 이력」에서 그 줄을 빼 주세요" };
-    return { dialog: (r.same ? "" : "상태는 저장했지만 ") + "사역 이력에 넣지 못했어요 — 잠시 뒤 「반영」을 한 번 더 눌러 주세요" };
+    // 빼다 실패 — 손으로 빼라고 하지 않는다(손으로 뺀 줄은 다시 「반영」해도 돌아오지 않는다) · 같은 상태로 한 번 더 저장하면 서버가 다시 뺀다(#1)
+    if (f.status !== "반영") return { dialog: (r.same ? "" : "상태는 바꿨지만 ") + "사역 이력에서 빼지 못했어요 — 잠시 뒤 같은 상태로 한 번 더 저장해 주세요" };
+    // 더하다 실패 — 고친 내용은 창이 닫히며 사라진다(신청 글도 줄도 그 값을 갖고 있지 않다 · #7)
+    return { dialog: (r.same ? "" : "상태는 저장했지만 ") + "사역 이력에 넣지 못했어요 — 고친 내용도 들어가지 않았어요. " +
+      "잠시 뒤 다시 열어 「사역 이력에 넣을 내용」을 확인하고 「반영」을 한 번 더 눌러 주세요" };
   }
   if (h.edited) return { toast: "사역 이력 줄을 고쳤어요" };
-  if (h.created || h.restored) return { toast: `사역 이력 ${h.year ?? q.year ?? ""}년에 더했어요` };
+  const year = h.year ?? q.year ?? "";
+  if (h.created && h.positionFailed) return { dialog: `사역 이력 ${year}년에 더했지만 교적에서 직분을 읽지 못했어요 — 「📜 사역 이력」에서 직분을 채워 주세요` };
+  if (h.created || h.restored) return { toast: `사역 이력 ${year}년에 더했어요` };
   if (h.removed) return { toast: "사역 이력에서 뺐어요" };
   return null;
 }

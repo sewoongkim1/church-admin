@@ -460,6 +460,11 @@ test("parseTeamText — 「·•/|」로 나눔 · 끝 직분 떼기(끝 낱말 
   assert.deepEqual(parseTeamText("교육위원회 · 중고등학생"), { committee: "교육위원회", team: "중고등학생", position: "" });
   assert.deepEqual(parseTeamText("시온성가대 · 은퇴권사님"), { committee: "", team: "시온성가대", position: "은퇴권사" });
   assert.deepEqual(parseTeamText("찬양위원회 시온성가대 부목사"), { committee: "찬양위원회", team: "시온성가대", position: "부목사" });
+  // 서리·이명도 앞말(교적이 쓰는 직분 — events-people.ts positionFromChurch 가 떼는 앞말 · 2026-10-02 최종 검토 #10)
+  assert.deepEqual(parseTeamText("찬양위원회 시온성가대 서리집사"), { committee: "찬양위원회", team: "시온성가대", position: "서리집사" });
+  assert.deepEqual(parseTeamText("시온성가대 · 이명권사님"), { committee: "", team: "시온성가대", position: "이명권사" });
+  assert.deepEqual(parseTeamText("새가족부 · 운영 · 서리집사님"), { committee: "새가족부", team: "운영", position: "서리집사" });
+  assert.deepEqual(parseTeamText("교육위원회 · 서리"), { committee: "교육위원회", team: "서리", position: "" });   // 앞말만으로는 직분이 아니다
   assert.deepEqual(parseTeamText("집사"), { committee: "", team: "집사", position: "" });           // 직분 한 마디뿐이면 떼지 않는다
   assert.deepEqual(parseTeamText("시온성가대 · 권사"), { committee: "", team: "시온성가대", position: "권사" });
   assert.deepEqual(parseTeamText("찬양위원회 시온성가대".normalize("NFD")), { committee: "찬양위원회", team: "시온성가대", position: "" });
@@ -645,6 +650,14 @@ test("applyMissingRequest — 고친 내용(line)으로 넣는다 · 교적 직�
   assert.equal(b.created, true);
   assert.equal(e.rows[0].position, "");
   assert.equal(logged.length, 1);
+  // 읽다 실패한 것은 응답에 싣는다(positionFailed — 불리언만 · 화면이 「직분을 채워 주세요」 창을 띄운다 · 2026-10-02 최종 검토 #9)
+  assert.deepEqual(b, { id: 100, year: 2023, created: true, positionFailed: true });
+  // 교적에 직분이 없을 뿐(빈 글자·null)이면 실패가 아니다
+  for (const none of ["", null]) {
+    const f = memDb();
+    assert.deepEqual(await applyMissingRequest(f.db, REQ(), OPT({ positionLookup: async () => none })), { id: 100, year: 2023, created: true },
+      JSON.stringify(none));
+  }
 });
 
 test("applyMissingRequest — 교적을 못 찾은 신청(person_id 없음)은 no-person · 표를 건드리지 않는다", async () => {
@@ -687,8 +700,9 @@ test("applyMissingRequest — 살아 있는 줄 고치기는 updated_at 으로 �
 test("applyMissingRequest — 빼 둔 줄: 마지막 빼기가 정정 신청 쪽(from:\"request\")이었을 때만 되살린다(고친 내용도 함께) · 손으로 뺀 줄·기록 없음은 history-removed", async () => {
   const OUT = LIVE({ deleted_at: "D", deleted_by: "m0", updated_at: "U1" });
   // 마지막 빼기가 「📜 사역 이력」에서 손으로(from 없음) · 기록이 없음 · 다른 from — 되살리지 않는다
+  //   신청 「삭제」로 뺀 줄(why:"request-deleted")도 — 그 신청은 지워졌다(지우는 사이에 낀 「반영 한 번 더」가 되살리지 않게 · 2026-10-02 최종 검토 #2)
   let m;
-  for (const last of [{ year: 2023 }, null, { year: 2023, from: "history" }]) {
+  for (const last of [{ year: 2023 }, null, { year: 2023, from: "history" }, { year: 2023, from: "request", request: 7, why: "request-deleted" }]) {
     m = memDb([OUT]);
     const seen = [];
     const r = await applyMissingRequest(m.db, REQ(), OPT({ lastDeleteLookup: async (id) => { seen.push(id); return last; } }));
@@ -769,13 +783,19 @@ test("applyMissingRequest — 같은 때 두 번(넣다가 23505)이면 먼저 �
 });
 
 test("applyMissingRequest — 교적 직분은 positionLookup 이 없으면 church_people 에서(명예·은퇴·원로 앞말 포함 · positionFromChurch)", async () => {
-  const seen = [];
+  const seen = [], cols = [];
+  // 가짜 명부는 고른 칸(select)만 돌려준다 — select 에서 position_detail 이 빠지면 「은퇴」가 사라져 이 시험이 잡는다(2026-10-02 최종 검토 #12)
+  const PERSON_ROW = { person_id: 11, name: "가나다", position: "권사", position_detail: "은퇴" };
   const { db, rows } = memDb([], { onFrom: (table, calls, qb) => {
     if (table !== "church_people") return null;
     seen.push(qb.log.find(([n]) => n === "eq")[1]);
-    return { data: { position: "권사", position_detail: "은퇴" }, error: null };
+    const pick = String(qb.log.find(([n]) => n === "select")?.[1][0] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    cols.push(pick);
+    return { data: Object.fromEntries(pick.filter((c) => c in PERSON_ROW).map((c) => [c, PERSON_ROW[c]])), error: null };
   } });
   await applyMissingRequest(db, REQ(), OPT({ positionLookup: undefined }));
   assert.deepEqual(seen, [["person_id", 11]]);
+  assert.ok(cols[0].includes("position") && cols[0].includes("position_detail"), "직분 칸을 고르지 않는다: " + JSON.stringify(cols));
+  assert.ok(!cols[0].includes("name") && !cols[0].includes("*"), "직분 말고 다른 칸까지 읽는다: " + JSON.stringify(cols));
   assert.equal(rows[0].position, "은퇴권사");
 });

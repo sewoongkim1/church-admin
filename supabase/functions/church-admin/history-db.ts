@@ -254,7 +254,8 @@ export function historyFilter(rows: any[], b: any): { hit: any[]; years: number[
 export const requestKey = (reqId: unknown): string => `req:${Number(reqId)}`;
 const REQ_SEP_RE = /[·•\/|]/;
 // 직분으로 볼 끝 낱말 — 낱말 **전체**가 (앞말)직분(님)일 때만(2026-10-02 리뷰 D5 · 「대학청년」·「중고등학생」·「권사회」·「청년부」는 팀 이름이다) · 끝의 「님」은 뗀다
-const REQ_POS_RE = /^(부|담임|협동|시무|안수|명예|은퇴|원로)?(집사|권사|장로|목사|전도사|사모|성도|청년|학생)(님)?$/;
+//   앞말에 서리·이명도(교적이 쓰는 직분 「서리집사」·「이명권사」 — events-people.ts positionFromChurch 가 떼는 앞말 · 2026-10-02 최종 검토 #10)
+const REQ_POS_RE = /^(부|담임|협동|시무|안수|명예|은퇴|원로|서리|이명)?(집사|권사|장로|목사|전도사|사모|성도|청년|학생)(님)?$/;
 // 창에서 고칠 수 있는 칸 — 이 넷만 줄에 들어간다(이름·목장은 신청에서, 직분은 교적에서)
 const LINE_KEYS = ["year", "committee", "team", "role_title"] as const;
 
@@ -351,8 +352,9 @@ async function churchPosition(db: Db, personId: number): Promise<string> {
 }
 
 // 그 줄의 마지막 「빼기」 기록(detail) — 정정 신청 쪽이 뺐으면 {from:"request"} 가 있다(「📜 사역 이력」에서 손으로 뺀 rowDelete 는 {year} 만).
-//   되살릴지는 이것 하나로 정한다(applyMissingRequest) — 신청 「삭제」로 뺀 줄(why:"request-deleted")도 from:"request" 지만
-//   그 신청 줄이 지워져 다시 「반영」할 길이 없으니 되살아날 수 없다.
+//   되살릴지는 이것 하나로 정한다(applyMissingRequest) — 신청 「삭제」로 뺀 줄(why:"request-deleted")도 from:"request" 지만 되살리지 않는다.
+//   ⚠️ 신청이 지워졌으니 다시 「반영」할 길이 없을 것 같아도, 지우기 직전에 신청을 읽어 둔 「반영 한 번 더」(noop 갈래)가 그 뒤에 닿을 수 있다
+//      (2026-10-02 최종 검토 #2 — 그래서 why 를 따로 본다 · index.ts historyRequestSet 도 그 갈래에서 신청이 아직 있는지 다시 본다).
 async function lastDeleteDetail(db: Db, rowId: number): Promise<Record<string, unknown> | null> {
   const { data, error } = await db.from("admin_audit").select("detail").eq("action", "history.delete").eq("target", String(rowId))
     .order("id", { ascending: false }).limit(1).maybeSingle();
@@ -372,7 +374,9 @@ function lineDiff(line: ReqLine | null, row: any): Record<string, unknown> {
   return patch;
 }
 
-export type MissingApply = { id?: number; year?: number; created?: boolean; restored?: boolean; edited?: boolean; fields?: string[]; error?: string };
+// positionFailed — 넣을 때 교적 직분 읽기가 실패해 직분을 빈칸으로 넣었다(불리언만 · 화면이 「직분을 채워 주세요」 창 · 2026-10-02 최종 검토 #9)
+export type MissingApply = { id?: number; year?: number; created?: boolean; restored?: boolean; edited?: boolean; fields?: string[];
+  positionFailed?: boolean; error?: string };
 export type MissingApplyOpts = {
   line?: ReqLine | null; memberId: string | null; nowIso: string;
   positionLookup?: (personId: number) => Promise<string>;                         // 시험이 교적 직분 읽기를 바꿔 끼운다(없으면 church_people)
@@ -383,6 +387,7 @@ export type MissingApplyOpts = {
 //   살아 있으면: 고친 내용(line)이 다를 때만, 창이 본 그대로(updated_at = line.expect)일 때 고친다(edited · fields) — 아니면 line-conflict · 같으면 그대로(created:false)
 //   빼 두었으면: 마지막 빼기가 정정 신청 쪽(from:"request")이었을 때만 되살린다(restored · 고친 내용도 함께).
 //               「📜 사역 이력」에서 손으로 뺀 줄(기록에 from 없음)·빼기 기록이 없는 줄은 되살리지 않는다(history-removed · 2026-10-02 리뷰 D2).
+//               신청 「삭제」로 뺀 줄(why:"request-deleted")도 되살리지 않는다(history-removed · 2026-10-02 최종 검토 #2).
 //               ⚠️ 상태가 어디서 왔는지(확인 중→반영인지 반영에 머문 다시 누름인지)는 보지 않는다 — 263fa20 은 「반영으로 들어올 때만」도 보았는데,
 //               「확인 중→반영」에서 되살리다 DB 오류가 나면 안내(「잠시 뒤 「반영」을 한 번 더」)를 따른 다음 누름이 반영에 머문 길이라
 //               「직접 뺀 줄이라 다시 넣지 않았어요」로 잘못 답했다(2026-10-02 · 그 조건을 걷었다).
@@ -410,7 +415,7 @@ export async function applyMissingRequest(db: Db, req: any, opts: MissingApplyOp
   }
   if (ex) {
     const last = await (lastDeleteLookup ?? ((x: number) => lastDeleteDetail(db, x)))(Number(ex.id));
-    if (last?.from !== "request") return { error: "history-removed", id: Number(ex.id) };
+    if (last?.from !== "request" || last?.why === "request-deleted") return { error: "history-removed", id: Number(ex.id) };
     // 창이 빼 둔 그 줄을 보고 고쳤다면 그대로일 때만(줄이 없던 때를 봤으면 잠그지 않는다 — 고친 내용은 그래도 넣는다)
     const expect = line?.expect ?? "";
     if (expect && String(ex.updated_at ?? "") !== expect) return { error: "line-conflict" };
@@ -429,12 +434,14 @@ export async function applyMissingRequest(db: Db, req: any, opts: MissingApplyOp
   if (e1) throw e1;
   if (erased) return { error: "history-deleted" };
   // 직분은 교적에서 — 읽기가 실패해도 줄은 넣는다(직분만 빈칸 · 담당자가 「📜 사역 이력」에서 채울 수 있다)
-  let position = "";
+  //   실패는 positionFailed 로 알린다(빈칸이 「교적에 직분이 없음」과 같아 보여 담당자가 모르고 지나가지 않게 · 2026-10-02 최종 검토 #9)
+  let position = "", positionFailed = false;
   try {
     position = await (positionLookup ?? ((x: number) => churchPosition(db, x)))(pid);
   } catch (err) {
     console.error("history request church position", err);
     position = "";
+    positionFailed = true;
   }
   const t = missingRowFromRequest(req, line, position);
   if (!t.row) return { error: t.error };
@@ -451,7 +458,7 @@ export async function applyMissingRequest(db: Db, req: any, opts: MissingApplyOp
     if (!again) throw error;
     return { id: Number(again.id), year: again.year, created: false };
   }
-  return { id: Number(data.id), year: data.year, created: true };
+  return { id: Number(data.id), year: data.year, created: true, ...(positionFailed ? { positionFailed: true } : {}) };
 }
 
 // 「반영」을 되돌렸다(확인 중·반영 안 함으로) · 신청을 지웠다 — 이 신청의 살아 있는 줄만 뺀다(표시만 · 다시 반영하면 되살아난다)

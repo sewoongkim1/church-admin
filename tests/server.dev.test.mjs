@@ -2725,6 +2725,8 @@ test("정정 신청 빠진 사역 — 「반영」하면 그 해 이력에 한 �
     const errs = [];
     const step = async (label, fn) => { try { await fn(); } catch (err) { errs.push(label + " — " + (err?.message ?? err)); } };
     if (reqId) {
+      // 줄 번호는 지우기 전에 열쇠로 다시 모은다 — 응답을 맞대다 실패해 rowIds 에 못 넣은 줄의 기록도 지우려고(2026-10-02 최종 검토 #13)
+      await step("이력 줄 번호", async () => { for (const r of await hrqRows(reqId)) rowIds.add(r.id); });
       await step("이력 줄", () => rest(`ministry_history?src_key=eq.req:${reqId}`, "DELETE"));
       await step("신청 기록", () => rest(`admin_audit?action=eq.history.request&target=eq.${reqId}`, "DELETE"));
     }
