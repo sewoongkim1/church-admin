@@ -1235,6 +1235,7 @@ body:has(#view > section[aria-busy="true"]){cursor:progress}
 .mh-acts2{margin-bottom:12px}
 .mh-years,.mh-only{margin-bottom:8px}
 .mh-sum{margin:2px 0 10px}
+.mh-qhint{margin:-4px 0 8px;font-size:13px}   /* 찾기 칸 아래 「교인ID 는 #번호」(교인명부·총괄만 · 2026-10-02) */
 .mh-why{margin-top:3px;font-size:12px;line-height:1.5;color:var(--gray)}
 .mh-table td{vertical-align:top}
 /* 해·부서·이름·목장은 한 줄로(교적 칸이 넓어지면 「202/6」처럼 네 자리 해가 갈라졌다 · .be-table 의 overflow-wrap:anywhere) — 팀·교적은 감긴다 */

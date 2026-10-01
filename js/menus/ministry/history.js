@@ -104,7 +104,9 @@ export async function render(el, { call, query }) {
         <button type="button" data-only="" aria-pressed="false">전체</button>
         <button type="button" data-only="none" aria-pressed="false">못 맞춘 줄만</button>
         <button type="button" data-only="weak" aria-pressed="false">근거 약한 줄만</button></div>
-      <input type="search" class="search" maxlength="40" placeholder="이름·팀·부서로 찾기" aria-label="이름·팀·부서로 찾기" value="${esc(f.q)}">
+      <input type="search" class="search" maxlength="40" placeholder="이름·목장·팀·부서 (띄어 쓰면 모두 맞는 줄)"
+        aria-label="이름·목장·팀·부서로 찾기 — 띄어 쓰면 낱말이 모두 맞는 줄" value="${esc(f.q)}">
+      <p class="muted mh-qhint" id="mh-qhint" hidden>교인ID 는 #번호</p>
       <p class="mh-sum muted"></p>
       <div class="mh-list"></div>
       <div class="pp-pager mh-pager"></div>`;
@@ -124,6 +126,10 @@ export async function render(el, { call, query }) {
       { total: 0, linked: 0, none: 0, weak: 0 });
     el.querySelector(".mh-sum").textContent = ys.length
       ? `${num(s.total)}줄 · 교적 이어짐 ${num(s.linked)} (그중 근거 약함 ${num(s.weak)}) · 못 맞춤 ${num(s.none)}` : "";
+    // 「#번호」 안내는 교인ID 를 받는 역할(교인명부·총괄 — 서버 답의 full)에게만. 사역신청 역할이 #번호로 찾으면 서버가 need-directory.
+    const full = !!(last && last.full), hint = el.querySelector(".mh-qhint"), input = el.querySelector(".search");
+    hint.hidden = !full;
+    if (full) input.setAttribute("aria-describedby", "mh-qhint"); else input.removeAttribute("aria-describedby");
   };
   const draw = () => {
     if (!el.isConnected) return;
@@ -145,7 +151,11 @@ export async function render(el, { call, query }) {
     const mySeq = ++loadSeq;
     const r = await busy(el, () => call("historyList", f));
     if (!el.isConnected || mySeq !== loadSeq) return false;   // 떠났거나, 더 늦게 부른 load() 가 이미 있다(out-of-order)
-    if (!r.ok) { el.querySelector(".mh-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`; return false; }
+    if (!r.ok) {   // 오류(#교인ID 를 사역신청 역할이 찾은 need-directory 포함)는 목록 자리에 — 앞 답의 쪽 넘기기는 거둔다
+      el.querySelector(".mh-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`;
+      el.querySelector(".mh-pager").innerHTML = "";
+      return false;
+    }
     if (r.total > 0 && f.page * r.pageSize >= r.total) {   // 지운 뒤 등 범위를 벗어난 쪽을 보던 중 — 마지막 쪽으로 한 번만 다시
       f.page = Math.max(0, Math.ceil(r.total / r.pageSize) - 1);
       return load();

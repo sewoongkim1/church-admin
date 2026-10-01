@@ -139,6 +139,11 @@ test("errorText — 사역 이력 오류 코드 일곱 가지가 각자 문구�
   assert.equal(errorText({ error: "candidates-changed" }), "그사이 교인명부가 바뀌었어요 — 창을 닫고 다시 열어 주세요");
 });
 
+// 2026-10-02 — 찾기 칸의 #교인ID 는 교인명부·총괄만(서버 historyFilter 가 사역신청 역할에게 need-directory) · 목록 자리에 이 문장
+test("errorText — need-directory(#교인ID 로 찾기)는 교인명부 역할 안내", () => {
+  assert.equal(errorText({ error: "need-directory" }), "교인ID 로 찾기는 교인명부 역할이 있어야 해요");
+});
+
 // ⚠️ 2026-10-01 최종 검토 — 여러 해를 넣으면 묶음마다 받은 수는 다른 해로 이어진 줄을 못 센다 → 넣은 뒤 해마다 요약(최종)으로
 test("uploadSummary — 올린 해 전체의 최종 수(해마다 요약에서) · 실패 · 요약이 없으면 넣은 줄 수만", () => {
   const ys = [
@@ -166,4 +171,8 @@ test("deepLink — row 는 양의 안전 정수만 · q 는 다듬고 NFC·40자
   assert.deepEqual(deepLink({}), { row: null, q: "" });
   assert.deepEqual(deepLink(undefined), { row: null, q: "" });
   assert.deepEqual(deepLink(), { row: null, q: "" });
+  // 띄어 쓴 낱말(이름 + 목장)은 그대로 둔다 — 서버가 낱말마다 함께 찾는다(2026-10-02) · 주소의 「+」는 URLSearchParams 가 빈칸으로 푼다
+  assert.equal(deepLink({ q: " 김세웅 화평-20 " }).q, "김세웅 화평-20");
+  assert.equal(deepLink(Object.fromEntries(new URLSearchParams("q=%EA%B9%80%EC%84%B8%EC%9B%85+%ED%99%94%ED%8F%89-20"))).q, "김세웅 화평-20");
+  assert.equal(deepLink({ q: "가나다 #123" }).q, "가나다 #123");
 });

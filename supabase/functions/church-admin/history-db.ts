@@ -226,16 +226,46 @@ async function judgeUpload(db: Db, raws: unknown[]) {
 }
 const reasonKey = (s: string): string => s.replace(/\d+명/, "N명").replace(/ \(.*\)$/, "");
 
-// 목록·내려받기 공용 거르기(해 · 못 맞춤/근거 약함 · 이름·팀·부서 찾기) — 둘이 따로 거르면 화면에 보인 줄과 내려받은 줄이 어긋난다
-export function historyFilter(rows: any[], b: any): { hit: any[]; years: number[]; q: string; only: "" | "none" | "weak" } {
+// 찾기 칸(2026-10-02 친구 요청 · 동명이인 중 한 분만) — 빈칸·「+」·「,」로 낱말을 가르고, 줄은 **모든** 낱말이 맞아야 남는다.
+//   낱말 하나는 이름(hKey) · 목장 · 부서 · 팀 · 직책 · 직분 중 하나에 들어 있으면 맞다(NFC · 띄어쓰기 없앰 · 영문 대소문자 무시).
+//   목장은 끝의 「목장」을 양쪽 다 떼고도 본다(「20목장」·「20」 → 「화평-20」·「화평-20목장」).
+//   낱말 하나일 때 오늘(이름·팀·부서 · 한 덩이)보다 좁아지지 않는다 — 칸이 늘었고 대소문자를 안 가린다.
+//   「#숫자」는 교인ID(person_id) — 교인명부·총괄(full)만. 아니면 거르지 않고 error:"need-directory"(던지지 않는다 · 교인ID 로
+//   줄을 가려 보는 길도 교인ID 를 보는 것과 같다). # 없는 숫자는 글자 그대로(목장 번호 「12」).
+const Q_SEP_RE = /[\s+,]+/;
+const Q_ID_RE = /^#(\d+)$/;
+const fold = (s: unknown): string => nfc(s).replace(/\s+/g, "").toLowerCase();
+const noMok = (s: string): string => s.replace(/목장$/, "");
+const Q_TEXT_KEYS = ["committee", "team", "role_title", "position"] as const;
+function wordHit(r: any, w: string): boolean {
+  if (hKey(r.name).toLowerCase().includes(hKey(w).toLowerCase())) return true;
+  if (Q_TEXT_KEYS.some((k) => fold(r[k]).includes(w))) return true;
+  const mok = fold(r.mok);
+  if (mok.includes(w)) return true;
+  const wm = noMok(w);                                   // 「목장」 한 낱말은 떼면 빈 글 — 그때는 글자 그대로만(위)
+  return !!wm && wm !== w && noMok(mok).includes(wm);
+}
+
+// 목록·내려받기 공용 거르기(해 · 못 맞춤/근거 약함 · 찾기) — 둘이 따로 거르면 화면에 보인 줄과 내려받은 줄이 어긋난다
+//   opt.full — 교인명부·총괄 역할(isFull). 안 넘기면 full 이 아닌 것으로 본다.
+export function historyFilter(rows: any[], b: any, opt: { full?: boolean } = {}):
+  { hit: any[]; years: number[]; q: string; only: "" | "none" | "weak"; error?: "need-directory" } {
   const years = Array.isArray(b?.years) ? b.years.map(Number).filter(Number.isInteger) : [];
-  const q = cut(b?.q, 40).replace(/\s+/g, "");
   const only = b?.only === "none" || b?.only === "weak" ? b.only : "";
+  const words: string[] = [], pids: number[] = [];
+  for (const raw of cut(b?.q, 40).split(Q_SEP_RE)) {
+    const w = fold(raw);
+    if (!w) continue;
+    const m = Q_ID_RE.exec(w);
+    if (m) pids.push(Number(m[1])); else words.push(w);
+  }
+  const q = [...words, ...pids.map((n) => "#" + n)].join(" ");   // 찾은 것이 있는가(내려받기 기록 search:true) — 기록에는 싣지 않는다
+  if (pids.length && !opt.full) return { hit: [], years, q, only, error: "need-directory" };
   let hit = rows.filter((r) => !years.length || years.includes(r.year));
   if (only === "none") hit = hit.filter((r) => r.person_id === null);
   if (only === "weak") hit = hit.filter((r) => r.person_id !== null && r.match_basis && WEAK_RE.test(r.match_basis));
-  if (q) hit = hit.filter((r) => hKey(r.name).includes(hKey(q)) || nfc(r.team).replace(/\s+/g, "").includes(q) ||
-    nfc(r.committee).replace(/\s+/g, "").includes(q));
+  for (const n of pids) hit = hit.filter((r) => r.person_id !== null && r.person_id !== undefined && Number(r.person_id) === n);
+  if (words.length) hit = hit.filter((r) => words.every((w) => wordHit(r, w)));
   return { hit, years, q, only };
 }
 
@@ -495,7 +525,8 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
       if (r.person_id !== null) { y.linked++; if (r.match_basis && WEAK_RE.test(r.match_basis)) y.weak++; } else y.none++;
       yearsAll.set(r.year, y);
     }
-    const { hit } = historyFilter(rows, b);
+    const { hit, error } = historyFilter(rows, b, { full });
+    if (error) return { ok: false, error };            // #교인ID 찾기 — 교인명부·총괄만(줄·수·해 요약도 싣지 않는다)
     hit.sort((a, b2) => b2.year - a.year || String(a.committee).localeCompare(b2.committee, "ko") ||
       String(a.team).localeCompare(b2.team, "ko") || String(a.name).localeCompare(b2.name, "ko") || a.id - b2.id);
     const page = Math.max(0, Math.floor(Number(b.page) || 0));
@@ -732,7 +763,8 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     const full = isFull(ctx);
     const every = await all(() => db.from("ministry_history").select(ROW_COLS).is("deleted_at", null).order("id", { ascending: true }));
     // 목록과 같은 거르기(해 · 못 맞춘 줄만/근거 약한 줄만 · 찾기) — 화면에서 거른 그대로 내려받는다
-    const { hit: rows, years, q, only } = historyFilter(every, b);
+    const { hit: rows, years, q, only, error } = historyFilter(every, b, { full });
+    if (error) return { ok: false, error };            // 목록과 같은 답(need-directory) · 기록 없음
     if (!rows.length) return { ok: true, full, rows: [] };
     rows.sort((a, c) => a.year - c.year || a.id - c.id);
     // 명부 전체를 한 번만 읽는다(내보내는 줄마다 .in() 을 부르지 않게 — 수천 줄이면 수천 번이 된다)

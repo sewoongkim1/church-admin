@@ -143,6 +143,7 @@ const MESSAGES = {
   "bad-year": "해(년도)를 1950~2100 사이 네 자리로 적어 주세요",
   "candidates-changed": "그사이 교인명부가 바뀌었어요 — 창을 닫고 다시 열어 주세요",
   "no-directory": "교인명부가 아직 올라오지 않아 맞출 수 없어요",
+  "need-directory": "교인ID 로 찾기는 교인명부 역할이 있어야 해요",   // 찾기 칸의 #교인ID(2026-10-02 · historyFilter)
 };
 
 // 서버 답 → 한 문장(+ 오류 번호)

@@ -406,6 +406,145 @@ test("historyFilter — 목록·내려받기 공용(해 · 못 맞춤/근거 약
   assert.deepEqual(ids({ only: "bogus", years: ["x"] }), [1, 2, 3]);
 });
 
+// 2026-10-02 친구 요청 — 동명이인 중 한 분만 보기: 띄어 쓴 낱말은 **모두** 맞아야(낱말마다 이름·목장·부서·팀·직책·직분 중 하나) ·
+//   #숫자는 교인ID(교인명부·총괄만 — 사역신청 역할은 need-directory). 숫자만(# 없이)은 글자 그대로(목장 번호 「12」).
+test("historyFilter 찾기 — 띄어 쓴 낱말을 함께(이름·목장·부서·팀·직책·직분) · #교인ID 는 교인명부·총괄만", () => {
+  const rows = [
+    { id: 1, year: 2024, name: "김세웅", mok: "화평-20", committee: "찬양부", team: "시온성가대", role_title: "", position: "집사",
+      person_id: 101, match_basis: "같은 소속" },
+    { id: 2, year: 2024, name: "김세웅", mok: "기쁨-3목장", committee: "전도부", team: "새가족팀", role_title: "팀장", position: "안수집사",
+      person_id: 102, match_basis: "같은 소속" },
+    { id: 3, year: 2023, name: "김세웅A", mok: "화평-120", committee: "교육부", team: "유년부 교사", role_title: "부장", position: "권사",
+      person_id: null, match_basis: "" },
+    { id: 4, year: 2023, name: "이영희", mok: "화평-20", committee: "찬양부", team: "시온성가대", role_title: "", position: "권사",
+      person_id: 12, match_basis: "같은 소속" },
+  ];
+  const run = (q, full = false, b = {}) => historyFilter(rows, { ...b, q }, { full });
+  const ids = (q, full = false, b = {}) => run(q, full, b).hit.map((r) => r.id);
+
+  // 이름 + 목장 — 두 낱말이 모두 맞는 줄만(오늘은 「김세웅화평-20」 한 덩이로 보아 아무것도 안 나왔다)
+  assert.deepEqual(ids("김세웅 화평-20"), [1]);
+  assert.deepEqual(ids("화평-20 김세웅"), [1]);                       // 차례는 상관없다
+  // 목장 — 끝의 「목장」은 양쪽 다 떼고 본다
+  assert.deepEqual(ids("김세웅 화평-20목장"), [1]);                   // 줄은 「화평-20」, 찾기는 「…목장」
+  assert.deepEqual(ids("김세웅 기쁨-3"), [2]);                        // 줄은 「기쁨-3목장」, 찾기는 없이
+  assert.deepEqual(ids("김세웅 3목장"), [2]);
+  assert.deepEqual(ids("김세웅 20목장"), [1, 3]);                     // 들어 있으면 맞는다(「화평-120」에도 「20」이 있다)
+  assert.deepEqual(ids("목장"), [2]);                                 // 「목장」 한 낱말은 다 맞는 것이 아니다 — 글자 그대로
+  // 부서·팀·직책·직분을 넘나드는 낱말
+  assert.deepEqual(ids("전도부 팀장"), [2]);
+  assert.deepEqual(ids("안수집사"), [2]);
+  assert.deepEqual(ids("권사 교사"), [3]);                            // 직분 + 팀(「유년부 교사」의 띄어쓰기는 없앤 채)
+  assert.deepEqual(ids("김세웅 부장"), [3]);
+  assert.deepEqual(ids("집사"), [1, 2]);
+  assert.deepEqual(ids("시온 권사"), [4]);
+  assert.deepEqual(ids("김세웅 없는팀"), []);
+  // 한 낱말 — 오늘(이름·팀·부서) 맞던 줄은 그대로 맞는다
+  assert.deepEqual(ids("김세웅"), [1, 2, 3]);
+  assert.deepEqual(ids("시온"), [1, 4]);
+  assert.deepEqual(ids("찬양"), [1, 4]);
+  assert.deepEqual(ids("유년부교사"), [3]);
+  assert.deepEqual(ids("김세웅a"), [3]);                              // 동명이인 끝 글자(hKey) — 오늘처럼
+  assert.deepEqual(ids("김세웅 a"), [3]);                             // 오늘 「김세웅a」로 맞던 것 — 띄어도 좁아지지 않는다
+  assert.deepEqual(ids("김세웅".normalize("NFD")), [1, 2, 3]);        // 맥 자모분리(NFD)도 완성형으로
+  // 해·교적 거르기와 함께
+  assert.deepEqual(ids("김세웅", false, { years: [2023] }), [3]);
+  assert.deepEqual(ids("김세웅", false, { only: "none" }), [3]);
+  // 「+」「,」도 낱말 가르개
+  assert.deepEqual(ids("김세웅+화평-20"), [1]);
+  assert.deepEqual(ids("김세웅,화평-20"), [1]);
+  assert.deepEqual(ids(" 김세웅 ,+ 화평-20 "), [1]);
+  // 비었거나 빈칸·가르개뿐이면 거르지 않는다(q 는 빈 글 — 내려받기 기록에 search 가 안 붙게)
+  for (const q of ["", "   ", " + , ", undefined]) {
+    assert.deepEqual(ids(q), [1, 2, 3, 4], String(q));
+    assert.equal(run(q).q, "", String(q));
+    assert.equal(run(q).error, undefined, String(q));
+  }
+  assert.ok(run("김세웅 화평-20").q, "찾은 것이 있으면 q 가 빈 글이 아니다");
+  // #숫자 — 교인명부·총괄(full)이면 교인ID 로 거른다(낱말은 그대로 함께)
+  assert.deepEqual(ids("#101", true), [1]);
+  assert.deepEqual(ids("#12", true), [4]);
+  assert.deepEqual(ids("김세웅 #102", true), [2]);
+  assert.deepEqual(ids("#102 화평-20", true), []);                    // 모두 맞아야 — 102 는 기쁨-3목장
+  assert.deepEqual(ids("#999", true), []);
+  assert.deepEqual(ids("#0012", true), [4]);                          // 앞의 0 은 숫자로
+  assert.equal(run("#101", true).error, undefined);
+  // 사역신청 역할(full 아님) — 거르지 않고 오류 코드(던지지 않는다 · 교인ID 로 줄을 가려 보는 길을 막는다)
+  for (const q of ["#101", "김세웅 #102", "#12"]) {
+    const r = run(q, false);
+    assert.equal(r.error, "need-directory", q);
+    assert.deepEqual(r.hit, [], q);
+  }
+  const noOpt = historyFilter(rows, { q: "#101" });                  // 역할을 안 넘기면 full 이 아닌 것으로
+  assert.equal(noOpt.error, "need-directory");
+  // # 없는 숫자는 글자 — 목장 번호(「화평-120」의 12)로 맞고, 교인ID 12(4번 줄)로 맞지 않는다 · 오류도 없다
+  assert.deepEqual(ids("12"), [3]);
+  assert.deepEqual(ids("12", true), [3]);
+  assert.equal(run("12").error, undefined);
+  // 「#」 뒤가 숫자가 아니면 글자 그대로(어느 칸에도 없으니 빈 결과 · 오류 없음)
+  assert.deepEqual(ids("#"), []);
+  assert.equal(run("#").error, undefined);
+  assert.deepEqual(ids("#가나"), []);
+  assert.equal(run("#가나").error, undefined);
+});
+
+// 같은 거르기가 목록·내려받기 두 곳에 — 화면에 보인 줄 = 내려받은 줄 · 사역신청 역할의 #교인ID 는 둘 다 need-directory(기록 없음)
+test("목록·내려받기 — 낱말 함께 찾기·#교인ID 가 같은 줄을 거른다 · 사역신청 역할은 need-directory 이고 교인ID 가 없다", async () => {
+  const audits = [];
+  const base = { role_title: "", renewal: "", src_note: "", link_how: "auto", match_reason: "", source: "excel", source_file: "a",
+    linked_at: null, updated_at: "T" };
+  const rows = [
+    { ...base, id: 1, year: 2024, committee: "찬양부", team: "가", name: "가나다", position: "집사", mok: "기쁨-19", person_id: 11, match_basis: "같은 소속" },
+    { ...base, id: 2, year: 2024, committee: "찬양부", team: "가", name: "가나다", position: "권사", mok: "화평-3", person_id: 12, match_basis: "같은 소속" },
+    { ...base, id: 3, year: 2023, committee: "전도부", team: "나", name: "라마바", position: "집사", mok: "기쁨-19", person_id: null, match_basis: "" },
+  ];
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "ministry_history") return page0(qb, rows);
+    if (table === "church_people") return calls.includes("in") ? { data: [{ person_id: 11 }, { person_id: 12 }], error: null }
+      : page0(qb, [{ person_id: 11 }, { person_id: 12 }]);
+    throw new Error("이 시험이 다루지 않는 호출: " + table);
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const ministry = { member: { id: "m" }, roles: ["ministry"] };
+  const dir = { member: { id: "d" }, roles: ["ministry", "directory"] };
+  const sup = { member: { id: "s" }, roles: ["super"] };
+  const ids = (r) => r.rows.map((x) => x.id);
+
+  // 사역신청 역할 — #교인ID 는 목록·내려받기 모두 need-directory 하나만(줄·수·해 요약도 없다) · 내려받기 기록도 없다
+  for (const q of ["#11", "가나다 #12"]) {
+    assert.deepEqual(await H.list(ministry, { q }), { ok: false, error: "need-directory" }, q);
+    assert.deepEqual(await H.exportRows(ministry, { q }), { ok: false, error: "need-directory" }, q);
+  }
+  assert.equal(audits.length, 0, "오류로 끝난 내려받기가 기록을 남겼다");
+
+  // 이름 + 목장 — 목록과 내려받기가 같은 줄 · 사역신청 역할에게는 교인ID 칸이 없다
+  for (const ctx of [ministry, dir]) {
+    const l = await H.list(ctx, { q: "가나다 화평-3" });
+    const x = await H.exportRows(ctx, { q: "가나다 화평-3" });
+    assert.deepEqual(ids(l), [2]);
+    assert.deepEqual(ids(x), [2]);
+    assert.equal(l.total, 1);
+    const pidShown = ctx === dir;
+    for (const r of [...l.rows, ...x.rows]) assert.equal("person_id" in r, pidShown, JSON.stringify(ctx.roles));
+  }
+  // 교인명부·총괄 — #교인ID(낱말과 함께도) · 목록과 내려받기가 같은 줄
+  for (const ctx of [dir, sup]) {
+    for (const [q, want] of [["#11", [1]], ["가나다 #12", [2]], ["#12 집사", []]]) {
+      const l = await H.list(ctx, { q });
+      assert.equal(l.ok, true, q);
+      assert.deepEqual(ids(l), want, q);
+      const x = await H.exportRows(ctx, { q });
+      assert.equal(x.ok, true, q);
+      assert.deepEqual(ids(x), want, q);
+    }
+  }
+  // 내려받기 기록 — 찾았다는 것(search:true)만 · 찾은 글자도 교인ID 도 싣지 않는다
+  const details = audits.map((a) => a[3]);
+  assert.ok(details.length > 0);
+  for (const d of details) assert.equal(d.search, true);
+  assert.ok(!/가나다|화평|#1[12]/.test(JSON.stringify(audits)), "기록에 찾은 글자·교인ID 가 실렸다");
+});
+
 test("내려받기 — 화면의 거르기(only·q)를 따른다 · 기록에 찾은 글자는 없다(search:true 만) · 명부는 차례로 읽는다", async () => {
   const audits = [];
   const rows = [
