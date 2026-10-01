@@ -5,6 +5,8 @@
 -- ⚠️ user_id·history_id·person_id 에 FK 를 걸지 않는다 — 계정이 합쳐지거나, 기록 줄을 빼 두거나, 새 명부에서 빠져도 신청은 남는다.
 -- ⚠️ kind·status 글자는 교회 어드민 history-check.ts 와 성경암송 app.js MH_* 가 같은 글자를 쓴다(세 곳) — 하나만 고치면 저장이 막힌다.
 -- 2026-10-01 「직분이 틀려요」(wrong_position) 뺌 — 직분은 교적 기준(운영에 돌리기 전이라 파일을 고쳤다 · 개발은 제약을 다시 만들었다).
+-- ⚠️ 2026-10-02 이 표에 성경암송 트리거 redirect_merged_member_write(앱 계정 합치기)가 붙었다 — 표를 지웠다 다시 만들면 성경암송 supabase/member_merge.sql 을 다시 돌릴 것 ·
+--    status 의 열린 글자(신청·확인 중)나 부분 unique 색인 조건을 바꾸면 member_merge.sql 도 함께.
 -- 여러 번 돌려도 안전하다(if not exists).
 -- 실행: supabase --workdir <작업 폴더> db query --linked -f C:/Projects/church-admin/.worktrees/history-check/supabase/sql/008_ministry_history_requests.sql
 begin;
