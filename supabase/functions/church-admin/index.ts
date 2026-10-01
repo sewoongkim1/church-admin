@@ -57,6 +57,9 @@ import { DECIDED } from "./ministry.ts";
 import { orderAutoRecs, signupAutoRecs, syncCounts, toLinkCand, linkRowOf, type AutoRec, type LinkKind, type LinkLook, type LinkRow } from "./people-links.ts";
 // 교인명부 「자세히」 창 사역·성경필사 탭(2026-10-01 · Task 5) — 이 묶음의 이름은 people-links.ts 에서만 가져온다
 import { historyTabs, unlinkedRows, movedOrderIds, parseLink, linkPatch, unlinkRec, missingTable } from "./people-links.ts";
+// b6 「사역 이력」 표 잇기(2026-10-01 · b6 설계 §7 약속) — 잇는 모양·다시 맞추기는 b6 모듈 그대로
+import { historyLinkPatch, historyUnlinkPatch } from "./history-match.ts";
+import { rematchHistoryRows } from "./history-db.ts";
 // 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
 import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, readLoginWho, REQ_OPEN, requestBlock, requestInsert, requestOut, REQUEST_SELECT, sortHistory } from "./history-check.ts";
@@ -1322,7 +1325,13 @@ async function peopleHistory(b: any) {
     linksOf("order", mineO.map((o) => Number(o.id))), linksOf("signup", mineS.map((s) => Number(s.id))),
     movedOrders(mineO.map((o) => Number(o.id))),
   ]);
-  return { ok: true, rows: unlinkedRows({ orders: mineO, signups: mineS, events, orderLinks, signupLinks, moved, history: [] }) };
+  // 사역 이력(b6)에서 아무에게도 안 이어진 줄(person_id null — auto 못 맞춤·none) · 표가 없으면 빈 것
+  let hist: any[] = [];
+  try {
+    hist = (await allRows(() => db.from("ministry_history").select("id,year,committee,team,role_title,position,mok,name,link_how")
+      .is("deleted_at", null).is("person_id", null).order("id", { ascending: true }))).filter((h) => nameKey(h.name) === key);
+  } catch (e) { if (!missingTable(e)) throw e; }
+  return { ok: true, rows: unlinkedRows({ orders: mineO, signups: mineS, events, orderLinks, signupLinks, moved, history: hist }) };
 }
 
 // 「이분 것」(manual) · 「이분 아님」(none) · 「풀기」(auto — auto 로 되돌리고 그 줄만 다시 맞춘다).
@@ -1334,10 +1343,10 @@ const SIGNUP_LINK_COLS = "id,event_id,who_type,group_name,sub_name,name";
 async function peopleLink(ctx: Ctx, b: any) {
   const p = parseLink(b);
   if (!p.ok) return { ok: false, error: p.error };
-  if (p.kind === "history") return { ok: false, error: "bad-kind" };   // 사역 이력(b6) 표가 열리면 계획 Task 10 이 이 줄을 바꾼다
   const { data: person, error: e0 } = await db.from("church_people").select("person_id,name_key").eq("person_id", p.person).maybeSingle();
   if (e0) throw e0;
   if (!person) return { ok: false, error: "not-found" };
+  if (p.kind === "history") return await historyLinkFor(ctx, p, person);
   const kind = p.kind as LinkKind;
   let row: any = null;
   if (kind === "order") {
@@ -1369,6 +1378,33 @@ async function peopleLink(ctx: Ctx, b: any) {
     if (error) throw error;
   }
   await audit(ctx, "people.link", String(p.row), { kind, row: p.row, how: p.how });
+  return { ok: true, how: p.how, relinked, history: await personHistory(p.person) };
+}
+
+// 사역 이력 줄 하나를 이 분께(설계 §5 · b6 §7) — 이름 확인·이어진 줄만 풀기는 신청·명단과 같다. 쓰는 모양은 b6 의 historyLinkPatch·historyUnlinkPatch,
+// 풀기 뒤 그 줄 다시 맞추기는 b6 의 rematchHistoryRows. 기록 history.link 는 b6 사역 이력 메뉴와 같은 모양({op, year, by}) — 이름·교인ID 없음.
+async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: string }, person: { person_id: number; name_key: string }) {
+  const { data: h, error } = await db.from("ministry_history").select("id,year,name,person_id,link_how,deleted_at").eq("id", p.row).maybeSingle();
+  if (missingTable(error)) return { ok: false, error: "bad-kind" };
+  if (error) throw error;
+  if (!h || h.deleted_at) return { ok: false, error: "not-found" };
+  if (nameKey(h.name) !== person.name_key) return { ok: false, error: "other-name" };
+  if (p.how !== "manual" && Number(h.person_id) !== p.person) return { ok: false, error: "not-linked" };
+  const now = new Date().toISOString();
+  let relinked = false;
+  if (p.how === "auto") {
+    const { error: e1 } = await db.from("ministry_history").update(historyUnlinkPatch(now)).eq("id", p.row).is("deleted_at", null);
+    if (e1) throw e1;
+    await rematchHistoryRows(db, [p.row]);
+    const { data: after, error: e2 } = await db.from("ministry_history").select("person_id").eq("id", p.row).maybeSingle();
+    if (e2) throw e2;
+    relinked = Number(after?.person_id) === p.person;
+  } else {
+    const patch = historyLinkPatch(p.how === "manual" ? p.person : null, ctx.member?.id ?? null, now);
+    const { error: e1 } = await db.from("ministry_history").update(patch).eq("id", p.row).is("deleted_at", null);
+    if (e1) throw e1;
+  }
+  await audit(ctx, "history.link", String(p.row), { op: p.how === "manual" ? "pick" : p.how, year: h.year, by: "directory" });
   return { ok: true, how: p.how, relinked, history: await personHistory(p.person) };
 }
 

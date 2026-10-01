@@ -2669,7 +2669,6 @@ test("이분 것·이분 아님·풀기(peopleLink): 사람이 정한 줄 · 자
   assert.equal((await link("order", PL.orders.o3, "manual", 999999999)).body.error, "not-found");
   assert.equal((await link("order", 0, "manual")).body.error, "invalid");
   assert.equal((await call(d.token, "peopleLink", { kind: "order", row: PL.orders.o3, person: PL.ids[0], how: "delete" })).body.error, "invalid");
-  assert.equal((await link("history", 1, "manual")).body.error, "bad-kind", "사역 이력 잇기는 Task 10 에서");
   // ⑤ 기록 — people.link {kind,row,how}(이름·교인ID 없음 · 「교인명부 기록」)
   const logs = (await call(people.super.token, "auditList", { limit: 80, kind: "people" })).body.rows
     .filter((r) => r.action === "people.link" && ((r.detail?.kind === "order" && r.detail?.row === PL.orders.o3) ||
@@ -2751,6 +2750,8 @@ test("그때그때 잇기 — 나머지 네 자리(종이 명단 새로 넣기·
   assert.ok(uprow, "올린 줄을 찾아야 한다");
   const lu1 = await linkOf("signup", uprow.id);
   assert.deepEqual([lu1?.person_id, lu1?.link_how, lu1?.match_basis], [PL.ids[2], "auto", "맞음"]);
+});
+
 // ── 사역 이력(2026-10-01) — 표 둘이 안 열린다 · 올리기→맞춤→가리기→잇기→다시 맞추기→빼기→다시 올리기 ──
 // 고정 교인ID 990000061~63(다른 시험과 겹치지 않는 번위) · 이름은 ca-test-hi-<STAMP><한글 한 글자> · 해는 2001(씨앗·다른 시험과 안 겹침)
 const HI = { ids: [990000061, 990000062, 990000063], name: `ca-test-hi-${STAMP}가`, solo: `ca-test-hi-${STAMP}나`, none: `ca-test-hi-${STAMP}없`, year: 2001 };
@@ -2961,5 +2962,46 @@ test("사역 이력 — 살펴보기 명부 기록(people.lookup) · 잇기 잠�
     assert.deepEqual(expQ.rows.map((r) => r.name), [HI.none], "q 거르기가 이름 말고 다른 줄도 돌려줬다: " + JSON.stringify(expQ.rows));
   } finally {
     await hiClean();
+  }
+});
+
+// ---------- 사역 이력(b6) 잇기 — peopleLink kind history(2026-10-01 · 계획 Task 10) ----------
+test("사역 이력 잇기: 탭에 붙는다 · 넘긴 신청은 빠진다 · 이분 것·이분 아님·풀기 · 기록 history.link {op,year,by}", async () => {
+  await plOpen();
+  const d = people.directory;
+  const h = (o) => ({ year: 2024, committee: "시험부", team: "시험팀", role_title: "", name: PL.a, position: "집사", mok: "화평-20",
+    person_id: null, link_how: "auto", match_basis: "", source: "excel", order_id: null, src_key: `ca-test-pl-${STAMP}|${o.k}`, ...o.v });
+  const rows = await rest("ministry_history", "POST", [
+    h({ k: "h1", v: { person_id: PL.ids[0], match_basis: "같은 소속" } }),            // 이어진 줄 → 탭에
+    h({ k: "h2", v: { year: 2025, mok: "기쁨-5" } }),                                 // 못 맞춘 줄 → 아직 안 이어진 기록
+    h({ k: "h3", v: { year: 2027, source: "app", order_id: PL.orders.o1, person_id: PL.ids[0], src_key: `app|${PL.orders.o1}` } }),   // 넘긴 신청
+  ]);
+  const [h1, h2, h3] = rows.map((r) => r.id);
+  try {
+    const p = (await call(d.token, "peoplePerson", { id: PL.ids[0] })).body.history;
+    assert.deepEqual(p.ministry.map((x) => [x.kind, x.row]).filter(([k]) => k === "history").map(([, r]) => r).sort((x, y) => x - y), [h1, h3].sort((x, y) => x - y));
+    assert.equal(p.ministry.some((x) => x.kind === "order" && x.row === PL.orders.o1), false, "넘긴 신청이 신청 쪽에도 보인다");
+    assert.equal(p.ministry.find((x) => x.row === h1).status, "임명확정");
+    const un = (await call(d.token, "peopleHistory", { id: PL.ids[0] })).body.rows;
+    const u2 = un.find((x) => x.kind === "history" && x.row === h2);
+    assert.deepEqual(Object.keys(u2).sort(), ["committee", "how", "kind", "mok", "position", "role_title", "row", "team", "year"]);
+    const link = (row, how, person = PL.ids[0]) => call(d.token, "peopleLink", { kind: "history", row, person, how });
+    const m = await link(h2, "manual");
+    assert.equal(m.body.ok, true, JSON.stringify(m.body));
+    let r2 = (await rest(`ministry_history?select=person_id,link_how,match_basis&id=eq.${h2}`, "GET"))[0];
+    assert.deepEqual([r2.person_id, r2.link_how, r2.match_basis], [PL.ids[0], "manual", "사람이 이음"]);
+    assert.equal((await link(h2, "none")).body.ok, true);
+    r2 = (await rest(`ministry_history?select=person_id,link_how&id=eq.${h2}`, "GET"))[0];
+    assert.deepEqual([r2.person_id, r2.link_how], [null, "none"]);
+    const f = await link(h1, "auto");
+    assert.equal(f.body.ok, true, JSON.stringify(f.body));
+    assert.equal(typeof f.body.relinked, "boolean");
+    assert.equal((await link(h2, "auto")).body.error, "not-linked");
+    assert.equal((await link(h1, "manual", PL.ids[2])).body.error, "other-name");
+    const logs = (await call(people.super.token, "auditList", { limit: 50 })).body.rows
+      .filter((r) => r.action === "history.link" && r.target === String(h2));
+    assert.deepEqual(logs.map((r) => r.detail).reverse(), [{ op: "pick", year: 2025, by: "directory" }, { op: "none", year: 2025, by: "directory" }]);
+  } finally {
+    await rest(`ministry_history?id=in.(${[h1, h2, h3].join(",")})`, "DELETE");
   }
 });
