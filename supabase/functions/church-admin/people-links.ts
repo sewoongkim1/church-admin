@@ -197,12 +197,14 @@ export function unlinkedRows(x: { orders?: any[]; signups?: any[]; events?: any[
 }
 
 // ---------- peopleLink(「이분 것」·「이분 아님」·「풀기」) ----------
-export function parseLink(b: unknown): { ok: true; kind: string; row: number; person: number; how: LinkHow } | { ok: false; error: string } {
+// expect — 낙관적 잠금(history-db.ts link() 456~459행과 같은 패턴). 화면이 보낸 줄의 updated_at. 없으면(옛 호출 포함) 잠그지 않는다.
+export function parseLink(b: unknown): { ok: true; kind: string; row: number; person: number; how: LinkHow; expect: string | null } | { ok: false; error: string } {
   const o = (b && typeof b === "object" && !Array.isArray(b) ? b : {}) as Record<string, unknown>;
   const kind = String(o.kind ?? ""), how = String(o.how ?? ""), row = Number(o.row), person = Number(o.person);
   if (!LINK_KINDS.includes(kind) || !LINK_HOWS.includes(how)) return { ok: false, error: "invalid" };
   if (!Number.isSafeInteger(row) || row <= 0 || !Number.isSafeInteger(person) || person <= 0) return { ok: false, error: "invalid" };
-  return { ok: true, kind, row, person, how: how as LinkHow };
+  const expect = o.expect === undefined || o.expect === null || o.expect === "" ? null : String(o.expect);
+  return { ok: true, kind, row, person, how: how as LinkHow, expect };
 }
 // 사람이 정한 줄 — manual(이분 것) · none(이분 아님). 자동이 다시 덮지 않는다(link_how).
 export function linkPatch(kind: LinkKind, row: number, how: "manual" | "none", personId: number, memberId: string | null, nowIso: string) {

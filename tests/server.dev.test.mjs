@@ -2998,6 +2998,15 @@ test("사역 이력 잇기: 탭에 붙는다 · 넘긴 신청은 빠진다 · �
     assert.equal(typeof f.body.relinked, "boolean");
     assert.equal((await link(h2, "auto")).body.error, "not-linked");
     assert.equal((await link(h1, "manual", PL.ids[2])).body.error, "other-name");
+    // expect(낙관적 잠금 · b6 약속② · history-db.ts link() 456~459행과 같은 패턴) — 낡은 expect → conflict(안 바뀜) · 맞는 expect → 성공
+    const r1 = (await rest(`ministry_history?select=updated_at,person_id,link_how&id=eq.${h1}`, "GET"))[0];
+    const stale = await call(d.token, "peopleLink", { kind: "history", row: h1, person: PL.ids[0], how: "manual", expect: "2000-01-01T00:00:00.000Z" });
+    assert.equal(stale.body.error, "conflict", JSON.stringify(stale.body));
+    assert.deepEqual((await rest(`ministry_history?select=updated_at,person_id,link_how&id=eq.${h1}`, "GET"))[0], r1, "conflict 뒤에도 줄이 안 바뀌어야 한다");
+    const freshOk = await call(d.token, "peopleLink", { kind: "history", row: h1, person: PL.ids[0], how: "manual", expect: r1.updated_at });
+    assert.equal(freshOk.body.ok, true, JSON.stringify(freshOk.body));
+    const r1b = (await rest(`ministry_history?select=person_id,link_how,match_basis&id=eq.${h1}`, "GET"))[0];
+    assert.deepEqual([r1b.person_id, r1b.link_how, r1b.match_basis], [PL.ids[0], "manual", "사람이 이음"]);
     const logs = (await call(people.super.token, "auditList", { limit: 50 })).body.rows
       .filter((r) => r.action === "history.link" && r.target === String(h2));
     assert.deepEqual(logs.map((r) => r.detail).reverse(), [{ op: "pick", year: 2025, by: "directory" }, { op: "none", year: 2025, by: "directory" }]);

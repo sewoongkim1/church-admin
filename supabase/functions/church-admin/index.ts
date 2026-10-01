@@ -1383,28 +1383,38 @@ async function peopleLink(ctx: Ctx, b: any) {
 
 // 사역 이력 줄 하나를 이 분께(설계 §5 · b6 §7) — 이름 확인·이어진 줄만 풀기는 신청·명단과 같다. 쓰는 모양은 b6 의 historyLinkPatch·historyUnlinkPatch,
 // 풀기 뒤 그 줄 다시 맞추기는 b6 의 rematchHistoryRows. 기록 history.link 는 b6 사역 이력 메뉴와 같은 모양({op, year, by}) — 이름·교인ID 없음.
-async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: string }, person: { person_id: number; name_key: string }) {
-  const { data: h, error } = await db.from("ministry_history").select("id,year,name,person_id,link_how,deleted_at").eq("id", p.row).maybeSingle();
+// ⚠️ 쓰기 차례(b6 약속①): 표 줄 고치기 → 기록(audit) → rematchHistoryRows 는 try/catch(다시 맞추기가 실패해도 넘어간다 — 던지면
+//    이미 바뀐 표 상태와 응답(500)이 어긋난다). ⚠️ expect(b6 약속②·history-db.ts link() 456~459행과 같은 패턴) — 화면이
+//    보낸 줄의 updated_at 과 다르면 아무것도 쓰지 않고 conflict(없으면 옛 호출처럼 잠그지 않는다 · person-tabs.js 는 아직 안 보낸다).
+async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: string; expect: string | null }, person: { person_id: number; name_key: string }) {
+  const { data: h, error } = await db.from("ministry_history").select("id,year,name,person_id,link_how,deleted_at,updated_at").eq("id", p.row).maybeSingle();
   if (missingTable(error)) return { ok: false, error: "bad-kind" };
   if (error) throw error;
   if (!h || h.deleted_at) return { ok: false, error: "not-found" };
   if (nameKey(h.name) !== person.name_key) return { ok: false, error: "other-name" };
   if (p.how !== "manual" && Number(h.person_id) !== p.person) return { ok: false, error: "not-linked" };
+  if (p.expect !== null && p.expect !== h.updated_at) return { ok: false, error: "conflict" };
   const now = new Date().toISOString();
   let relinked = false;
   if (p.how === "auto") {
     const { error: e1 } = await db.from("ministry_history").update(historyUnlinkPatch(now)).eq("id", p.row).is("deleted_at", null);
     if (e1) throw e1;
-    await rematchHistoryRows(db, [p.row]);
-    const { data: after, error: e2 } = await db.from("ministry_history").select("person_id").eq("id", p.row).maybeSingle();
-    if (e2) throw e2;
-    relinked = Number(after?.person_id) === p.person;
+    await audit(ctx, "history.link", String(p.row), { op: "auto", year: h.year, by: "directory" });
+    try {
+      await rematchHistoryRows(db, [p.row]);
+      const { data: after, error: e2 } = await db.from("ministry_history").select("person_id").eq("id", p.row).maybeSingle();
+      if (e2) throw e2;
+      relinked = Number(after?.person_id) === p.person;
+    } catch (err) {
+      console.error("history rematch after directory link", err);
+      relinked = false;
+    }
   } else {
     const patch = historyLinkPatch(p.how === "manual" ? p.person : null, ctx.member?.id ?? null, now);
     const { error: e1 } = await db.from("ministry_history").update(patch).eq("id", p.row).is("deleted_at", null);
     if (e1) throw e1;
+    await audit(ctx, "history.link", String(p.row), { op: p.how === "manual" ? "pick" : "none", year: h.year, by: "directory" });
   }
-  await audit(ctx, "history.link", String(p.row), { op: p.how === "manual" ? "pick" : p.how, year: h.year, by: "directory" });
   return { ok: true, how: p.how, relinked, history: await personHistory(p.person) };
 }
 

@@ -185,9 +185,13 @@ test("unlinkedRows — 아무에게도 안 이어진 줄(auto)과 「이분 아�
   assert.ok(!SECRET.test(JSON.stringify(rows)));
 });
 
-test("parseLink — kind 셋 · how 셋 · 줄·교인ID 는 양의 정수", () => {
-  assert.deepEqual(parseLink({ kind: "order", row: "12", person: 900001, how: "manual" }), { ok: true, kind: "order", row: 12, person: 900001, how: "manual" });
+test("parseLink — kind 셋 · how 셋 · 줄·교인ID 는 양의 정수 · expect(없으면 null · 있으면 글자)", () => {
+  assert.deepEqual(parseLink({ kind: "order", row: "12", person: 900001, how: "manual" }),
+    { ok: true, kind: "order", row: 12, person: 900001, how: "manual", expect: null });
   assert.equal(parseLink({ kind: "history", row: 1, person: 1, how: "none" }).ok, true);
+  assert.deepEqual(parseLink({ kind: "history", row: 1, person: 1, how: "auto", expect: "2026-10-01T00:00:00.000Z" }),
+    { ok: true, kind: "history", row: 1, person: 1, how: "auto", expect: "2026-10-01T00:00:00.000Z" });
+  for (const e of [null, "", undefined]) assert.equal(parseLink({ kind: "order", row: 1, person: 1, how: "manual", expect: e }).expect, null);
   for (const bad of [null, [], { kind: "x", row: 1, person: 1, how: "manual" }, { kind: "order", row: 0, person: 1, how: "manual" },
     { kind: "order", row: 1, person: -1, how: "manual" }, { kind: "order", row: 1.5, person: 1, how: "auto" },
     { kind: "signup", row: 1, person: 1, how: "delete" }]) assert.deepEqual(parseLink(bad), { ok: false, error: "invalid" }, JSON.stringify(bad));
