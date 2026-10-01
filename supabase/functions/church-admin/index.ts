@@ -1381,11 +1381,26 @@ async function peopleLink(ctx: Ctx, b: any) {
   return { ok: true, how: p.how, relinked, history: await personHistory(p.person) };
 }
 
+// 쓰기 하나를 거는 자리(검토 지적 2026-10-02 · history-db.ts link() 468~474행과 같은 패턴) — expect 가 있으면
+//   UPDATE 의 WHERE 에도 eq(updated_at) 를 넣어, 그사이(이 함수의 SELECT 뒤 ~ 이 UPDATE 사이) 다른 요청이 먼저 쓴 줄을
+//   조건 없이 덮지 않는다. 0행이면(그사이 바뀜·지워짐) 다시 읽어 conflict(아직 있음)·not-found(지워짐)를 가린다.
+//   ⚠️ 이전엔 비교(앞서 읽은 h.updated_at 과 p.expect)만 앱 코드에서 하고 이 UPDATE 자체는 조건 없이 썼다 — 그 사이의
+//   진짜 경합(TOCTOU)은 안 걸렸다. expect 가 없으면(옛 호출) 전처럼 걸지 않는다.
+async function historyWriteGuarded(row: number, expect: string | null, expectAt: string, patch: Record<string, unknown>) {
+  let upd = db.from("ministry_history").update(patch).eq("id", row).is("deleted_at", null);
+  if (expect !== null) upd = upd.eq("updated_at", expectAt);
+  const { data, error } = await upd.select("id");
+  if (error) throw error;
+  if ((data ?? []).length) return null;
+  const { data: cur, error: ec } = await db.from("ministry_history").select("id,deleted_at").eq("id", row).maybeSingle();
+  if (ec) throw ec;
+  return { ok: false as const, error: (expect !== null && cur && !cur.deleted_at ? "conflict" : "not-found") as const };
+}
+
 // 사역 이력 줄 하나를 이 분께(설계 §5 · b6 §7) — 이름 확인·이어진 줄만 풀기는 신청·명단과 같다. 쓰는 모양은 b6 의 historyLinkPatch·historyUnlinkPatch,
 // 풀기 뒤 그 줄 다시 맞추기는 b6 의 rematchHistoryRows. 기록 history.link 는 b6 사역 이력 메뉴와 같은 모양({op, year, by}) — 이름·교인ID 없음.
 // ⚠️ 쓰기 차례(b6 약속①): 표 줄 고치기 → 기록(audit) → rematchHistoryRows 는 try/catch(다시 맞추기가 실패해도 넘어간다 — 던지면
-//    이미 바뀐 표 상태와 응답(500)이 어긋난다). ⚠️ expect(b6 약속②·history-db.ts link() 456~459행과 같은 패턴) — 화면이
-//    보낸 줄의 updated_at 과 다르면 아무것도 쓰지 않고 conflict(없으면 옛 호출처럼 잠그지 않는다 · person-tabs.js 는 아직 안 보낸다).
+//    이미 바뀐 표 상태와 응답(500)이 어긋난다). ⚠️ expect(b6 약속②) — 실제 잠금은 historyWriteGuarded 의 UPDATE WHERE 가 건다.
 async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: string; expect: string | null }, person: { person_id: number; name_key: string }) {
   const { data: h, error } = await db.from("ministry_history").select("id,year,name,person_id,link_how,deleted_at,updated_at").eq("id", p.row).maybeSingle();
   if (missingTable(error)) return { ok: false, error: "bad-kind" };
@@ -1397,8 +1412,8 @@ async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: s
   const now = new Date().toISOString();
   let relinked = false;
   if (p.how === "auto") {
-    const { error: e1 } = await db.from("ministry_history").update(historyUnlinkPatch(now)).eq("id", p.row).is("deleted_at", null);
-    if (e1) throw e1;
+    const fail = await historyWriteGuarded(p.row, p.expect, h.updated_at, historyUnlinkPatch(now));
+    if (fail) return fail;
     await audit(ctx, "history.link", String(p.row), { op: "auto", year: h.year, by: "directory" });
     try {
       await rematchHistoryRows(db, [p.row]);
@@ -1411,8 +1426,8 @@ async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: s
     }
   } else {
     const patch = historyLinkPatch(p.how === "manual" ? p.person : null, ctx.member?.id ?? null, now);
-    const { error: e1 } = await db.from("ministry_history").update(patch).eq("id", p.row).is("deleted_at", null);
-    if (e1) throw e1;
+    const fail = await historyWriteGuarded(p.row, p.expect, h.updated_at, patch);
+    if (fail) return fail;
     await audit(ctx, "history.link", String(p.row), { op: p.how === "manual" ? "pick" : "none", year: h.year, by: "directory" });
   }
   return { ok: true, how: p.how, relinked, history: await personHistory(p.person) };

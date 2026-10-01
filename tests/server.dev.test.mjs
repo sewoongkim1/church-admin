@@ -3007,6 +3007,23 @@ test("사역 이력 잇기: 탭에 붙는다 · 넘긴 신청은 빠진다 · �
     assert.equal(freshOk.body.ok, true, JSON.stringify(freshOk.body));
     const r1b = (await rest(`ministry_history?select=person_id,link_how,match_basis&id=eq.${h1}`, "GET"))[0];
     assert.deepEqual([r1b.person_id, r1b.link_how, r1b.match_basis], [PL.ids[0], "manual", "사람이 이음"]);
+    // 진짜 경합(검토 지적 2026-10-02) — 위 stale 은 "다른 값을 보내면 거절" 만 본다(순서대로 불러 비교값만 틀리게 준 것).
+    //   여기는 같은 expect 로 두 쓰기를 동시에 보내 UPDATE 의 WHERE eq(updated_at) 가 실제로 거는지를 본다
+    //   (성경필사 "같은 분을 동시에 셋" 시험과 같은 결 — Promise.all 로 진짜 경합을 낸다). PL.ids[0]·PL.ids[1] 은 같은 이름(PL.a).
+    const r1c = (await rest(`ministry_history?select=updated_at&id=eq.${h1}`, "GET"))[0];
+    const [raceA, raceB] = await Promise.all([
+      call(d.token, "peopleLink", { kind: "history", row: h1, person: PL.ids[0], how: "manual", expect: r1c.updated_at }),
+      call(d.token, "peopleLink", { kind: "history", row: h1, person: PL.ids[1], how: "manual", expect: r1c.updated_at }),
+    ]);
+    const bothBodies = JSON.stringify([raceA.body, raceB.body]);
+    const oks = [raceA, raceB].filter((r) => r.body.ok);
+    const fails = [raceA, raceB].filter((r) => !r.body.ok);
+    assert.equal(oks.length, 1, "같은 expect 로 동시에 쓴 둘 중 하나만 성공해야 한다 — " + bothBodies);
+    assert.equal(fails.length, 1, bothBodies);
+    assert.equal(fails[0].body.error, "conflict", bothBodies);
+    const r1e = (await rest(`ministry_history?select=person_id,link_how&id=eq.${h1}`, "GET"))[0];
+    assert.ok([PL.ids[0], PL.ids[1]].includes(r1e.person_id), "줄은 이긴 쪽 한 사람으로만 바뀌어야 한다 — " + bothBodies);
+    assert.equal(r1e.link_how, "manual");
     const logs = (await call(people.super.token, "auditList", { limit: 50 })).body.rows
       .filter((r) => r.action === "history.link" && r.target === String(h2));
     assert.deepEqual(logs.map((r) => r.detail).reverse(), [{ op: "pick", year: 2025, by: "directory" }, { op: "none", year: 2025, by: "directory" }]);
