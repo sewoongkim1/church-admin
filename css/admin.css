@@ -1182,3 +1182,22 @@ body:has(#view > section[aria-busy="true"]){cursor:progress}
 .mt-warn{margin-top:14px}
 /* 🧪 시험 참여자의 신청(2026-10-01) — 종이 딱지(.mn-paper)와 같은 꼴, 색만 주황으로 가른다 */
 .mn-test{color:#8a4b00;background:#fff4e0;border-color:#f5d6a3}
+
+/* 📮 정정 신청(2026-10-01) — b6 「📜 사역 이력」이 .mh-* 를 쓴다 · 겹치지 않게 .hr-* · 상태 색은 신청 현황(.mn-stbar)과 같은 값 */
+.hr-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px}
+.hr-row{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.hr-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hr-kind{font-weight:700;color:var(--navy)}
+.hr-st{margin-left:auto}
+.hr-st.s1{background:#eef3fb;color:#1a3a6b}
+.hr-st.s2{background:#fdf6e3;color:#7a5f16}
+.hr-st.s3{background:#eaf6ee;color:#1f5c3a}
+.hr-st.s4{background:#f4f6fa;color:#5a6273}
+.hr-target{display:block;margin-top:6px;font-weight:600;word-break:keep-all}
+.hr-detail{display:block;margin-top:4px;color:var(--gray);word-break:keep-all}
+.hr-info p{margin:0 0 6px;word-break:keep-all}
+.hr-sts{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 10px}
+.hr-st-btn[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.hr-l{display:block;font-weight:700;margin:6px 0 4px}
+.hr-ans{width:100%;box-sizing:border-box;font:inherit;padding:10px;border:1px solid var(--border);border-radius:10px;resize:vertical}
+.hr-verify{display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:700}
