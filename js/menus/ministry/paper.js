@@ -22,6 +22,8 @@
 //      "복사해 붙여넣어 주세요"로 돌아가는 안내라 가짓수를 늘릴 실익이 적다.
 import { esc, dialog, busy, errorText } from "../../core/ui.js";
 import { loadXlsx } from "../../core/xlsx.js";   // SheetJS — 📤 명단 올리기와 같은 한 곳(FE-6 · 2026-09-30)
+// CSV 읽기도 📤 명단 올리기와 같은 셋(2026-10-01) — 따옴표 안 쉼표 · 한국어 엑셀 CSV(EUC-KR) · 유니코드 텍스트(UTF-16)
+import { splitCsv, unquote, decodeText } from "../bibleevent/upload-logic.js";
 import { churchBadgeHtml, CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
 // 살펴본 결과 줄의 이름을 누르면 교적 창(2026-09-30) — 단추엔 줄의 자리(mpRows)만 싣는다(번호를 DOM 에 올리지 않는다)
 import { openChurchPerson } from "../bibleevent/person-popup.js";
@@ -56,13 +58,20 @@ export const previewStatus = (raw) => {
 // 코드 꼴이 아니면 그 문장을 그대로 보여준다.
 const errMsg = (d) => esc(d?.error && !/^[a-z-]+$/.test(d.error) ? d.error : errorText(d));
 
+// 한 줄 → 칸들. 탭이 있으면 탭(엑셀에서 복사), 없으면 CSV — 따옴표 밖 쉼표에서만 나누고 겉 따옴표는 벗긴다
+// (「"이사, 전출"」이 한 칸 · 원문은 그냥 쉼표로 나눠 「"이사」만 남고 뒤 칸이 밀렸다).
+export const mpSplit = (line) => (line.indexOf("\t") >= 0 ? line.split("\t") : splitCsv(line)).map(unquote);
+
+// CSV 파일 바이트 → 줄마다 칸들. 한국어 엑셀의 「CSV(쉼표로 분리)」는 EUC-KR 이라 UTF-8 로만 읽으면 한글이 깨진다(decodeText).
+export const mpCsvLines = (bytes) => decodeText(bytes).split(/\r\n|\r|\n/).map(mpSplit);
+
 // 붙여넣기 파싱 — 탭(엑셀)·콤마(CSV) 둘 다 받는다. 엑셀에서 머리글까지 딸려 오면 첫 줄을 버린다.
 export function mpParse(text) {
   const out = [];
   String(text || "").split(/\r?\n/).forEach((line) => {
     const t = line.trim();
     if (!t) return;
-    const cells = (line.indexOf("\t") >= 0 ? line.split("\t") : line.split(",")).map((x) => x.trim());
+    const cells = mpSplit(line);
     if (!cells.some(Boolean)) return;
     out.push({
       gu: cells[0] || "", mok: cells[1] || "", name: cells[2] || "", position: cells[3] || "",
@@ -210,8 +219,7 @@ export async function render(el, { call }) {
     try {
       let lines = [];
       if (/\.csv$/i.test(f.name)) {
-        const text = await f.text();
-        lines = text.split(/\r?\n/).map((l) => l.split(",").map((x) => x.trim()));
+        lines = mpCsvLines(new Uint8Array(await f.arrayBuffer()));
       } else {
         // 시트가 여럿이면 「명단」 시트를 먼저 본다(양식의 「적는 법」 시트를 실수로 읽지 않게)
         const XLSX = await loadXlsx();
