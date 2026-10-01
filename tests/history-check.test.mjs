@@ -4,6 +4,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applicantFromLogin, loginNameKey, matchLoginPerson } from "../supabase/functions/church-admin/people-match.ts";
+import {
+  HISTORY_OUT_KEYS, REQUEST_OUT_KEYS, REQ_OPEN_MAX, hcUserId, historyRowOut, internalKeyOk, parseRequest,
+  readLoginWho, requestBlock, requestInsert, requestOut, sortHistory,
+} from "../supabase/functions/church-admin/history-check.ts";
+import { ACTION_ROLES, canCall } from "../supabase/functions/church-admin/authz.ts";
 
 const P = (id, o) => ({ person_id: id, kind2: "장년", mok1: "", mok3: "", school_dept: "", phone_digits: "", ...o });
 const W = (o) => ({ type: "교구", gu: "기쁨", mok: "12", bu: "", grade: "", name: "홍길동", ...o });
@@ -64,4 +69,108 @@ test("loginNameKey — 띄어쓰기·자모분리(NFD)를 맞추고, 물을 수 
   assert.equal(loginNameKey(W({ name: "홍길동".normalize("NFD") })), "홍길동");
   assert.equal(loginNameKey(W({ name: "홍(길동)" })), null);
   assert.equal(loginNameKey(W({ name: "" })), null);
+});
+
+test("internalKeyOk — 같은 값만 · 빈 값·길이 다름은 false", () => {
+  assert.equal(internalKeyOk("abc123", "abc123"), true);
+  assert.equal(internalKeyOk("abc124", "abc123"), false);
+  assert.equal(internalKeyOk("abc12", "abc123"), false);
+  assert.equal(internalKeyOk("", ""), false);
+  assert.equal(internalKeyOk(null, "abc123"), false);
+});
+
+test("hcUserId — uuid 꼴만", () => {
+  assert.equal(hcUserId("0f8fad5b-d9cb-469f-a165-70867728950e"), "0f8fad5b-d9cb-469f-a165-70867728950e");
+  assert.equal(hcUserId(" 0f8fad5b-d9cb-469f-a165-70867728950e "), "0f8fad5b-d9cb-469f-a165-70867728950e");
+  assert.equal(hcUserId("abc"), null);
+  assert.equal(hcUserId(undefined), null);
+});
+
+test("readLoginWho — 구분은 교구·교회학교만 · 이름 필수 · NFC·빈칸 정리", () => {
+  assert.deepEqual(readLoginWho({ type: "교구", gu: "기쁨", mok: "12", name: " 홍  길동 " }),
+    { type: "교구", gu: "기쁨", mok: "12", bu: "", grade: "", name: "홍 길동" });
+  assert.equal(readLoginWho({ type: "교역자", name: "홍길동" }), null);
+  assert.equal(readLoginWho({ type: "교구", name: "" }), null);
+  assert.equal(readLoginWho(null), null);
+  assert.equal(readLoginWho("교구"), null);
+});
+
+test("parseRequest — 줄 정정은 history_id 필수 · 「그 밖에」는 설명 필수", () => {
+  assert.deepEqual(parseRequest({ kind: "not_mine", history_id: "12" }),
+    { ok: true, req: { history_id: 12, kind: "not_mine", detail: "", year: null, team_text: "" } });
+  assert.deepEqual(parseRequest({ kind: "wrong_team" }), { ok: false, error: "no-row" });
+  assert.deepEqual(parseRequest({ kind: "wrong_team", history_id: -1 }), { ok: false, error: "no-row" });
+  assert.deepEqual(parseRequest({ kind: "other", history_id: 3, detail: "  " }), { ok: false, error: "need-detail" });
+  assert.equal(parseRequest({ kind: "other", history_id: 3, detail: "그해엔\n알토" }).req.detail, "그해엔 알토");
+});
+
+test("parseRequest — 빠진 사역은 연도·부서팀 필수 · 찾아 주세요는 줄 없이", () => {
+  assert.deepEqual(parseRequest({ kind: "missing", year: "2023", team_text: " 시온성가대 ", history_id: 9 }),
+    { ok: true, req: { history_id: null, kind: "missing", detail: "", year: 2023, team_text: "시온성가대" } });
+  assert.deepEqual(parseRequest({ kind: "missing", year: "", team_text: "시온성가대" }), { ok: false, error: "bad-year" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 1900, team_text: "시온성가대" }), { ok: false, error: "bad-year" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, team_text: "" }), { ok: false, error: "need-team" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, team_text: "가".repeat(101) }), { ok: false, error: "too-long" });
+  assert.deepEqual(parseRequest({ kind: "find_me", history_id: 5, detail: "목장이 바뀌었어요" }),
+    { ok: true, req: { history_id: null, kind: "find_me", detail: "목장이 바뀌었어요", year: null, team_text: "" } });
+});
+
+test("parseRequest — 모르는 종류·긴 설명", () => {
+  assert.deepEqual(parseRequest({ kind: "delete_all" }), { ok: false, error: "bad-kind" });
+  assert.deepEqual(parseRequest({}), { ok: false, error: "bad-kind" });
+  assert.deepEqual(parseRequest({ kind: "not_mine", history_id: 1, detail: "가".repeat(201) }), { ok: false, error: "too-long" });
+  assert.equal(parseRequest({ kind: "not_mine", history_id: 1, detail: "가".repeat(200) }).ok, true);
+});
+
+test("requestBlock — 찾았나 · 이분 줄인가 · 이미 열린 신청 · 20건", () => {
+  const line = { history_id: 7, kind: "not_mine", detail: "", year: null, team_text: "" };
+  const find = { history_id: null, kind: "find_me", detail: "", year: null, team_text: "" };
+  const miss = { history_id: null, kind: "missing", detail: "", year: 2023, team_text: "팀" };
+  const mine = new Set([7]);
+  assert.equal(requestBlock(line, true, mine, []), null);
+  assert.equal(requestBlock(line, false, mine, []), "not-found");
+  assert.equal(requestBlock(miss, false, mine, []), "not-found");
+  assert.equal(requestBlock(line, true, new Set([8]), []), "not-yours");
+  assert.equal(requestBlock(line, true, mine, [{ history_id: 7, kind: "wrong_team" }]), "already-open");
+  assert.equal(requestBlock(find, true, mine, []), "already-found");
+  assert.equal(requestBlock(find, false, mine, []), null);
+  assert.equal(requestBlock(find, false, mine, [{ history_id: null, kind: "find_me" }]), "already-open");
+  const many = Array.from({ length: REQ_OPEN_MAX }, (_, i) => ({ history_id: 100 + i, kind: "not_mine" }));
+  assert.equal(requestBlock(line, true, mine, many), "too-many");
+  assert.equal(requestBlock(miss, true, mine, many.slice(1)), null);
+});
+
+test("requestInsert — 신청 때 소속·이름 사본(교구는 교구·목장, 교회학교는 부서·학년)", () => {
+  const req = { history_id: 7, kind: "not_mine", detail: "", year: null, team_text: "" };
+  const uid = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  assert.deepEqual(requestInsert(req, uid, 5, { type: "교구", gu: "기쁨", mok: "12", bu: "", grade: "", name: "홍길동" }), {
+    user_id: uid, person_id: 5, history_id: 7, kind: "not_mine", detail: "", year: null, team_text: "",
+    who_type: "교구", who_group: "기쁨", who_sub: "12", who_name: "홍길동",
+  });
+  const s = requestInsert(req, uid, null, { type: "교회학교", gu: "", mok: "", bu: "중등부", grade: "2학년", name: "홍길동" });
+  assert.equal(s.who_group, "중등부"); assert.equal(s.who_sub, "2학년"); assert.equal(s.person_id, null);
+});
+
+test("historyRowOut·requestOut — 정해진 칸만(교인ID·user_id·그때 목장·맞춤 근거가 새지 않는다)", () => {
+  const h = historyRowOut({ id: "3", year: 2025, committee: "찬양위원회", team: "시온성가대", role_title: "", position: "집사",
+    person_id: 990000001, mok: "기쁨-12", match_basis: "맞음", link_how: "auto", src_note: "x", name: "홍길동" });
+  assert.deepEqual(Object.keys(h).sort(), HISTORY_OUT_KEYS);
+  assert.equal(h.id, 3);
+  const q = requestOut({ id: 1, history_id: null, kind: "find_me", detail: "", year: null, team_text: "", status: "신청",
+    answer: "", created_at: "2026-10-01T00:00:00Z", user_id: "u", person_id: 5, handled_by: "m", who_name: "홍길동" });
+  assert.deepEqual(Object.keys(q).sort(), REQUEST_OUT_KEYS);
+  assert.equal(q.history_id, null);
+});
+
+test("sortHistory — 연도 내림차순 · 같은 해는 부서·팀·id 차례", () => {
+  const r = (id, year, committee, team) => ({ id, year, committee, team });
+  const out = sortHistory([r(1, 2025, "나", "가"), r(2, 2026, "나", "나"), r(3, 2026, "가", "다"), r(4, 2026, "나", "나")]);
+  assert.deepEqual(out.map((x) => x.id), [3, 2, 4, 1]);
+});
+
+test("내부 액션 둘은 역할 표에 없다 — 카카오 토큰으로 부르면 unknown-action", () => {
+  for (const a of ["internalMyHistory", "internalHistoryRequest"]) {
+    assert.ok(!(a in ACTION_ROLES), a);
+    assert.equal(canCall(a, { status: "active", roles: ["super"] }), "unknown-action");
+  }
 });
