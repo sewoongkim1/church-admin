@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   srcKey, parseRow, matchAll, teamKey, historyLinkPatch, historyUnlinkPatch, R_MANUAL_NONE,
+  toHPerson, candFp, nameKeyVariants, WEAK_RE,
 } from "../supabase/functions/church-admin/history-match.ts";
 
 let pid = 1000;
@@ -62,7 +63,7 @@ test("남성 목장 — 「소망-남성」은 남성1 분, 숫자 1목장 줄�
   const m = person({ gender: "남", mok1: "소망", mok3: "소망-남성1" });
   assert.equal(one([row({ mok: "소망-남성" })], [m]).match_basis, "같은 소속");
   const r = one([row({ mok: "소망-1" })], [m]);
-  assert.notEqual(r.match_basis, "같은 소속");
+  assert.deepEqual([r.person_id, r.match_basis], [m.person_id, "같은 교구(목장 다름)"]);
 });
 
 test("빼기 — 권사 줄과 남자 분 · 그해보다 늦게 등록", () => {
@@ -193,4 +194,202 @@ test("historyLinkPatch / historyUnlinkPatch 모양(교인명부 세션과의 약
     person_id: null, link_how: "none", linked_by: "m1", linked_at: now, match_basis: "", match_reason: R_MANUAL_NONE, updated_at: now,
   });
   assert.deepEqual(historyUnlinkPatch(now), { link_how: "auto", linked_by: null, linked_at: null, updated_at: now });
+});
+
+// ── 2026-10-01 검토 반영 — 아래부터 추가 ───────────────────────────────────
+
+test("학생 줄(#1) — 생년 모르는 장년은 못 고르고, 12~19세 띠 안의 아이만 「같은 구분(학생)」", () => {
+  const teenInBand = person({ kind2: "교회학교", position: "", birth_year: 2010 });   // 2026년 16세
+  const tooYoung = person({ kind2: "교회학교", position: "", birth_year: 2016 });      // 2026년 10세 — 빼기에서 제외
+  const adultUnknown = person({ kind2: "장년", position: "집사", birth_year: null });  // 생년 모름 — 학생 줄엔 못 고른다
+  const r = one([row({ year: 2026, position: "고등부", mok: "" })], [teenInBand, tooYoung, adultUnknown]);
+  assert.equal(r.person_id, teenInBand.person_id);
+  assert.match(r.match_basis, /같은 구분\(학생\)/);
+});
+
+test("뒤섞기(#2) — 줄 차례를 바꿔도 결과가 같다", () => {
+  const old = person({ name: "쉬플대", mok3: "기쁨-2목장", position: "집사" });
+  const moved = person({ name: "쉬플대", mok1: "은혜", mok3: "은혜-7목장", position: "권사" });
+  const typo = person({ name: "오타라", mok1: "사랑", mok3: "사랑-15목장", position: "권사" });
+  const r1 = row({ year: 2024, name: "쉬플대", position: "집사", mok: "기쁨-9", team: "행복전도대-토" });
+  const r2 = row({ year: 2025, name: "쉬플대", position: "집사", mok: "은혜-7", team: "행복전도대-토", renewal: "유지" });
+  const r3 = row({ year: 2023, name: "오타다", position: "권사", mok: "사랑-15", team: "중보기도" });
+  const r4 = row({ year: 2024, name: "오타라", position: "권사", mok: "사랑-15", team: "중보기도" });
+  const people = [old, moved, typo];
+  const norm = (res) => [...res].sort((a, b) => a.id - b.id);
+  const base = norm(matchAll([r1, r2, r3, r4], people));
+  assert.deepEqual(norm(matchAll([r4, r1, r3, r2], people)), base);
+  assert.deepEqual(norm(matchAll([r3, r2, r4, r1], people)), base);
+  assert.deepEqual(norm(matchAll([...[r1, r2, r3, r4]].reverse(), people)), base);
+  assert.equal(base.find((r) => r.id === r1.id).person_id, moved.person_id);
+  assert.equal(base.find((r) => r.id === r4.id).person_id, typo.person_id);
+});
+
+test("「학생으로 봄」 메모(#3)는 실제로 고른 분이 그 아이일 때만 붙는다(새지 않는다)", () => {
+  const adult = person({ household: "h1", mok3: "기쁨-14목장" });
+  const teen = person({ kind2: "교회학교", birth_year: 2010, household: "h3", mok3: "기쁨-14목장" }); // 2024년 14세
+  const spouse = person({ name: "라마바", gender: "남", household: "h1", mok3: "기쁨-14목장" });
+  const rows = [
+    row({ position: "", mok: "기쁨-14" }),
+    row({ name: "라마바", position: "", mok: "기쁨-14", team: "유아부" }),
+  ];
+  const res = one(rows, [adult, teen, spouse], rows[0].id);
+  assert.equal(res.person_id, adult.person_id);
+  assert.ok(!res.match_basis.includes("학생으로 봄"), `새어 나감: ${res.match_basis}`);
+});
+
+test("A/B 동명이인(#4) — 끝 영문자가 다르면 다른 해 같은 팀으로도 안 잇는다", () => {
+  const plain = person({ mok3: "기쁨-30목장" });                                   // 「가나다」(붙임말 없음)
+  const b = person({ name: "가나다B", mok1: "은혜", mok3: "은혜-7목장", position: "권사" });
+  const rows = [
+    row({ year: 2024, name: "가나다A", position: "집사", mok: "기쁨-9", team: "제자터" }),   // 명부에 「가나다A」는 없다
+    row({ year: 2025, name: "가나다B", position: "권사", mok: "은혜-7", team: "제자터", renewal: "유지" }),
+  ];
+  const res = matchAll(rows, [plain, b]);
+  assert.equal(res[1].person_id, b.person_id);
+  assert.equal(res[0].person_id, plain.person_id);
+  assert.match(res[0].match_basis, /같은 교구/);
+  assert.ok(!res[0].match_basis.startsWith("다른 해"), `A/B 가 섞임: ${res[0].match_basis}`);
+});
+
+test("다른 해 같은 목장 — 팀이 달라도 같은 목장 글자·직분이면 잇는다", () => {
+  const x = person({ household: "hx", mok3: "기쁨-22목장", position: "집사" });
+  const x2 = person({ household: "hy", mok3: "기쁨-22목장", position: "집사" });   // 진짜 동명이인(다른 세대)
+  const spouse = person({ name: "마바사", gender: "남", household: "hx", mok3: "기쁨-22목장", position: "집사" });
+  const rows = [
+    row({ year: 2024, position: "집사", mok: "기쁨-22", team: "A부서" }),
+    row({ year: 2024, name: "마바사", position: "집사", mok: "기쁨-22", team: "유아부" }),
+    row({ year: 2025, position: "집사", mok: "기쁨-22", team: "B부서" }),
+  ];
+  const res = matchAll(rows, [x, x2, spouse]);
+  assert.deepEqual([res[2].person_id, res[2].match_basis], [x.person_id, "다른 해 같은 목장"]);
+});
+
+test("기쁨-1 경계(#5) — 2025 자리표시 줄은 2026 진짜 1목장 줄과 「다른 해 같은 목장」으로 안 잇는다", () => {
+  const p1 = person({ mok3: "기쁨-1목장" });
+  const p2 = person({ mok1: "소망", mok3: "소망-9목장" });   // 모호하게 만드는 동명이인
+  const rows = [
+    row({ year: 2025, mok: "기쁨-1", team: "A팀" }),
+    row({ year: 2026, mok: "기쁨-1", team: "B팀" }),
+  ];
+  const res = matchAll(rows, [p1, p2]);
+  assert.equal(res[1].person_id, p1.person_id);   // 2026 진짜 1목장은 정상
+  assert.equal(res[0].person_id, null);            // 2025 자리표시는 안 이어진다
+});
+
+test("같은 소속(강한 맞춤) 줄은 다른 해 근거로 덮이지 않는다", () => {
+  const x = person({ mok3: "기쁨-5목장" });
+  const y = person({ mok1: "은혜", mok3: "은혜-9목장" });
+  const rows = [
+    row({ year: 2024, mok: "기쁨-5", team: "제자터" }),
+    row({ year: 2025, mok: "은혜-9", team: "제자터", renewal: "유지" }),
+  ];
+  const res = matchAll(rows, [x, y]);
+  assert.deepEqual([res[0].person_id, res[0].match_basis], [x.person_id, "같은 소속"]);
+  assert.deepEqual([res[1].person_id, res[1].match_basis], [y.person_id, "같은 소속"]);
+});
+
+test("뒤쪽 해가 「신규」면 다른 해 같은 팀을 안 잇는다", () => {
+  const old = person({ mok3: "기쁨-2목장", position: "집사" });
+  const moved = person({ mok1: "은혜", mok3: "은혜-7목장", position: "권사" });
+  const rows = [
+    row({ year: 2024, position: "집사", mok: "기쁨-9", team: "행복전도대-토" }),
+    row({ year: 2025, position: "집사", mok: "은혜-7", team: "행복전도대-토", renewal: "신규" }),
+  ];
+  const res = matchAll(rows, [old, moved]);
+  assert.deepEqual([res[0].person_id, res[0].match_basis], [old.person_id, "같은 교구(목장 다름) · 다른 교구에 같은 이름"]);
+});
+
+test("같은 해 같은 팀에 같은 이름 줄이 둘이면(peers>1) 다른 해 같은 팀을 안 쓴다", () => {
+  const other = person({ mok3: "기쁨-30목장", position: "집사" });        // 기쁨 교구의 동명이인(약한 맞춤)
+  const moved = person({ mok1: "은혜", mok3: "은혜-7목장", position: "권사" });
+  const rows = [
+    row({ year: 2024, position: "집사", mok: "기쁨-9", team: "행복전도대-토" }),
+    row({ year: 2024, position: "집사", mok: "기쁨-9", team: "행복전도대-토" }),  // 짝 줄(같은 해·같은 팀·같은 이름)
+    row({ year: 2025, position: "집사", mok: "은혜-7", team: "행복전도대-토", renewal: "유지" }),
+  ];
+  const res = matchAll(rows, [other, moved]);
+  assert.ok(res.slice(0, 2).every((r) => r.person_id === other.person_id && r.match_basis.startsWith("같은 교구")));
+});
+
+test("allowed 에 없는 anchor 는 거부된다(성별이 안 맞는 다른 해 근거)", () => {
+  const sisterY = person({ gender: "남", mok1: "은혜", mok3: "은혜-7목장", position: "장로" });
+  const guCand = person({ gender: "여", mok3: "기쁨-30목장", position: "권사" });
+  const rows = [
+    row({ year: 2024, position: "권사", mok: "기쁨-9", team: "제자터" }),             // 여성 줄 — guCand 만 성별 통과
+    row({ year: 2025, position: "장로", mok: "은혜-7", team: "제자터", renewal: "유지" }), // 남성 줄 — sisterY 유일 후보
+  ];
+  const res = matchAll(rows, [sisterY, guCand]);
+  assert.deepEqual([res[0].person_id, res[0].match_basis], [guCand.person_id, "같은 교구(목장 다름) · 다른 교구에 같은 이름"]);
+});
+
+test("같은 해 같은 줄 사람 — 팀 이름이 달라 오타 규칙이 못 본 줄도 같은 분으로 잇는다", () => {
+  const p = person({ name: "가나라", mok1: "사랑", mok3: "사랑-15목장", position: "권사" });
+  const rows = [
+    row({ year: 2023, name: "가나다", position: "권사", mok: "사랑-15", team: "중보기도" }),
+    row({ year: 2024, name: "가나라", position: "권사", mok: "사랑-15", team: "중보기도" }),
+    row({ year: 2023, name: "가나다", position: "권사", mok: "사랑-15", team: "안내위원" }),
+  ];
+  const res = matchAll(rows, [p]);
+  assert.deepEqual([res[0].person_id, res[0].match_basis], [p.person_id, "이름 한 글자 다름(오타로 봄)"]);
+  assert.deepEqual([res[2].person_id, res[2].match_basis],
+    [p.person_id, "이름 한 글자 다름(오타로 봄) · 같은 해 다른 팀 줄과 같은 분"]);
+});
+
+test("빼기 — 청년 줄과 45세 이상", () => {
+  const old = person({ kind2: "청년", mok1: "청년부", position: "", birth_year: 1979 }); // 2024년 45세
+  const r = one([row({ year: 2024, position: "청년", mok: "청년" })], [old]);
+  assert.equal(r.person_id, null);
+  assert.match(r.match_reason, /직분과 성별/);
+});
+
+test("같은 해 겹침 — 세기가 같으면 둘 다 비운다", () => {
+  const p = person({});
+  const rows = [row({ mok: "화평-3" }), row({ mok: "은혜-5", team: "주차" })];
+  const res = matchAll(rows, [p]);
+  assert.equal(res[0].person_id, null);
+  assert.equal(res[1].person_id, null);
+  assert.match(res[0].match_reason, /같은 해에 다른 교구/);
+  assert.match(res[1].match_reason, /같은 해에 다른 교구/);
+});
+
+test("toHPerson — 생년월일은 birth_date 우선, 없으면 birth 글자 · 「0000」은 모름 · household_id 0 은 빈 글자", () => {
+  const a = toHPerson({
+    person_id: 7, name: "가나다", gender: "여", kind2: "장년", mok1: "기쁨", mok3: "기쁨-1목장",
+    school_dept: "", position: "집사", position_detail: "", birth_date: "1988-07-15", birth: "1970",
+    registered_date: "2005-01-01", registered: "1999", household_id: 3,
+  });
+  assert.deepEqual([a.birth_year, a.birth_month, a.reg_year, a.household], [1988, 7, 2005, "3"]);
+  const b = toHPerson({ person_id: 8, birth: "1992-04", registered: "0000-00-00", household_id: 0 });
+  assert.deepEqual([b.birth_year, b.birth_month, b.reg_year, b.household], [1992, 4, null, ""]);
+  const c = toHPerson({ person_id: 9, birth_date: "0000-00-00", birth: "0000" });
+  assert.equal(c.birth_year, null);
+});
+
+test("candFp — 16진 8자 · 같은 입력은 같은 값 · 차례가 다르면 값도 다르다", () => {
+  const a = candFp(["가", "나", "다"]);
+  assert.match(a, /^[0-9a-f]{8}$/);
+  assert.equal(candFp(["가", "나", "다"]), a);
+  assert.notEqual(candFp(["나", "가", "다"]), a);
+});
+
+test("nameKeyVariants — 바탕 이름 포함 · A~Z 대소문자 모두 · 괄호 뗀 꼴", () => {
+  const v = nameKeyVariants("가나다");
+  for (let i = 0; i < 26; i++) {
+    const c = String.fromCharCode(65 + i);
+    assert.ok(v.includes("가나다" + c), `빠짐: 가나다${c}`);
+    assert.ok(v.includes("가나다" + c.toLowerCase()), `빠짐: 가나다${c.toLowerCase()}`);
+  }
+  assert.ok(v.includes("가나다"));
+  const p = nameKeyVariants("가나다(별명)");
+  assert.ok(p.includes("가나다"));          // 괄호를 뗀 꼴도 들어간다
+  assert.ok(p.includes("가나다(별명)"));    // 원래 꼴(hKey)도 들어간다
+});
+
+test("WEAK_RE — 근거 약한 줄 문구만 맞는다", () => {
+  for (const s of ["같은 교구(목장 다름)", "이름이 한 분뿐(소속 다름)", "다른 해 같은 팀", "다른 해 같은 목장", "이름 한 글자 다름(오타로 봄)"]) {
+    assert.ok(WEAK_RE.test(s), `약함으로 못 잡음: ${s}`);
+  }
+  assert.ok(!WEAK_RE.test("같은 소속"));
+  assert.ok(!WEAK_RE.test("같은 소속 · 직분으로 가림"));
 });

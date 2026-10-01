@@ -4,13 +4,12 @@
 //   authz.ts 와 같은 제약(원격 import·enum 금지, node --experimental-strip-types 가 그대로 읽는다).
 // ⚠️ 2026-10-01 독립 검증 다섯 갈래에서 나온 규칙이다. 규칙을 바꾸면 대조 시험(check_real)의 기대값도 함께 본다.
 // ⚠️ 이 모듈은 교인ID 를 돌려준다 — 부르는 쪽(history-db.ts)이 역할에 따라 응답에서 가린다(설계 §5).
-import { mokNumber, nameKey as pmNameKey } from "./people-match.ts";
+import { mokNumber, nameKey as pmNameKey, KID_KIND2 } from "./people-match.ts";
 
 export const GU7 = ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨"];
 const TYPO: Record<string, string> = { "가쁨": "기쁨", "믿은": "믿음" };
 const YOUTH_MOK1 = ["청년부", "청년공동체", "청년새가족"];
 const YOUTH_KIND2 = ["청년", "청년군대/유학"];
-const KID_KIND2 = ["교회학교", "학생"];
 const KID_POS = ["학생", "어린이", "고등부", "중등부"];
 
 // ── 사람(교인명부 한 분) — 부르는 쪽이 church_people 에서 이 모양으로 옮긴다(history-db.ts toHPerson)
@@ -50,6 +49,7 @@ export type Affil = {
   raw: string;                                                          // 목장 글자(띄어쓰기 없음) — 「같은 목장 글자」 견주기
   notes: string[];
 };
+const GU_RE = new RegExp("^(" + GU7.join("|") + ")-?(.*)$");
 export function parseRow(year: number, mokText: unknown, position: unknown): Affil {
   let t = nospace(mokText);
   const notes: string[] = [];
@@ -57,7 +57,7 @@ export function parseRow(year: number, mokText: unknown, position: unknown): Aff
     if (t.startsWith(bad)) { t = good + t.slice(bad.length); notes.push("목장 오타 고쳐 읽음"); }
   }
   const a: Affil = { kind: "모름", gu: "", mok: null, men: false, ttae: null, raw: t, notes };
-  const m = new RegExp("^(" + GU7.join("|") + ")-?(.*)$").exec(t);
+  const m = GU_RE.exec(t);
   if (m) {
     a.kind = "교구"; a.gu = m[1];
     const rest = m[2];
@@ -128,7 +128,8 @@ function sameAffil(c: P, a: Affil, year: number): boolean {
   }
   if (a.kind === "새가족") return c.mok1 === "새가족";
   if (a.kind === "청년") return c.youthKind && !kidAt(c, year);
-  if (a.kind === "학생") return true;   // 나이 띠(12~19세)는 빼기 단계에서 이미 걸렀다
+  // 학생 줄 — 나이 띠(12~19세)는 빼기 단계에서 이미 걸렀다(출생연도 있으면). 생년을 모르면 kind2 로만(장년 추정 금지)
+  if (a.kind === "학생") return ageAt(c, year) !== null || KID_KIND2.includes(c.kind2);
   return false;
 }
 
@@ -165,7 +166,8 @@ function candidatesOf(k: string, ctx: Ctx, notes: string[]): P[] {
 }
 
 // 빼기(설계 §4.2) — 다른 분으로 본다. kid=아이·직분 없는 청년 때문에 빠졌는가
-function excluded(c: P, r: HRow, a: Affil, pos: string, notes: string[]): "" | "kid" | "misfit" {
+// teenIds — 「학생으로 봄」 carve-out 으로 통과한 교인ID 를 모은다(최종 고른 분이 이 중 하나일 때만 결과 근거에 적는다 · matchOne 참고)
+function excluded(c: P, r: HRow, a: Affil, pos: string, teenIds: Set<number>): "" | "kid" | "misfit" {
   const y = r.year;
   const sx = rowSex(pos, a);
   if (sx && c.sex && sx !== c.sex) return "misfit";
@@ -178,7 +180,7 @@ function excluded(c: P, r: HRow, a: Affil, pos: string, notes: string[]): "" | "
     // 직분이 빈 교구 줄 — 그해 14세 이상이고 가족 목장 글자가 같은 아이만(부모와 함께 섬기는 도우미)
     const famSame = a.kind === "교구" && c.mok1 === a.gu && !c.men && a.mok !== null && mokNumber(c.mok3) === a.mok;
     if (!(famSame && age !== null && age >= 14)) return "kid";
-    notes.push("학생으로 봄");
+    teenIds.add(c.person_id);
   }
   // 집사 이상 줄 ↔ 직분 없는 청년·아이(kind2 교회학교·학생 포함 — 낡은 kind2 도) · 검증: 같은 소속 3,294줄 중 반례 0
   if (rank(pos) >= 1 && !c.position && (c.youthKind || KID_KIND2.includes(c.kind2) || kidAt(c, y))) return "kid";
@@ -214,42 +216,47 @@ function tieBreak(list: P[], r: HRow, a: Affil, pos: string, ctx: Ctx): { one: P
 function matchOne(r: HRow, ctx: Ctx): Pick {
   const pos = cleanPos(r.position);
   const a = parseRow(r.year, r.mok, pos);
-  const notes = [...a.notes];
+  const baseNotes = [...a.notes];
+  const teenIds = new Set<number>();   // 「학생으로 봄」으로 통과한 교인ID — 최종 고른 분일 때만 근거에 적는다
   const k = hKey(r.name);
-  const all = candidatesOf(k, ctx, notes);
-  if (!all.length) return { pid: null, basis: "", reason: R_NONE, strength: S.NONE, notes, cands: [] };
+  const all = candidatesOf(k, ctx, baseNotes);
+  if (!all.length) return { pid: null, basis: "", reason: R_NONE, strength: S.NONE, notes: baseNotes, cands: [] };
   const why: string[] = [];
-  const cands = all.filter((c) => { const e = excluded(c, r, a, pos, notes); if (e) why.push(e); return !e; });
-  if (!cands.length) return { pid: null, basis: "", reason: why.includes("misfit") ? R_MISFIT : R_KID, strength: S.NONE, notes, cands };
+  const cands = all.filter((c) => { const e = excluded(c, r, a, pos, teenIds); if (e) why.push(e); return !e; });
+  if (!cands.length) {
+    return { pid: null, basis: "", reason: why.includes("misfit") ? R_MISFIT : R_KID, strength: S.NONE, notes: baseNotes, cands };
+  }
+  const mk = (pid: number | null, basis: string, reason: string, strength: number, cands2: P[]): Pick => ({
+    pid, basis, reason, strength, cands: cands2,
+    notes: pid !== null && teenIds.has(pid) ? [...baseNotes, "학생으로 봄"] : baseNotes,
+  });
 
   const label = a.kind === "청년" ? "같은 구분(청년)" : a.kind === "학생" ? "같은 구분(학생)" : "같은 소속";
   const same = cands.filter((c) => sameAffil(c, a, r.year));
-  if (same.length === 1) return { pid: same[0].person_id, basis: label, reason: "", strength: S.SAME, notes, cands };
+  if (same.length === 1) return mk(same[0].person_id, label, "", S.SAME, cands);
   if (same.length > 1) {
     const t = tieBreak(same, r, a, pos, ctx);
-    if (t.one) return { pid: t.one.person_id, basis: `${label} · ${t.how}`, reason: "", strength: S.TIE, notes, cands };
+    if (t.one) return mk(t.one.person_id, `${label} · ${t.how}`, "", S.TIE, cands);
     const where = a.kind === "교구" ? "같은 목장" : `같은 소속(${a.kind})`;
-    return { pid: null, basis: "", reason: `${where}에 같은 이름 ${same.length}명 — 누군지 못 가림`, strength: S.NONE, notes, cands };
+    return mk(null, "", `${where}에 같은 이름 ${same.length}명 — 누군지 못 가림`, S.NONE, cands);
   }
   if (a.kind === "교구") {
     const gu = cands.filter((c) => c.mok1 === a.gu);
     const base = a.mok === null && !a.men ? "같은 교구(목장 모름)" : "같은 교구(목장 다름)";
     const elsewhere = all.some((c) => c.mok1 !== a.gu && !kidAt(c, r.year)) ? " · 다른 교구에 같은 이름" : "";
-    if (gu.length === 1) return { pid: gu[0].person_id, basis: base + elsewhere, reason: "", strength: S.GU, notes, cands };
+    if (gu.length === 1) return mk(gu[0].person_id, base + elsewhere, "", S.GU, cands);
     if (gu.length > 1) {
       const t = tieBreak(gu, r, a, pos, ctx);
-      if (t.one) return { pid: t.one.person_id, basis: `같은 교구 · ${t.how}`, reason: "", strength: S.GU, notes, cands };
-      return { pid: null, basis: "", reason: `같은 교구에 같은 이름 ${gu.length}명(목장은 명부와 다름) — 누군지 못 가림`, strength: S.NONE, notes, cands };
+      if (t.one) return mk(t.one.person_id, `같은 교구 · ${t.how}`, "", S.GU, cands);
+      return mk(null, "", `같은 교구에 같은 이름 ${gu.length}명(목장은 명부와 다름) — 누군지 못 가림`, S.NONE, cands);
     }
   }
   if (cands.length === 1) {
-    return { pid: cands[0].person_id, basis: a.kind === "모름" ? "이름이 한 분뿐(소속 모름)" : "이름이 한 분뿐(소속 다름)",
-      reason: "", strength: S.ONLY, notes, cands };
+    return mk(cands[0].person_id, a.kind === "모름" ? "이름이 한 분뿐(소속 모름)" : "이름이 한 분뿐(소속 다름)", "", S.ONLY, cands);
   }
   const t = tieBreak(cands, r, a, pos, ctx);
-  if (t.one) return { pid: t.one.person_id, basis: `${t.how}(소속 다름)`, reason: "", strength: S.ONLY, notes, cands };
-  return { pid: null, basis: "", reason: `교인명부에 같은 이름 ${cands.length}명, 적힌 소속과 같은 분이 없음 — 누군지 못 가림`,
-    strength: S.NONE, notes, cands };
+  if (t.one) return mk(t.one.person_id, `${t.how}(소속 다름)`, "", S.ONLY, cands);
+  return mk(null, "", `교인명부에 같은 이름 ${cands.length}명, 적힌 소속과 같은 분이 없음 — 누군지 못 가림`, S.NONE, cands);
 }
 
 // ── 팀 이름 다듬기(다른 해 같은 팀) ─────────────────────────────────────
@@ -272,7 +279,6 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
     if (p.mok1) push(ctx.byGu, p.mok1, p);
     if (p.household) push(ctx.byHousehold, p.household, p);
   }
-  const byId = new Map<number, P>(ps.map((p) => [p.person_id, p]));
   for (const r of rows) ctx.rowSig.add(`${r.year}|${hKey(r.name)}|${parseRow(r.year, r.mok, r.position).raw}`);
 
   // 1차
@@ -282,11 +288,20 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
     else if (r.link_how === "none") pick.set(r.id, { pid: null, basis: "", reason: R_MANUAL_NONE, strength: S.MANUAL, notes: [], cands: [] });
     else pick.set(r.id, matchOne(r, ctx));
   }
-  const auto = rows.filter((r) => r.link_how === "auto");
-  const isAnchor = (p: Pick): boolean => p.pid !== null && p.strength >= S.CROSS;
+  // id 로 정렬 — 이 차례가 뒤 단계(다른 해로 잇기)에서 반복해 쓰인다. pick 을 도는 중 고쳐 가므로 입력 줄 차례가 그대로면
+  // 결과가 입력 순서에 따라 갈릴 수 있다(2026-10-01 검토 지적) — 항상 같은(id) 차례로 돈다.
+  const auto = rows.filter((r) => r.link_how === "auto").sort((x, y) => x.id - y.id);
+  // anchor = 다른 줄의 근거가 될 만큼 강한 맞춤(같은 소속·직분 가림·다른 해로 이미 이은 것·사람이 이음) — 「같은 팀」·「같은 목장」 두 경로가 같은 문턱을 쓴다
+  const isAnchor = (p: Pick): boolean => p.pid !== null && p.strength >= S.TIE;
 
   // 다른 해로 잇기(설계 §4.4) — 사슬이라 바뀜이 없을 때까지(최대 4번)
   const group = (r: HRow): string => (parseRow(r.year, r.mok, r.position).kind === "청년" ? "청년" : "어른");
+  // 이름 끝 영문자(「가나다A」·「가나다B」) — 둘 다 글자가 있고 다르면 다른 사람으로 본다(동명이인 표시). 한쪽만 있으면(붙임말 없는 줄) 잇는다.
+  const suffixLetter = (name: unknown): string => { const sk = hKey(name); return hasSuffix(sk) ? sk.slice(-1) : ""; };
+  const diffSuffix = (n1: unknown, n2: unknown): boolean => {
+    const a1 = suffixLetter(n1), a2 = suffixLetter(n2);
+    return a1 !== "" && a2 !== "" && a1 !== a2;
+  };
   const sameTeamYear = new Map<string, HRow[]>();
   for (const r of rows) {
     const k = `${r.year}|${teamKey(r.team)}|${stripSuffix(hKey(r.name))}`;
@@ -313,21 +328,27 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
       if (peers.length === 1) {
         for (const s of byName.get(nk) ?? []) {
           if (Math.abs(s.year - r.year) !== 1 || teamKey(s.team) !== tk || group(s) !== g) continue;
+          if (diffSuffix(r.name, s.name)) continue;             // 「가나다A」↔「가나다B」는 안 잇는다
           const later = s.year > r.year ? s : r;
           if (nfc(later.renewal) !== "유지") continue;
           const sp = pick.get(s.id)!;
-          if (sp.pid !== null && (sp.strength >= S.SAME || sp.strength === S.MANUAL || sp.basis.startsWith("다른 해"))) found.add(sp.pid);
+          if (isAnchor(sp)) found.add(sp.pid!);
         }
         if (found.size) how = "다른 해 같은 팀";
       }
       if (!found.size) {
-        const raw = parseRow(r.year, r.mok, r.position).raw;
+        const parsed = parseRow(r.year, r.mok, r.position);
+        const raw = parsed.raw;
         const pos = cleanPos(r.position);
         for (const s of byName.get(nk) ?? []) {
           if (Math.abs(s.year - r.year) !== 1 || !raw) continue;
-          if (parseRow(s.year, s.mok, s.position).raw !== raw || cleanPos(s.position) !== pos) continue;
+          if (diffSuffix(r.name, s.name)) continue;             // 「가나다A」↔「가나다B」는 안 잇는다
+          const sParsed = parseRow(s.year, s.mok, s.position);
+          // raw 글자만 보면 2025년 이전 「기쁨-1」(자리 표시 · kind 모름)과 2026 진짜 「기쁨-1」목장(kind 교구)이 같은 글자로 겹친다 —
+          // 읽은 kind 까지 같아야 잇는다(설계 §4.1 경계).
+          if (sParsed.raw !== raw || sParsed.kind !== parsed.kind || cleanPos(s.position) !== pos) continue;
           const sp = pick.get(s.id)!;
-          if (sp.pid !== null && isAnchor(sp)) found.add(sp.pid);
+          if (isAnchor(sp)) found.add(sp.pid!);
         }
         if (found.size) how = "다른 해 같은 목장";
       }
@@ -365,7 +386,7 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
       const other = [...teams].some((t) => t.endsWith(`|${tk}`) && !t.startsWith(`${r.year}|`));
       return other && !teams.has(`${r.year}|${tk}`);
     });
-    if (near.length === 1 && !excluded(near[0], r, a, cleanPos(r.position), [])) {
+    if (near.length === 1 && !excluded(near[0], r, a, cleanPos(r.position), new Set())) {
       pick.set(r.id, { pid: near[0].person_id, basis: "이름 한 글자 다름(오타로 봄)", reason: "", strength: S.ONLY, notes: cur.notes, cands: near });
     }
   }
@@ -471,11 +492,15 @@ export function candFp(lines: string[]): string {
 // 근거가 약한 맞춤 — 화면의 「△ 확인」·「근거 약한 줄만」(history-logic.js WEAK_RE 와 같은 글 · 시험이 맞댄다)
 export const WEAK_RE = /^(같은 교구|이름이 한 분뿐|직분으로 가림\(소속 다름\)|가족이 같은 해 같은 목장\(소속 다름\)|다른 해|이름 한 글자 다름)/;
 // 같은 이름의 명부 열쇠들 — church_people.name_key(NFC·띄어쓰기 없음 · 끝 영문자는 원본 그대로)로 물을 것
+// candidatesOf 의 hasSuffix 는 영문자 A~Z 아무거나 받는다(동명이인 표시 「홍길동a」~「홍길동z」) — 서버 후보 창이
+// matchAll 이 실제로 고를 수 있는 분을 전부 담도록 A~D 만이 아니라 A~Z(대·소문자) 모두 더한다.
 export function nameKeyVariants(name: unknown): string[] {
   const k = hKey(name);
   const base = stripSuffix(k);
   const out = new Set<string>([k, base, stripParen(k)]);
-  for (const c of ["A", "B", "C", "D"]) { out.add(base + c); out.add(base + c.toLowerCase()); }
-  if (hasSuffix(k)) out.add(base + k.slice(-1).toLowerCase());
+  for (let i = 0; i < 26; i++) {
+    const c = String.fromCharCode(65 + i);
+    out.add(base + c); out.add(base + c.toLowerCase());
+  }
   return [...out].filter(Boolean);
 }
