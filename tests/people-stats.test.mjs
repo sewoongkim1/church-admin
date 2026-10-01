@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { statsOf, householdsByGu, AGE_BANDS, SEXES, CARD_GU } from "../supabase/functions/church-admin/people-query.ts";
 import { MATCH_GU } from "../supabase/functions/church-admin/people-match.ts";
-import { guTable, positionTable, ageTable, pickOptions, statsChoices, guCardRows, CARD_GU as SCREEN_CARD_GU }
+import { guTable, positionTable, ageTable, pickOptions, statsChoices, guCardRows, CARD_GU as SCREEN_CARD_GU, linkSyncText }
   from "../js/menus/people/stats-logic.js";
 import { ageHtml, guCardsHtml } from "../js/menus/people/stats.js";
 import { filterChoices, pickSummary } from "../js/menus/people/people-logic.js";
@@ -388,4 +388,10 @@ test("교인 현황 화면 — 고를 목록은 statsChoices 에서(교인 찾�
   const code = js.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
   assert.ok(/import\s*\{[^}]*\bstatsChoices\b[^}]*\}\s*from\s*"\.\/stats-logic\.js"/.test(code), "statsChoices 를 들여온다");
   assert.ok(!/\bfilterChoices\b/.test(code), "교인 찾기 규칙(filterChoices)을 쓰면 출석 「(없음)」을 못 고른다");
+});
+
+test("linkSyncText — 「기록 잇기 맞추기」 결과 한 줄(천 단위 쉼표)", () => {
+  assert.equal(linkSyncText({ added: 3, changed: 1, unmatched: 12, orders: 1200, signups: 2834 }),
+    "새로 이음 3 · 바뀜 1 · 못 맞춤 12 (사역신청 1,200줄 · 성경필사 2,834줄)");
+  assert.equal(linkSyncText({}), "새로 이음 0 · 바뀜 0 · 못 맞춤 0 (사역신청 0줄 · 성경필사 0줄)");
 });

@@ -12,9 +12,9 @@
 //   단추·고르개는 🔎 교인 찾기와 같다(.pp-pick-b + pickMany — 폰은 바텀 시트, PC 는 단추 아래 작은 판 · 고를 목록에 인원 수).
 //   고를 목록의 인원은 같은 표의 다른 거르기 안에서 센다 · 출석 「(없음)」도 고른다(stats-logic.js statsChoices).
 // ⚠️ 이벤트는 route() 가 만든 이 화면의 el 에만 단다(공용 #view 에 달면 다음 메뉴로 새어 간다).
-import { esc, errorText } from "../../core/ui.js";
+import { esc, errorText, dialog, toast, busy } from "../../core/ui.js";
 import { sourceLine, pickSummary, sameSet } from "./people-logic.js";
-import { guTable, positionTable, ageTable, pickOptions, statsChoices, guCardRows } from "./stats-logic.js";
+import { guTable, positionTable, ageTable, pickOptions, statsChoices, guCardRows, linkSyncText } from "./stats-logic.js";
 import { pickMany } from "../../core/picker.js";
 
 const TITLE = `<h2 class="page-title">📊 교인 현황</h2>`;
@@ -67,7 +67,13 @@ const secHtml = (sec, withPicks) => `<div class="pp-ssec" data-sec="${sec}"><h3 
   (withPicks ? `<div class="pp-sfilters">${SECS[sec][1].map((k) => pickHtml(sec, k)).join("")}</div>` : "") +
   `<div class="pp-stable"></div></div>`;
 
-export async function render(el, { call }) {
+// 🔗 기록 잇기 맞추기(총괄만 · 2026-10-01) — 새 교인명부를 올린 뒤 한 번. 서버가 다시 맞추고 수만 돌려준다(people.linksync 기록).
+const LINKSYNC_HTML = `<div class="card pp-linksync"><h3 class="sec-title">🔗 기록 잇기 맞추기</h3>` +
+  `<p class="muted">새 교인명부를 올린 뒤 한 번 눌러 주세요 — 사역신청·성경필사 기록을 교인과 다시 잇습니다. ` +
+  `담당자가 「이분 것」·「이분 아님」으로 정한 것은 그대로 둡니다.</p>` +
+  `<div class="acts"><button type="button" class="btn" data-act="linksync">🔗 기록 잇기 맞추기</button></div></div>`;
+
+export async function render(el, { call, me }) {
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
   const r = await call("peopleStats");
   if (!r.ok) { el.innerHTML = TITLE + `<p class="empty">${esc(errorText(r))}</p>`; return; }
@@ -84,7 +90,7 @@ export async function render(el, { call }) {
     ${pairTable("장년 · 청년 · 교회학교", "구분", s.kind2)}
     ${pairTable("출석 구분", "출석", s.kind3)}
     ${pairTable("교회학교 부서", "부서", s.school)}
-    ${secHtml("age", !!F)}`;
+    ${secHtml("age", !!F)}${(me?.roles || []).includes("super") ? LINKSYNC_HTML : ""}`;
 
   // 그 표만 다시 센다 — 숫자 묶음이 없으면 서버 표 그대로
   const table = {
@@ -121,8 +127,19 @@ export async function render(el, { call }) {
     sel[sec][key] = [...got];       // 늘 새 배열
     draw(sec);
   }
+  async function linkSync() {
+    const yes = await dialog({ title: "🔗 기록 잇기 맞추기", ok: "맞추기", cancel: "그만두기",
+      html: "사역신청(모든 해)·성경필사(초안 회차 빼고) 기록을 지금 교인명부로 다시 잇습니다.<br>몇십 초 걸릴 수 있어요. 사람이 정한 잇기는 그대로예요." });
+    if (!yes || !el.isConnected) return;
+    const r = await busy(el, () => call("peopleLinkSync", { apply: true }));
+    if (!r.ok) { dialog({ title: "⚠️ 맞추지 못했어요", text: errorText(r), cancel: null }); return; }
+    toast("🔗 기록 잇기를 맞췄어요");
+    dialog({ title: "🔗 기록 잇기 맞추기 — 끝", text: linkSyncText(r), cancel: null });
+  }
   el.addEventListener("click", (e) => {
     const b = e.target.closest('button[data-act="pick"]');
     if (b && el.contains(b)) openPick(b);
+    const ls = e.target.closest('button[data-act="linksync"]');
+    if (ls && el.contains(ls)) linkSync();
   });
 }

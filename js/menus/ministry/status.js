@@ -6,7 +6,7 @@
 //   ② 메뉴를 열 때마다 새로 불러온다(옛 mnLoaded 캐시를 없앰 — 여러 담당자가 서로 옛 화면을 보던 것).
 //   ③ 임명 알림 결과 넷(이미 보냄 / 보냄 N대 / 안 켜심 / 발송 실패)을 가른다. 발송 실패는 toast 가 아니라 창으로.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
-import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts, clearPhone }
+import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts, clearPhone, phoneClearCount }
   from "./status-logic.js";
 import { cardHtml, groupsHtml, dupBadgeHtml, tableHtml, askCancelReason, confirmAppoint, confirmDelete } from "./status-ui.js";
 import { CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
@@ -45,7 +45,8 @@ export async function render(el, { call }) {
     `<b data-cnt="${esc(key || "all")}">0</b><span>${esc(label)}</span></button>`;
   // ⚠️ 붙는 머리(.mn-head)에는 「지금 무엇을 보고 있나」만 둔다 — 보기 단추·찾기·신청일 칸은 머리 밖에
   el.innerHTML = `<h2 class="page-title">📋 신청 현황 <span class="muted">${esc(res.year)}년</span></h2>
-    <div class="acts mn-acts"><button type="button" class="btn" data-act="reload">↻ 새로 불러오기</button></div>
+    <div class="acts mn-acts"><button type="button" class="btn" data-act="reload">↻ 새로 불러오기</button>
+      <button type="button" class="btn" data-act="phoneclear" hidden></button></div>
     ${hasChurch(rows) ? CHURCH_LEGEND : ""}
     <div class="card mn-panel">
       <div class="mn-head">
@@ -83,6 +84,10 @@ export async function render(el, { call }) {
 
   const draw = () => {
     const now = new Date();
+    // 📵 결정된 신청 번호 지우기(2026-10-01) — 결정됐고 번호가 남은 신청이 있을 때만 · 수는 전체 기준(거르기와 상관없이)
+    const nClear = phoneClearCount(rows), pcb = el.querySelector('[data-act="phoneclear"]');
+    pcb.hidden = !nClear;
+    pcb.textContent = `📵 결정된 신청 번호 지우기(${nClear}건)`;
     const shown = filterRows(rows, { stOn: [...stOn], range, from, to, q }, now);
     // 상태 막대 — 숫자는 추리기 **전** 전체 기준(어디에 몇 건인지 늘 보이게)
     const sc = statusCounts(rows);
@@ -167,7 +172,7 @@ export async function render(el, { call }) {
       return;
     }
     if (d.status) r.status = d.status;
-    // 결정이 나면 서버가 번호를 지운다 — 카드도 그 자리에서 지워야 사실과 맞다. 교적 표시는 서버가 번호 없이 다시 센 값(d.church)으로(clearPhone)
+    // 옛 서버(결정 때 번호를 지우던 판 · 2026-10-01 전)의 답이면 카드 번호를 지우고 교적 표시를 서버가 다시 센 값으로(clearPhone) — 지금 서버는 phoneCleared 가 늘 false
     if (d.phoneCleared) clearPhone(r, d.church);
     if (note !== undefined) r.note = note;
     if (status === "임명확정") {
@@ -182,6 +187,30 @@ export async function render(el, { call }) {
       toast(`${r.name}님 «${r.team}» — ${TO[r.status] || r.status} 바꿨어요`);
     }
     draw();
+  }
+
+  // 결정된(임명·취소) 신청의 휴대폰 번호를 그 해 것 모두 지운다(2026-10-01 · 결정 뒤에도 180일이 지나면 저절로 지워진다).
+  // 보낸 수가 서버의 지금 수와 다르면 지우지 않고 알린 뒤 새로 불러온다(그사이 다른 담당자가 바꿨다). 지운 뒤에도 새로 불러와
+  // 교적 표시를 번호 없이 다시 센다(번호로 이어 둔 교인 잇기는 남는다).
+  async function clearPhones() {
+    const n = phoneClearCount(rows);
+    if (!n) return;
+    const yes = await dialog({ title: "📵 결정된 신청 번호 지우기", danger: true, ok: `${n}건 지우기`, cancel: "그만두기",
+      html: `<b>${esc(res.year)}년</b> 신청 가운데 임명·취소가 정해진 <b>${n}건</b>의 휴대폰 번호를 지웁니다.<br>` +
+        `교적 표시는 번호 없이 다시 셉니다. 되돌릴 수 없어요.<br>` +
+        `<small class="muted">지우지 않아도 결정 뒤 180일이 지나면 저절로 지워져요.</small>` });
+    if (!yes || !el.isConnected) return;
+    const d = await busy(el, () => call("ministryPhoneClear", { count: n }));
+    if (!d.ok) {
+      if (d.error === "conflict") {
+        await dialog({ title: "그사이 바뀌었어요", text: `지금 지울 번호는 ${d.count ?? 0}건이에요 — 새로 불러올게요`, cancel: null });
+        return reload();
+      }
+      dialog({ title: "⚠️ 번호를 지우지 못했어요", text: errorText(d), cancel: null });
+      return;
+    }
+    toast(`📵 번호 ${d.count}건을 지웠어요`);
+    reload();
   }
 
   async function remove(id) {
@@ -248,6 +277,7 @@ export async function render(el, { call }) {
     if (act === "drop") return toggleMenu(b);
     closeMenus();
     if (act === "reload") return reload();
+    if (act === "phoneclear") return clearPhones();
     if (act === "set") return setStatus(b.dataset.id, b.dataset.st);
     if (act === "del") return remove(b.dataset.id);
     if (act === "cond") {

@@ -32,7 +32,7 @@ export const teamKey = (r) => (r.committee || "") + " · " + (r.team || "");
 const digits = (p) => String(p || "").replace(/[^0-9]/g, "");
 
 // 같은 휴대폰 번호 → 그 번호로 신청한 사람들. ⚠️ 명단 **전체**로 센다(거르기로 한쪽이 가려져도 표시는 남는다).
-// 번호는 결정이 나면 서버가 지우므로 남은 것끼리만 본다.
+// 번호가 남은 것끼리만 본다(2026-10-01 부터 결정된 신청도 번호를 갖고 있다 — 「결정된 신청 번호 지우기」·결정 뒤 180일에 지워진다).
 export function dupMap(allRows) {
   const m = new Map();
   for (const r of allRows) {
@@ -84,3 +84,9 @@ export function clearPhone(r, church) {
   r.phone = "";
   r.church = church && typeof church === "object" ? church : null;
 }
+
+// 「📵 결정된 신청 번호 지우기(N건)」의 N — 서버 ministryPhoneClear 가 같은 셈으로 대조한다(다르면 conflict).
+//   결정 상태(임명확정·미채택·취소 — 서버 ministry.ts DECIDED)이고 번호가 빈 글자가 아닌 신청.
+export const PHONE_DECIDED = ["임명확정", "미채택", "취소"];
+export const phoneClearCount = (rows) =>
+  (rows || []).filter((r) => PHONE_DECIDED.includes(r && r.status) && String((r && r.phone) || "") !== "").length;
