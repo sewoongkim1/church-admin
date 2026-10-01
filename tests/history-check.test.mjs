@@ -7,6 +7,8 @@ import { applicantFromLogin, loginNameKey, matchLoginPerson } from "../supabase/
 import {
   HISTORY_OUT_KEYS, REQUEST_OUT_KEYS, REQ_KINDS, REQ_LINE_KINDS, REQ_OPEN_MAX, hcUserId, historyRowOut, internalKeyOk, parseRequest,
   readLoginWho, requestBlock, requestInsert, requestOut, sortHistory,
+  REQ_FILTERS, REQ_SET_STATUS, REQUEST_ADMIN_OUT_KEYS, filterRequests, parseRequestSet, requestAdminOut, requestAuditDetail,
+  requestCounts, requestSetBlock, requestSetPatch,
 } from "../supabase/functions/church-admin/history-check.ts";
 import { ACTION_ROLES, canCall } from "../supabase/functions/church-admin/authz.ts";
 
@@ -179,4 +181,64 @@ test("직분은 정정하지 않는다 — 「직분이 틀려요」(wrong_posit
   assert.deepEqual(REQ_LINE_KINDS, ["not_mine", "wrong_team", "other"]);
   assert.deepEqual(REQ_KINDS, ["not_mine", "wrong_team", "other", "missing", "find_me"]);
   assert.deepEqual(parseRequest({ kind: "wrong_position", history_id: 1 }), { ok: false, error: "bad-kind" });
+});
+
+test("parseRequestSet — id·상태·답 300자·expect", () => {
+  assert.deepEqual(parseRequestSet({ id: "7", status: "반영", answer: " 고쳤어요 ", verified: true, expect: "2026-10-01T00:00:00+00:00" }),
+    { ok: true, set: { id: 7, status: "반영", answer: "고쳤어요", verified: true, expect: "2026-10-01T00:00:00+00:00" } });
+  assert.deepEqual(parseRequestSet({ id: 0, status: "반영", expect: "x" }), { ok: false, error: "bad-id" });
+  assert.deepEqual(parseRequestSet({ id: 1, status: "신청", expect: "x" }), { ok: false, error: "bad-status" });
+  assert.deepEqual(parseRequestSet({ id: 1, status: "반영", answer: "가".repeat(301), expect: "x" }), { ok: false, error: "answer-too-long" });
+  assert.deepEqual(parseRequestSet({ id: 1, status: "반영", expect: "" }), { ok: false, error: "conflict" });
+  assert.equal(parseRequestSet({ id: 1, status: "반영", verified: "true", expect: "x" }).set.verified, false);   // 참은 true 하나만
+  assert.deepEqual(REQ_SET_STATUS, ["확인 중", "반영", "반영 안 함"]);
+  assert.deepEqual(REQ_FILTERS, ["open", "done", "all"]);
+});
+
+test("requestSetBlock — 충돌 · 반영 안 함은 답 · 내 것이 아니에요 반영은 본인 확인", () => {
+  const S = (o) => ({ id: 1, status: "반영", answer: "", verified: false, expect: "T1", ...o });
+  assert.equal(requestSetBlock(S({}), { kind: "wrong_team", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({ expect: "T0" }), { kind: "wrong_team", updated_at: "T1" }), "conflict");
+  assert.equal(requestSetBlock(S({ status: "반영 안 함" }), { kind: "wrong_team", updated_at: "T1" }), "need-answer");
+  assert.equal(requestSetBlock(S({ status: "반영 안 함", answer: "원본이 맞아요" }), { kind: "wrong_team", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({}), { kind: "not_mine", updated_at: "T1" }), "need-verified");
+  assert.equal(requestSetBlock(S({ verified: true }), { kind: "not_mine", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({ status: "확인 중" }), { kind: "not_mine", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({ status: "반영 안 함", answer: "본인이 아니래요" }), { kind: "not_mine", updated_at: "T1" }), null);
+});
+
+test("requestSetPatch — 끝난 상태만 handled_at · 확인 중은 null · updated_at 은 늘", () => {
+  const set = { id: 1, status: "반영", answer: "고쳤어요", verified: false, expect: "T" };
+  assert.deepEqual(requestSetPatch(set, "m1", "2026-10-01T01:00:00.000Z"),
+    { status: "반영", answer: "고쳤어요", handled_by: "m1", handled_at: "2026-10-01T01:00:00.000Z", updated_at: "2026-10-01T01:00:00.000Z" });
+  assert.equal(requestSetPatch({ ...set, status: "확인 중" }, "m1", "N").handled_at, null);
+});
+
+test("requestAuditDetail — 이름·답 없이 id·종류·전후·확인", () => {
+  assert.deepEqual(requestAuditDetail({ kind: "not_mine", status: "신청" }, { id: 3, status: "반영", answer: "개인 사정", verified: true, expect: "T" }),
+    { id: 3, kind: "not_mine", from: "신청", to: "반영", verified: true });
+});
+
+test("requestAdminOut — 정해진 칸만(user_id·person_id·handled_by 없음) · found · 빼 둔 줄", () => {
+  const r = { id: "5", kind: "wrong_team", detail: "d", year: null, team_text: "", status: "신청", answer: "", created_at: "C", updated_at: "U",
+    handled_at: null, who_type: "교구", who_group: "기쁨", who_sub: "12", who_name: "홍길동", person_id: 990000001, history_id: 9,
+    user_id: "0f8fad5b-d9cb-469f-a165-70867728950e", handled_by: "m1" };
+  const row = { id: 9, year: 2025, committee: "찬양위원회", team: "시온성가대", role_title: "", position: "집사", deleted_at: "2026-10-01", person_id: 1, mok: "기쁨-12" };
+  const o = requestAdminOut(r, row);
+  assert.deepEqual(Object.keys(o).sort(), REQUEST_ADMIN_OUT_KEYS);
+  assert.deepEqual(o.who, { type: "교구", group: "기쁨", sub: "12", name: "홍길동" });
+  assert.equal(o.found, true);
+  assert.deepEqual(o.row, { id: 9, year: 2025, committee: "찬양위원회", team: "시온성가대", role_title: "", position: "집사", deleted: true });
+  assert.ok(!JSON.stringify(o).includes("990000001") && !JSON.stringify(o).includes("0f8fad5b") && !JSON.stringify(o).includes("기쁨-12"));
+  assert.equal(requestAdminOut({ ...r, person_id: null }, null).found, false);
+  assert.equal(requestAdminOut(r, null).row, null);
+});
+
+test("filterRequests·requestCounts — 끝나지 않은 것은 오래된 것부터 · 끝난 것·전부는 최근 것부터", () => {
+  const q = (id, status, created_at) => ({ id, status, created_at });
+  const rows = [q(1, "반영", "2026-09-01"), q(2, "신청", "2026-09-03"), q(3, "확인 중", "2026-09-02"), q(4, "반영 안 함", "2026-09-04")];
+  assert.deepEqual(filterRequests(rows, "open").map((x) => x.id), [3, 2]);
+  assert.deepEqual(filterRequests(rows, "done").map((x) => x.id), [4, 1]);
+  assert.deepEqual(filterRequests(rows, "all").map((x) => x.id), [4, 2, 3, 1]);
+  assert.deepEqual(requestCounts(rows), { "신청": 1, "확인 중": 1 });
 });

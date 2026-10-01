@@ -115,3 +115,75 @@ const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);   //
 export function sortHistory<T extends { year: number; committee: string; team: string; id: number }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => b.year - a.year || cmp(a.committee, b.committee) || cmp(a.team, b.team) || a.id - b.id);
 }
+
+// ── 담당자 처리 「📮 정정 신청」(2026-10-01) ──
+//   설계: v2 docs/superpowers/specs/2026-10-01-ministry-history-requests-admin-design.md §3·§4
+//   ⚠️ 응답에 user_id·person_id·handled_by 를 싣지 않는다(requestAdminOut 이 정한다 — 시험이 키 집합을 대조).
+export const REQ_FILTERS = ["open", "done", "all"];
+export const REQ_SET_STATUS = ["확인 중", "반영", "반영 안 함"];   // 「신청」은 성도님이 낸 상태 — 담당자가 고르지 않는다
+export const REQ_ANSWER_MAX = 300;
+export const REQ_LIST_MAX = 500;
+export const REQUEST_ADMIN_SELECT =
+  "id,kind,detail,year,team_text,status,answer,created_at,updated_at,handled_at,who_type,who_group,who_sub,who_name,person_id,history_id";
+export const ROW_ADMIN_SELECT = "id,year,committee,team,role_title,position,deleted_at";
+export const REQUEST_ADMIN_OUT_KEYS = ["answer", "created_at", "detail", "found", "handled_at", "id", "kind", "row", "status",
+  "team_text", "updated_at", "who", "year"];
+
+export type ReqSet = { id: number; status: string; answer: string; verified: boolean; expect: string };
+
+export function parseRequestSet(b: any): { ok: true; set: ReqSet } | { ok: false; error: string } {
+  const id = Number(b?.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "bad-id" };
+  const status = tidy(b?.status);
+  if (!REQ_SET_STATUS.includes(status)) return { ok: false, error: "bad-status" };
+  const answer = tidy(b?.answer);
+  if (answer.length > REQ_ANSWER_MAX) return { ok: false, error: "answer-too-long" };
+  const expect = String(b?.expect ?? "").trim();
+  if (!expect) return { ok: false, error: "conflict" };   // 무엇을 보고 바꾸는지 모르면 덮어쓰지 않는다
+  return { ok: true, set: { id, status, answer, verified: b?.verified === true, expect } };
+}
+
+// 지금 줄(cur)에 비춰 막기 — null 이면 써도 된다
+export function requestSetBlock(set: ReqSet, cur: { kind: string; updated_at: string }): string | null {
+  if (String(cur.updated_at) !== set.expect) return "conflict";
+  if (set.status === "반영 안 함" && !set.answer) return "need-answer";
+  // 「내 것이 아니에요」는 남의 이름으로 들어와서도 낼 수 있다 — 반영(=그 줄을 그분에게서 떼기) 전에 본인 확인(친구 결정)
+  if (set.status === "반영" && cur.kind === "not_mine" && !set.verified) return "need-verified";
+  return null;
+}
+
+export function requestSetPatch(set: ReqSet, memberId: string | null, nowIso: string) {
+  const done = set.status !== "확인 중";
+  return { status: set.status, answer: set.answer, handled_by: memberId, handled_at: done ? nowIso : null, updated_at: nowIso };
+}
+
+export function requestAuditDetail(cur: { kind: string; status: string }, set: ReqSet) {
+  return { id: set.id, kind: cur.kind, from: cur.status, to: set.status, verified: set.verified };
+}
+
+export function requestAdminOut(r: any, row: any | null) {
+  return {
+    id: Number(r.id), kind: String(r.kind ?? ""), detail: String(r.detail ?? ""), year: r.year == null ? null : Number(r.year),
+    team_text: String(r.team_text ?? ""), status: String(r.status ?? ""), answer: String(r.answer ?? ""),
+    created_at: String(r.created_at ?? ""), updated_at: String(r.updated_at ?? ""), handled_at: r.handled_at ? String(r.handled_at) : null,
+    who: { type: String(r.who_type ?? ""), group: String(r.who_group ?? ""), sub: String(r.who_sub ?? ""), name: String(r.who_name ?? "") },
+    found: r.person_id != null,
+    row: row ? {
+      id: Number(row.id), year: Number(row.year), committee: String(row.committee ?? ""), team: String(row.team ?? ""),
+      role_title: String(row.role_title ?? ""), position: String(row.position ?? ""), deleted: !!row.deleted_at,
+    } : null,
+  };
+}
+
+// 끝나지 않은 것은 오래된 것부터(먼저 온 신청을 먼저) · 끝난 것·전부는 최근 것부터 · 최대 REQ_LIST_MAX
+export function filterRequests<T extends { id: number; status: string; created_at: string }>(rows: T[], filter: string): T[] {
+  const open = (r: T) => REQ_OPEN.includes(r.status);
+  const pick = filter === "open" ? rows.filter(open) : filter === "done" ? rows.filter((r) => !open(r)) : [...rows];
+  const dir = filter === "open" ? 1 : -1;
+  return pick.sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id - b.id) * dir)
+    .slice(0, REQ_LIST_MAX);
+}
+
+export function requestCounts(rows: { status: string }[]) {
+  return { "신청": rows.filter((r) => r.status === "신청").length, "확인 중": rows.filter((r) => r.status === "확인 중").length };
+}
