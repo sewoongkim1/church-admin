@@ -438,7 +438,7 @@ const REQ = (o = {}) => ({ id: 7, kind: "missing", year: 2023, team_text: "찬�
 // 화면이 고쳐 보낸 내용(parseRequestLine 을 거친 모양)
 const LINE = (o = {}) => ({ year: 2023, committee: "찬양위원회", team: "시온성가대", role_title: "", expect: "", ...o });
 // applyMissingRequest 의 옵션 — 시험마다 교적 직분·마지막 빼기 기록을 바꿔 끼운다
-const OPT = (o = {}) => ({ line: null, memberId: "m", nowIso: "T1", mayRestore: false,
+const OPT = (o = {}) => ({ line: null, memberId: "m", nowIso: "T1",
   positionLookup: async () => "권사", lastDeleteLookup: async () => { throw new Error("이 시험은 빼기 기록을 묻지 않는다"); }, ...o });
 
 test("parseTeamText — 「·•/|」로 나눔 · 끝 직분 떼기(끝 낱말 전체가 직분일 때만 · 님 뗌) · 한 조각이면 첫 빈칸에서 둘 · 셋 이상은 팀에 「 · 」로", () => {
@@ -557,7 +557,7 @@ test("applyMissingRequest — 넣기: 본인 교인ID · 사람이 이은 줄 ·
   const { db, rows } = memDb();
   const asked = [];
   const look = async (pid) => { asked.push(pid); return "권사"; };
-  const a = await applyMissingRequest(db, REQ({ team_text: "새가족부 · 운영 · 안수집사" }), OPT({ positionLookup: look, mayRestore: true }));
+  const a = await applyMissingRequest(db, REQ({ team_text: "새가족부 · 운영 · 안수집사" }), OPT({ positionLookup: look }));
   assert.deepEqual(a, { id: 100, year: 2023, created: true });
   assert.deepEqual(asked, [11]);
   assert.equal(rows.length, 1);
@@ -635,18 +635,14 @@ test("applyMissingRequest — 살아 있는 줄 고치기는 updated_at 으로 �
   assert.ok(upd.some(([n, a]) => n === "is" && a[0] === "deleted_at" && a[1] === null), "고치기가 빼 둔 줄을 건드릴 수 있다");
 });
 
-test("applyMissingRequest — 빼 둔 줄: 「반영」으로 들어올 때(mayRestore)만 · 마지막 빼기가 정정 신청 쪽이었을 때만 되살린다(고친 내용도 함께)", async () => {
+test("applyMissingRequest — 빼 둔 줄: 마지막 빼기가 정정 신청 쪽(from:\"request\")이었을 때만 되살린다(고친 내용도 함께) · 손으로 뺀 줄·기록 없음은 history-removed", async () => {
   const OUT = LIVE({ deleted_at: "D", deleted_by: "m0", updated_at: "U1" });
-  // 반영에 머문 채(답만 고침·반영 한 번 더) — 되살리지 않는다 · 빼기 기록도 묻지 않는다
-  let m = memDb([OUT]);
-  assert.deepEqual(await applyMissingRequest(m.db, REQ(), OPT({ mayRestore: false })), { error: "history-removed", id: 100 });
-  assert.equal(m.rows[0].deleted_at, "D");
-
   // 마지막 빼기가 「📜 사역 이력」에서 손으로(from 없음) · 기록이 없음 · 다른 from — 되살리지 않는다
+  let m;
   for (const last of [{ year: 2023 }, null, { year: 2023, from: "history" }]) {
     m = memDb([OUT]);
     const seen = [];
-    const r = await applyMissingRequest(m.db, REQ(), OPT({ mayRestore: true, lastDeleteLookup: async (id) => { seen.push(id); return last; } }));
+    const r = await applyMissingRequest(m.db, REQ(), OPT({ lastDeleteLookup: async (id) => { seen.push(id); return last; } }));
     assert.deepEqual(r, { error: "history-removed", id: 100 }, JSON.stringify(last));
     assert.deepEqual(seen, [100]);
     assert.equal(m.rows[0].deleted_at, "D");
@@ -655,7 +651,7 @@ test("applyMissingRequest — 빼 둔 줄: 「반영」으로 들어올 때(mayR
   // 정정 신청 쪽이 뺐다 — 되살린다 · 고친 내용도 넣는다
   m = memDb([OUT]);
   const fromReq = async () => ({ year: 2023, from: "request", request: 7 });
-  const r = await applyMissingRequest(m.db, REQ(), OPT({ mayRestore: true, nowIso: "T5", lastDeleteLookup: fromReq,
+  const r = await applyMissingRequest(m.db, REQ(), OPT({ nowIso: "T5", lastDeleteLookup: fromReq,
     line: LINE({ team: "호산나찬양대", role_title: "팀장", expect: "U1" }) }));
   assert.deepEqual(r, { id: 100, year: 2023, restored: true, fields: ["team", "role_title"] });
   assert.deepEqual([m.rows[0].deleted_at, m.rows[0].deleted_by, m.rows[0].updated_at, m.rows[0].team, m.rows[0].role_title],
@@ -663,13 +659,20 @@ test("applyMissingRequest — 빼 둔 줄: 「반영」으로 들어올 때(mayR
 
   // 고친 내용 없이(옛 화면) — 그대로 되살린다
   m = memDb([OUT]);
-  assert.deepEqual(await applyMissingRequest(m.db, REQ(), OPT({ mayRestore: true, lastDeleteLookup: fromReq })),
+  assert.deepEqual(await applyMissingRequest(m.db, REQ(), OPT({ lastDeleteLookup: fromReq })),
+    { id: 100, year: 2023, restored: true, fields: [] });
+  assert.equal(m.rows[0].deleted_at, null);
+
+  // 상태가 어디서 왔는지는 보지 않는다(2026-10-02 · 263fa20 의 mayRestore 를 걷었다) — 「확인 중→반영」에서 되살리다 DB 오류가 나
+  //   「잠시 뒤 「반영」을 한 번 더」 안내를 따라 반영에 머문 채 다시 눌러도 되살린다. 옛 부르는 쪽이 mayRestore:false 를 넘겨도 읽지 않는다.
+  m = memDb([OUT]);
+  assert.deepEqual(await applyMissingRequest(m.db, REQ(), OPT({ mayRestore: false, lastDeleteLookup: fromReq })),
     { id: 100, year: 2023, restored: true, fields: [] });
   assert.equal(m.rows[0].deleted_at, null);
 
   // 창이 본 뒤로 그 줄이 바뀌었다(expect 다름) — 되살리지 않는다
   m = memDb([OUT]);
-  assert.deepEqual(await applyMissingRequest(m.db, REQ(), OPT({ mayRestore: true, lastDeleteLookup: fromReq, line: LINE({ expect: "U-old" }) })),
+  assert.deepEqual(await applyMissingRequest(m.db, REQ(), OPT({ lastDeleteLookup: fromReq, line: LINE({ expect: "U-old" }) })),
     { error: "line-conflict" });
   assert.equal(m.rows[0].deleted_at, "D");
 });
@@ -681,7 +684,7 @@ test("applyMissingRequest — 마지막 빼기 기록은 lastDeleteLookup 이 �
     seen.push(qb.log);
     return { data: { detail: { year: 2023, from: "request", request: 7 } }, error: null };
   } });
-  const r = await applyMissingRequest(db, REQ(), OPT({ mayRestore: true, lastDeleteLookup: undefined }));
+  const r = await applyMissingRequest(db, REQ(), OPT({ lastDeleteLookup: undefined }));
   assert.equal(r.restored, true);
   assert.equal(rows[0].deleted_at, null);
   const log = seen[0];
@@ -693,7 +696,7 @@ test("applyMissingRequest — 마지막 빼기 기록은 lastDeleteLookup 이 �
 
 test("applyMissingRequest — 지워 달라는 요청으로 지운 줄(erasedKey(req:<id>))이면 history-deleted · 줄을 못 만들면 그 코드 · 넣지 않는다", async () => {
   const { db, rows } = memDb([{ id: 1, src_key: await erasedKey("req:7"), year: 2023, deleted_at: "D" }]);
-  assert.deepEqual(await applyMissingRequest(db, REQ(), OPT({ mayRestore: true })), { error: "history-deleted" });
+  assert.deepEqual(await applyMissingRequest(db, REQ(), OPT()), { error: "history-deleted" });
   assert.equal(rows.length, 1);
   const e = memDb();
   assert.deepEqual(await applyMissingRequest(e.db, REQ({ team_text: "가".repeat(HISTORY_FIELD_MAX + 1) }), OPT()), { error: "history-too-long" });

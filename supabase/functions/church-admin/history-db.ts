@@ -334,7 +334,9 @@ async function churchPosition(db: Db, personId: number): Promise<string> {
   return data ? positionFromChurch(data) : "";
 }
 
-// 그 줄의 마지막 「빼기」 기록(detail) — 정정 신청 쪽이 뺐으면 {from:"request"} 가 있다(「📜 사역 이력」에서 손으로 뺀 rowDelete 는 {year} 만)
+// 그 줄의 마지막 「빼기」 기록(detail) — 정정 신청 쪽이 뺐으면 {from:"request"} 가 있다(「📜 사역 이력」에서 손으로 뺀 rowDelete 는 {year} 만).
+//   되살릴지는 이것 하나로 정한다(applyMissingRequest) — 신청 「삭제」로 뺀 줄(why:"request-deleted")도 from:"request" 지만
+//   그 신청 줄이 지워져 다시 「반영」할 길이 없으니 되살아날 수 없다.
 async function lastDeleteDetail(db: Db, rowId: number): Promise<Record<string, unknown> | null> {
   const { data, error } = await db.from("admin_audit").select("detail").eq("action", "history.delete").eq("target", String(rowId))
     .order("id", { ascending: false }).limit(1).maybeSingle();
@@ -357,19 +359,21 @@ function lineDiff(line: ReqLine | null, row: any): Record<string, unknown> {
 export type MissingApply = { id?: number; year?: number; created?: boolean; restored?: boolean; edited?: boolean; fields?: string[]; error?: string };
 export type MissingApplyOpts = {
   line?: ReqLine | null; memberId: string | null; nowIso: string;
-  mayRestore: boolean;                                                            // 상태가 다른 데서 「반영」으로 들어올 때만 참(반영에 머물면 거짓)
   positionLookup?: (personId: number) => Promise<string>;                         // 시험이 교적 직분 읽기를 바꿔 끼운다(없으면 church_people)
   lastDeleteLookup?: (rowId: number) => Promise<Record<string, unknown> | null>;  // 시험이 마지막 빼기 기록 읽기를 바꿔 끼운다(없으면 admin_audit)
 };
 
 // 「반영」 — 이 신청의 줄(req:<id>)이
 //   살아 있으면: 고친 내용(line)이 다를 때만, 창이 본 그대로(updated_at = line.expect)일 때 고친다(edited · fields) — 아니면 line-conflict · 같으면 그대로(created:false)
-//   빼 두었으면: 「반영」으로 들어올 때(mayRestore)만, 그리고 마지막 빼기가 정정 신청 쪽(from:"request")이었을 때만 되살린다(restored · 고친 내용도 함께).
-//               「📜 사역 이력」에서 손으로 뺀 줄은 되살리지 않는다(history-removed · 2026-10-02 리뷰 D2).
+//   빼 두었으면: 마지막 빼기가 정정 신청 쪽(from:"request")이었을 때만 되살린다(restored · 고친 내용도 함께).
+//               「📜 사역 이력」에서 손으로 뺀 줄(기록에 from 없음)·빼기 기록이 없는 줄은 되살리지 않는다(history-removed · 2026-10-02 리뷰 D2).
+//               ⚠️ 상태가 어디서 왔는지(확인 중→반영인지 반영에 머문 다시 누름인지)는 보지 않는다 — 263fa20 은 「반영으로 들어올 때만」도 보았는데,
+//               「확인 중→반영」에서 되살리다 DB 오류가 나면 안내(「잠시 뒤 「반영」을 한 번 더」)를 따른 다음 누름이 반영에 머문 길이라
+//               「직접 뺀 줄이라 다시 넣지 않았어요」로 잘못 답했다(2026-10-02 · 그 조건을 걷었다).
 //   없으면: 넣는다(created) — 본인 교인ID 로 사람이 이은 줄(manual · 근거 「본인 정정 신청」 · 다시 맞추기가 덮지 않는다).
 //   교인ID 가 없는 신청은 넣지 않는다(no-person) — 서버(requestBlock)가 빠진 사역은 교적을 찾은 분에게만 받는다.
 export async function applyMissingRequest(db: Db, req: any, opts: MissingApplyOpts): Promise<MissingApply> {
-  const { line = null, memberId, nowIso, mayRestore, positionLookup, lastDeleteLookup } = opts;
+  const { line = null, memberId, nowIso, positionLookup, lastDeleteLookup } = opts;
   const pid = req?.person_id !== null && req?.person_id !== undefined && Number(req.person_id) > 0 ? Number(req.person_id) : null;
   if (pid === null) return { error: "no-person" };
   const key = requestKey(req?.id);
@@ -389,7 +393,6 @@ export async function applyMissingRequest(db: Db, req: any, opts: MissingApplyOp
     return { id: Number(ex.id), year: Number(patch.year ?? ex.year), edited: true, fields };
   }
   if (ex) {
-    if (!mayRestore) return { error: "history-removed", id: Number(ex.id) };
     const last = await (lastDeleteLookup ?? ((x: number) => lastDeleteDetail(db, x)))(Number(ex.id));
     if (last?.from !== "request") return { error: "history-removed", id: Number(ex.id) };
     // 창이 빼 둔 그 줄을 보고 고쳤다면 그대로일 때만(줄이 없던 때를 봤으면 잠그지 않는다 — 고친 내용은 그래도 넣는다)

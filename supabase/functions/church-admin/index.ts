@@ -1823,7 +1823,8 @@ async function historyRequestList(b: any) {
 // 「빠진 사역」(kind missing) 신청의 사역 이력 줄 — 「반영」이 되면 그 해 이력에 더하고(applyMissingRequest · 고친 내용 line 대로), 「반영」에서 벗어나면 뺀다.
 //   신청 상태는 이미 바뀌었다 — 줄 쓰기가 실패해도 상태 바꾼 것을 되돌리지 않는다(응답 history:{error} → 화면이 창으로 알린다).
 //   ⚠️ try 는 줄 쓰기(applyMissingRequest·undoMissingRequest)만 감싼다 — 기록(audit)은 그 밖에서. 기록이 실패하면 다른 액션처럼 던진다(2026-10-02 리뷰 D1).
-//   되살리기는 상태가 다른 데서 「반영」으로 들어올 때만(mayRestore) — 반영에 머문 채(답만 고침·반영 한 번 더)는 빼 둔 줄을 되살리지 않는다(D2).
+//   빼 둔 줄은 마지막 빼기 기록이 정정 신청 쪽(from:"request")일 때만 되살린다 — 「📜 사역 이력」에서 손으로 뺀 줄은 아니다(history-removed · D2).
+//   상태가 어디서 왔는지는 보지 않는다 — 「확인 중→반영」에서 되살리다 실패한 뒤 반영에 머문 채 한 번 더 눌러도 되살린다(2026-10-02).
 //   기록: history.add(더함 · 되살림 restored:true) · history.edit(고친 칸 fields — 되살리며 고쳤어도) · history.delete(뺌)
 //         detail 은 {year, from:"request", request: 신청 id}(+ fields·restored)만(이름·교인ID·글 없음).
 //   돌려주는 것: null(할 일 없음) · {id, year, created|restored|edited|removed (, fields)} · {error}
@@ -1836,7 +1837,7 @@ async function missingRequestHistory(ctx: Ctx, req: any, from: string, to: strin
   if (to === "반영") {
     let r: MissingApply;
     try {
-      r = await applyMissingRequest(db, req, { line, memberId: mid, nowIso: now, mayRestore: from !== "반영" });
+      r = await applyMissingRequest(db, req, { line, memberId: mid, nowIso: now });
     } catch (err) {
       console.error("history request → ministry_history", err);
       return { error: "history-failed" };
@@ -1880,7 +1881,8 @@ async function historyRequestSet(ctx: Ctx, b: any) {
   }
   if (requestSetNoop(p.set, cur)) {
     // 이미 「반영」된 빠진 사역 신청을 「반영」으로 한 번 더 — 그 해 이력에 이 신청의 줄이 없으면(이 기능 전에 반영했다) 채우고,
-    //   고친 내용(line)이 줄과 다르면 고친다. 빼 둔 줄은 되살리지 않는다(mayRestore 거짓 — history-removed).
+    //   고친 내용(line)이 줄과 다르면 고친다. 빼 둔 줄은 마지막 빼기가 정정 신청 쪽일 때만 되살린다(「확인 중→반영」에서 되살리다
+    //   실패한 뒤의 다시 누름 · 손으로 뺀 줄은 history-removed).
     //   줄이 그대로면 예전처럼 쓰지도 기록하지도 않는다({ok, same}).
     if (cur.kind === "missing" && p.set.status === "반영") {
       const h = await missingRequestHistory(ctx, cur, "반영", "반영", line);
