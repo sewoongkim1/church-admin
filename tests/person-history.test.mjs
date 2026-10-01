@@ -137,7 +137,7 @@ test("linkDoneText — 셋의 알림 · 풀었는데 다시 붙으면 「이분 
   const h = H();
   assert.equal(linkDoneText("manual", { ok: true, history: h }), "이분 기록으로 이었어요");
   assert.equal(linkDoneText("none", { ok: true, history: h }), "이분 기록이 아니라고 적었어요");
-  assert.equal(linkDoneText("auto", { ok: true, relinked: false, history: h }), "잇기를 풀었어요");
+  assert.equal(linkDoneText("auto", { ok: true, relinked: false, history: h }), "연결을 끊었어요");
   assert.ok(linkDoneText("auto", { ok: true, relinked: true, history: h }).includes("「이분 아님」"));
   assert.equal(linkDoneText("manual", { ok: true, relinked: true, history: h }), "이분 기록으로 이었어요", "relinked 는 풀기만");
   for (const how of ["manual", "none", "auto"]) {

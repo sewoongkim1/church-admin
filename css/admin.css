@@ -798,6 +798,8 @@ a.mn-tel.sm{padding:2px 8px}
 .dlg.pd .pd-hm{margin-left:6px;font-size:13px;color:var(--ink-2)}
 .dlg.pd .pd-hx,.dlg.pd .pd-hb{min-height:var(--chip);padding:0 12px;border-radius:999px;border:1px solid var(--ghost-bd);
   background:var(--paper);color:var(--navy);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+/* 「연결 끊기」 — 아주 좁은 폰(창 안쪽 360px 아래)에서는 「끊기」만(팀 이름 칸이 글자 중간에서 끊기지 않게 · 2026-10-02) */
+@container (max-width:359px){.dlg.pd .pd-hx-w{display:none}}
 .dlg.pd .pd-hb.warn{color:var(--error);border-color:currentColor}
 .dlg.pd .pd-hc{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
 .dlg.pd .pd-hc small{margin-right:auto;font-size:13px;color:var(--ink-2)}

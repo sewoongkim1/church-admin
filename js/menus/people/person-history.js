@@ -20,7 +20,7 @@ const join = (...xs) => xs.map((x) => String(x ?? "").trim()).filter(Boolean).jo
 // 잇기·풀기 뒤 알림(person-tabs.js link) — r = 서버 응답. 풀었는데 규칙이 다시 이분께 이었으면 「이분 아님」을 권한다.
 // ⚠️ 서버가 탭 자료(history)를 못 실었으면(다시 읽기 실패 · 쓰기는 됐다 — 2026-10-02 가지 마지막 검토) 창의 탭은 옛 모양 그대로라
 //    「창을 다시 열면」을 덧붙인다(그 줄을 또 누르면 not-linked 로 막힌다).
-const LINK_DONE = { manual: "이분 기록으로 이었어요", none: "이분 기록이 아니라고 적었어요", auto: "잇기를 풀었어요" };
+const LINK_DONE = { manual: "이분 기록으로 이었어요", none: "이분 기록이 아니라고 적었어요", auto: "연결을 끊었어요" };
 export const LINK_STALE = " — 창을 닫고 다시 열면 바뀐 기록이 보여요";
 export function linkDoneText(how, r) {
   const base = how === "auto" && r?.relinked ? "규칙이 다시 이분께 이었어요 — 이분 기록이 아니면 「이분 아님」을 눌러 주세요"
@@ -64,8 +64,8 @@ function linkedRow(tab, r, year, ui) {
   const manual = r?.how === "manual" ? `<small class="pd-hm">사람이 이음</small>` : "";
   const c = ui && ui.confirm && ui.confirm.key === rowKey(r?.kind, r?.row) ? ui.confirm : null;
   const tail = !c
-    ? `<button type="button" class="pd-hx" data-pd-act="unlink" ${dataRow(r)} aria-label="${t(text)} — 잇기 풀기">풀기</button>`
-    : `<span class="pd-hc" role="group" aria-label="잇기 풀기 확인"><small>${c.relinked ? "규칙이 다시 이분께 이었어요" : "연결을 끊을까요?"}</small>` +
+    ? `<button type="button" class="pd-hx" data-pd-act="unlink" ${dataRow(r)} aria-label="${t(text)} — 연결 끊기"><span class="pd-hx-w">연결 </span>끊기</button>`
+    : `<span class="pd-hc" role="group" aria-label="연결 끊기 확인"><small>${c.relinked ? "규칙이 다시 이분께 이었어요" : "연결을 끊을까요?"}</small>` +
       (c.relinked ? "" : `<button type="button" class="pd-hb" data-pd-act="unlink-yes" ${dataRow(r)}>예</button>`) +
       `<button type="button" class="pd-hb" data-pd-act="unlink-no" ${dataRow(r)}>${c.relinked ? "그대로 두기" : "아니요"}</button>` +
       `<button type="button" class="pd-hb warn" data-pd-act="notme" ${dataRow(r)}>이분 아님</button></span>`;
