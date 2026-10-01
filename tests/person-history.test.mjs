@@ -68,7 +68,7 @@ test("histPanelHtml — 해는 처음 한 번 · 줄마다 「풀기」 · 사�
 test("histPanelHtml — 「풀기」 확인은 그 줄 안에서(창 위에 창 없음) · 다시 붙었으면 「이분 아님」을 권한다", () => {
   const c = histPanelHtml("ministry", H([M({ row: 5 }), M({ row: 6 })], []), { confirm: { key: rowKey("order", 5), relinked: false } });
   noNL(c); noBad(c);
-  assert.ok(c.includes("정말 풀까요?"));
+  assert.ok(c.includes("연결을 끊을까요?"));
   for (const a of ["unlink-yes", "unlink-no", "notme"]) assert.equal((c.match(new RegExp(`data-pd-act="${a}"`, "g")) || []).length, 1, a);
   assert.equal((c.match(/data-pd-act="unlink"/g) || []).length, 1, "다른 줄은 그대로 「풀기」");
   const r = histPanelHtml("ministry", H([M({ row: 5 })], []), { confirm: { key: rowKey("order", 5), relinked: true } });

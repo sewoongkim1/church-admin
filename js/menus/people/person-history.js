@@ -57,7 +57,7 @@ export function bibleText(r) {
 }
 const dataRow = (r) => `data-kind="${t(r?.kind)}" data-row="${t(r?.row)}"`;
 
-// 이어진 줄 하나 — [해] · 글 · [칩] · 「풀기」(확인 중이면 그 자리에서 「정말 풀까요? 예 · 아니요 · 이분 아님」)
+// 이어진 줄 하나 — [해] · 글 · [칩] · 「풀기」(확인 중이면 그 자리에서 「연결을 끊을까요? 예 · 아니요 · 이분 아님」)
 function linkedRow(tab, r, year, ui) {
   const text = tab === "ministry" ? ministryText(r) : bibleText(r);
   const chip = tab === "ministry" ? statusChip(r?.kind === "history" ? "임명확정" : r?.status) : "";
@@ -65,7 +65,7 @@ function linkedRow(tab, r, year, ui) {
   const c = ui && ui.confirm && ui.confirm.key === rowKey(r?.kind, r?.row) ? ui.confirm : null;
   const tail = !c
     ? `<button type="button" class="pd-hx" data-pd-act="unlink" ${dataRow(r)} aria-label="${t(text)} — 잇기 풀기">풀기</button>`
-    : `<span class="pd-hc" role="group" aria-label="잇기 풀기 확인"><small>${c.relinked ? "규칙이 다시 이분께 이었어요" : "정말 풀까요?"}</small>` +
+    : `<span class="pd-hc" role="group" aria-label="잇기 풀기 확인"><small>${c.relinked ? "규칙이 다시 이분께 이었어요" : "연결을 끊을까요?"}</small>` +
       (c.relinked ? "" : `<button type="button" class="pd-hb" data-pd-act="unlink-yes" ${dataRow(r)}>예</button>`) +
       `<button type="button" class="pd-hb" data-pd-act="unlink-no" ${dataRow(r)}>${c.relinked ? "그대로 두기" : "아니요"}</button>` +
       `<button type="button" class="pd-hb warn" data-pd-act="notme" ${dataRow(r)}>이분 아님</button></span>`;
