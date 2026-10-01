@@ -53,16 +53,36 @@ export function tidyHistoryRow(x: any): { row: Record<string, any> | null; error
   return { row, error: "" };
 }
 
-export function rowOut(r: any, full: boolean) {
+export function rowOut(r: any, full: boolean, inDirectory?: boolean) {
+  const hasPerson = r.person_id !== null && r.person_id !== undefined;
   const o: Record<string, unknown> = {
     id: Number(r.id), year: r.year, committee: r.committee, team: r.team, role_title: r.role_title, name: r.name,
     position: r.position, mok: r.mok, renewal: r.renewal, src_note: r.src_note,
-    linked: r.person_id !== null && r.person_id !== undefined, link_how: r.link_how,
+    linked: hasPerson, link_how: r.link_how,
     match_basis: r.match_basis, match_reason: r.match_reason, weak: !!r.match_basis && WEAK_RE.test(r.match_basis),
     source: r.source, updated_at: r.updated_at,
+    in_directory: hasPerson ? (inDirectory === undefined ? null : inDirectory) : null,
   };
   if (full) o.person_id = r.person_id ?? null;
   return o;
+}
+
+// person_id 들이 지금 교인명부(church_people)에 있는가 — 100개씩(정수라 .in() 이스케이프 걱정 없음 · 설계 §3.3 「명부에 없음」)
+async function directorySet(db: Db, ids: number[]): Promise<Set<number>> {
+  const out = new Set<number>();
+  const uniq = [...new Set(ids)];
+  for (let i = 0; i < uniq.length; i += 100) {
+    const part = uniq.slice(i, i + 100);
+    const { data, error } = await db.from("church_people").select("person_id").in("person_id", part);
+    if (error) throw error;
+    for (const p of (data ?? []) as any[]) out.add(Number(p.person_id));
+  }
+  return out;
+}
+// 모든 person_id — exportRows 처럼 수천 줄을 한 번에 가릴 때(수천 번 .in() 대신 전체를 한 번 페이지로)
+async function allDirectoryIds(db: Db): Promise<Set<number>> {
+  const rows = await all(() => db.from("church_people").select("person_id"));
+  return new Set(rows.map((r: any) => Number(r.person_id)));
 }
 
 async function hasDirectory(db: Db): Promise<boolean> {
@@ -108,12 +128,22 @@ export async function rematchHistoryRows(db: Db, ids: number[] | null): Promise<
 }
 
 // 같은 이름의 명부 후보(창 · 고르기) — person_id 차례. 화면 글자(이름·소속·직분·교적 목장)로 지문을 만든다.
+// ⚠️ 지문(fp)은 「최종으로 보여 준 목록」을 기준으로 만든다 — link() 의 op:"pick" 이 고를 때도 반드시 이 함수 하나로
+//   같은 목록을 다시 만든다(둘이 따로 만들면 지문이 어긋나 「이분」이 늘 candidates-changed 가 난다).
 async function candidatesFor(db: Db, row: any) {
   // postgrest .in() 은 " \ , ( ) 를 이스케이프하지 않는다 — 그런 열쇠는 묻지 않는다(괄호 든 이름은 괄호 뗀 열쇠로 묻는다)
   const keys = nameKeyVariants(row.name).filter((k) => !/["\\,()]/.test(k));
-  if (!keys.length) return { list: [], fp: candFp([]) };
-  const people = await all(() => db.from("church_people").select(HISTORY_PEOPLE_COLS + ",name_key")
-    .in("name_key", keys).order("person_id", { ascending: true }));
+  const people: any[] = keys.length ? await all(() => db.from("church_people").select(HISTORY_PEOPLE_COLS + ",name_key")
+    .in("name_key", keys).order("person_id", { ascending: true })) : [];
+  // 「이름 한 글자 다름(오타로 봄)」같이 다른 이름 규칙으로 이어진 줄은 지금 이어진 분이 이름 열쇠 후보에 없을 수 있다 —
+  // 그분을 빼고 보여 주면 담당자가 지금 이어진 분을 확인할 수 없으니 끝에 더한다(설계 §4.5·§5 줄 창).
+  const pid = row.person_id !== null && row.person_id !== undefined ? Number(row.person_id) : null;
+  if (pid !== null && !people.some((p) => Number(p.person_id) === pid)) {
+    const { data, error } = await db.from("church_people").select(HISTORY_PEOPLE_COLS + ",name_key").eq("person_id", pid).maybeSingle();
+    if (error) throw error;
+    if (data) people.push(data);
+  }
+  if (!people.length) return { list: [], fp: candFp([]) };
   const tk = teamKey(row.team);
   const ids = people.map((p) => Number(p.person_id));
   const served = new Map<number, number>();
@@ -141,7 +171,13 @@ async function readRow(db: Db, id: number) {
   if (error) throw error;
   return data && !data.deleted_at ? data : null;
 }
-const outOrNull = (r: any, full: boolean) => (r ? rowOut(r, full) : null);
+// 줄 하나 + 교적 있는지(person_id 있을 때만 묻는다) → rowOut. readRow 뒤에 늘 이걸로 감싼다.
+async function outOrNull(db: Db, r: any, full: boolean) {
+  if (!r) return null;
+  if (r.person_id === null || r.person_id === undefined) return rowOut(r, full);
+  const dir = await directorySet(db, [Number(r.person_id)]);
+  return rowOut(r, full, dir.has(Number(r.person_id)));
+}
 const idOf = (v: unknown): number => { const n = Number(v) || 0; return Number.isSafeInteger(n) && n > 0 ? n : 0; };
 
 // 올리기 판정(살펴보기·넣기 공용) — 새 줄 · 이미 있음 · 빼 둔 줄과 같음 · 파일 안 겹침 · 틀림
@@ -151,9 +187,10 @@ async function judgeUpload(db: Db, raws: unknown[]) {
     return { i, row: t.row, error: t.error, key: t.row ? srcKey(t.row as any) : "", mark: t.row ? "add" : "bad" };
   });
   const years = [...new Set(items.filter((x) => x.row).map((x) => x.row!.year))];
-  const existing = new Map<string, boolean>();          // src_key → 빼 둔 줄인가
+  const existing = new Map<string, boolean>();          // src_key → 빼 둔 줄인가(모든 해를 본다 — 줄의 해를 고쳐도 src_key 는 안 바뀌어
+                                                          //   연도로만 거르면 고친 줄을 놓친다 · 설계 §3.2)
   if (years.length) {
-    const rows = await all(() => db.from("ministry_history").select("id,src_key,deleted_at").in("year", years).order("id", { ascending: true }));
+    const rows = await all(() => db.from("ministry_history").select("id,src_key,deleted_at").order("id", { ascending: true }));
     for (const r of rows) existing.set(r.src_key, !!r.deleted_at);
   }
   const seen = new Set<string>();
@@ -192,8 +229,9 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
       String(a.team).localeCompare(b2.team, "ko") || String(a.name).localeCompare(b2.name, "ko") || a.id - b2.id);
     const page = Math.max(0, Math.floor(Number(b.page) || 0));
     const shown = hit.slice(page * HISTORY_LIST_PAGE, (page + 1) * HISTORY_LIST_PAGE);
-    return { ok: true, full, rows: shown.map((r) => rowOut(r, full)), total: hit.length, page, pageSize: HISTORY_LIST_PAGE,
-      years: [...yearsAll.values()].sort((a, b2) => b2.year - a.year) };
+    const dir = await directorySet(db, shown.filter((r) => r.person_id !== null).map((r) => Number(r.person_id)));
+    return { ok: true, full, rows: shown.map((r) => rowOut(r, full, r.person_id === null ? undefined : dir.has(Number(r.person_id)))),
+      total: hit.length, page, pageSize: HISTORY_LIST_PAGE, years: [...yearsAll.values()].sort((a, b2) => b2.year - a.year) };
   }
 
   async function upload(ctx: HCtx, b: any, save: boolean) {
@@ -206,15 +244,20 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     const adds = j.items.filter((x) => x.mark === "add");
     if (!save) {
       // 미리보기 — 새 줄을 지금 표와 함께 맞춰 본다(쓰지 않는다)
-      let preview = { linked: 0, unlinked: 0, reasons: [] as [string, number][] };
-      if (adds.length && (await hasDirectory(db))) {
-        const [rows, people] = await Promise.all([loadHistory(db), loadPeople(db)]);
-        const temp: HRow[] = adds.map((x, n) => ({ id: -(n + 1), ...(x.row as any), link_how: "auto", person_id: null }));
-        const res = matchAll([...rows.map(asHRow), ...temp], people).filter((r) => r.id < 0);
-        const rc = new Map<string, number>();
-        for (const r of res) if (r.person_id === null) rc.set(reasonKey(r.match_reason), (rc.get(reasonKey(r.match_reason)) ?? 0) + 1);
-        preview = { linked: res.filter((r) => r.person_id !== null).length, unlinked: res.filter((r) => r.person_id === null).length,
-          reasons: [...rc.entries()].sort((a, c) => c[1] - a[1]) };
+      let preview: { linked: number; unlinked: number; reasons: [string, number][]; noDirectory?: boolean } =
+        { linked: 0, unlinked: 0, reasons: [] };
+      if (adds.length) {
+        if (!(await hasDirectory(db))) {
+          preview.noDirectory = true;
+        } else {
+          const [rows, people] = await Promise.all([loadHistory(db), loadPeople(db)]);
+          const temp: HRow[] = adds.map((x, n) => ({ id: -(n + 1), ...(x.row as any), link_how: "auto", person_id: null }));
+          const res = matchAll([...rows.map(asHRow), ...temp], people).filter((r) => r.id < 0);
+          const rc = new Map<string, number>();
+          for (const r of res) if (r.person_id === null) rc.set(reasonKey(r.match_reason), (rc.get(reasonKey(r.match_reason)) ?? 0) + 1);
+          preview = { linked: res.filter((r) => r.person_id !== null).length, unlinked: res.filter((r) => r.person_id === null).length,
+            reasons: [...rc.entries()].sort((a, c) => c[1] - a[1]) };
+        }
       }
       return { ok: true, counts: j.counts, bad, preview };
     }
@@ -232,18 +275,33 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
       if (!error) { saved += part.length; continue; }
       for (const one of part) {                          // 한 묶음이 막히면 한 줄씩 — 그사이 같은 줄이 들어왔으면(23505) 건너뜀
         const { error: e2 } = await db.from("ministry_history").insert(one);
-        if (!e2) saved++; else if ((e2 as any).code === "23505") j.counts.same++; else { failed++; console.error("history insert", e2); }
+        if (!e2) saved++;
+        // 판정 때는 「새 줄」이었는데 그사이 같은 줄이 들어왔다 — add 에서 same 으로(합이 total 과 맞게)
+        else if ((e2 as any).code === "23505") { j.counts.same++; j.counts.add--; }
+        else { failed++; console.error("history insert", e2); }
       }
     }
-    const { error: e3 } = await db.from("ministry_history_imports").update({ added: saved }).eq("id", imp.id);
+    const { error: e3 } = await db.from("ministry_history_imports")
+      .update({ added: saved, skipped_same: j.counts.same }).eq("id", imp.id);
     if (e3) throw e3;
-    const m = await rematchHistoryRows(db, null);
-    const { count: linked, error: e4 } = await db.from("ministry_history").select("id", { count: "exact", head: true })
-      .eq("import_id", imp.id).not("person_id", "is", null);
-    if (e4) throw e4;
-    await audit(ctx, "history.upload", String(imp.id), { years: j.years, rows: raws.length, ...j.counts, saved, failed,
-      linked: linked ?? 0, unlinked: saved - (linked ?? 0), changed: m.changed });
-    return { ok: true, counts: j.counts, bad, saved, failed, linked: linked ?? 0, unlinked: saved - (linked ?? 0) };
+    // ⚠️ 기록은 쓴 바로 뒤에 — 다시 맞추기가 실패해도(아래) 「넣었는데 기록이 없다」가 되지 않게
+    await audit(ctx, "history.upload", String(imp.id), { years: j.years, rows: raws.length, ...j.counts, saved, failed });
+    let rematched = true;
+    let linked = 0, unlinked = saved;
+    try {
+      await rematchHistoryRows(db, null);
+      const { count, error: e4 } = await db.from("ministry_history").select("id", { count: "exact", head: true })
+        .eq("import_id", imp.id).not("person_id", "is", null);
+      if (e4) throw e4;
+      linked = count ?? 0;
+      unlinked = saved - linked;
+    } catch (err) {
+      console.error("history rematch after upload", err);
+      rematched = false;
+    }
+    return rematched
+      ? { ok: true, counts: j.counts, bad, saved, failed, linked, unlinked, rematched }
+      : { ok: true, counts: j.counts, bad, saved, failed, rematched };
   }
 
   async function rowAdd(ctx: HCtx, b: any) {
@@ -253,12 +311,17 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     const { data, error } = await db.from("ministry_history").insert({ ...t.row, src_key: key, source: "admin",
       source_file: "(화면에서 더함)", link_how: "auto" }).select("id").single();
     if (error) {
-      if ((error as any).code === "23505") return { ok: false, error: "history-exists" };
+      if ((error as any).code === "23505") {
+        const { data: clash, error: e0 } = await db.from("ministry_history").select("deleted_at").eq("src_key", key).maybeSingle();
+        if (e0) throw e0;
+        return { ok: false, error: clash?.deleted_at ? "history-deleted" : "history-exists" };
+      }
       throw error;
     }
-    await rematchHistoryRows(db, [data.id]);
     await audit(ctx, "history.add", String(data.id), { year: t.row.year });
-    return { ok: true, row: outOrNull(await readRow(db, data.id), isFull(ctx)) };
+    let rematched = true;
+    try { await rematchHistoryRows(db, [data.id]); } catch (err) { console.error("history rematch after add", err); rematched = false; }
+    return { ok: true, rematched, row: await outOrNull(db, await readRow(db, data.id), isFull(ctx)) };
   }
 
   async function rowSave(ctx: HCtx, b: any) {
@@ -274,15 +337,21 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     if (!t.row) return { ok: false, error: t.error };
     const upd: Record<string, unknown> = {};
     for (const k of HISTORY_EDIT_KEYS) if (t.row[k] !== cur[k]) upd[k] = t.row[k];
-    if (!Object.keys(upd).length) return { ok: true, row: rowOut(cur, isFull(ctx)) };
+    if (!Object.keys(upd).length) return { ok: true, row: await outOrNull(db, cur, isFull(ctx)) };
     upd.updated_at = new Date().toISOString();
     const { data, error } = await db.from("ministry_history").update(upd).eq("id", id).eq("updated_at", cur.updated_at).select("id");
     if (error) throw error;
     if (!(data ?? []).length) return { ok: false, error: (await readRow(db, id)) ? "conflict" : "not-found" };
-    const rematch = ["year", "name", "position", "mok", "team"].some((k) => k in upd);
-    if (rematch && cur.link_how === "auto") await rematchHistoryRows(db, [id]);
     await audit(ctx, "history.edit", String(id), { year: t.row.year, fields: Object.keys(upd).filter((k) => k !== "updated_at") });
-    return { ok: true, row: outOrNull(await readRow(db, id), isFull(ctx)) };
+    // 신규/유지(renewal) 도 다시 맞추기 방아쇠다 — §4.4 「다른 해 같은 팀」이 뒤쪽 해 줄의 신규/유지를 읽는다
+    const needRematch = ["year", "name", "position", "mok", "team", "renewal"].some((k) => k in upd) && cur.link_how === "auto";
+    let rematched = true;
+    if (needRematch) {
+      try { await rematchHistoryRows(db, [id]); } catch (err) { console.error("history rematch after edit", err); rematched = false; }
+    }
+    const out: Record<string, unknown> = { ok: true, row: await outOrNull(db, await readRow(db, id), isFull(ctx)) };
+    if (needRematch) out.rematched = rematched;
+    return out;
   }
 
   async function rowDelete(ctx: HCtx, b: any) {
@@ -307,7 +376,7 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     const full = isFull(ctx);
     const { list, fp } = await candidatesFor(db, row);
     await audit(ctx, "people.lookup", "", { q: row.name, count: list.length, from: "history" });
-    return { ok: true, full, fp, row: rowOut(row, full), candidates: list.map((c) => candOut(c, full, row.person_id ?? null)) };
+    return { ok: true, full, fp, row: await outOrNull(db, row, full), candidates: list.map((c) => candOut(c, full, row.person_id ?? null)) };
   }
 
   async function link(ctx: HCtx, b: any) {
@@ -325,16 +394,30 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
       patch = historyLinkPatch(list[n].person_id, ctx.member?.id ?? null, now);
     } else if (op === "none") patch = historyLinkPatch(null, ctx.member?.id ?? null, now);
     else patch = historyUnlinkPatch(now);
-    const { error } = await db.from("ministry_history").update(patch).eq("id", id).is("deleted_at", null);
+    // .select("id") 로 실제로 살아 있는 줄을 건드렸는지 본다 — 그사이 빠졌으면(deleted_at) 쓰지 않은 것과 같다(기록도 안 남긴다)
+    const { data, error } = await db.from("ministry_history").update(patch).eq("id", id).is("deleted_at", null).select("id");
     if (error) throw error;
-    if (op === "auto") await rematchHistoryRows(db, [id]);
+    if (!(data ?? []).length) return { ok: false, error: "not-found" };
     await audit(ctx, "history.link", String(id), { op, year: row.year, by: "ministry" });
-    return { ok: true, row: outOrNull(await readRow(db, id), isFull(ctx)) };
+    let rematched = true;
+    if (op === "auto") {
+      try { await rematchHistoryRows(db, [id]); } catch (err) { console.error("history rematch after link", err); rematched = false; }
+    }
+    const out: Record<string, unknown> = { ok: true, row: await outOrNull(db, await readRow(db, id), isFull(ctx)) };
+    if (op === "auto") out.rematched = rematched;
+    return out;
   }
 
   async function rematch(ctx: HCtx, b: any) {
     if (b.confirm !== true) return { ok: false, error: "needs-confirm" };
-    const m = await rematchHistoryRows(db, null);
+    let m: { changed: number; linked: number; total: number; noDirectory?: boolean };
+    try {
+      m = await rematchHistoryRows(db, null);
+    } catch (err) {
+      // 다시 맞추기 자체가 실패해도 「시도했다」는 기록은 남긴다(실패를 조용히 삼키지 않게) — 그다음 다시 던진다
+      await audit(ctx, "history.rematch", "", { failed: true });
+      throw err;
+    }
     if (m.noDirectory) return { ok: false, error: "no-directory" };
     await audit(ctx, "history.rematch", "", { changed: m.changed, linked: m.linked, total: m.total });
     return { ok: true, ...m };
@@ -347,8 +430,12 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     if (years.length) rows = rows.filter((r) => years.includes(r.year));
     if (!rows.length) return { ok: true, full, rows: [] };
     rows.sort((a, c) => a.year - c.year || a.id - c.id);
+    // 명부 전체를 한 번만 읽는다(내보내는 줄마다 .in() 을 부르지 않게 — 수천 줄이면 수천 번이 된다)
+    const dirIds = await allDirectoryIds(db);
     await audit(ctx, "history.export", "", { count: rows.length, years });
-    return { ok: true, full, rows: rows.map((r) => ({ ...rowOut(r, full), source_file: r.source_file })) };
+    return { ok: true, full, rows: rows.map((r) => ({
+      ...rowOut(r, full, r.person_id === null ? undefined : dirIds.has(Number(r.person_id))), source_file: r.source_file,
+    })) };
   }
 
   return { list, upload, rowAdd, rowSave, rowDelete, candidates, link, rematch, exportRows };
