@@ -4,7 +4,7 @@
 //    여기 한 번 더 적고, 시험이 두 함수를 같은 id 들로 맞대 본다(한쪽만 고치면 시험이 실패한다).
 // ⚠️ 사람 묶음은 근삿값이다(같은 이름·같은 소속 또는 같은 앱 계정) — 화면과 내려받기에 늘 그렇게 적는다.
 // ⚠️ 여러 번 참여한 분(repeaters)의 label 은 **소속만**이다(CONTRACT 5절) — 이름은 name 칸. 화면은 「이름 · 소속」, CSV 는 두 칸.
-import { whoText, csvCell, evPickOptions } from "./roster-logic.js";
+import { whoText, csvCell, evPickOptions, norm } from "./roster-logic.js";
 
 export const APPROX = "같은 이름·같은 소속(또는 같은 앱 계정)을 한 분으로 셌어요 — 근삿값이에요. 목장을 옮기신 해는 따로 나올 수 있어요.";
 export const MIN_REPEAT = 3;   // 서버 statsOf 의 minRepeat 기본값 — 서버는 3회 이상만 보낸다
@@ -39,9 +39,70 @@ export function chipOn(events, sel) {
 // 「2026년 3월 · 제목 전체」 · 「231명 · 마감」(+ 👁) · 시작일 최근 먼저. 자격 회차도 통계에는 넣는다.
 export const statsPickOptions = (events) => evPickOptions(events);
 
-// 회차 id → 짧은 이름(없으면 제목, 그것도 없으면 id) — 표 머리·막대 이름
-export const labelMap = (events) => new Map((events || []).map((e) => [e.id, e.short_title || e.title || e.id]));
+// ── 통계 이름표 · 차례(2026-10-01 친구 「왼쪽에 년도가 들어가도록」·「완서자는 빼주세요 — 모두 완서 기준이니」·「이벤트도 빼주시고」·
+//    「2022년은 마태복음입니다」·「순서는 연도 일자별 내림차순으로」) ──
+// ⚠️ **👤 통계 화면만의 표시 규칙**이다 — 막대 이름·교구×회차 머리 칸·「고른 회차 N개 — …」 줄·내려받기(세 표)·여러 번 참여한 분의
+//    참여 회차. DB 의 제목과 다른 화면(📋 콤보·📤 올릴 회차·👤 「통계에 넣을 회차」 고르개 = roster-logic.js evPickLabel 「2026년 3월 · 제목 전체」)은 그대로다.
+// 이름은 **제목**에서(짧은 이름엔 「사순절 완서자」처럼 책 이름이 없는 회차가 있다 → 짧은 이름 → id): 앞 연도(「2026」·「2026년」)를 떼고,
+// 따로 선 낱말 「완서자」「이벤트」「참여자」「성경필사」를 빼고(다 빼면 비는 이름은 빼기 전 그대로), 시작일(opens_on)의 연도를 앞에 붙인다.
+// 시작일이 없거나 꼴이 아니면 뗀 앞 연도 · 그것도 없으면 연도 없이. 「2026 사순절 마가복음 성경필사 완서자」 → 「2026 사순절 마가복음」.
+const DROP_WORDS = new Set(["완서자", "이벤트", "참여자", "성경필사"]);
+const YEAR_TOKEN = /^(\d{4})년?$/;
+const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
+// YYYY-MM-DD 이고 월·일이 말이 되면 그 글, 아니면 "" — roster-logic.js evYm 과 같은 판정(「2026-13-01」은 날짜 없음)
+function ymd(v) {
+  const s = norm(v);
+  const m = YMD.exec(s);
+  return m && +m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31 ? s : "";
+}
+// 제목 앞의 연도 — 띄어 썼든(「2026 사순절」) 붙여 썼든(「2026사순절」·「2026년도 사순절」) 한 번만 뗀다(검토 M1).
+//   뒤에 글이 남을 때만 뗀다 — 「2026년」처럼 연도뿐인 제목은 아래에서 연도 하나로.
+const LEAD_YEAR = /^(\d{4})(?:년도|년)?\s*(?=[^\d\s년])/;
+export function statLabel(ev) {
+  const raw = (norm(ev?.title) || norm(ev?.short_title) || norm(ev?.id)).normalize("NFC");
+  const lead = LEAD_YEAR.exec(raw);
+  const toks = (lead ? raw.slice(lead[0].length) : raw).split(" ").filter(Boolean);
+  const year = ymd(ev?.opens_on).slice(0, 4) || (lead ? lead[1] : "");
+  // 연도뿐인 제목(「2026」·「2026년」) — 연도 하나(시작일이 있으면 그 연도)
+  if (!lead && toks.length === 1 && YEAR_TOKEN.exec(toks[0])) return year || YEAR_TOKEN.exec(toks[0])[1];
+  // 뒤에 같은 연도가 또 있어도(「사순절 2026」) 한 번만
+  const kept = toks.filter((t) => !DROP_WORDS.has(t) && !(year && YEAR_TOKEN.exec(t)?.[1] === year));
+  const body = (kept.length ? kept : toks).join(" ");
+  return year && body !== year ? `${year} ${body}`.trim() : body;
+}
+// 회차 id → 통계 이름표 — 막대·표 머리·고른 회차 줄·내려받기·여러 번 참여한 분의 참여 회차가 모두 이것을 쓴다
+export const labelMap = (events) => new Map((events || []).map((e) => [e.id, statLabel(e)]));
 const lb = (labels, id, fallback) => labels?.get(id) || fallback || id;
+
+// 통계의 회차 차례 — 시작일 늦은 것 먼저 → 마감일 늦은 것 먼저 → id(abc 순 · 「lent-2026」이 「lent-booklet-2026」 앞).
+// 날짜가 없거나 꼴이 아닌 회차는 날짜 있는 회차 뒤. 서버 statsOf 는 기간 차례(마감일 오름차순)로 주니 화면이 다시 세운다.
+// (📋 콤보 차례 roster-logic.js sortEvents 는 마감일을 안 보고 같은 날이면 id 거꾸로 — 그 화면 것이라 건드리지 않는다)
+const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const byRecent = (a, b) => byCode(ymd(b.opens_on), ymd(a.opens_on)) || byCode(ymd(b.closes_on), ymd(a.closes_on)) ||
+  byCode(norm(a.id), norm(b.id));
+function recentRank(events) {
+  const rank = new Map();
+  [...(events || [])].sort(byRecent).forEach((e, i) => { if (!rank.has(e.id)) rank.set(e.id, i); });
+  return rank;
+}
+// 회차 id 들을 최근 회차 먼저로(새 배열) — 회차 목록에 없는 id 는 맨 뒤에 받은 차례 그대로
+function orderBy(ids, rank) {
+  const r = (id) => (rank.has(id) ? rank.get(id) : rank.size);
+  return [...(ids || [])].sort((a, b) => r(a) - r(b));
+}
+export const recentIds = (ids, events) => orderBy(ids, recentRank(events));
+// 통계(evStats)를 최근 회차 먼저로 — 통계를 받은 **한 곳**(history.js loadStats)에서 부르고, 막대·교구×회차 열·내려받기는 그 결과를 쓴다.
+// perEvent 와 여러 번 참여한 분의 events 를 다시 세운다. 교구 줄(byGroup)은 회차 차례와 상관없어 그대로. 받은 통계는 바꾸지 않는다.
+export function orderStats(stats, events) {
+  const rank = recentRank(events);
+  const pos = new Map(orderBy((stats?.perEvent || []).map((e) => e.id), rank).map((id, i) => [id, i]));
+  return {
+    ...stats,
+    perEvent: [...(stats?.perEvent || [])].sort((a, b) => pos.get(a.id) - pos.get(b.id)),
+    byGroup: stats?.byGroup || [],
+    repeaters: (stats?.repeaters || []).map((p) => ({ ...p, events: orderBy(p.events, rank) })),
+  };
+}
 
 // 회차별 인원 막대 — 가장 많은 회차가 100%. 0명이 아니면 적어도 2%(보이게).
 export function barRows(perEvent, labels) {
@@ -93,7 +154,8 @@ export function fitRepeat(choices, cur) {
 export function statsCsv(stats, labels, min) {
   const x = crossTable(stats, labels);
   const lines = [["회차별 인원"], ["회차", "인원"]];
-  for (const e of stats?.perEvent || []) lines.push([e.title || e.id, e.count]);
+  // 회차 이름은 세 표 모두 막대와 같은 이름표(2026-10-01 — 예전엔 이 표만 제목 전체였다)
+  for (const e of stats?.perEvent || []) lines.push([lb(labels, e.id, e.title), e.count]);
   lines.push([], ["교구(부서) × 회차 — 명단 줄 수"], ["구분", "소속", ...x.cols.map((c) => c.label), "합계"]);
   let kind = "";
   for (const r of x.rows) {
