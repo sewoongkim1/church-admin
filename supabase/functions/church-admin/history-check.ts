@@ -144,12 +144,18 @@ export function parseRequestSet(b: any): { ok: true; set: ReqSet } | { ok: false
 }
 
 // 지금 줄(cur)에 비춰 막기 — null 이면 써도 된다
-export function requestSetBlock(set: ReqSet, cur: { kind: string; updated_at: string }): string | null {
+export function requestSetBlock(set: ReqSet, cur: { kind: string; status: string; updated_at: string }): string | null {
   if (String(cur.updated_at) !== set.expect) return "conflict";
   if (set.status === "반영 안 함" && !set.answer) return "need-answer";
   // 「내 것이 아니에요」는 남의 이름으로 들어와서도 낼 수 있다 — 반영(=그 줄을 그분에게서 떼기) 전에 본인 확인(친구 결정)
-  if (set.status === "반영" && cur.kind === "not_mine" && !set.verified) return "need-verified";
+  // 이미 반영된 줄의 답만 고칠 때는 다시 묻지 않는다 — 2026-10-01 친구 결정
+  if (set.status === "반영" && cur.kind === "not_mine" && cur.status !== "반영" && !set.verified) return "need-verified";
   return null;
+}
+
+// 상태·답이 지금 줄과 같으면 참 — 쓰지도 기록하지도 않는다(답은 저장될 때 이미 tidy 됐다)
+export function requestSetNoop(set: ReqSet, cur: { status: string; answer: string }): boolean {
+  return set.status === cur.status && set.answer === String(cur.answer ?? "");
 }
 
 export function requestSetPatch(set: ReqSet, memberId: string | null, nowIso: string) {

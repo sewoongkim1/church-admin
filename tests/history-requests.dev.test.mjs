@@ -116,6 +116,21 @@ test("「내 것이 아니에요」 반영은 본인 확인 · 기록에 남는�
   const [log] = await rest(`admin_audit?select=member_id,detail&action=eq.history.request&target=eq.${st.q.notMine}&order=id.desc&limit=1`, "GET");
   assert.equal(log.member_id, st.memberId);
   assert.deepEqual(log.detail, { id: st.q.notMine, kind: "not_mine", from: "신청", to: "반영", verified: true });
+
+  // 2026-10-01: 반영 뒤 같은 상태·같은 답으로 다시 저장하면 쓰지도 기록하지도 않는다
+  const countBefore = (await rest(`admin_audit?select=id&action=eq.history.request&target=eq.${st.q.notMine}`, "GET")).length;
+  const cur2 = await reqRow(st.q.notMine);
+  const same = await call("historyRequestSet", { id: st.q.notMine, status: "반영", answer: "확인 뒤 뺐어요", expect: cur2.updated_at });
+  assert.deepEqual(same.body, { ok: true, same: true });
+  const countAfterSame = (await rest(`admin_audit?select=id&action=eq.history.request&target=eq.${st.q.notMine}`, "GET")).length;
+  assert.equal(countAfterSame, countBefore);
+
+  // 답만 바꿔 verified 없이 저장 — 이미 반영된 줄이라 다시 묻지 않는다(기록 하나 더)
+  const cur3 = await reqRow(st.q.notMine);
+  const changed = await call("historyRequestSet", { id: st.q.notMine, status: "반영", answer: "확인 뒤 뺐어요(다시 확인)", expect: cur3.updated_at });
+  assert.equal(changed.body.ok, true, JSON.stringify(changed.body));
+  const countAfterChanged = (await rest(`admin_audit?select=id&action=eq.history.request&target=eq.${st.q.notMine}`, "GET")).length;
+  assert.equal(countAfterChanged, countBefore + 1);
 });
 
 test("다시 열기 — 같은 줄에 열린 신청이 있으면 already-open", async () => {

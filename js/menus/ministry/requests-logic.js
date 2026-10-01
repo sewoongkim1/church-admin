@@ -14,7 +14,7 @@ const MSG = {
   "need-answer": "「반영 안 함」은 사유(답)를 꼭 적어 주세요",
   "need-verified": "「내 것이 아니에요」는 본인에게 확인한 뒤 칸을 체크해 주세요",
   conflict: "다른 분이 먼저 바꿨어요 — 새로 불러올게요",
-  "already-open": "같은 기록 줄에 이미 열린 신청이 있어요 — 그 신청을 먼저 처리해 주세요",
+  "already-open": "같은 분에게 이미 열린 신청이 있어요(같은 기록 줄 또는 「내 기록 찾아 주세요」) — 그 신청을 먼저 처리해 주세요",
   "not-found": "그 신청을 찾지 못했어요 — 새로 불러와 주세요",
 };
 // 이 메뉴의 오류 글 — 없으면 null(부르는 쪽이 ui.js errorText 로)
@@ -70,10 +70,11 @@ export function formHtml(q) {
       <p>${esc(whoText(q.who))} <span class="muted">· 교적 ${q.found ? "찾음" : "못 찾음"}</span></p>
       <p>${esc(targetText(q))}</p>
       ${q.detail ? `<p class="hr-detail">「${esc(q.detail)}」</p>` : ""}
-      <a class="btn" href="${esc(linkOf(q))}">📜 그 줄 열기</a>
+      <a class="btn" href="${esc(linkOf(q))}" target="_blank" rel="noopener">📜 그 줄 열기(새 탭)</a>
       ${q.kind === "find_me" ? `<p class="muted">대개 앱 로그인 목장이 교적과 달라서예요 — 답에 「앱 설정 → 로그인 정보변경에서 목장을 ○○로 바꿔 주세요」를 적고 「반영」해 주세요.</p>` : ""}
     </div>
     <div class="hr-sts" role="group" aria-label="처리 상태">${sts}</div>
+    ${["반영", "반영 안 함"].includes(q.status) ? `<p class="muted">끝난 신청은 [확인 중]을 눌러 다시 열 수 있어요.</p>` : ""}
     <label class="hr-l" for="hr-ans">답 <span class="muted">(「반영 안 함」은 꼭 · ${ANSWER_MAX}자까지)</span></label>
     <textarea id="hr-ans" class="hr-ans" rows="3" maxlength="${ANSWER_MAX}">${esc(q.answer)}</textarea>
     <p class="muted">답은 같은 이름·소속으로 앱에 들어오는 사람에게도 보여요 — 다른 분 이름·사적인 사정은 적지 마세요.</p>
@@ -86,6 +87,6 @@ export function formCheck(q, f) {
   const a = String(f.answer || "").trim();
   if (a.length > ANSWER_MAX) return "answer-too-long";
   if (f.status === "반영 안 함" && !a) return "need-answer";
-  if (f.status === "반영" && q.kind === "not_mine" && !f.verified) return "need-verified";
+  if (f.status === "반영" && q.kind === "not_mine" && q.status !== "반영" && !f.verified) return "need-verified";
   return null;
 }

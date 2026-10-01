@@ -8,7 +8,7 @@ import {
   HISTORY_OUT_KEYS, REQUEST_OUT_KEYS, REQ_KINDS, REQ_LINE_KINDS, REQ_OPEN_MAX, hcUserId, historyRowOut, internalKeyOk, parseRequest,
   readLoginWho, requestBlock, requestInsert, requestOut, sortHistory,
   REQ_FILTERS, REQ_SET_STATUS, REQUEST_ADMIN_OUT_KEYS, filterRequests, parseRequestSet, requestAdminOut, requestAuditDetail,
-  requestCounts, requestSetBlock, requestSetPatch,
+  requestCounts, requestSetBlock, requestSetNoop, requestSetPatch,
 } from "../supabase/functions/church-admin/history-check.ts";
 import { ACTION_ROLES, canCall } from "../supabase/functions/church-admin/authz.ts";
 import { LABEL, detailText } from "../js/menus/system/audit.js";
@@ -198,14 +198,23 @@ test("parseRequestSet — id·상태·답 300자·expect", () => {
 
 test("requestSetBlock — 충돌 · 반영 안 함은 답 · 내 것이 아니에요 반영은 본인 확인", () => {
   const S = (o) => ({ id: 1, status: "반영", answer: "", verified: false, expect: "T1", ...o });
-  assert.equal(requestSetBlock(S({}), { kind: "wrong_team", updated_at: "T1" }), null);
-  assert.equal(requestSetBlock(S({ expect: "T0" }), { kind: "wrong_team", updated_at: "T1" }), "conflict");
-  assert.equal(requestSetBlock(S({ status: "반영 안 함" }), { kind: "wrong_team", updated_at: "T1" }), "need-answer");
-  assert.equal(requestSetBlock(S({ status: "반영 안 함", answer: "원본이 맞아요" }), { kind: "wrong_team", updated_at: "T1" }), null);
-  assert.equal(requestSetBlock(S({}), { kind: "not_mine", updated_at: "T1" }), "need-verified");
-  assert.equal(requestSetBlock(S({ verified: true }), { kind: "not_mine", updated_at: "T1" }), null);
-  assert.equal(requestSetBlock(S({ status: "확인 중" }), { kind: "not_mine", updated_at: "T1" }), null);
-  assert.equal(requestSetBlock(S({ status: "반영 안 함", answer: "본인이 아니래요" }), { kind: "not_mine", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({}), { kind: "wrong_team", status: "신청", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({ expect: "T0" }), { kind: "wrong_team", status: "신청", updated_at: "T1" }), "conflict");
+  assert.equal(requestSetBlock(S({ status: "반영 안 함" }), { kind: "wrong_team", status: "신청", updated_at: "T1" }), "need-answer");
+  assert.equal(requestSetBlock(S({ status: "반영 안 함", answer: "원본이 맞아요" }), { kind: "wrong_team", status: "신청", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({}), { kind: "not_mine", status: "신청", updated_at: "T1" }), "need-verified");
+  assert.equal(requestSetBlock(S({ verified: true }), { kind: "not_mine", status: "신청", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({ status: "확인 중" }), { kind: "not_mine", status: "신청", updated_at: "T1" }), null);
+  assert.equal(requestSetBlock(S({ status: "반영 안 함", answer: "본인이 아니래요" }), { kind: "not_mine", status: "신청", updated_at: "T1" }), null);
+  // 2026-10-01 친구 결정: 이미 반영된 줄의 답만 고칠 때는 다시 본인 확인을 묻지 않는다
+  assert.equal(requestSetBlock(S({ status: "반영", answer: "고쳐 적음", verified: false }), { kind: "not_mine", status: "반영", updated_at: "T1" }), null);
+});
+
+test("requestSetNoop — 상태·답이 지금과 같으면 참(쓰지도 기록하지도 않는다)", () => {
+  assert.equal(requestSetNoop({ status: "반영", answer: "고쳤어요" }, { status: "반영", answer: "고쳤어요" }), true);
+  assert.equal(requestSetNoop({ status: "반영", answer: "고쳤어요" }, { status: "확인 중", answer: "고쳤어요" }), false);
+  assert.equal(requestSetNoop({ status: "반영", answer: "고쳤어요" }, { status: "반영", answer: "다른 답" }), false);
+  assert.equal(requestSetNoop({ status: "확인 중", answer: "" }, { status: "확인 중", answer: null }), true);
 });
 
 test("requestSetPatch — 끝난 상태만 handled_at · 확인 중은 null · updated_at 은 늘", () => {

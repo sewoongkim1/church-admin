@@ -55,7 +55,7 @@ import { churchForSignup } from "./events-person.ts";
 import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
 import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, readLoginWho, REQ_OPEN, requestBlock, requestInsert, requestOut, REQUEST_SELECT, sortHistory } from "./history-check.ts";
 // 「📮 정정 신청」 담당자 처리(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
-import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, requestAdminOut, requestAuditDetail, requestCounts, requestSetBlock, requestSetPatch, ROW_ADMIN_SELECT } from "./history-check.ts";
+import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, requestAdminOut, requestAuditDetail, requestCounts, requestSetBlock, requestSetNoop, requestSetPatch, ROW_ADMIN_SELECT } from "./history-check.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1797,10 +1797,11 @@ async function historyRequestList(b: any) {
 async function historyRequestSet(ctx: Ctx, b: any) {
   const p = parseRequestSet(b);
   if (!p.ok) return p;
-  const { data: cur, error } = await db.from("ministry_history_requests").select("id,kind,status,updated_at")
+  const { data: cur, error } = await db.from("ministry_history_requests").select(REQUEST_ADMIN_SELECT)
     .eq("id", p.set.id).maybeSingle();
   if (error) throw error;
   if (!cur) return { ok: false, error: "not-found" };
+  if (requestSetNoop(p.set, cur)) return { ok: true, same: true };   // 바뀐 것이 없으면 쓰지도 기록하지도 않는다
   const block = requestSetBlock(p.set, cur);
   if (block) return { ok: false, error: block };
   // 본 뒤로 아무도 안 바꿨을 때만 쓴다(updated_at 조건) — 0행이면 그사이 누가 바꿨다

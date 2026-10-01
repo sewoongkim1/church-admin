@@ -17,13 +17,15 @@ export async function render(el, { call }) {
     <div class="hr-list"><p class="empty">불러오는 중…</p></div>`;
   const $ = (s) => el.querySelector(s);
 
+  const drawFilter = () => { $(".hr-filter").textContent = FILTERS.find((x) => x.value === filter).label + " ▾"; };
   const draw = () => {
-    $(".hr-filter").textContent = FILTERS.find((x) => x.value === filter).label + " ▾";
+    drawFilter();
     $(".hr-n").textContent = countsText(counts);
     $(".hr-list").innerHTML = list.length ? list.map(rowHtml).join("")
       : `<p class="empty">${filter === "open" ? "처리할 신청이 없어요" : "신청이 없어요"}</p>`;
   };
   const load = async () => {
+    drawFilter();
     const r = await busy(el, () => call("historyRequestList", { status: filter }));
     if (!r.ok) { $(".hr-list").innerHTML = `<p class="empty">${esc(errorText(r))}</p>`; return; }
     list = r.list || [];
@@ -63,14 +65,15 @@ export async function render(el, { call }) {
         const f = { status: picked, answer: box.querySelector("#hr-ans").value, verified: !!box.querySelector("#hr-ver")?.checked };
         const bad = formCheck(q, f);
         if (bad) return { ok: false, message: msgOf({ error: bad }) };
+        if (f.status === q.status && f.answer.trim() === q.answer) return { ok: true, value: "same" };   // 바뀐 것이 없으면 보내지도 않는다
         const r = await call("historyRequestSet", { id: q.id, ...f, expect: q.updated_at });
-        if (r.ok) return { ok: true, value: "saved" };
-        if (r.error === "conflict") return { ok: true, value: "conflict" };   // 창을 닫고 새로 불러온다
+        if (r.ok) return { ok: true, value: r.same ? "same" : "saved" };
+        if (r.error === "conflict" || r.error === "not-found") return { ok: true, value: r.error };   // 창을 닫고 새로 불러온다
         return msgOf(r) ? { ok: false, message: msgOf(r) } : r;
       },
     });
     if (res == null) return;
-    toast(res === "conflict" ? msgOf({ error: "conflict" }) : "저장했어요");
+    toast(res === "saved" ? "저장했어요" : res === "same" ? "바뀐 것이 없어요" : msgOf({ error: res }));
     await load();
   }
 
