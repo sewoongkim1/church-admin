@@ -1,8 +1,9 @@
 // 바꾼 기록 — 총괄 관리자(super)만. 최근 100건.
 // 「교인명부 기록」(people.*)은 따로 본다 — 찾기·보기가 많아 바꾼 일을 덮지 않게(서버 auditList 의 kind · 2026-09-29).
 // 성경필사(암송): event.* 는 「바꾼 기록」, people.lookup·people.fill 은 people.* 라 「교인명부 기록」으로 간다.
-// people.lookup 은 세 곳이 남긴다 — 성경필사 evPeopleLookup·evPerson(detail 에 from 없음) · 사역신청·담당자 ministryPerson
-// (from:"ministry" · 2026-09-30 검토 5) · 사역 이력 줄 창(from:"history") · 사역 이력 올리기 살펴보기(from:"history-check" · 2026-10-01).
+// people.lookup 은 다섯 곳이 남긴다 — 성경필사 evPeopleLookup·evPerson(detail 에 from 없음) · 사역신청·담당자 ministryPerson
+// (from:"ministry" · 2026-09-30 검토 5) · 사역 이력 줄 창(from:"history") · 사역 이력 올리기 살펴보기(from:"history-check" · 2026-10-01)
+// · 사역 이력 고치기(from:"history-edit" · 후보에 영향 줄 칸을 고쳐 다시 맞췄을 때 · 2026-10-01 최종 검토).
 // 이름은 labelOf 가 detail 을 보고 가른다(LABEL 만 보면 사역신청 열람이 「성경필사」로 찍힌다).
 import { esc, kstTime, errorText } from "../../core/ui.js";
 
@@ -31,11 +32,14 @@ export const LOOKUP_MINISTRY = "명부 찾기(사역신청·담당자)";
 export const LOOKUP_HISTORY = "명부 찾기(사역 이력)";
 // 사역 이력 올리기 살펴보기 — 새 줄을 교인명부에 맞춰 본 것(이어진 수가 명부의 답이다 · 2026-10-01 최종 검토)
 export const LOOKUP_HISTORY_CHECK = "명부 찾기(사역 이력 살펴보기)";
+// 사역 이력 고치기 — 줄 창에서 후보에 영향 줄 칸(이름·직분·목장·팀·해·신규유지)을 고쳐 다시 맞춘 것(이름 떠보기 흔적)
+export const LOOKUP_HISTORY_EDIT = "명부 찾기(사역 이력 고치기)";
 export function labelOf(r) {
   const a = (r && r.action) || "";
   if (a === "people.lookup" && r.detail && r.detail.from === "ministry") return LOOKUP_MINISTRY;
   if (a === "people.lookup" && r.detail && r.detail.from === "history") return LOOKUP_HISTORY;
   if (a === "people.lookup" && r.detail && r.detail.from === "history-check") return LOOKUP_HISTORY_CHECK;
+  if (a === "people.lookup" && r.detail && r.detail.from === "history-edit") return LOOKUP_HISTORY_EDIT;
   return LABEL[a] || a;
 }
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };
@@ -150,12 +154,13 @@ export function detailText(r) {
     return joinDot(`${d.count ?? 0}줄`, (d.years || []).length ? `${d.years.join("·")}년` : "모든 해", HIST_ONLY[d.only] || "",
       d.search === true ? "찾기로 거름" : "");
   }
-  // 사역 이력 올리기 살펴보기(from:"history-check") — 물은 이름(중복 뺀 이름 · 50개까지 실린다)과 이어진 수
+  // 사역 이력 올리기 살펴보기(from:"history-check") — 물은 이름(중복 뺀 이름 전부 실린다 · 화면은 someNames 로 스무 분까지만 적는다)과 이어진 수
   if (r.action === "people.lookup" && d.from === "history-check") {
     return joinDot(`물은 이름 ${d.asked ?? 0}(${someNames(d.askedNames)})`, `이어짐 ${d.count ?? 0}`);
   }
   // 사역신청·담당자 화면이 명부 번호로 한 분을 가렸으면 byPhone(번호 자체는 서버가 싣지 않는다)
   // 사역 이력 줄 창이 지금 이어진 분(다른 이름 · 오타 규칙 등)을 끝에 더해 보였으면 extra:1
+  // 사역 이력 고치기(from:"history-edit")도 이 줄에서 그대로 「‘q’ · N명」으로 나온다(q 는 고친 뒤 이름)
   if (r.action === "people.lookup") {
     return `‘${d.q || ""}’ · ${d.count ?? 0}명${d.byPhone === true ? " · 번호로 고름" : ""}${d.extra === 1 ? " · 지금 이어진 분 함께" : ""}`;
   }

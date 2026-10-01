@@ -107,9 +107,12 @@ export function exportAoa(rows, full) {
   return [EXPORT_HEAD, ...rows.map((r) => [r.year, r.committee, r.team, r.name, full && r.person_id != null ? r.person_id : "",
     r.linked ? "" : r.match_reason, r.position, r.mok, r.renewal, r.role_title, r.src_note, r.source_file || "", r.linked ? r.match_basis : ""])];
 }
-export function exportName(years, now = new Date()) {
+// 교적으로 거른 채(못 맞춘 줄만·근거 약한 줄만) · 찾기로 거른 채 내려받으면 파일 이름에도 적어 둔다 — 「모든 줄」과 헷갈리지 않게.
+const EXPORT_ONLY_SUFFIX = { none: "_못맞춤", weak: "_근거약함" };
+export function exportName(years, only = "", q = "", now = new Date()) {
   const d = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
-  return `사역이력_${years && years.length ? [...years].sort().join("-") : "모든해"}_${d}.xlsx`;
+  const suffix = (EXPORT_ONLY_SUFFIX[only] || "") + (q ? "_찾기" : "");
+  return `사역이력_${years && years.length ? [...years].sort().join("-") : "모든해"}${suffix}_${d}.xlsx`;
 }
 
 // 고치기 창 칸 — 서버 HISTORY_EDIT_KEYS 와 같은 칸

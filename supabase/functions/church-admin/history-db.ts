@@ -25,8 +25,6 @@ export const HISTORY_EDIT_KEYS = ["year", ...TEXT_KEYS, "src_note"] as const;
 export const HISTORY_REMATCH_KEYS = ["year", "name", "position", "mok", "team", "renewal"] as const;
 // 새 줄의 자리 표시 사유 — 넣은 뒤 다시 맞추기가 덮는다. 맞추지 못하고 남은 줄(중간에 멈춤·명부 없음)이 화면에서 스스로 드러나게.
 export const HISTORY_UNMATCHED_YET = "아직 맞추지 않음 — 🔄 다시 맞추기";
-// 올리기 살펴보기 기록(people.lookup · from:"history-check")에 싣는 이름 수 상한(물은 수 asked 는 전부 센다)
-const ASKED_NAMES_MAX = 50;
 
 type Db = any;
 export type HCtx = { member: { id: string } | null; roles: string[] };
@@ -297,7 +295,8 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
           preview = { linked: res.filter((r) => r.person_id !== null).length, unlinked: res.filter((r) => r.person_id === null).length,
             reasons: [...rc.entries()].sort((a, c) => c[1] - a[1]) };
           // ⚠️ 살펴보기도 교인명부에 물은 것이다 — 이어진 수가 생년·등록연도·성별의 답이 된다(최종 검토 · 성경필사 people.fill 과 같은 규칙).
-          //   명부를 실제로 읽은 때만(새 줄 있음 · 명부 있음) 「교인명부 기록」에 한 줄. 이름은 이름 열쇠마다 하나 · 50개까지.
+          //   명부를 실제로 읽은 때만(새 줄 있음 · 명부 있음) 「교인명부 기록」에 한 줄. 이름은 이름 열쇠마다 하나 — 상한을 따로
+          //   두지 않는다(한 번에 받는 줄이 이미 HISTORY_MAX_UPLOAD 로 묶여 있어 이름 수도 그 안에 든다).
           const seen = new Set<string>();
           const askedNames: string[] = [];
           for (const x of adds) {
@@ -306,8 +305,7 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
             seen.add(k);
             askedNames.push(String(x.row!.name));
           }
-          await audit(ctx, "people.lookup", "", { from: "history-check", asked: askedNames.length,
-            askedNames: askedNames.slice(0, ASKED_NAMES_MAX), count: preview.linked });
+          await audit(ctx, "people.lookup", "", { from: "history-check", asked: askedNames.length, askedNames, count: preview.linked });
         }
       }
       return { ok: true, counts: j.counts, bad, preview };
@@ -367,12 +365,17 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     const t = tidyHistoryRow(b.row);
     if (!t.row) return { ok: false, error: t.error };
     const key = srcKey(t.row as any);
+    // 지워 달라는 요청으로 이름까지 지운 줄(CLAUDE.md 비상 절차 ②-1)의 src_key 는 해시(`erasedKey`)라 unique 제약이
+    // 원래 열쇠(key)와 부딪히지 않는다 — 그대로 두면 지운 분의 이름이 조용히 되살아난다. 넣기 전에 먼저 물어본다.
+    const { data: erased, error: e0 } = await db.from("ministry_history").select("id").eq("src_key", await erasedKey(key)).maybeSingle();
+    if (e0) throw e0;
+    if (erased) return { ok: false, error: "history-deleted" };
     const { data, error } = await db.from("ministry_history").insert({ ...t.row, src_key: key, source: "admin",
       source_file: "(화면에서 더함)", link_how: "auto", match_reason: HISTORY_UNMATCHED_YET }).select("id").single();
     if (error) {
       if ((error as any).code === "23505") {
-        const { data: clash, error: e0 } = await db.from("ministry_history").select("deleted_at").eq("src_key", key).maybeSingle();
-        if (e0) throw e0;
+        const { data: clash, error: e1 } = await db.from("ministry_history").select("deleted_at").eq("src_key", key).maybeSingle();
+        if (e1) throw e1;
         return { ok: false, error: clash?.deleted_at ? "history-deleted" : "history-exists" };
       }
       throw error;
@@ -404,7 +407,15 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     // 신규/유지(renewal) 도 다시 맞추기 방아쇠다 — §4.4 「다른 해 같은 팀」이 뒤쪽 해 줄의 신규/유지를 읽는다(HISTORY_REMATCH_KEYS)
     const needRematch = HISTORY_REMATCH_KEYS.some((k) => k in upd) && cur.link_how === "auto";
     const rematched = needRematch ? await tryRematch([id], "edit") : true;
-    const out: Record<string, unknown> = { ok: true, row: await outOrNull(db, await readRow(db, id), isFull(ctx)) };
+    const fresh = await readRow(db, id);
+    // 후보에 영향 줄 수 있는 칸(이름·직분·목장·팀·해·신규유지)을 고쳐 **실제로** 다시 맞춘 것도 이름을 떠본 것이다 —
+    // 고치기로 명부를 찔러보는 흔적을 남긴다(2026-10-01 최종 검토 · 올리기 살펴보기와 같은 기준: 명부를 실제로 읽었을 때만).
+    // rematched 가 false 면 명부가 없어 묻지 못했으니(noDirectory) 쓰지 않는다. candidatesFor 를 또 불러 후보 수를 세지 않고
+    // (질의가 하나 더 든다), 이번 다시 맞추기로 이어졌는지만(0/1) 싣는다 — q 는 고친 뒤(지금) 이름.
+    if (needRematch && rematched) {
+      await audit(ctx, "people.lookup", "", { from: "history-edit", q: t.row.name, count: fresh && fresh.person_id !== null ? 1 : 0 });
+    }
+    const out: Record<string, unknown> = { ok: true, row: await outOrNull(db, fresh, isFull(ctx)) };
     if (needRematch) out.rematched = rematched;
     return out;
   }

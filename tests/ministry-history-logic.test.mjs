@@ -85,7 +85,13 @@ test("exportAoa — 교적ID 는 full 일 때만 · 비고는 못 맞춘 줄만 
   assert.deepEqual([full[1][4], full[1][5], full[1][12]], [7, "", "같은 소속"]);
   assert.deepEqual([full[2][4], full[2][5], full[2][12]], ["", "교인명부에 같은 이름이 없음", ""]);
   assert.equal(basic[1][4], "");
-  assert.match(exportName([2024, 2022], new Date("2026-10-01T00:00:00Z")), /^사역이력_2022-2024_20261001\.xlsx$/);
+  const d0 = new Date("2026-10-01T00:00:00Z");
+  assert.match(exportName([2024, 2022], "", "", d0), /^사역이력_2022-2024_20261001\.xlsx$/);
+  // 교적으로 거른 채·찾기로 거른 채 내려받으면 파일 이름에도 적는다(「모든 줄」과 헷갈리지 않게)
+  assert.match(exportName([2024], "none", "", d0), /^사역이력_2024_못맞춤_20261001\.xlsx$/);
+  assert.match(exportName([], "weak", "", d0), /^사역이력_모든해_근거약함_20261001\.xlsx$/);
+  assert.match(exportName([2024], "", "가나다", d0), /^사역이력_2024_찾기_20261001\.xlsx$/);
+  assert.match(exportName([2024], "none", "가나다", d0), /^사역이력_2024_못맞춤_찾기_20261001\.xlsx$/);
 });
 
 // ⚠️ 2026-10-01 검토 반영(task-5-brief 가 아닌 contract-notes) — history-db.ts 가 in_directory 를 보내기 시작해서 더함.
@@ -155,7 +161,7 @@ test("deepLink — row 는 양의 안전 정수만 · q 는 다듬고 NFC·40자
   assert.equal(deepLink({ row: "abc" }).row, null);
   assert.equal(deepLink({ row: "1.5" }).row, null);
   assert.equal(deepLink({ row: "99999999999999999999" }).row, null);   // Number.MAX_SAFE_INTEGER 밖
-  assert.equal(deepLink({ q: "  김세웅  " }).q, "김세웅");
+  assert.equal(deepLink({ q: "  ca-test-가나다  " }).q, "ca-test-가나다");
   assert.equal(deepLink({ q: "가".repeat(50) }).q, "가".repeat(40));
   assert.deepEqual(deepLink({}), { row: null, q: "" });
   assert.deepEqual(deepLink(undefined), { row: null, q: "" });

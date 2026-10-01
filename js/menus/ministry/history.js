@@ -376,21 +376,18 @@ export async function render(el, { call, query }) {
       const XLSX = await loadXlsx();
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(exportAoa(r.rows, r.full)), "사역 이력");
-      XLSX.writeFile(wb, exportName(f.years));
+      XLSX.writeFile(wb, exportName(f.years, f.only, f.q));
     } catch (e) { toast(fileErrorText(e && e.message)); }
   }
 
   // ── 그리기 · 사건 ──────────────────────────────────────────────────
-  if (dl.q) { f.q = dl.q; f.page = 0; }   // shell() 이 찾기 칸 value 를 f.q 로 그리니 그 전에 바꿔 둔다
+  // 주소로 왔으면(해·교적 거르기가 옛것 그대로 남아 있을 수 있다) 먼저 거르기를 비운다 — 안 그러면 연결된 줄·이름이
+  // 낡은 거르기에 가려 목록에 안 보일 수 있다.
+  if (dl.q || dl.row) { f.years = []; f.only = ""; f.page = 0; }
+  if (dl.q) f.q = dl.q;   // shell() 이 찾기 칸 value 를 f.q 로 그리니 그 전에 바꿔 둔다
   shell();
   await load();
   if (!el.isConnected) return;
-  if (dl.row) {
-    const r = rows.find((x) => x.id === dl.row);
-    await openRow(r || { id: dl.row });   // 목록에 없어도(다른 쪽·거른 줄) openRow 는 id 만으로 historyCandidates 를 받아 온다
-    if (!el.isConnected) return;
-  }
-  if (dl.row || dl.q) history.replaceState(null, "", "#/mn-history");   // 다시 그릴 때(새로고침 등) 또 열리지 않게 — hashchange 는 안 난다
   const fileInput = el.querySelector("[data-file]");
   fileInput.addEventListener("change", async (e) => { const files = [...e.target.files]; e.target.value = ""; await readFiles(files); });
 
@@ -469,4 +466,13 @@ export async function render(el, { call, query }) {
   const unbind = () => { mqWide.removeEventListener("change", onMq); clearTimeout(qTimer); if (unbindMq === unbind) unbindMq = null; };
   const onMq = () => { if (!el.isConnected) { unbind(); return; } draw(); };
   unbindMq?.(); unbindMq = unbind; mqWide.addEventListener("change", onMq);
+
+  // 주소로 열기(?row=·?q=) — 사건·끌어다 놓기·붙여넣기·화면너비 핸들러를 모두 붙인 뒤에 연다. openRow 는 창이 닫힐
+  // 때까지 기다리는데, 그동안 이 핸들러들이 안 붙어 있으면 바탕 화면의 칩 누르기·붙여넣기·끌어다 놓기가 죽는다.
+  if (dl.row) {
+    const r = rows.find((x) => x.id === dl.row);
+    await openRow(r || { id: dl.row });   // 목록에 없어도(다른 쪽·거른 줄) openRow 는 id 만으로 historyCandidates 를 받아 온다
+    if (!el.isConnected) return;
+  }
+  if (dl.row || dl.q) history.replaceState(null, "", "#/mn-history");   // 다시 그릴 때(새로고침 등) 또 열리지 않게 — hashchange 는 안 난다
 }

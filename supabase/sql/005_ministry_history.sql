@@ -65,7 +65,10 @@ revoke all on sequence ministry_history_id_seq, ministry_history_imports_id_seq 
 --          "person_id": 123 | null, "match_basis": "…", "match_reason": "…" }, …]
 --   updated_at 은 올리지 않는다(맞춤만 바뀌었다 — 열려 있는 고치기 창이 conflict 로 막히지 않게).
 --   그래서 읽었던 맞춤 상태(old_*)도 맞아야 쓴다 — 동시에 돈 두 다시 맞추기 중 낡은 쪽이 더 새 결과를 덮지 않게(2026-10-01 최종 검토).
---   old_* 를 안 보낸 옛 부름(씨앗 등)은 「아직 맞춘 적 없는 줄」(교인ID 없음 · 근거·사유 빈칸)에만 쓴다.
+--   old_* 를 안 보낸 부름은 h.match_basis=''·h.match_reason='' 인 줄에만 쓴다 — 지금은 씨앗(tests/seed-history-dev.mjs)도
+--   old_* 를 함께 보낸다, old_* 없이 부르는 곳은 없다. 그리고 화면·올리기로 새로 생기는 줄은 match_reason 이 빈칸이
+--   아니라 자리 표시 사유(HISTORY_UNMATCHED_YET = 「아직 맞추지 않음 — 🔄 다시 맞추기」)로 시작한다 — old_* 를 안 보내고
+--   그 줄을 건드리면 안 맞는다(일부러 그렇다: old_* 없는 부름은 이제 쓰지 않을 부름이다).
 create or replace function public.ministry_history_apply(p jsonb)
 returns integer language plpgsql set search_path = public as $$
 declare n integer;

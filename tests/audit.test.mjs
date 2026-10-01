@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, LOOKUP_HISTORY_CHECK, detailText, labelOf } from "../js/menus/system/audit.js";
+import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, LOOKUP_HISTORY_CHECK, LOOKUP_HISTORY_EDIT, detailText, labelOf } from "../js/menus/system/audit.js";
 import { ministryApplicant, ministryLookupLog, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
 
 // 기록 한 줄 — 서버 auditList 가 주는 모양({action, target, detail})
@@ -203,6 +203,14 @@ test("people.lookup(from:history-check) — 「명부 찾기(사역 이력 살�
 test("people.lookup(from:history) — 지금 이어진 분을 끝에 더해 보였으면(extra:1) 「지금 이어진 분 함께」", () => {
   assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 3, from: "history", extra: 1 })), "‘홍길동’ · 3명 · 지금 이어진 분 함께");
   assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 2, from: "history" })), "‘홍길동’ · 2명");
+});
+
+// 사역 이력 고치기(from:"history-edit") — 후보에 영향 줄 칸을 고쳐 다시 맞췄을 때 남는 흔적(2026-10-01 최종 검토)
+test("people.lookup(from:history-edit) — 「명부 찾기(사역 이력 고치기)」 · 고친 뒤 이름과 이어졌는지(0/1)를 그대로 「‘q’ · N명」으로", () => {
+  assert.equal(labelOf(R("people.lookup", { from: "history-edit", q: "홍길동", count: 1 })), LOOKUP_HISTORY_EDIT);
+  assert.equal(LOOKUP_HISTORY_EDIT, "명부 찾기(사역 이력 고치기)");
+  assert.equal(detailText(R("people.lookup", { from: "history-edit", q: "홍길동", count: 1 })), "‘홍길동’ · 1명");
+  assert.equal(detailText(R("people.lookup", { from: "history-edit", q: "홍길순", count: 0 })), "‘홍길순’ · 0명");
 });
 
 // 교인명부 세션(자세히 창 「이분 것」)이 남길 수 있는 모양 — 해가 없거나 op 대신 how(manual·none·auto)

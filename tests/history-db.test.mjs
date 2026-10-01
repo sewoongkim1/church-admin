@@ -154,7 +154,9 @@ test("살펴보기 — 새 줄이 있고 명부가 있으면 people.lookup(from:
   assert.deepEqual(detail, { from: "history-check", asked: 2, askedNames: ["가나다", "라마바"], count: 2 });
 });
 
-test("살펴보기 — 물은 이름은 50개까지만 싣고 asked 는 전부 센다", async () => {
+// 2026-10-01 최종 검토 — 50개 상한을 없앴다(물은 이름 전부를 싣는다 · 화면(audit.js someNames)이 스무 분까지만 적어 보인다).
+// 그래도 한 번에 받는 줄은 HISTORY_MAX_UPLOAD 로 묶이니 askedNames 도 자연히 그 안에 든다.
+test("살펴보기 — 물은 이름은 상한 없이 전부 싣는다(asked 와 askedNames.length 가 같다)", async () => {
   const audits = [];
   const db = fakeDb((table, calls, qb) => {
     if (table === "church_people" && !calls.includes("range")) return { count: 1, error: null };
@@ -166,7 +168,8 @@ test("살펴보기 — 물은 이름은 50개까지만 싣고 asked 는 전부 �
   const rows = Array.from({ length: 60 }, (_, i) => ({ year: 2024, name: "가나다" + String.fromCharCode(0xAC00 + i), team: "가" }));
   await H.upload({ member: null, roles: ["ministry"] }, { rows }, false);
   assert.equal(audits[0][3].asked, 60);
-  assert.equal(audits[0][3].askedNames.length, 50);
+  assert.equal(audits[0][3].askedNames.length, 60);
+  assert.deepEqual(audits[0][3].askedNames, rows.map((r) => r.name));
 });
 
 test("살펴보기 — 빈 올리기·명부 없음은 명부를 읽지 않으니 기록도 없다(noDirectory)", async () => {
@@ -285,6 +288,81 @@ test("후보 — 지금 이어진 분이 이름 열쇠 밖(오타 규칙 등)이
   assert.equal(res.candidates.length, 1);
   assert.equal(res.candidates[0].current, true);
   assert.deepEqual(audits[0].slice(1), ["people.lookup", "", { q: "가나닥", count: 1, from: "history", extra: 1 }]);
+});
+
+// 더하기(＋ 한 줄 더하기)도 지워 달라는 요청으로 지운 줄을 되살리면 안 된다(CLAUDE.md 비상 절차 ②-1) — 열쇠가 해시라
+// 보통의 unique 충돌(23505)로는 안 걸린다. 넣기 전에 erasedKey 로 먼저 물어본다.
+test("더하기 — 지워 달라는 요청으로 이름까지 지운 줄과 같은 열쇠면 history-deleted(넣지도 기록하지도 않는다)", async () => {
+  const db = fakeDb((table, calls) => {
+    if (table === "ministry_history" && calls.includes("maybeSingle")) return { data: { id: 1 }, error: null };   // erasedKey 로 찾음
+    throw new Error("이 시험이 다루지 않는 호출: " + table + " " + JSON.stringify(calls));
+  });
+  const H = makeHistory({ db, audit: async () => { throw new Error("넣지 않았는데 기록했다"); } });
+  const res = await H.rowAdd({ member: { id: "m" }, roles: ["ministry"] },
+    { row: { year: 2024, committee: "찬양부", team: "가", name: "가나다", mok: "기쁨-19", position: "집사" } });
+  assert.equal(res.ok, false);
+  assert.equal(res.error, "history-deleted");
+});
+
+// 고치기 창에서 후보에 영향 줄 칸(이름·직분·목장·팀·해·신규유지 — HISTORY_REMATCH_KEYS)을 고쳐 auto 줄이 실제로 다시
+// 맞춰지면, 명부를 실제로 물은 것이다 — 이름 떠보기 흔적을 people.lookup(from:"history-edit")으로 남긴다(2026-10-01 최종 검토).
+test("고치기 — 다시 맞추기 칸을 고쳐 실제로 다시 맞춰지면 people.lookup(from:history-edit · q·count) 도 기록한다", async () => {
+  const audits = [];
+  let hReads = 0;
+  const cur = { id: 5, year: 2024, committee: "", team: "가", role_title: "", name: "가나다", position: "집사", mok: "기쁨-19",
+    renewal: "", src_note: "", person_id: null, link_how: "auto", match_basis: "", match_reason: HISTORY_UNMATCHED_YET,
+    source: "excel", source_file: "", linked_at: null, updated_at: "T1", deleted_at: null };
+  const matchRow = { id: 5, year: 2024, committee: "", team: "가", name: "가나다", position: "집사", mok: "기쁨-19",
+    renewal: "신규", link_how: "auto", person_id: null, match_basis: "", match_reason: HISTORY_UNMATCHED_YET, updated_at: "T1" };
+  const rpcCalls = [];
+  const db = fakeDb((table, calls, qb) => {
+    if (table === "ministry_history" && calls.includes("maybeSingle")) {
+      hReads++;
+      if (hReads === 1) return { data: cur, error: null };   // rowSave 가 읽은 지금 줄
+      return { data: { ...cur, renewal: "신규", person_id: PERSON.person_id, match_basis: "같은 소속", match_reason: "", updated_at: "T2" },
+        error: null };                                        // 다시 맞춘 뒤(fresh)
+    }
+    if (table === "ministry_history" && calls.includes("update")) return { data: [{ id: 5 }], error: null };
+    if (table === "ministry_history") return page0(qb, [matchRow]);                               // loadHistory
+    if (table === "church_people" && calls.includes("in")) return { data: [{ person_id: PERSON.person_id }], error: null }; // directorySet
+    if (table === "church_people" && calls.includes("range")) return page0(qb, [PERSON]);          // loadPeople
+    if (table === "church_people") return { count: 1, error: null };                               // hasDirectory
+    throw new Error("이 시험이 다루지 않는 호출: " + table + " " + JSON.stringify(calls));
+  }, async (name, args) => { rpcCalls.push([name, args]); return { data: args.p.length, error: null }; });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const ctx = { member: { id: "m" }, roles: ["ministry"] };
+  const res = await H.rowSave(ctx, { id: 5, expect: "T1", patch: { renewal: "신규" } });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.rematched, true);
+  assert.equal(rpcCalls.length, 1, "다시 맞추기가 실제로 써야 한다");
+  const edits = audits.filter((a) => a[1] === "history.edit");
+  const lookups = audits.filter((a) => a[1] === "people.lookup");
+  assert.equal(edits.length, 1);
+  assert.equal(lookups.length, 1, "history-edit 기록이 하나여야 한다: " + JSON.stringify(audits));
+  assert.deepEqual(lookups[0].slice(1), ["people.lookup", "", { from: "history-edit", q: "가나다", count: 1 }]);
+});
+
+// 다시 맞추기가 명부가 없어 못 돈 경우(noDirectory → rematched:false)는 실제로 묻지 못한 것이니 history-edit 기록도 없다
+test("고치기 — 명부가 없어 다시 맞추기를 못 돌리면(rematched:false) history-edit 기록도 남기지 않는다", async () => {
+  const audits = [];
+  const cur = { id: 5, year: 2024, committee: "", team: "가", role_title: "", name: "가나다", position: "집사", mok: "기쁨-19",
+    renewal: "", src_note: "", person_id: null, link_how: "auto", match_basis: "", match_reason: HISTORY_UNMATCHED_YET,
+    source: "excel", source_file: "", linked_at: null, updated_at: "T1", deleted_at: null };
+  let hReads = 0;
+  const db = fakeDb((table, calls) => {
+    if (table === "ministry_history" && calls.includes("maybeSingle")) {
+      hReads++;
+      return { data: hReads === 1 ? cur : { ...cur, renewal: "신규", updated_at: "T2" }, error: null };
+    }
+    if (table === "ministry_history" && calls.includes("update")) return { data: [{ id: 5 }], error: null };
+    if (table === "church_people") return { count: 0, error: null };   // 명부 없음
+    throw new Error("이 시험이 다루지 않는 호출: " + table + " " + JSON.stringify(calls));
+  });
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const res = await H.rowSave({ member: { id: "m" }, roles: ["ministry"] }, { id: 5, expect: "T1", patch: { renewal: "신규" } });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.rematched, false);
+  assert.equal(audits.filter((a) => a[1] === "people.lookup").length, 0);
 });
 
 // 지워 달라는 요청으로 이름까지 지운 줄(CLAUDE.md 비상 절차 ②-1) — SQL 이 src_key 를 'erased:'||sha256 으로 바꾼다.

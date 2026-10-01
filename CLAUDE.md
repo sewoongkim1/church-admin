@@ -123,7 +123,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 줄 응답의 in_directory(true/false/null) — 이어 둔 분이 지금 명부에 없으면 화면에 「⚠ 명부에 없음」. 12월 새 명부 뒤 「🔄 다시 맞추기」.
 - ⚠️ **12월 새 명부 뒤**: 떠난 분에게 자동으로 이어진 줄은 다시 맞추기(🔄 · 또는 아무 올리기 — 올리기도 모든 자동 줄을 다시 맞춘다)가 비우거나 동명이인에게 옮길 수 있다(「⚠ 명부에 없음」은 사람이 이은 줄에만 남는다) — 🔄 전에 「근거 약한 줄만」으로 확인(설계 §3.3 · 친구 결정 대기).
 - 개인정보 안내 `privacy.html` 8번(+6번 쓰는 곳·보는 사람·기록) — 모으는 것·보는 사람이 바뀌면 함께.
-- 올리기 살펴보기(`historyUploadCheck`)도 교인명부에 묻는다 — 새 줄이 있고 명부가 있으면 `people.lookup`(`from:"history-check"` · `{asked, askedNames(50까지), count}`) 한 줄(「교인명부 기록」 · 이어진 수가 생년·등록연도의 답이 된다 · 2026-10-01 최종 검토). 줄 창 후보는 `from:"history"`(지금 이어진 분을 끝에 더했으면 `extra:1`).
+- 올리기 살펴보기(`historyUploadCheck`)도 교인명부에 묻는다 — 새 줄이 있고 명부가 있으면 `people.lookup`(`from:"history-check"` · `{asked, askedNames(상한 없음 — 한 번에 받는 줄이 이미 HISTORY_MAX_UPLOAD 로 묶인다), count}`) 한 줄(「교인명부 기록」 · 이어진 수가 생년·등록연도의 답이 된다 · 2026-10-01 최종 검토). 줄 창 후보는 `from:"history"`(지금 이어진 분을 끝에 더했으면 `extra:1`) · 고치기 창에서 후보에 영향 줄 칸을 고쳐 다시 맞췄으면 `from:"history-edit"`(`{q: 고친 뒤 이름, count: 이번에 이어졌으면 1 아니면 0}`).
 - 여러 해를 넣으면 묶음마다 받은 수는 다른 해로 이어진 줄을 못 센다 — 화면은 넣은 뒤 다시 불러온 해마다 요약으로 최종 수를 보인다. 새 줄은 「아직 맞추지 않음 — 🔄 다시 맞추기」 사유로 들어가고 다시 맞추기가 덮는다.
 - 한 번에 3,000줄(`HISTORY_MAX_UPLOAD`) · 화면은 해마다 나눠 보낸다(`sendParts`). 「이분」·「이분 아님」·「되돌리기」는 줄의 `updated_at` 을 `expect` 로 보낸다(없으면 잠그지 않는다 — 교인명부 세션 옛 부름). `ministry_history_apply` 는 읽었던 맞춤 상태(`old_*`)까지 맞아야 쓴다.
 - 나중: 「이력으로 넘기기」(2027 임명확정 → 이 표 · `order_id` · 교인ID 는 교인명부 세션의 `people_links` 에서) — 설계 §8.
@@ -139,8 +139,9 @@ insert into admin_role_grants (member_id, role_id) select id,'super' from m
 ② **사람을 완전히 지우기** — Supabase 대시보드 Authentication → Users 에서 그 카카오 사용자 삭제(admin_members·역할은 cascade, 바꾼 기록은 「지워진 분」)
 ②-1 **사역 이력을 지워 달라는 요청**(개인정보 안내 4번 요청처로) — 화면의 「빼기」는 표시만이라 이름·교인ID 가 남는다. **개발에서 먼저 같은 문장을 돌려 본 뒤** 운영 작업 폴더에서
 `delete from ministry_history where id=<줄 id>`(⚠️ 그러면 같은 원본 파일을 다시 올릴 때 그 줄이 새 줄로 되살아난다) —
-되살아나지 않게 하려면 지우는 대신 `update ministry_history set name='', src_note='', person_id=null, link_how='none', match_basis='', match_reason='', deleted_at=coalesce(deleted_at, now()), updated_at=now(), src_key='erased:' || encode(sha256(convert_to(src_key, 'UTF8')), 'hex') where id=<줄 id>`
-(열쇠에도 이름이 들어 있어 해시로 바꾼다 — 올리기 판정 `judgeUpload` 가 `erasedKey` 로 같은 해시를 만들어 「빼 둔 줄과 같음」으로 건너뛴다).
+되살아나지 않게 하려면 지우는 대신 `update ministry_history set name='', src_note='', person_id=null, link_how='none', match_basis='', match_reason='', deleted_at=coalesce(deleted_at, now()), updated_at=now(), src_key='erased:' || encode(sha256(convert_to(src_key, 'UTF8')), 'hex') where id=<줄 id> and src_key not like 'erased:%'`
+(열쇠에도 이름이 들어 있어 해시로 바꾼다 — 올리기 판정 `judgeUpload` 가 `erasedKey` 로 같은 해시를 만들어 「빼 둔 줄과 같음」으로 건너뛴다.
+⚠️ `and src_key not like 'erased:%'` 를 꼭 둔다 — 안 두면 같은 문장을 두 번 돌릴 때 이미 해시인 `src_key` 를 또 해시해 `erasedKey` 가 더는 못 맞히는 값이 된다).
 그리고 `insert into admin_audit (action, target, detail) values ('history.delete', '<줄 id>', '{"erased": true}')` 로 「바꾼 기록」에 한 줄(이름은 적지 않는다).
 ③ **카카오 Redirect URI** 는 카카오 콘솔 「앱 → 플랫폼 키 → REST API 키」 화면에 있다(「고급 → 로그아웃 리다이렉트」와 다르다)
 ④ **Client Secret** 을 바꿀 때는 카카오에서 새로 만든 뒤 개발·운영 Supabase Kakao 설정 두 곳을 같은 날 바꾼다.
