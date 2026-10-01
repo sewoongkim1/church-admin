@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applicantFromLogin, loginNameKey, matchLoginPerson } from "../supabase/functions/church-admin/people-match.ts";
 import {
-  HISTORY_OUT_KEYS, REQUEST_OUT_KEYS, REQ_OPEN_MAX, hcUserId, historyRowOut, internalKeyOk, parseRequest,
+  HISTORY_OUT_KEYS, REQUEST_OUT_KEYS, REQ_KINDS, REQ_LINE_KINDS, REQ_OPEN_MAX, hcUserId, historyRowOut, internalKeyOk, parseRequest,
   readLoginWho, requestBlock, requestInsert, requestOut, sortHistory,
 } from "../supabase/functions/church-admin/history-check.ts";
 import { ACTION_ROLES, canCall } from "../supabase/functions/church-admin/authz.ts";
@@ -173,4 +173,10 @@ test("내부 액션 둘은 역할 표에 없다 — 카카오 토큰으로 부�
     assert.ok(!(a in ACTION_ROLES), a);
     assert.equal(canCall(a, { status: "active", roles: ["super"] }), "unknown-action");
   }
+});
+
+test("직분은 정정하지 않는다 — 「직분이 틀려요」(wrong_position)는 종류에 없다(교적 기준 · 2026-10-01)", () => {
+  assert.deepEqual(REQ_LINE_KINDS, ["not_mine", "wrong_team", "other"]);
+  assert.deepEqual(REQ_KINDS, ["not_mine", "wrong_team", "other", "missing", "find_me"]);
+  assert.deepEqual(parseRequest({ kind: "wrong_position", history_id: 1 }), { ok: false, error: "bad-kind" });
 });

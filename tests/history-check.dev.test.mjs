@@ -106,7 +106,7 @@ test("모양이 틀린 who·user_id 는 bad-who", async () => {
 
 test("정정 신청 — 이분 줄에 넣고, 같은 줄 두 번 · 남의 줄 · 빼 둔 줄 · 찾았는데 찾아 주세요는 막는다", async () => {
   const send = (o) => call({ action: "internalHistoryRequest", who: WHO, user_id: UID, ...o });
-  assert.deepEqual(await send({ kind: "wrong_position", history_id: hist.a, detail: "그해에는 권사였어요" }), { ok: true });
+  assert.deepEqual(await send({ kind: "wrong_team", history_id: hist.a, detail: "그해에는 호산나찬양대였어요" }), { ok: true });
   assert.equal((await send({ kind: "not_mine", history_id: hist.a })).error, "already-open");
   assert.equal((await send({ kind: "not_mine", history_id: hist.d })).error, "not-yours");
   assert.equal((await send({ kind: "not_mine", history_id: hist.c })).error, "not-yours");
@@ -124,7 +124,7 @@ test("찾지 못한 분은 「찾아 주세요」 하나만", async () => {
 
 test("내 신청 현황 — 최근 것이 위 · 정해진 칸만 · uuid 없음", async () => {
   const j = await call({ action: "internalMyHistory", who: WHO, user_id: UID });
-  assert.deepEqual(j.requests.map((r) => r.kind), ["find_me", "missing", "wrong_position"]);
+  assert.deepEqual(j.requests.map((r) => r.kind), ["find_me", "missing", "wrong_team"]);
   for (const r of j.requests) assert.deepEqual(Object.keys(r).sort(), REQUEST_OUT_KEYS);
   assert.ok(j.requests.every((r) => r.status === "신청"));
   assert.ok(!UUID_RE.test(JSON.stringify(j)), "uuid 가 샜다");

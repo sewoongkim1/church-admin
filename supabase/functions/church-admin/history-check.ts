@@ -5,7 +5,8 @@
 // ⚠️ kind·status 글자는 SQL 008 CHECK·성경암송 app.js MH_* 와 같다(세 곳).
 import type { LoginWho } from "./people-match.ts";
 
-export const REQ_LINE_KINDS = ["not_mine", "wrong_team", "wrong_position", "other"];
+// 「직분이 틀려요」(wrong_position)는 넣지 않는다 — 직분은 교적 기준(친구 결정 2026-10-01). 직분이 틀리면 교적에서 고친다.
+export const REQ_LINE_KINDS = ["not_mine", "wrong_team", "other"];
 export const REQ_KINDS = [...REQ_LINE_KINDS, "missing", "find_me"];
 export const REQ_STATUS = ["신청", "확인 중", "반영", "반영 안 함"];
 export const REQ_OPEN = ["신청", "확인 중"];
