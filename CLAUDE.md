@@ -45,8 +45,10 @@
 - 카카오톡 안 브라우저로 열리면 `kakaotalk://web/openExternal` 로 기본 브라우저에 넘긴다(`js/core/inapp.js` · `main.js` `start()`). 로그인하고 돌아온 주소(`?code=`·`?error=`)는 넘기지 않는다 — PKCE 열쇠가 그 브라우저에만 있다.
 - 이름·소속에 `" \ , ( ) |` 금지(postgrest `.in()` 이 이스케이프하지 않는다).
 - 개인정보 안내는 `privacy.html` — 모으는 것을 바꾸면 이 파일도 함께. 배포 목록(deploy.yml cp)에 들어 있어야 한다.
-- 엑셀 읽기(SheetJS)는 `js/core/xlsx.js` `loadXlsx` 한 곳(📤 명단 올리기·📋 종이 명단 올리기 · FE-6 2026-09-30). 파일은 저장소 `vendor/xlsx-<판>.full.min.js`(받은 곳 cdn.sheetjs.com · integrity sha384 · deploy.yml cp 에 `vendor` · `.gitattributes` 가 줄바꿈을 막는다).
+- 엑셀 읽기(SheetJS)는 `js/core/xlsx.js` `loadXlsx` 한 곳(📤 명단 올리기·📋 종이 명단 올리기·📜 사역 이력 · FE-6 2026-09-30). 파일은 저장소 `vendor/xlsx-<판>.full.min.js`(받은 곳 cdn.sheetjs.com · integrity sha384 · deploy.yml cp 에 `vendor` · `.gitattributes` 가 줄바꿈을 막는다).
   판을 올릴 때는 **새 이름**으로 넣고 판·integrity 를 함께 바꾼다(`tests/xlsx-loader.test.mjs` 가 파일 해시와 대조). npm·jsdelivr 의 xlsx 는 0.18.5(CVE 둘 · 한국 시간대에서 날짜 칸을 하루 앞으로 읽음)에서 멈췄다 — 되돌리지 말 것.
+- **`x-internal-key` 머리가 있는 요청은 토큰 검사 앞에서 내부 갈래(`internalRoute`)로만 간다**(성경암송 「사역 이력 확인」 · 2026-10-01). 내부 액션은 `ACTION_ROLES` 에 넣지 않는다 — 토큰으로 부르면 unknown-action. 설계 v2 `docs/superpowers/specs/2026-10-01-ministry-history-check-design.md`.
+- **「📮 정정 신청」**(`historyRequestList`·`historyRequestSet`): 응답에 `user_id`·`person_id`·`handled_by` 를 싣지 않는다(`requestAdminOut`) · 「반영 안 함」 답 필수 · `not_mine` 반영은 `verified` · 상태로 거를 때 `.in()` 금지(「확인 중」 빈칸). 설계 v2 `docs/superpowers/specs/2026-10-01-ministry-history-requests-admin-design.md`.
 
 ## 교인명부 (2026-09-29 운영 개시)
 dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명부) 담당자가 찾고·보고·내려받는다. 사역 화면에는 **교적 표시**(맞음·확인 필요·없음)와 「이름을 누르면 교적 창」(`ministryPerson` · 사역신청만이면 다섯 칸 — 아래).
@@ -118,6 +120,27 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 개인정보 안내는 `privacy.html` 7번(+6번 쓰는 곳·보는 사람·기록). 성경암송 `privacy/` 는 손대지 않았다(친구 결정 — 앱이 새로 모으는 것이 없다).
 - 개발 화면 확인용 가짜 회차: `node --experimental-strip-types tests/seed-bible-events-dev.mjs`(`--clean` 으로 지움 · 회차 id `ca-demo-` · 명단 이름은 음절 표로 지어내고 찾기 이름은 개발 가짜 명부에서 고른다).
 
+## 사역 이력 (2026-10-01)
+지난 해 사역 임명 명단(엑셀 · 2022~2026, 더 오래된 해도)을 올려 교인명부의 교인ID 와 잇는다. 메뉴 「📜 사역 이력」(`js/menus/ministry/history.js` · 역할 `ministry`).
+설계 v2 `docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md` · 계획 v2 `docs/superpowers/plans/2026-10-01-church-admin-ministry-history.md`.
+- 표 `ministry_history`·`ministry_history_imports`·함수 `ministry_history_apply`(SQL 005) — 서버만. 맞춤 규칙은 `history-match.ts`(순수), 표 쪽은 `history-db.ts`(`makeHistory` · npm import 없음 — 교인명부 세션이 import 한다).
+- ⚠️ **교인명부 세션(자세히 창 사역 탭)이 이 표를 person_id 로 읽고 「이분 것」으로 고친다** — 칸 이름·`historyLinkPatch`·`historyUnlinkPatch`·`rematchHistoryRows(db, ids)` 를 바꾸면 그쪽도(설계 §7).
+- ⚠️ `person_id` 는 `directory`·`super` 응답에만(`rowOut(r, full)`). 사역신청 역할의 「이분」은 후보 차례 번호 + 지문 `fp`(화면 글자로 만든 FNV — 교인ID 로 만들지 않는다).
+- ⚠️ `link_how` `manual`·`none` 은 자동 맞춤이 덮지 않는다. 다시 맞추기는 **모든 해를 함께** 계산한다(다른 해 같은 팀 「유지」가 근거라 해 하나만 돌리면 결과가 달라진다).
+- 같은 줄 열쇠 `src_key`(해|부서|팀|이름|목장|직분)는 올린 그대로 — 고쳐도 안 바뀐다. 빼기는 `deleted_at` 표시만(다시 올려도 안 되살아난다).
+- 진짜 원본 엑셀은 저장소 밖으로 옮겼다(2026-10-01 친구) — 대조 도구는 `python tools/history/check_real.py <명단 엑셀> [교인명부 정리 엑셀]` 로 경로를 준다.
+- 2025년 이전 명단의 「기쁨-1」은 목장 모름으로 읽는다(검증 추정 · 2026-10-01 친구 확인) — 바뀌면 `parseRow` 한 줄과 시험만.
+- 규칙을 바꾸면 이 PC 에서 `python tools/history/check_real.py` — 진짜 명부·통합 엑셀로 수와 검증 지적 64줄을 맞대 본다(2026-09-29 명부 기준 4,042 · 51 · 수만 찍는다).
+- 개발 DB 씨앗: `node --experimental-strip-types tests/seed-history-dev.mjs [--clean]`(source_file `ca-demo-seed`).
+- 쓰기 액션은 쓴 뒤 바로 기록하고, 다시 맞추기는 try/catch — 실패하면 응답 rematched:false(화면이 「🔄 다시 맞추기」를 권한다).
+- 줄 응답의 in_directory(true/false/null) — 이어 둔 분이 지금 명부에 없으면 화면에 「⚠ 명부에 없음」. 12월 새 명부 뒤 「🔄 다시 맞추기」.
+- ⚠️ **12월 새 명부 뒤**: 떠난 분에게 자동으로 이어진 줄은 다시 맞추기(🔄 · 또는 아무 올리기 — 올리기도 모든 자동 줄을 다시 맞춘다)가 비우거나 동명이인에게 옮길 수 있다(「⚠ 명부에 없음」은 사람이 이은 줄에만 남는다) — 🔄 전에 「근거 약한 줄만」으로 확인(설계 §3.3 · 처리는 12월 새 명부 때 정하기로 2026-10-01 친구 결정).
+- 개인정보 안내 `privacy.html` 8번(+6번 쓰는 곳·보는 사람·기록) — 모으는 것·보는 사람이 바뀌면 함께.
+- 올리기 살펴보기(`historyUploadCheck`)도 교인명부에 묻는다 — 새 줄이 있고 명부가 있으면 `people.lookup`(`from:"history-check"` · `{asked, askedNames(상한 없음 — 한 번에 받는 줄이 이미 HISTORY_MAX_UPLOAD 로 묶인다), count}`) 한 줄(「교인명부 기록」 · 이어진 수가 생년·등록연도의 답이 된다 · 2026-10-01 최종 검토). 줄 창 후보는 `from:"history"`(지금 이어진 분을 끝에 더했으면 `extra:1`) · 고치기 창에서 후보에 영향 줄 칸을 고쳐 다시 맞췄으면 `from:"history-edit"`(`{q: 고친 뒤 이름, count: 이번에 이어졌으면 1 아니면 0}`).
+- 여러 해를 넣으면 묶음마다 받은 수는 다른 해로 이어진 줄을 못 센다 — 화면은 넣은 뒤 다시 불러온 해마다 요약으로 최종 수를 보인다. 새 줄은 「아직 맞추지 않음 — 🔄 다시 맞추기」 사유로 들어가고 다시 맞추기가 덮는다.
+- 한 번에 3,000줄(`HISTORY_MAX_UPLOAD`) · 화면은 해마다 나눠 보낸다(`sendParts`). 「이분」·「이분 아님」·「되돌리기」는 줄의 `updated_at` 을 `expect` 로 보낸다(없으면 잠그지 않는다 — 교인명부 세션 옛 부름). `ministry_history_apply` 는 읽었던 맞춤 상태(`old_*`)까지 맞아야 쓴다.
+- 나중: 「이력으로 넘기기」(2027 임명확정 → 이 표 · `order_id` · 교인ID 는 교인명부 세션의 `people_links` 에서) — 설계 §8.
+
 ## 비상 절차
 ① **유일한 총괄 관리자가 카카오 계정을 잃었을 때** — 새 카카오로 로그인·등록 → 작업 폴더에서
 `select id,name,gu,mok,kakao_nickname from admin_members where status='pending'` 로 id 확인 →
@@ -127,6 +150,12 @@ insert into admin_role_grants (member_id, role_id) select id,'super' from m
 ```
 (이름은 파일에 적지 않는다)
 ② **사람을 완전히 지우기** — Supabase 대시보드 Authentication → Users 에서 그 카카오 사용자 삭제(admin_members·역할은 cascade, 바꾼 기록은 「지워진 분」)
+②-1 **사역 이력을 지워 달라는 요청**(개인정보 안내 4번 요청처로) — 화면의 「빼기」는 표시만이라 이름·교인ID 가 남는다. **개발에서 먼저 같은 문장을 돌려 본 뒤** 운영 작업 폴더에서
+`delete from ministry_history where id=<줄 id>`(⚠️ 그러면 같은 원본 파일을 다시 올릴 때 그 줄이 새 줄로 되살아난다) —
+되살아나지 않게 하려면 지우는 대신 `update ministry_history set name='', src_note='', person_id=null, link_how='none', match_basis='', match_reason='', deleted_at=coalesce(deleted_at, now()), updated_at=now(), src_key='erased:' || encode(sha256(convert_to(src_key, 'UTF8')), 'hex') where id=<줄 id> and src_key not like 'erased:%'`
+(열쇠에도 이름이 들어 있어 해시로 바꾼다 — 올리기 판정 `judgeUpload` 가 `erasedKey` 로 같은 해시를 만들어 「빼 둔 줄과 같음」으로 건너뛴다.
+⚠️ `and src_key not like 'erased:%'` 를 꼭 둔다 — 안 두면 같은 문장을 두 번 돌릴 때 이미 해시인 `src_key` 를 또 해시해 `erasedKey` 가 더는 못 맞히는 값이 된다).
+그리고 `insert into admin_audit (action, target, detail) values ('history.delete', '<줄 id>', '{"erased": true}')` 로 「바꾼 기록」에 한 줄(이름은 적지 않는다).
 ③ **카카오 Redirect URI** 는 카카오 콘솔 「앱 → 플랫폼 키 → REST API 키」 화면에 있다(「고급 → 로그아웃 리다이렉트」와 다르다)
 ④ **Client Secret** 을 바꿀 때는 카카오에서 새로 만든 뒤 개발·운영 Supabase Kakao 설정 두 곳을 같은 날 바꾼다.
 - 카톡·문자 공유 미리보기는 `index.html` 의 `og:*`(이미지 `img/og-admin.png`, 1200×630, 절대 주소). 새 파일·폴더를 화면에 쓰면 `deploy.yml` 의 `cp` 목록에도 넣는다(안 넣으면 404).

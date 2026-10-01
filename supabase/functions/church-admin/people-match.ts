@@ -139,3 +139,35 @@ export function churchFor(idx: Map<string, Cand[]> | null, a: Applicant, isSame?
   if (!k || LOOKUP_BAD.test(k)) return null;
   return matchChurch(idx.get(k), a, isSame);
 }
+
+// ── 성경암송 앱 로그인으로 교인 한 분 찾기(사역 이력 확인 · 2026-10-01) ──
+//   설계: v2 docs/superpowers/specs/2026-10-01-ministry-history-check-design.md §3
+//   교구 = 교구 + 목장 + 이름, 교회학교 = 부서 + 이름 — sameAffiliation 그대로(교적 표시 「맞음」과 같은 기준 · 친구 결정).
+//   같은 소속에 그 이름이 딱 한 분일 때만 그분. why 는 서버 안에서만 쓴다 — 화면엔 「찾지 못했어요」 하나(동명이인이 있다는 것을 알리지 않는다).
+// ⚠️ 이 파일의 sameAffiliation·mokNumber 를 고치면 성경암송 앱의 「사역 이력 확인」도 함께 바뀐다(그래서 규칙을 여기 둔다).
+export type LoginWho = { type: string; gu: string; mok: string; bu: string; grade: string; name: string };
+
+// 앱 로그인(users 줄) → 신청자 모양. 성경필사 명단 줄과 같은 읽기(목장 「12」·「남성」·「99」).
+export function applicantFromLogin(w: LoginWho): Applicant {
+  const school = txt(w?.type) === "교회학교";
+  return applicantFromSignup({
+    who_type: school ? "교회학교" : "교구",
+    group_name: school ? String(w?.bu ?? "") : String(w?.gu ?? ""),
+    sub_name: school ? "" : String(w?.mok ?? ""),
+    name: String(w?.name ?? ""),
+  });
+}
+
+// 명부에 물을 이름 열쇠 — 비었거나 물을 수 없는 글자(LOOKUP_BAD)면 null(그 이름은 찾지 않는다)
+export function loginNameKey(w: LoginWho): string | null {
+  const k = nameKey(w?.name);
+  return k && !LOOKUP_BAD.test(k) ? k : null;
+}
+
+// rows = 명부에서 같은 이름(name_key)으로 가져온 줄 { person_id, kind2, mok1, mok3, school_dept }
+export function matchLoginPerson(rows: any[] | undefined, w: LoginWho): { personId: number | null; why: "" | "없음" | "여럿" } {
+  const a = applicantFromLogin(w);
+  const same = (rows ?? []).filter((r) => sameAffiliation(toCand(r), a));
+  if (same.length === 1) return { personId: Number(same[0].person_id), why: "" };
+  return { personId: null, why: same.length ? "여럿" : "없음" };
+}

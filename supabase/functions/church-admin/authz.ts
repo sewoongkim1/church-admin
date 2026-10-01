@@ -35,6 +35,9 @@ export const ACTION_ROLES: Record<string, string | null> = {
   // 사역신청(2026-09-30 친구 요청) — 이름을 누르면 교적 창 — 담당자·역할 화면(총괄)도 이것을 부른다.
   // 모양은 index.ts ministryPerson 이 부른 분의 역할로 정한다(evPerson 과 같다 — 교인명부 역할·총괄이면 교인ID, 아니면 다섯 칸 + 교적 표시).
   ministryPerson: "ministry",
+  // 「📮 정정 신청」(2026-10-01) — 성경암송 앱 「사역 이력 확인」에서 온 정정 신청 목록·처리. 응답에 user_id·person_id 없음 · 처리는 바꾼 기록에.
+  historyRequestList: "ministry",
+  historyRequestSet: "ministry",
   // 교인명부(2026-09-29) — 찾기·한 분 보기·현황·내려받기. 읽기만(원본은 dimode). 찾기·보기·내려받기는 열람 기록에 남는다.
   peopleSearch: "directory",
   peoplePerson: "directory",
@@ -76,6 +79,18 @@ export const ACTION_ROLES: Record<string, string | null> = {
   // 사역신청 번호 보관(2026-10-01 · 교인명부 세션 설계 §6) — 결정 때 번호를 지우지 않고, 신청 현황 「결정된 신청 번호 지우기(N건)」로.
   //   보낸 수(count)가 지금 수와 같을 때만 지운다(그사이 바뀌었으면 conflict · 시험 PROBE 도 이 길로 아무것도 안 바꾼다). 바꾼 기록 ministry.phoneclear.
   ministryPhoneClear: "ministry",
+  // 사역 이력(2026-10-01) — 지난 해 사역 임명 명단(엑셀)과 교인ID 잇기(표 ministry_history · history-db.ts). 응답의 person_id 는
+  // 교인명부·총괄 역할일 때만(서버가 ctx.roles 로). 후보 보기는 「교인명부 기록」 people.lookup(from:"history") · 쓰기는 「바꾼 기록」 history.*.
+  historyList: "ministry",
+  historyUploadCheck: "ministry",
+  historyUploadSave: "ministry",
+  historyRowAdd: "ministry",
+  historyRowSave: "ministry",
+  historyRowDelete: "ministry",
+  historyCandidates: "ministry",
+  historyLink: "ministry",
+  historyRematch: "ministry",
+  historyExport: "ministry",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";
