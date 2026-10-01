@@ -167,3 +167,10 @@ test("people.linksync — 「기록 잇기 맞추기」 · 수만", () => {
   assert.equal(detailText(R("people.linksync", { orders: 1200, signups: 2834, added: 3, changed: 1, unmatched: 12, written: 4034 }, "8")),
     "사역신청 1200줄 · 성경필사 2834줄 · 새로 이음 3 · 바뀜 1 · 못 맞춤 12");
 });
+
+test("people.link — 「교적 잇기」 · 줄 종류 · 줄 번호 · 어떻게(이름·교인ID 없음)", () => {
+  assert.match(LABEL["people.link"], /[가-힣]/);
+  assert.equal(detailText(R("people.link", { kind: "order", row: 12, how: "manual" }, "12")), "사역신청 줄 12 · 이분 것");
+  assert.equal(detailText(R("people.link", { kind: "signup", row: 7, how: "none" }, "7")), "성경필사 줄 7 · 이분 아님");
+  assert.equal(detailText(R("people.link", { kind: "signup", row: 7, how: "auto" }, "7")), "성경필사 줄 7 · 잇기 풀기");
+});

@@ -148,6 +148,9 @@ const PROBE = {
   peoplePerson: { id: 0 },
   peopleStats: {},
   peopleExport: { q: "ca-test-probe-없음" },
+  // 「자세히」 창 탭(2026-10-01) — 없는 교인 → not-found · 줄 0 → invalid(둘 다 읽지도 쓰지도 기록하지도 않는다)
+  peopleHistory: { id: 0 },
+  peopleLink: { kind: "order", row: 0, person: 0, how: "manual" },
   // 성경필사(암송)(Task 5) — 읽기만. 없는 회차·없는 이름을 가리킨다
   evEvents: {},
   evRoster: { event_id: "ca-test-probe-none" },
@@ -2625,4 +2628,99 @@ test("그때그때 잇기 — 나머지 네 자리(종이 명단 새로 넣기·
   assert.ok(uprow, "올린 줄을 찾아야 한다");
   const lu1 = await linkOf("signup", uprow.id);
   assert.deepEqual([lu1?.person_id, lu1?.link_how, lu1?.match_basis], [PL.ids[2], "auto", "맞음"]);
+});
+
+// ---------- 교인명부 — 「자세히」 창 사역·성경필사 탭(2026-10-01) ----------
+const TAB_SECRET = /"(user_id|ident_key|memo|phone|answers|note)"\s*:/;
+const MIN_ITEM_KEYS = ["committee", "how", "kind", "option", "role_title", "row", "status", "team", "year"];
+const BIB_ITEM_KEYS = ["event_id", "group", "how", "kind", "opens_on", "position", "row", "short_title", "sub", "title", "who_type"];
+const plOpen = async () => {
+  await plFixtures();
+  await call(people.ministry.token, "ministryList");                          // 그때그때 잇기(앞 시험과 상관없이)
+  await call(people.bibleevent.token, "evRoster", { event_id: PL.ev });
+};
+
+test("「자세히」 창 탭(peoplePerson history): 이어진 기록만 · 칸 지도 · 메모·전화·앱 계정 없음 · people.view 한 줄", async () => {
+  await plOpen();
+  const mark = await auditMark();
+  const r = await call(people.directory.token, "peoplePerson", { id: PL.ids[0] });
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  const h = r.body.history;
+  assert.deepEqual(Object.keys(h).sort(), ["bible", "counts", "ministry"]);
+  assert.deepEqual(h.ministry.map((x) => [x.kind, x.row]), [["order", PL.orders.o1]]);
+  assert.deepEqual(h.bible.map((x) => [x.kind, x.row]), [["signup", PL.signups.s1]]);
+  assert.deepEqual(h.counts, { ministry: 1, bible: 1 });
+  assert.deepEqual(Object.keys(h.ministry[0]).sort(), MIN_ITEM_KEYS);
+  assert.deepEqual(Object.keys(h.bible[0]).sort(), BIB_ITEM_KEYS);
+  assert.deepEqual([h.ministry[0].committee, h.ministry[0].team, h.ministry[0].status, h.ministry[0].how], ["시험부", "시험팀", "신청완료", "auto"]);
+  assert.deepEqual([h.bible[0].event_id, h.bible[0].group, h.bible[0].sub, h.bible[0].opens_on], [PL.ev, "화평", "20", "2000-07-01"]);
+  assert.ok(!TAB_SECRET.test(JSON.stringify(h)), "탭에 실으면 안 되는 칸");
+  assert.ok(!UUID_RE.test(JSON.stringify(h)), "UUID 꼴 값");
+  const views = (await call(people.super.token, "auditList", { limit: 50, kind: "people" })).body.rows
+    .filter((x) => x.id > mark && x.target === String(PL.ids[0]));
+  assert.deepEqual(views.map((x) => x.action), ["people.view"], "탭 때문에 기록이 늘었다");
+});
+
+test("아직 안 이어진 기록(peopleHistory): 같은 이름 · 아무에게도 안 이어진 줄 · 칸 지도 · 기록 없음", async () => {
+  await plOpen();
+  const mark = await auditMark();
+  const pick = (rows) => rows.filter((x) => (x.kind === "order" && Object.values(PL.orders).includes(x.row)) ||
+    (x.kind === "signup" && Object.values(PL.signups).includes(x.row)));
+  const a = await call(people.directory.token, "peopleHistory", { id: PL.ids[0] });
+  assert.equal(a.body.ok, true, JSON.stringify(a.body));
+  assert.deepEqual(Object.keys(a.body).sort(), ["ok", "rows"]);
+  assert.deepEqual(pick(a.body.rows).map((x) => [x.kind, x.row, x.how]), [["order", PL.orders.o3, "auto"], ["signup", PL.signups.s2, "auto"]]);
+  const o3 = pick(a.body.rows)[0];
+  assert.deepEqual(Object.keys(o3).sort(), ["committee", "how", "kind", "option", "position", "row", "status", "team", "who", "year"]);
+  assert.equal(o3.who, "기쁨 5목장");
+  assert.ok(!TAB_SECRET.test(JSON.stringify(a.body)));
+  const b = await call(people.directory.token, "peopleHistory", { id: PL.ids[2] });
+  assert.deepEqual(pick(b.body.rows).map((x) => [x.kind, x.row]), [["order", PL.orders.o4], ["signup", PL.signups.s3]]);
+  assert.equal((await call(people.directory.token, "peopleHistory", { id: 1 })).body.error, "not-found");
+  const logs = (await call(people.super.token, "auditList", { limit: 50, kind: "people" })).body.rows
+    .filter((x) => x.id > mark && [String(PL.ids[0]), String(PL.ids[2])].includes(x.target));
+  assert.equal(logs.length, 0, JSON.stringify(logs));
+});
+
+test("이분 것·이분 아님·풀기(peopleLink): 사람이 정한 줄 · 자동이 덮지 않음 · 이름이 다르면 막음 · 기록 people.link {kind,row,how}", async () => {
+  await plOpen();
+  const d = people.directory;
+  const link = (kind, row, how, person = PL.ids[0]) => call(d.token, "peopleLink", { kind, row, person, how });
+  // ① 이분 것 — 못 맞춘 o3 을 61 께
+  const m = await link("order", PL.orders.o3, "manual");
+  assert.equal(m.body.ok, true, JSON.stringify(m.body));
+  assert.deepEqual(m.body.history.ministry.map((x) => x.row).sort((x, y) => x - y), [PL.orders.o1, PL.orders.o3].sort((x, y) => x - y));
+  assert.equal(m.body.history.ministry.find((x) => x.row === PL.orders.o3).how, "manual");
+  const lm = await linkOf("order", PL.orders.o3);
+  assert.deepEqual([lm.person_id, lm.link_how, lm.match_basis, lm.linked_by, lm.import_id], [PL.ids[0], "manual", "사람이 이음", d.memberId, null]);
+  await call(people.ministry.token, "ministryList");
+  await call(people.super.token, "peopleLinkSync", { apply: true });
+  assert.equal((await linkOf("order", PL.orders.o3)).link_how, "manual", "자동이 덮었다");
+  // ② 이분 아님 — 이분께 이어진 줄만 · 그 뒤 「아직 안 이어진 기록」에 how none 으로
+  const n = await link("order", PL.orders.o3, "none");
+  assert.equal(n.body.ok, true, JSON.stringify(n.body));
+  const ln = await linkOf("order", PL.orders.o3);
+  assert.deepEqual([ln.person_id, ln.link_how, ln.match_basis], [null, "none", ""]);
+  const un = await call(d.token, "peopleHistory", { id: PL.ids[0] });
+  assert.equal(un.body.rows.find((x) => x.kind === "order" && x.row === PL.orders.o3)?.how, "none");
+  // ③ 풀기 — 규칙이 다시 같은 분께 이으면 relinked(화면이 「이분 아님」을 권한다)
+  const f = await link("signup", PL.signups.s1, "auto");
+  assert.deepEqual([f.body.ok, f.body.relinked], [true, true], JSON.stringify(f.body));
+  const lf = await linkOf("signup", PL.signups.s1);
+  assert.deepEqual([lf.person_id, lf.link_how, lf.match_basis, lf.linked_by], [PL.ids[0], "auto", "맞음", null]);
+  // ④ 막는 것
+  assert.equal((await link("order", PL.orders.o4, "manual")).body.error, "other-name");
+  assert.equal((await link("order", PL.orders.o2, "none")).body.error, "not-linked", "62 께 이어진 줄을 61 창에서 「이분 아님」");
+  assert.equal((await link("order", PL.orders.o3, "manual", 999999999)).body.error, "not-found");
+  assert.equal((await link("order", 0, "manual")).body.error, "invalid");
+  assert.equal((await call(d.token, "peopleLink", { kind: "order", row: PL.orders.o3, person: PL.ids[0], how: "delete" })).body.error, "invalid");
+  assert.equal((await link("history", 1, "manual")).body.error, "bad-kind", "사역 이력 잇기는 Task 10 에서");
+  // ⑤ 기록 — people.link {kind,row,how}(이름·교인ID 없음 · 「교인명부 기록」)
+  const logs = (await call(people.super.token, "auditList", { limit: 80, kind: "people" })).body.rows
+    .filter((r) => r.action === "people.link" && ((r.detail?.kind === "order" && r.detail?.row === PL.orders.o3) ||
+      (r.detail?.kind === "signup" && r.detail?.row === PL.signups.s1)));
+  assert.deepEqual(logs.map((r) => r.detail).reverse(), [{ kind: "order", row: PL.orders.o3, how: "manual" },
+    { kind: "order", row: PL.orders.o3, how: "none" }, { kind: "signup", row: PL.signups.s1, how: "auto" }]);
+  // 되돌린다(o3 을 auto 로)
+  await rest(`people_links?kind=eq.order&row_id=eq.${PL.orders.o3}`, "PATCH", { person_id: null, link_how: "auto", match_basis: "", import_id: 1 });
 });

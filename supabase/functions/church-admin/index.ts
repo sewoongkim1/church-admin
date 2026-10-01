@@ -55,6 +55,8 @@ import { churchForSignup } from "./events-person.ts";
 import { DECIDED } from "./ministry.ts";
 // 교인명부 — 기록과 교인 잇기(2026-10-01 · people_links) — 이 묶음의 이름은 people-links.ts 에서만 가져온다
 import { orderAutoRecs, signupAutoRecs, syncCounts, toLinkCand, linkRowOf, type AutoRec, type LinkKind, type LinkLook, type LinkRow } from "./people-links.ts";
+// 교인명부 「자세히」 창 사역·성경필사 탭(2026-10-01 · Task 5) — 이 묶음의 이름은 people-links.ts 에서만 가져온다
+import { historyTabs, unlinkedRows, movedOrderIds, parseLink, linkPatch, unlinkRec, missingTable } from "./people-links.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1123,8 +1125,9 @@ async function peoplePerson(ctx: Ctx, b: any) {
     if (e2) throw e2;
     family = fam ?? [];
   }
+  const history = await personHistory(id);   // 사역·성경필사 탭(2026-10-01) — 칸 지도로만(people-links.ts historyTabs) · 기록은 people.view 한 줄 그대로
   await audit(ctx, "people.view", String(id), { name: data.name });
-  return { ok: true, person: { ...data, photo: urls.get(id) ?? "" }, family };
+  return { ok: true, person: { ...data, photo: urls.get(id) ?? "" }, family, history };
 }
 
 async function peopleStats() {
@@ -1233,6 +1236,130 @@ async function peopleLinkSync(ctx: Ctx, b: any) {
   const written = await writeAutoLinks([...oRecs, ...sRecs]);
   await audit(ctx, "people.linksync", String(look.importId), { ...counts, written });
   return { ok: true, dry: false, ...counts, written };
+}
+
+// ---------- 교인명부 — 「자세히」 창의 사역·성경필사 탭(2026-10-01 · 설계 §4·§5) ----------
+// ⚠️ 칸은 아래 목록으로만 읽는다 — 메모(note)·취소 사유·번호(phone)·앱 계정(user_id)·ident_key·memo·answers 는 읽지도 않는다.
+//    응답은 people-links.ts 칸 지도(historyTabs·unlinkedRows) — 시험이 키 집합을 대조한다.
+const ORDER_TAB_COLS = "id,year,committee,team,option,status";
+const SIGNUP_TAB_COLS = "id,event_id,who_type,group_name,sub_name,position";
+const EVENT_TAB_COLS = "id,title,short_title,opens_on,status";
+// b6 「사역 이력」 표(설계 §2.2 · b6 설계 §7) — 읽기만. link_how 는 「사람이 이음」 표시에만.
+const HISTORY_TAB_COLS = "id,year,committee,team,role_title,position,mok,source,link_how";
+
+async function rowsByIds(table: string, cols: string, ids: (number | string)[]): Promise<any[]> {
+  const uniq = [...new Set(ids)];
+  const out: any[] = [];
+  for (let i = 0; i < uniq.length; i += 300) {
+    const { data, error } = await db.from(table).select(cols).in("id", uniq.slice(i, i + 300));
+    if (error) throw error;
+    out.push(...((data ?? []) as any[]));
+  }
+  return out;
+}
+// 사역 이력 표가 아직 없으면(운영 SQL 005 전) 빈 것 — 사역 탭은 신청만 보인다(설계 §2.2)
+async function historyRowsOf(personId: number): Promise<any[]> {
+  const { data, error } = await db.from("ministry_history").select(HISTORY_TAB_COLS)
+    .eq("person_id", personId).is("deleted_at", null).order("year", { ascending: false }).limit(500);
+  if (missingTable(error)) return [];
+  if (error) throw error;
+  return (data ?? []) as any[];
+}
+// 이력으로 넘긴 신청(b6 §8 · order_id) — 빼지 않은 이력 줄이 가리키는 신청은 신청 쪽으로 읽지 않는다(두 번 보이지 않게)
+async function movedOrders(orderIds: number[]): Promise<Set<number>> {
+  const out = new Set<number>();
+  for (let i = 0; i < orderIds.length; i += 300) {
+    const { data, error } = await db.from("ministry_history").select("order_id")
+      .in("order_id", orderIds.slice(i, i + 300)).is("deleted_at", null);
+    if (missingTable(error)) return out;
+    if (error) throw error;
+    for (const id of movedOrderIds((data ?? []) as any[])) out.add(id);
+  }
+  return out;
+}
+async function personHistory(personId: number) {
+  const links = await allRows(() => db.from("people_links").select("kind,row_id,link_how")
+    .eq("person_id", personId).in("link_how", ["auto", "manual"]).order("kind", { ascending: true }).order("row_id", { ascending: true }));
+  const ids = (k: string) => links.filter((l) => l.kind === k).map((l) => Number(l.row_id));
+  const [orders, signups, history, moved] = await Promise.all([
+    rowsByIds("ministry_orders", ORDER_TAB_COLS, ids("order")),
+    rowsByIds("event_signups", SIGNUP_TAB_COLS, ids("signup")),
+    historyRowsOf(personId),
+    movedOrders(ids("order")),
+  ]);
+  const events = await rowsByIds("events", EVENT_TAB_COLS, signups.map((s) => s.event_id));
+  return historyTabs({ links, orders, signups, events, history, moved });
+}
+
+// 이름이 같고 아직 안 이어진 기록 — 이름으로 넓게 찾는다(신청·명단 전부를 읽어 메모리에서 nameKey 로 · evHistory 와 같은 방식 · 느리다).
+// 창의 탭을 누를 때 한 번 부른다. 기록은 남기지 않는다(창을 연 people.view 가 이미 있다).
+async function peopleHistory(b: any) {
+  const id = Number(b.id) || 0;
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "not-found" };
+  const { data: p, error } = await db.from("church_people").select("person_id,name_key").eq("person_id", id).maybeSingle();
+  if (error) throw error;
+  if (!p) return { ok: false, error: "not-found" };
+  const key = String(p.name_key ?? "");
+  const [orders, signups, events] = await Promise.all([
+    allRows(() => db.from("ministry_orders").select("id,user_id,year,committee,team,option,status,position,name,who").order("id", { ascending: true })),
+    allRows(() => db.from("event_signups").select("id,event_id,who_type,group_name,sub_name,name,position").order("id", { ascending: true })),
+    allRows(() => db.from("events").select(EVENT_TAB_COLS).order("id", { ascending: true })),
+  ]);
+  // 이름이 빈 옛 신청 줄만 앱 계정 이름을 묻는다(fillOrderNames) — 그다음 이 분 이름만 남긴다
+  const mineO = (await fillOrderNames(orders.filter((o) => !o.name || nameKey(o.name) === key))).filter((o) => nameKey(o.name) === key);
+  const mineS = signups.filter((s) => nameKey(s.name) === key);
+  const [orderLinks, signupLinks, moved] = await Promise.all([
+    linksOf("order", mineO.map((o) => Number(o.id))), linksOf("signup", mineS.map((s) => Number(s.id))),
+    movedOrders(mineO.map((o) => Number(o.id))),
+  ]);
+  return { ok: true, rows: unlinkedRows({ orders: mineO, signups: mineS, events, orderLinks, signupLinks, moved, history: [] }) };
+}
+
+// 「이분 것」(manual) · 「이분 아님」(none) · 「풀기」(auto — auto 로 되돌리고 그 줄만 다시 맞춘다).
+// ⚠️ 대상 줄의 이름이 이 교인 이름(nameKey)과 같아야 한다(다른 사람 줄을 잇지 못하게) · manual 은 그 교인이 지금 명부에 있어야 한다.
+// ⚠️ none·auto 는 그 줄이 지금 이 분께 이어져 있을 때만(not-linked) — 화면은 이어진 줄에만 그 단추를 둔다.
+// ⚠️ 사람의 쓰기는 이 표에 바로 upsert(사람이 정한 것이 자동을 이긴다) · 응답에 이 분의 탭 자료를 다시 실어 보낸다(people.view 를 늘리지 않게).
+const ORDER_LINK_COLS = "id,user_id,name,who,phone";
+const SIGNUP_LINK_COLS = "id,event_id,who_type,group_name,sub_name,name";
+async function peopleLink(ctx: Ctx, b: any) {
+  const p = parseLink(b);
+  if (!p.ok) return { ok: false, error: p.error };
+  if (p.kind === "history") return { ok: false, error: "bad-kind" };   // 사역 이력(b6) 표가 열리면 계획 Task 10 이 이 줄을 바꾼다
+  const { data: person, error: e0 } = await db.from("church_people").select("person_id,name_key").eq("person_id", p.person).maybeSingle();
+  if (e0) throw e0;
+  if (!person) return { ok: false, error: "not-found" };
+  const kind = p.kind as LinkKind;
+  let row: any = null;
+  if (kind === "order") {
+    const { data, error } = await db.from("ministry_orders").select(ORDER_LINK_COLS).eq("id", p.row).maybeSingle();
+    if (error) throw error;
+    row = data ? (await fillOrderNames([data]))[0] : null;
+  } else {
+    const { data, error } = await db.from("event_signups").select(SIGNUP_LINK_COLS).eq("id", p.row).maybeSingle();
+    if (error) throw error;
+    row = data;
+  }
+  if (!row) return { ok: false, error: "not-found" };
+  if (nameKey(row.name) !== person.name_key) return { ok: false, error: "other-name" };
+  const cur = (await linksOf(kind, [p.row])).get(p.row);
+  if (p.how !== "manual" && cur?.person_id !== p.person) return { ok: false, error: "not-linked" };
+  const now = new Date().toISOString();
+  let relinked = false;
+  if (p.how === "auto") {
+    const look = await churchLookupLinked([row.name]);
+    if (!look) return { ok: false, error: "no-directory" };
+    const rec = (kind === "order" ? orderAutoRecs([row], look, new Map(), true) : signupAutoRecs([row], look, new Map(), true))[0];
+    const l = { person_id: rec?.person_id ?? null, basis: rec?.match_basis ?? "" };
+    const { error } = await db.from("people_links").upsert(unlinkRec(kind, p.row, l, look.importId, now), { onConflict: "kind,row_id" });
+    if (error) throw error;
+    relinked = l.person_id === p.person;
+  } else {
+    const { error } = await db.from("people_links")
+      .upsert(linkPatch(kind, p.row, p.how, p.person, ctx.member?.id ?? null, now), { onConflict: "kind,row_id" });
+    if (error) throw error;
+  }
+  await audit(ctx, "people.link", String(p.row), { kind, row: p.row, how: p.how });
+  return { ok: true, how: p.how, relinked, history: await personHistory(p.person) };
 }
 
 // ---------- 성경필사(암송) — 이벤트 명단 (2026-09-29) ----------
@@ -1900,6 +2027,8 @@ Deno.serve(async (req) => {
       case "peoplePerson": return json(await peoplePerson(ctx, b));
       case "peopleStats":  return json(await peopleStats());
       case "peopleExport": return json(await peopleExport(ctx, b));
+      case "peopleHistory": return json(await peopleHistory(b));
+      case "peopleLink":    return json(await peopleLink(ctx, b));
       case "evEvents":  return json(await evEvents());
       case "evRoster":  return json(await evRoster(b));
       case "evHistory": return json(await evHistory(b));

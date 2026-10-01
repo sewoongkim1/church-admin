@@ -40,6 +40,10 @@ export const ACTION_ROLES: Record<string, string | null> = {
   peoplePerson: "directory",
   peopleStats: "directory",
   peopleExport: "directory",
+  // 교인명부 「자세히」 창 사역·성경필사 탭(2026-10-01) — 이름이 같고 아직 안 이어진 기록(읽기만 · 기록 없음 — 창을 연 people.view 가 있다) ·
+  //   「이분 것」·「이분 아님」·「풀기」(줄 이름 = 교인 이름일 때만 · 바꾼 기록 people.link). 메모·사유·전화·앱 계정은 싣지 않는다.
+  peopleHistory: "directory",
+  peopleLink: "directory",
   // 성경필사(암송)(2026-09-29) — 성경암송 앱의 이벤트 명단(events·event_signups). 여기는 읽기 넷
   // (회차 목록·명단·사람별 이력·통계). 줄은 이름·소속·직분·담당자 메모·교적 표시만 — user_id·신원 키·
   // 성도님 전화·메모·답은 싣지 않는다. 쓰기(회차 설정·줄 고치기·올리기)는 Task 6~8 이 이 아래에 더한다.

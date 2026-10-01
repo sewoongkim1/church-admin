@@ -67,7 +67,7 @@ test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄�
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "directory");
-  assert.deepEqual(acts.sort(), ["peopleExport", "peoplePerson", "peopleSearch", "peopleStats"]);
+  assert.deepEqual(acts.sort(), ["peopleExport", "peopleHistory", "peopleLink", "peoplePerson", "peopleSearch", "peopleStats"]);
   for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 
