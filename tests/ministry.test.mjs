@@ -48,3 +48,20 @@ test("DECIDED — 결정 상태 셋(번호 지우기 단추·180일 작업이 �
   assert.deepEqual(DECIDED, ["임명확정", "미채택", "취소"]);
   for (const st of ["임명확정", "취소"]) assert.equal("phone" in statusPatch("접수완료", st, "사유", NOW).patch, false, st);
 });
+
+// 2026-10-02 가지 마지막 검토 — 결정에서 접수·신청으로 되돌려도 decided_at 은 남는다(statusPatch 가 지우지 않는다).
+// 그래서 180일 자동 지우기(SQL 007)도 상태를 봐야 단추(ministryPhoneClear · DECIDED)와 같은 셈이 된다.
+test("SQL 007 — 180일 자동 지우기는 지금도 결정 상태인 줄만(DECIDED 와 같은 목록 · 되돌린 줄은 decided_at 이 남아도 아니다)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { DECIDED } = await import("../supabase/functions/church-admin/ministry.ts");
+  assert.equal("decided_at" in statusPatch("임명확정", "접수완료", undefined, NOW).patch, false, "되돌려도 decided_at 은 그대로 남는다");
+  const sql = readFileSync(new URL("../supabase/sql/007_ministry_phone_expire.sql", import.meta.url), "utf8")
+    .split(/\r?\n/).map((l) => l.replace(/--.*$/, "")).join("\n");          // 주석은 빼고 본다
+  const upd = sql.match(/update\s+ministry_orders\s+set\s+phone\s*=\s*null[\s\S]*?;/i);
+  assert.ok(upd, "번호를 지우는 update 한 줄");
+  const st = upd[0].match(/status\s+in\s*\(([^)]*)\)/i);
+  assert.ok(st, "WHERE 에 status in (…)");
+  assert.deepEqual(st[1].split(",").map((x) => x.trim().replace(/^'|'$/g, "")), DECIDED);
+  assert.match(upd[0], /decided_at\s*<\s*now\(\)\s*-\s*interval\s*'180 days'/i);
+  assert.match(upd[0], /phone\s+is\s+not\s+null/i);
+});

@@ -1,7 +1,8 @@
 // 교인명부 「자세히」 창 사역·성경필사 탭 — 순수 시험(preflight 가 돈다 · 2026-10-01). 이름은 지어낸 것.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { HIST_TABS, tabOf, tabsHtml, ministryText, statusChip, bibleText, histPanelHtml, unlinkedHtml, histTotal, rowKey }
+import { HIST_TABS, tabOf, tabsHtml, ministryText, statusChip, bibleText, histPanelHtml, unlinkedHtml, histTotal, rowKey,
+  linkDoneText, LINK_STALE }
   from "../js/menus/people/person-history.js";
 import { personDetailHtml } from "../js/menus/people/person-detail.js";
 
@@ -129,4 +130,21 @@ test("personDetailHtml — 탭 셋 · 고른 칸만 켜짐 · 이력이 있으�
   assert.ok(personDetailHtml(P, [], H([], [])).includes('class="pd-wrap pd-few pd-tabbed"'), "이력 0 이면 예전처럼 좁힌다(탭은 그대로)");
   assert.equal(personDetailHtml(P, []).includes("pd-tabs"), false);
   assert.ok(personDetailHtml(P, []).includes('class="pd-wrap pd-few"'));
+});
+
+// 2026-10-02 가지 마지막 검토 — 쓰기는 됐는데 서버가 탭 자료(history) 다시 읽기에 실패하면 history 만 빠져 온다
+test("linkDoneText — 셋의 알림 · 풀었는데 다시 붙으면 「이분 아님」 권함 · history 가 없으면 「창을 다시 열면」을 덧붙인다", () => {
+  const h = H();
+  assert.equal(linkDoneText("manual", { ok: true, history: h }), "이분 기록으로 이었어요");
+  assert.equal(linkDoneText("none", { ok: true, history: h }), "이분 기록이 아니라고 적었어요");
+  assert.equal(linkDoneText("auto", { ok: true, relinked: false, history: h }), "잇기를 풀었어요");
+  assert.ok(linkDoneText("auto", { ok: true, relinked: true, history: h }).includes("「이분 아님」"));
+  assert.equal(linkDoneText("manual", { ok: true, relinked: true, history: h }), "이분 기록으로 이었어요", "relinked 는 풀기만");
+  for (const how of ["manual", "none", "auto"]) {
+    const s = linkDoneText(how, { ok: true, relinked: false });
+    assert.ok(s.endsWith(LINK_STALE), how + " — history 없음");
+    assert.equal(linkDoneText(how, { ok: true, history: null }).endsWith(LINK_STALE), true);
+    noNL(s);
+  }
+  assert.ok(linkDoneText("auto", { ok: true, relinked: true }).includes("「이분 아님」"));
 });

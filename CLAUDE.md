@@ -71,14 +71,16 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 찾기·보기·내려받기는 `admin_audit` 의 `people.*` — 「바꾼 기록」 기본 보기에선 빠지고 「교인명부 기록」 보기에서만 보인다. 이 기록은 명단에서 빠져도 지우지 않는다(개인정보 안내 6번).
 - 「자세히」 창의 🤝 사역 · ✍️ 성경필사 탭(2026-10-01 · 설계 v2 `docs/superpowers/specs/2026-10-01-person-history-tabs-design.md` · 계획 `docs/superpowers/plans/2026-10-01-person-history-tabs.md`):
   기록과 교인을 잇는 표 `people_links`(SQL 006 · `(kind,row_id)` — `order`=ministry_orders · `signup`=event_signups · FK 없음 · 앱 표엔 칸을 안 더한다). 규칙·칸 지도는 `people-links.ts`(순수).
-  ⚠️ **`manual`·`none` 은 자동이 절대 덮지 않는다** — 자동 쓰기는 SQL 함수 `people_links_auto` 하나로만(그 안의 where), 사람의 쓰기는 `peopleLink` 하나. 표에 직접 upsert 로 auto 를 쓰지 말 것.
+  ⚠️ **`manual`·`none` 은 자동이 절대 덮지 않는다** — 자동 맞춤의 쓰기는 SQL 함수 `people_links_auto` 하나로만(그 안의 where), 사람의 쓰기는 `peopleLink` 하나(「이분 것」·「이분 아님」 `linkPatch` · 「풀기」 `unlinkRec` — 풀기는 사람이 고른 일이라 그 줄 하나를 직접 upsert 로 auto 로 되돌린다). **그 밖의 자리**(기록 잇기 맞추기·그때그때 잇기·새 코드)에서 표에 직접 upsert 로 auto 를 쓰지 말 것.
   ⚠️ 「이름이 명부에 한 분뿐」은 **자동으로 잇지 않는다**(`autoLink` — 이름 누르기의 `personPickFor` ②와 다르다 · 친구 결정). 그때그때 잇기는 신청 현황·종이 명단 넣기·성경필사 명단·올리기·더하기·고치기(실패해도 화면은 그대로 · 서버 로그) — 초안 회차는 잇지 않는다.
   ⚠️ **번호로 이은 줄(`match_basis` 「번호」)은 그 신청의 번호가 지워진 뒤 다시 맞추지 않는다**(`phoneLinkKept` — 설계 §3.1-3 · 개인정보 안내 6번 「번호로 이어 둔 교인ID 는 남아요」). 이 조건을 빼면 번호가 지워진 뒤의 새 명단·「기록 잇기 맞추기」에서 번호로 이은 줄이 모두 null 로 끊긴다.
-  ⚠️ 탭 응답은 칸 지도로만 — `user_id`·`ident_key`·`memo`·`phone`·`answers`·`note` 금지(시험이 키 집합 대조). 탭·잇기 단추에 `data-v`·`data-fam` 금지(dialog 가 닫기로, 가족 단추로 읽는다). 「풀기」 확인은 줄 안(창 위에 창 없음).
+  ⚠️ 탭 응답은 칸 지도로만 — `user_id`·`ident_key`·`memo`·`phone`·`answers`·`note`·b6 원본 메모 `src_note` 금지(시험이 키 집합 대조).
+  ⚠️ 탭 자료 읽기(`personHistory`)가 실패해도 창·쓰기는 그대로 — `personHistorySafe`(`historyOrNull`)가 null 을 주고 `withHistory` 가 `history` 칸째 뺀다(창은 예전 모양 · 잇기는 성공 알림 + 「창을 다시 열면」). 감싸지 않고 부르면 SQL 006 전·권한 오류 때 「자세히」 창 전체가 500 이 된다. 탭·잇기 단추에 `data-v`·`data-fam` 금지(dialog 가 닫기로, 가족 단추로 읽는다). 「풀기」 확인은 줄 안(창 위에 창 없음).
   ⚠️ PC 무스크롤은 CSS(`.pd-tabbed` · 사역·성경필사 칸 `contain:size`)가 지킨다 — 칸·탭을 더하면 1366×657 을 다시 잴 것(계획 Task 6 Step 9 하네스).
-  사역 이력(b6 `ministry_history`)은 읽기만(`person_id` · `deleted_at is null`) · 표가 없으면 42P01·PGRST205 를 빈 것으로 · 넘긴 신청(`order_id`)은 신청 쪽으로 안 읽는다.
+  사역 이력(b6 `ministry_history`)은 `person_id` · `deleted_at is null` 로 읽고, 「이분 것」·「이분 아님」·「풀기」로 **고치기도 한다**(Task 10 · `peopleLink` kind `history` → `historyLinkFor`) — 쓰는 모양은 b6 의 `historyLinkPatch`·`historyUnlinkPatch`, 풀기 뒤 그 줄 다시 맞추기는 `rematchHistoryRows`(try/catch) · 기록은 「바꾼 기록」 `history.link {op,year,by:"directory"}`(이름·교인ID 없음) · expect 를 주면 `historyWriteGuarded` 의 UPDATE WHERE 로 잠금 · 이름 확인은 「이분 것」만(`linkNameOk` — 사역 이력은 b6 열쇠 `historyNameMatches`). 표가 없으면 42P01·PGRST205 를 빈 것으로 · 넘긴 신청(`order_id`)은 신청 쪽으로 안 읽는다.
 - 사역신청 휴대폰 번호(2026-10-01 친구 결정) — **결정(임명·취소) 때 지우지 않는다.** 신청 현황 「📵 결정된 신청 번호 지우기(N건)」(`ministryPhoneClear` — 보낸 수가 맞을 때만 · 기록 `ministry.phoneclear`) + 결정 뒤 **180일 자동**(SQL 007 `ministry_phone_expire()` · pg_cron `ministry-phone-expire` 매일 03:17 KST).
-  ⚠️ 약속이 문서(개인정보 안내 6번 · 성경암송 `privacy/`)와 코드 두 곳이다 — 예약이 실제로 도는지 `cron.job_run_details` 로 본다. 옛 성경암송 관리 화면(얼림)은 결정 때 바로 지운다(더 엄격하니 둔다).
+  ⚠️ 약속이 문서(개인정보 안내 6번 · 성경암송 `privacy/` · 성경암송 `app.js` 세 곳 — 개인정보 화면·도움말·사역 신청서 안내)와 코드 두 곳이다 — 예약이 실제로 도는지 `cron.job_run_details` 로 본다. 옛 성경암송 관리 화면(얼림)은 결정 때 바로 지운다(더 엄격하니 둔다).
+  ⚠️ 180일 자동도 **지금 결정 상태인 줄만**(`status in DECIDED` + `decided_at` · 2026-10-02) — 결정에서 되돌려도 `decided_at` 은 남는다(`statusPatch`). 단추와 같은 셈이다 · 목록은 `ministry.ts DECIDED` 와 같아야 한다(`tests/ministry.test.mjs` 가 SQL 을 읽어 맞댄다).
 - 다음 명단(12월 무렵) 전에 할 다듬기: v2 계획서 끝의 최종 검토 「나중」 목록(옛 기준일 폴더로 덮어쓰기 막기 · 깨진 글자 멈춤 · 씨앗 사진 원자 복사 등).
 
 ## 성경필사(암송) (2026-09-30 운영 개시)

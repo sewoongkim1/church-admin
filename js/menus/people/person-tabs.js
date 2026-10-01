@@ -8,14 +8,12 @@
 // ⚠️ 창이 닫힌 뒤 답이 오면 그리지 않는다(dlg.isConnected).
 // ⚠️ 이 파일은 Node 시험이 (person-popup.js → search.js 를 거쳐) 불러 본다 — 맨 위에서 document·window 를 만지지 않는다.
 import { toast, busy, errorText } from "../../core/ui.js";
-import { HIST_TABS, tabOf, tabsHtml, histPanelHtml, rowKey } from "./person-history.js";
+import { HIST_TABS, tabOf, tabsHtml, histPanelHtml, rowKey, linkDoneText } from "./person-history.js";
 
 let lastTab = "church";
 // 마지막 「자세히」 창이 보던 탭 — 가족으로 넘어갈 때 그대로 연다(search.js 가 다시 내보내고 person-popup.js 가 쓴다).
 // 가족 칩은 교적 칸 안에 있어 지금은 늘 「교적」이 넘어간다 — 칩이 다른 칸에도 생기면 그대로 산다.
 export const detailTab = () => lastTab;
-
-const DONE = { manual: "이분 기록으로 이었어요", none: "이분 기록이 아니라고 적었어요", auto: "잇기를 풀었어요" };
 
 export function bindPersonTabs({ dlg, call, personId, history, tab }) {
   const main = dlg && dlg.querySelector(".pd-main");
@@ -54,10 +52,10 @@ export function bindPersonTabs({ dlg, call, personId, history, tab }) {
     const r = await busy(main, () => call("peopleLink", { kind, row: Number(row), person: personId, how }));
     if (!dlg.isConnected) return;
     if (!r || !r.ok) { toast(errorText(r)); return; }
-    if (r.history) s.history = r.history;
+    if (r.history) s.history = r.history;   // 없으면(서버가 탭 자료 다시 읽기에 실패 · 쓰기는 됐다) 옛 탭 그대로 — 알림이 「다시 열면」을 덧붙인다
     const again = how === "auto" && r.relinked;
     s.confirm = again ? { key: rowKey(kind, row), relinked: true } : null;
-    toast(again ? "규칙이 다시 이분께 이었어요 — 이분 기록이 아니면 「이분 아님」을 눌러 주세요" : DONE[how]);
+    toast(linkDoneText(how, r));
     if (s.unlinked.state === "ready" || s.unlinked.state === "error") await loadUnlinked(true);
     else draw();
     main.querySelector(again ? `[data-pd-panel="${s.tab}"] .pd-hc button` : `[data-pd-tab="${s.tab}"]`)?.focus({ preventScroll: true });

@@ -226,6 +226,21 @@ export function linkNameOk(kind: string, how: string, rowName: unknown, personKe
   const k = nameKey(personKey);
   return !!k && nameKey(rowName) === k;
 }
+// ---------- 탭 자료가 실패해도 창·쓰기는 그대로(2026-10-02 가지 마지막 검토) ----------
+// 탭은 덧붙는 기능이다 — 이분의 탭 자료 읽기(index.ts personHistory)가 실패해도(예: 함수가 SQL 006 보다 먼저 나가
+// people_links 가 없을 때 · 표·권한 오류) 「자세히」 창(peoplePerson)은 예전 창(탭 없이 — person-detail.js 가 history 없음을
+// 그렇게 그린다)으로 열리고, 이미 끝난 잇기 쓰기(peopleLink)는 성공으로 알린다(탭 자료만 빠진다).
+// 오류는 log 로만(서버 기록) — 응답에 싣지 않는다. log 가 던져도 창을 깨지 않는다.
+export async function historyOrNull<T>(read: () => Promise<T>, log: (e: unknown) => void = () => {}): Promise<T | null> {
+  try { return await read(); } catch (e) {
+    try { log(e); } catch { /* 기록이 실패해도 창은 연다 */ }
+    return null;
+  }
+}
+// 응답에 탭 자료를 붙인다 — 없으면(null·undefined) 칸째 뺀다(화면은 history 가 있을 때만 탭을 그리고 다시 그린다)
+export function withHistory<T extends Record<string, unknown>>(res: T, history: unknown): T & { history?: unknown } {
+  return history === null || history === undefined ? res : { ...res, history };
+}
 // 사람이 정한 줄 — manual(이분 것) · none(이분 아님). 자동이 다시 덮지 않는다(link_how).
 export function linkPatch(kind: LinkKind, row: number, how: "manual" | "none", personId: number, memberId: string | null, nowIso: string) {
   return { kind, row_id: row, person_id: how === "manual" ? personId : null, link_how: how,

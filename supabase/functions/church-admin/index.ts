@@ -60,6 +60,8 @@ import { historyTabs, unlinkedRows, movedOrderIds, parseLink, linkPatch, unlinkR
 // b6 「사역 이력」 표 잇기(2026-10-01 · b6 설계 §7 약속) — 잇는 모양·다시 맞추기는 b6 모듈 그대로
 import { historyLinkPatch, historyUnlinkPatch } from "./history-match.ts";
 import { linkNameOk, historyNameMatches } from "./people-links.ts";
+// 탭 자료 읽기가 실패해도 「자세히」 창·잇기 쓰기는 그대로(2026-10-02 가지 마지막 검토)
+import { historyOrNull, withHistory } from "./people-links.ts";
 import { rematchHistoryRows } from "./history-db.ts";
 // 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
@@ -1139,9 +1141,11 @@ async function peoplePerson(ctx: Ctx, b: any) {
     if (e2) throw e2;
     family = fam ?? [];
   }
-  const history = await personHistory(id);   // 사역·성경필사 탭(2026-10-01) — 칸 지도로만(people-links.ts historyTabs) · 기록은 people.view 한 줄 그대로
+  // 사역·성경필사 탭(2026-10-01) — 칸 지도로만(people-links.ts historyTabs) · 기록은 people.view 한 줄 그대로
+  // ⚠️ 탭은 덧붙는 기능 — 읽기가 실패하면 history 를 빼고 예전 창(탭 없이)으로 연다(창 전체를 500 으로 만들지 않는다 · personHistorySafe)
+  const history = await personHistorySafe(id);
   await audit(ctx, "people.view", String(id), { name: data.name });
-  return { ok: true, person: { ...data, photo: urls.get(id) ?? "" }, family, history };
+  return withHistory({ ok: true, person: { ...data, photo: urls.get(id) ?? "" }, family }, history);
 }
 
 async function peopleStats() {
@@ -1304,6 +1308,10 @@ async function personHistory(personId: number) {
   const events = await rowsByIds("events", EVENT_TAB_COLS, signups.map((s) => s.event_id));
   return historyTabs({ links, orders, signups, events, history, moved });
 }
+// 탭 자료 — 실패하면 null(오류는 서버 기록에만). 「자세히」 창·잇기 쓰기 응답이 이것을 쓴다(people-links.ts historyOrNull).
+//   예: 함수가 SQL 006 보다 먼저 나가 people_links 가 없을 때(PGRST205 · 개발 함수는 한 벌을 함께 쓴다) · ministry_history 권한 오류.
+const personHistorySafe = (personId: number) =>
+  historyOrNull(() => personHistory(personId), (e) => console.error("personHistory", personId, e));
 
 // 이름이 같고 아직 안 이어진 기록 — 이름으로 넓게 찾는다(신청·명단 전부를 읽어 메모리에서 nameKey 로 · evHistory 와 같은 방식 · 느리다).
 // 창의 탭을 누를 때 한 번 부른다. 기록은 남기지 않는다(창을 연 people.view 가 이미 있다).
@@ -1383,7 +1391,8 @@ async function peopleLink(ctx: Ctx, b: any) {
     if (error) throw error;
   }
   await audit(ctx, "people.link", String(p.row), { kind, row: p.row, how: p.how });
-  return { ok: true, how: p.how, relinked, history: await personHistory(p.person) };
+  // 쓰기·기록은 끝났다 — 탭 자료 다시 읽기가 실패해도 성공으로 알리고 history 만 뺀다(화면이 「창을 다시 열면」을 덧붙인다)
+  return withHistory({ ok: true, how: p.how, relinked }, await personHistorySafe(p.person));
 }
 
 // 쓰기 하나를 거는 자리(검토 지적 2026-10-02 · history-db.ts link() 468~474행과 같은 패턴) — expect 가 있으면
@@ -1435,7 +1444,7 @@ async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: s
     if (fail) return fail;
     await audit(ctx, "history.link", String(p.row), { op: p.how === "manual" ? "pick" : "none", year: h.year, by: "directory" });
   }
-  return { ok: true, how: p.how, relinked, history: await personHistory(p.person) };
+  return withHistory({ ok: true, how: p.how, relinked }, await personHistorySafe(p.person));   // 다시 읽기 실패면 history 만 빠진다(peopleLink 와 같다)
 }
 
 // ---------- 성경필사(암송) — 이벤트 명단 (2026-09-29) ----------

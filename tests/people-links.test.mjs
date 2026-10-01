@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { autoLink, needsAuto, phoneLinkKept, orderAutoRecs, signupAutoRecs, syncCounts, toLinkCand, linkRowOf, movedOrderIds,
-  historyTabs, unlinkedRows, parseLink, linkPatch, unlinkRec, missingTable, linkNameOk, historyNameMatches, BASIS_SAME, BASIS_PHONE, BASIS_MANUAL }
+  historyTabs, unlinkedRows, parseLink, linkPatch, unlinkRec, missingTable, linkNameOk, historyNameMatches, historyOrNull, withHistory,
+  BASIS_SAME, BASIS_PHONE, BASIS_MANUAL }
   from "../supabase/functions/church-admin/people-links.ts";
 import { applicantFromWho, applicantFromSignup } from "../supabase/functions/church-admin/people-match.ts";
 import { signupSame } from "../supabase/functions/church-admin/events-person.ts";
@@ -132,7 +133,8 @@ const EVENTS = [
   { id: "autumn-2026", title: "2026 가을 말씀 동행", short_title: "", opens_on: "2026-10-27", status: "draft" },
   { id: "summer-2025", title: "2025 썸머 써 바이블", short_title: "", opens_on: "2025-06-01", status: "archived" },
 ];
-const SECRET = /"(user_id|ident_key|memo|phone|answers|note)"\s*:/;
+// src_note = b6 사역 이력의 원본 메모(2026-10-02 가지 마지막 검토 — CLAUDE.md 교인명부 절 응답 금지 칸)
+const SECRET = /"(user_id|ident_key|memo|phone|answers|note|src_note)"\s*:/;
 const MIN_KEYS = ["committee", "how", "kind", "option", "role_title", "row", "status", "team", "year"];
 const BIB_KEYS = ["event_id", "group", "how", "kind", "opens_on", "position", "row", "short_title", "sub", "title", "who_type"];
 
@@ -146,7 +148,7 @@ test("historyTabs — 이어진 줄만 · 이력으로 넘긴 신청·초안 회
     { id: 3, year: 2027, committee: "전도부", team: "행복전도대", option: "", status: "신청완료" },
   ];
   const history = [
-    { id: 40, year: 2025, committee: "교육위원회", team: "중등부", role_title: "교사", position: "집사", mok: "화평-20", source: "excel", link_how: "auto" },
+    { id: 40, year: 2025, committee: "교육위원회", team: "중등부", role_title: "교사", position: "집사", mok: "화평-20", source: "excel", link_how: "auto", src_note: "원본 메모" },
     { id: 41, year: 2026, committee: "예배위원회", team: "안내팀", role_title: "팀장", link_how: "manual" },
   ];
   const signups = [
@@ -174,7 +176,8 @@ test("unlinkedRows — 아무에게도 안 이어진 줄(auto)과 「이분 아�
   const orderLinks = new Map([[2, L({ row_id: 2, import_id: 7 })], [3, L({ row_id: 3, person_id: 99 })], [4, L({ row_id: 4, link_how: "none" })]]);
   const signups = [{ id: 7, event_id: "lent-2026", who_type: "교구", group_name: "기쁨", sub_name: "5", position: "집사", name: "홍길동", memo: "m" },
     { id: 8, event_id: "autumn-2026", who_type: "교구", group_name: "기쁨", sub_name: "5", position: "", name: "홍길동" }];
-  const history = [{ id: 40, year: 2024, committee: "교육위원회", team: "중등부", role_title: "", position: "집사", mok: "기쁨-5", link_how: "auto", name: "홍길동" }];
+  const history = [{ id: 40, year: 2024, committee: "교육위원회", team: "중등부", role_title: "", position: "집사", mok: "기쁨-5", link_how: "auto", name: "홍길동",
+    src_note: "원본 메모" }];
   const rows = unlinkedRows({ orders: [o(1), o(2), o(3), o(4), o(5)], signups, events: EVENTS, orderLinks, signupLinks: new Map(),
     moved: new Set([5]), history });
   assert.deepEqual(rows.map((r) => [r.kind, r.row, r.how]), [["order", 1, "auto"], ["order", 2, "auto"], ["order", 4, "none"],
@@ -241,4 +244,29 @@ test("linkNameOk — 이름은 「이분 것」(manual)만 · 「이분 아님�
   assert.equal(linkNameOk("signup", "manual", "홍길동", "홍길동A"), false);
   assert.equal(linkNameOk("history", "manual", "홍길동", "홍길동A"), true);
   assert.equal(linkNameOk("history", "manual", "홍길동(큰)", "홍길동"), true);
+});
+
+// 2026-10-02 가지 마지막 검토 — 탭은 덧붙는 기능. 이력 읽기가 실패해도 「자세히」 창은 예전 창으로 열리고(500 아님),
+// 이미 끝난 잇기 쓰기는 성공으로 알린다(history 만 빠진다).
+test("historyOrNull — 읽기가 되면 그 값 · 던지면 null(오류는 log 로만 · log 가 던져도 null)", async () => {
+  const H = { counts: { ministry: 0, bible: 0 }, ministry: [], bible: [] };
+  assert.equal(await historyOrNull(async () => H), H);
+  const seen = [];
+  const boom = Object.assign(new Error("people_links 없음"), { code: "PGRST205" });
+  assert.equal(await historyOrNull(async () => { throw boom; }, (e) => seen.push(e)), null);
+  assert.deepEqual(seen, [boom], "오류는 log 로 넘긴다(응답에는 안 싣는다)");
+  assert.equal(await historyOrNull(() => Promise.reject(new Error("x"))), null, "log 없이도");
+  assert.equal(await historyOrNull(async () => { throw new Error("x"); }, () => { throw new Error("기록 실패"); }), null, "log 가 던져도 창은 연다");
+});
+
+test("withHistory — 탭 자료가 있으면 붙이고 · 없으면(null·undefined) 칸째 뺀다 · 나머지 칸은 그대로", () => {
+  const H = { counts: { ministry: 1, bible: 0 }, ministry: [{ kind: "order", row: 1 }], bible: [] };
+  assert.deepEqual(withHistory({ ok: true, how: "manual", relinked: false }, H), { ok: true, how: "manual", relinked: false, history: H });
+  for (const none of [null, undefined]) {
+    const r = withHistory({ ok: true, how: "auto", relinked: true }, none);
+    assert.deepEqual(r, { ok: true, how: "auto", relinked: true });
+    assert.equal("history" in r, false, "화면은 history 가 있을 때만 탭을 그린다 — null 칸도 싣지 않는다");
+  }
+  assert.deepEqual(withHistory({ ok: true, person: { person_id: 11 }, family: [] }, null), { ok: true, person: { person_id: 11 }, family: [] },
+    "peoplePerson — history 가 빠지면 예전 창");
 });

@@ -1,6 +1,6 @@
 -- 교회 어드민 — 사역신청 휴대폰 번호 180일 자동 지우기(2026-10-01)
 --   설계: bible-memorize-church-app-v2 docs/superpowers/specs/2026-10-01-person-history-tabs-design.md §6
--- 결정(임명확정·미채택·취소 — decided_at 이 찍힌 줄) 뒤 180일이 지나면 번호를 지운다.
+-- 결정(임명확정·미채택·취소 — decided_at 이 찍힌 줄) 뒤 180일이 지나면 번호를 지운다. 지금도 결정 상태인 줄만(되돌린 줄은 아니다).
 -- 담당자가 신청 현황 「결정된 신청 번호 지우기」를 잊어도 개인정보 안내의 약속(늦어도 180일)이 지켜지게.
 -- ⚠️ 개발 먼저. 개발엔 pg_cron 이 없다(2026-10-01 확인) — 그때는 함수만 만들고 예약은 건너뛴다(notice 한 줄). 운영엔 있다(daily-push).
 -- ⚠️ 매일 18:17 UTC = 03:17 KST(pg_cron 은 UTC 로 돈다). 같은 이름으로 다시 부르면 예약을 고쳐 쓴다(pg_cron 1.4+).
@@ -15,8 +15,13 @@ set search_path = public
 as $$
 declare n int;
 begin
+  -- 상태도 본다(2026-10-02 가지 마지막 검토) — 결정에서 접수·신청으로 되돌려도 decided_at 은 남는다(ministry.ts statusPatch).
+  -- 그 줄은 아직 심사 중이라 번호를 지우지 않는다. 신청 현황 「결정된 신청 번호 지우기」(index.ts ministryPhoneClear)와 같은 셈 —
+  -- 상태 목록은 ministry.ts DECIDED 와 같아야 한다(tests/ministry.test.mjs 가 맞대 본다).
   update ministry_orders set phone = null, updated_at = now()
-   where phone is not null and decided_at < now() - interval '180 days';
+   where phone is not null
+     and status in ('임명확정', '미채택', '취소')
+     and decided_at < now() - interval '180 days';
   get diagnostics n = row_count;
   return n;
 end
