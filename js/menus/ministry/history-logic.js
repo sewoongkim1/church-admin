@@ -141,3 +141,12 @@ export function editPatch(before, after) {
   }
   return p;
 }
+
+// 주소로 열기 — #/mn-history?row=<줄 id> 는 그 줄 창을 곧바로 · ?q=<이름> 은 찾기 칸을 채운다(「📮 정정 신청」 메뉴가 연다).
+// row 는 양의 안전 정수만(그 밖은 주소를 잘못 만든 것 — 조용히 무시) · q 는 다듬고(NFC) 찾기 칸 한도(40자)에 맞춘다.
+export function deepLink(query = {}) {
+  const n = Number((query || {}).row);
+  const row = Number.isSafeInteger(n) && n > 0 ? n : null;
+  const q = String((query || {}).q ?? "").trim().normalize("NFC").slice(0, 40);
+  return { row, q };
+}

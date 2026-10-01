@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   findHeader, parseHistorySheet, yearFromName, sendParts, textToAoa, linkState, mergeChecks, exportAoa, exportName,
-  editPatch, WEAK_RE, MAX_SEND, EXPORT_HEAD, EDIT_KEYS, REMATCH_KEYS, STATE_TEXT, STATE_CLASS, uploadSummary,
+  editPatch, WEAK_RE, MAX_SEND, EXPORT_HEAD, EDIT_KEYS, REMATCH_KEYS, STATE_TEXT, STATE_CLASS, uploadSummary, deepLink,
 } from "../js/menus/ministry/history-logic.js";
 import { WEAK_RE as SERVER_WEAK_RE } from "../supabase/functions/church-admin/history-match.ts";
 import { HISTORY_MAX_UPLOAD, HISTORY_EDIT_KEYS, HISTORY_REMATCH_KEYS } from "../supabase/functions/church-admin/history-db.ts";
@@ -145,4 +145,19 @@ test("uploadSummary — 올린 해 전체의 최종 수(해마다 요약에서) 
   assert.equal(uploadSummary([2024], 5, 2, ys), "5줄 넣었어요 — 올린 해 전체: 교적 이어짐 890 · 못 맞춤 10 · 실패 2\n(2024년 · 모두 900줄)");
   assert.equal(uploadSummary([2024], 5, 0, null), "5줄 넣었어요");
   assert.equal(uploadSummary([2021], 5, 1, ys), "5줄 넣었어요 · 실패 1");
+});
+
+// 「📮 정정 신청」 메뉴가 #/mn-history?row=<id>&q=<이름> 으로 연다 — row 는 양의 안전 정수만, q 는 다듬고 NFC·40자로
+test("deepLink — row 는 양의 안전 정수만 · q 는 다듬고 NFC·40자로 · 없으면 null/빈 글", () => {
+  assert.deepEqual(deepLink({ row: "42" }), { row: 42, q: "" });
+  assert.equal(deepLink({ row: "0" }).row, null);
+  assert.equal(deepLink({ row: "-3" }).row, null);
+  assert.equal(deepLink({ row: "abc" }).row, null);
+  assert.equal(deepLink({ row: "1.5" }).row, null);
+  assert.equal(deepLink({ row: "99999999999999999999" }).row, null);   // Number.MAX_SAFE_INTEGER 밖
+  assert.equal(deepLink({ q: "  김세웅  " }).q, "김세웅");
+  assert.equal(deepLink({ q: "가".repeat(50) }).q, "가".repeat(40));
+  assert.deepEqual(deepLink({}), { row: null, q: "" });
+  assert.deepEqual(deepLink(undefined), { row: null, q: "" });
+  assert.deepEqual(deepLink(), { row: null, q: "" });
 });

@@ -9,7 +9,7 @@ import { loadXlsx } from "../../core/xlsx.js";
 import { fileErrorText } from "../bibleevent/upload-logic.js";
 import { openPerson } from "../people/search.js";
 import { parseHistorySheet, findHeader, textToAoa, sendParts, yearOptions, linkState, STATE_TEXT, STATE_CLASS, whyText,
-  mergeChecks, exportAoa, exportName, EDIT_KEYS, REMATCH_KEYS, editPatch, uploadSummary } from "./history-logic.js";
+  mergeChecks, exportAoa, exportName, EDIT_KEYS, REMATCH_KEYS, editPatch, uploadSummary, deepLink } from "./history-logic.js";
 
 const TITLE = `<h2 class="page-title">📜 사역 이력</h2>`;
 const mqWide = matchMedia("(min-width:1024px)");   // PC 는 표, 폰은 카드
@@ -82,7 +82,8 @@ function candHtml(d) {
     (d.row.link_how !== "auto" ? `<button type="button" class="be-cand" data-cand="auto" aria-pressed="false">자동 맞춤으로 되돌리기</button>` : "") + `</div>`;
 }
 
-export async function render(el, { call }) {
+export async function render(el, { call, query }) {
+  const dl = deepLink(query);     // #/mn-history?row=<id> · ?q=<이름> — 「📮 정정 신청」 메뉴가 연다
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
   let last = null;          // 마지막 historyList 답
   let rows = [];
@@ -380,9 +381,16 @@ export async function render(el, { call }) {
   }
 
   // ── 그리기 · 사건 ──────────────────────────────────────────────────
+  if (dl.q) { f.q = dl.q; f.page = 0; }   // shell() 이 찾기 칸 value 를 f.q 로 그리니 그 전에 바꿔 둔다
   shell();
   await load();
   if (!el.isConnected) return;
+  if (dl.row) {
+    const r = rows.find((x) => x.id === dl.row);
+    await openRow(r || { id: dl.row });   // 목록에 없어도(다른 쪽·거른 줄) openRow 는 id 만으로 historyCandidates 를 받아 온다
+    if (!el.isConnected) return;
+  }
+  if (dl.row || dl.q) history.replaceState(null, "", "#/mn-history");   // 다시 그릴 때(새로고침 등) 또 열리지 않게 — hashchange 는 안 난다
   const fileInput = el.querySelector("[data-file]");
   fileInput.addEventListener("change", async (e) => { const files = [...e.target.files]; e.target.value = ""; await readFiles(files); });
 
