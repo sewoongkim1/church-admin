@@ -1183,6 +1183,32 @@ body:has(#view > section[aria-busy="true"]){cursor:progress}
 /* 🧪 시험 참여자의 신청(2026-10-01) — 종이 딱지(.mn-paper)와 같은 꼴, 색만 주황으로 가른다 */
 .mn-test{color:#8a4b00;background:#fff4e0;border-color:#f5d6a3}
 
+/* 📜 사역 이력(2026-10-01) — 다른 메뉴 모양을 흔들지 않게 mh- 로 */
+.mh-how{margin:-4px 0 10px;line-height:1.6}
+.mh-acts2{margin-bottom:12px}
+.mh-years,.mh-only{margin-bottom:8px}
+.mh-sum{margin:2px 0 10px}
+.mh-why{margin-top:3px;font-size:12px;line-height:1.5;color:var(--gray)}
+.mh-table td{vertical-align:top}
+/* 해·부서·이름·목장은 한 줄로(교적 칸이 넓어지면 「202/6」처럼 네 자리 해가 갈라졌다 · .be-table 의 overflow-wrap:anywhere) — 팀·교적은 감긴다 */
+.mh-table td:nth-child(1),.mh-table td:nth-child(2),.mh-table td:nth-child(4),.mh-table td:nth-child(6){white-space:nowrap}
+.mh-file{font-weight:800;color:var(--navy);margin-bottom:6px;word-break:break-all}
+.mh-ul{margin:0 0 8px;padding-left:18px;font-size:14px;line-height:1.7}
+.mh-reasons{font-size:13px;color:#41506b}
+.mh-pre{margin:6px 0;font-size:14px}
+.mh-pre-note{margin:-2px 0 8px;font-size:13px}
+.mh-bad{color:var(--error);font-weight:700}
+.mh-h{margin:12px 0 6px;font-size:14px;color:var(--navy)}
+.mh-h small{font-weight:400;color:var(--gray)}
+.mh-cands .be-cand.on{border-color:var(--navy);background:#eef2fb;box-shadow:inset 0 0 0 1px var(--navy)}
+.mh-served{display:block;font-size:12px;color:#2f7a4f;font-weight:700}
+.mh-pid{display:block;font-size:12px;color:var(--ink-2)}   /* --gray 는 후보 단추 바탕(--ghost-bg) 위에서 4.07:1 — AA 아래 */
+.mh-detail{min-height:36px;font-size:13px;margin:-2px 0 6px}
+.mh-edit{margin-top:12px}
+.mh-delbox{margin-top:14px}
+.mh-delbox [data-step2]{margin-top:8px}
+section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:12px}
+
 /* 📮 정정 신청(2026-10-01) — b6 「📜 사역 이력」이 .mh-* 를 쓴다 · 겹치지 않게 .hr-* · 상태 색은 신청 현황(.mn-stbar)과 같은 값 */
 .hr-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px}
 .hr-row{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}

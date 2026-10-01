@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LABEL, LOOKUP_MINISTRY, detailText, labelOf } from "../js/menus/system/audit.js";
+import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, LOOKUP_HISTORY_CHECK, LOOKUP_HISTORY_EDIT, detailText, labelOf } from "../js/menus/system/audit.js";
 import { ministryApplicant, ministryLookupLog, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
 
 // 기록 한 줄 — 서버 auditList 가 주는 모양({action, target, detail})
@@ -155,4 +155,82 @@ test("ministry.tester — 더함/뺌 · 이름 · 소속", () => {
   assert.match(LABEL["ministry.tester"], /[가-힣]/);
   assert.equal(detailText(R("ministry.tester", { op: "add", name: "홍길동", who: "화평 20목장" })), "더함 · 홍길동 · 화평 20목장");
   assert.equal(detailText(R("ministry.tester", { op: "remove", name: "홍길동", who: "" })), "뺌 · 홍길동");
+});
+
+// ── 사역 이력(2026-10-01) — 기록 일곱 가지 · people.lookup(from:"history") ──
+test("사역 이력 기록 일곱 가지 — 한국말 이름 · detail 줄(이름·교인ID 없이 해·수만)", () => {
+  for (const a of ["history.upload", "history.add", "history.edit", "history.delete", "history.link", "history.rematch", "history.export"]) {
+    assert.match(LABEL[a], /[가-힣]/, a);
+  }
+  assert.equal(detailText(R("history.upload", { years: [2022, 2023], rows: 1269, saved: 1269, same: 0, linked: 1240, unlinked: 29 })),
+    "2022·2023년 · 올린 줄 1269 · 넣음 1269 · 이미 있음 0 · 교적 이어짐 1240 · 못 맞춤 29");
+  assert.equal(detailText(R("history.edit", { year: 2024, fields: ["name", "mok"] })), "2024년 · 이름·목장");
+  assert.equal(detailText(R("history.link", { op: "none", year: 2024, by: "directory" })), "2024년 · 이분 아님 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { op: "pick", year: 2024, by: "directory" })), "2024년 · 이분으로 이음 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { op: "auto", year: 2024 })), "2024년 · 자동으로 되돌림");
+  assert.equal(detailText(R("history.add", { year: 2024 })), "2024년");
+  assert.equal(detailText(R("history.delete", { year: 2024 })), "2024년");
+  assert.equal(detailText(R("history.rematch", { changed: 3, linked: 4042, total: 4093 })), "바뀐 줄 3 · 교적 이어짐 4042/4093");
+  assert.equal(detailText(R("history.export", { count: 10, years: [] })), "10줄 · 모든 해");
+  assert.equal(detailText(R("history.export", { count: 5, years: [2023, 2024] })), "5줄 · 2023·2024년");
+  assert.equal(labelOf(R("people.lookup", { q: "가", count: 2, from: "history" })), LOOKUP_HISTORY);
+});
+
+// ⚠️ 2026-10-01 검토 반영(task-5-brief 가 아닌 contract-notes) — 서버는 보통 history.upload 에 linked·unlinked 를 안 싣는다
+// (이게 지금 모양이다 — 위 「기록 일곱 가지」 시험의 linked·unlinked 있는 샘플은 옛 기록 모양). 없으면 「교적 이어짐·못 맞춤」을
+// 억지로 0 으로 찍지 않는다 · 다시 맞추기가 실패하면(failed:true) 그 사실만
+test("history.upload — 지금 모양(linked·unlinked 없음)은 교적 이어짐·못 맞춤을 안 보인다(있으면 옛 기록 모양으로 보인다)", () => {
+  assert.equal(detailText(R("history.upload", { years: [2024], rows: 3, saved: 3, same: 0 })),
+    "2024년 · 올린 줄 3 · 넣음 3 · 이미 있음 0");
+});
+test("history.rematch — failed:true 면 「다시 맞추기 실패」", () => {
+  assert.equal(detailText(R("history.rematch", { failed: true })), "다시 맞추기 실패");
+});
+
+// ── 2026-10-01 최종 검토 반영 ──
+// 올리기 살펴보기도 교인명부에 물은 것 — 서버 history-db.ts upload(save=false) 가 남기는 모양 그대로
+test("people.lookup(from:history-check) — 「명부 찾기(사역 이력 살펴보기)」 · 물은 이름 N(이름, …) · 이어짐 M", () => {
+  const d = { from: "history-check", asked: 2, askedNames: ["홍길동", "홍길순"], count: 1 };
+  assert.equal(labelOf(R("people.lookup", d)), LOOKUP_HISTORY_CHECK);
+  assert.equal(LOOKUP_HISTORY_CHECK, "명부 찾기(사역 이력 살펴보기)");
+  assert.equal(detailText(R("people.lookup", d)), "물은 이름 2(홍길동, 홍길순) · 이어짐 1");
+  // 쉰 분까지 실려도 화면은 스무 분까지 적고 나머지는 수로(someNames) · asked 는 실린 이름보다 클 수 있다
+  const many = Array.from({ length: 50 }, (_, i) => "홍길동" + i);
+  assert.equal(detailText(R("people.lookup", { from: "history-check", asked: 70, askedNames: many, count: 40 })),
+    `물은 이름 70(${many.slice(0, 20).join(", ")} 외 30명) · 이어짐 40`);
+});
+
+test("people.lookup(from:history) — 지금 이어진 분을 끝에 더해 보였으면(extra:1) 「지금 이어진 분 함께」", () => {
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 3, from: "history", extra: 1 })), "‘홍길동’ · 3명 · 지금 이어진 분 함께");
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 2, from: "history" })), "‘홍길동’ · 2명");
+});
+
+// 사역 이력 고치기(from:"history-edit") — 후보에 영향 줄 칸을 고쳐 다시 맞췄을 때 남는 흔적(2026-10-01 최종 검토)
+test("people.lookup(from:history-edit) — 「명부 찾기(사역 이력 고치기)」 · 고친 뒤 이름과 이어졌는지(0/1)를 그대로 「‘q’ · N명」으로", () => {
+  assert.equal(labelOf(R("people.lookup", { from: "history-edit", q: "홍길동", count: 1 })), LOOKUP_HISTORY_EDIT);
+  assert.equal(LOOKUP_HISTORY_EDIT, "명부 찾기(사역 이력 고치기)");
+  assert.equal(detailText(R("people.lookup", { from: "history-edit", q: "홍길동", count: 1 })), "‘홍길동’ · 1명");
+  assert.equal(detailText(R("people.lookup", { from: "history-edit", q: "홍길순", count: 0 })), "‘홍길순’ · 0명");
+});
+
+// 교인명부 세션(자세히 창 「이분 것」)이 남길 수 있는 모양 — 해가 없거나 op 대신 how(manual·none·auto)
+test("history.link — 해가 없으면 「년」을 안 붙인다 · how 도 읽는다(manual→이분으로 이음 · none→이분 아님 · auto→자동으로 되돌림)", () => {
+  assert.equal(detailText(R("history.link", { id: 3, by: "directory", how: "manual" }, "3")), "이분으로 이음 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { id: 3, by: "directory", how: "none" })), "이분 아님 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { id: 3, by: "directory", how: "auto" })), "자동으로 되돌림 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { op: "manual", year: 2023, by: "directory" })), "2023년 · 이분으로 이음 · 교적 창에서");
+  assert.equal(detailText(R("history.link", { id: 3, by: "directory" })), "교적 창에서");
+  assert.ok(!detailText(R("history.link", { by: "directory", how: "manual" })).includes("manual"));
+});
+
+test("history.delete — 지워 달라는 요청(CLAUDE.md 비상 절차 ②-1 의 {erased:true})은 따로 적는다 · 해가 없으면 「년」을 안 붙인다", () => {
+  assert.equal(detailText(R("history.delete", { erased: true }, "12")), "지워 달라는 요청 — 이름까지 지움");
+  assert.equal(detailText(R("history.delete", {})), "");
+  assert.equal(detailText(R("history.delete", { year: 2024 })), "2024년");
+});
+
+test("history.export — 화면에서 거른 것(못 맞춘 줄만·근거 약한 줄만 · 찾기)을 적는다 · 찾은 글자는 서버가 싣지 않는다", () => {
+  assert.equal(detailText(R("history.export", { count: 51, years: [], only: "none" })), "51줄 · 모든 해 · 못 맞춘 줄만");
+  assert.equal(detailText(R("history.export", { count: 3, years: [2024], only: "weak", search: true })), "3줄 · 2024년 · 근거 약한 줄만 · 찾기로 거름");
+  assert.equal(detailText(R("history.export", { count: 10, years: [] })), "10줄 · 모든 해");
 });

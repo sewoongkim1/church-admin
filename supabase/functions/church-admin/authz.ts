@@ -69,6 +69,18 @@ export const ACTION_ROLES: Record<string, string | null> = {
   ministryTesters: "ministry",
   ministryTesterFind: "ministry",
   ministryTesterSave: "ministry",
+  // 사역 이력(2026-10-01) — 지난 해 사역 임명 명단(엑셀)과 교인ID 잇기(표 ministry_history · history-db.ts). 응답의 person_id 는
+  // 교인명부·총괄 역할일 때만(서버가 ctx.roles 로). 후보 보기는 「교인명부 기록」 people.lookup(from:"history") · 쓰기는 「바꾼 기록」 history.*.
+  historyList: "ministry",
+  historyUploadCheck: "ministry",
+  historyUploadSave: "ministry",
+  historyRowAdd: "ministry",
+  historyRowSave: "ministry",
+  historyRowDelete: "ministry",
+  historyCandidates: "ministry",
+  historyLink: "ministry",
+  historyRematch: "ministry",
+  historyExport: "ministry",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";
