@@ -55,14 +55,19 @@ function ymd(v) {
   const m = YMD.exec(s);
   return m && +m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31 ? s : "";
 }
+// 제목 앞의 연도 — 띄어 썼든(「2026 사순절」) 붙여 썼든(「2026사순절」·「2026년도 사순절」) 한 번만 뗀다(검토 M1).
+//   뒤에 글이 남을 때만 뗀다 — 「2026년」처럼 연도뿐인 제목은 아래에서 연도 하나로.
+const LEAD_YEAR = /^(\d{4})(?:년도|년)?\s*(?=[^\d\s년])/;
 export function statLabel(ev) {
-  const toks = (norm(ev?.title) || norm(ev?.short_title) || norm(ev?.id)).normalize("NFC").split(" ").filter(Boolean);
-  const lead = toks.length > 1 ? YEAR_TOKEN.exec(toks[0]) : null;
-  const rest = lead ? toks.slice(1) : toks;
+  const raw = (norm(ev?.title) || norm(ev?.short_title) || norm(ev?.id)).normalize("NFC");
+  const lead = LEAD_YEAR.exec(raw);
+  const toks = (lead ? raw.slice(lead[0].length) : raw).split(" ").filter(Boolean);
   const year = ymd(ev?.opens_on).slice(0, 4) || (lead ? lead[1] : "");
+  // 연도뿐인 제목(「2026」·「2026년」) — 연도 하나(시작일이 있으면 그 연도)
+  if (!lead && toks.length === 1 && YEAR_TOKEN.exec(toks[0])) return year || YEAR_TOKEN.exec(toks[0])[1];
   // 뒤에 같은 연도가 또 있어도(「사순절 2026」) 한 번만
-  const kept = rest.filter((t) => !DROP_WORDS.has(t) && !(year && YEAR_TOKEN.exec(t)?.[1] === year));
-  const body = (kept.length ? kept : rest).join(" ");
+  const kept = toks.filter((t) => !DROP_WORDS.has(t) && !(year && YEAR_TOKEN.exec(t)?.[1] === year));
+  const body = (kept.length ? kept : toks).join(" ");
   return year && body !== year ? `${year} ${body}`.trim() : body;
 }
 // 회차 id → 통계 이름표 — 막대·표 머리·고른 회차 줄·내려받기·여러 번 참여한 분의 참여 회차가 모두 이것을 쓴다
