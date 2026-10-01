@@ -48,6 +48,7 @@
 - 엑셀 읽기(SheetJS)는 `js/core/xlsx.js` `loadXlsx` 한 곳(📤 명단 올리기·📋 종이 명단 올리기 · FE-6 2026-09-30). 파일은 저장소 `vendor/xlsx-<판>.full.min.js`(받은 곳 cdn.sheetjs.com · integrity sha384 · deploy.yml cp 에 `vendor` · `.gitattributes` 가 줄바꿈을 막는다).
   판을 올릴 때는 **새 이름**으로 넣고 판·integrity 를 함께 바꾼다(`tests/xlsx-loader.test.mjs` 가 파일 해시와 대조). npm·jsdelivr 의 xlsx 는 0.18.5(CVE 둘 · 한국 시간대에서 날짜 칸을 하루 앞으로 읽음)에서 멈췄다 — 되돌리지 말 것.
 - **`x-internal-key` 머리가 있는 요청은 토큰 검사 앞에서 내부 갈래(`internalRoute`)로만 간다**(성경암송 「사역 이력 확인」 · 2026-10-01). 내부 액션은 `ACTION_ROLES` 에 넣지 않는다 — 토큰으로 부르면 unknown-action. 설계 v2 `docs/superpowers/specs/2026-10-01-ministry-history-check-design.md`.
+- **「📮 정정 신청」**(`historyRequestList`·`historyRequestSet`): 응답에 `user_id`·`person_id`·`handled_by` 를 싣지 않는다(`requestAdminOut`) · 「반영 안 함」 답 필수 · `not_mine` 반영은 `verified` · 상태로 거를 때 `.in()` 금지(「확인 중」 빈칸). 설계 v2 `docs/superpowers/specs/2026-10-01-ministry-history-requests-admin-design.md`.
 
 ## 교인명부 (2026-09-29 운영 개시)
 dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명부) 담당자가 찾고·보고·내려받는다. 사역 화면에는 **교적 표시**(맞음·확인 필요·없음)와 「이름을 누르면 교적 창」(`ministryPerson` · 사역신청만이면 다섯 칸 — 아래).
