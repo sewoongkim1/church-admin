@@ -88,6 +88,11 @@ export function phoneLinkKept(cur: LinkRow | undefined, phone: unknown): boolean
   return !!cur && cur.link_how === "auto" && cur.match_basis === BASIS_PHONE && cur.person_id !== null && !phoneDigits(phone);
 }
 
+// ⚠️ cur 는 반드시 이 kind(order 또는 signup) **하나로만** 거른 people_links 줄의 Map(row_id → LinkRow)이어야 한다.
+// people_links 의 기본키는 (kind, row_id)이지 row_id 혼자가 아니다 — ministry_orders.id 와 event_signups.id 는
+// 서로 독립된 시퀀스라 작은 번호가 흔히 겹친다. order·signup 을 함께 다뤄야 하면(historyTabs 가 하듯) `${kind}:${row_id}`
+// 복합키 Map 을 쓰고, 이 함수(recsOf)에는 kind 하나로 거른 Map 만 넘긴다. 부르는 쪽(orderAutoRecs·signupAutoRecs 를
+// 호출하는 서버 코드)이 이 계약을 어기면 다른 kind 의 잇기 상태가 조용히 뒤섞인다.
 function recsOf(kind: LinkKind, rows: any[], look: LinkLook, cur: Map<number, LinkRow>, all: boolean,
   pick: (r: any, cands: LinkCand[] | undefined) => { person_id: number | null; basis: string },
   keep?: (r: any, c: LinkRow | undefined) => boolean): AutoRec[] {
@@ -106,11 +111,13 @@ function recsOf(kind: LinkKind, rows: any[], look: LinkLook, cur: Map<number, Li
 }
 // 사역신청 줄 — 신청 현황의 교적 표시와 같은 맞대는 줄(applicantFromWho(이름, who, 번호) · 이름·소속이 빈 옛 줄은 부르는 쪽이 앱 계정으로 채운다)
 // ⚠️ 번호로 이은 줄은 번호가 지워졌으면 건너뛴다(phoneLinkKept) — 이 인자를 빼면 「기록 잇기 맞추기」·새 명부에서 그 줄이 끊긴다.
+// ⚠️ cur 는 kind='order' 로만 거른 Map 이어야 한다(recsOf 주석 참고 — signup 과 섞지 않는다).
 export function orderAutoRecs(rows: OrderIn[], look: LinkLook, cur: Map<number, LinkRow>, all = false): AutoRec[] {
   return recsOf("order", rows, look, cur, all, (r, cands) => autoLink(cands, applicantFromWho(r.name, r.who, r.phone ?? "")),
     (r, c) => phoneLinkKept(c, r.phone));
 }
 // 성경필사 줄 — 명단의 교적 표시와 같은 signupSame(교구 줄 아이 빼기 · 옮겨 적은 줄 맞음) · 번호 없음
+// ⚠️ cur 는 kind='signup' 으로만 거른 Map 이어야 한다(recsOf 주석 참고 — order 와 섞지 않는다).
 export function signupAutoRecs(rows: SignupIn[], look: LinkLook, cur: Map<number, LinkRow>, all = false): AutoRec[] {
   return recsOf("signup", rows, look, cur, all, (r, cands) => autoLink(cands, applicantFromSignup(r), { isSame: signupSame(r, cands) }));
 }
