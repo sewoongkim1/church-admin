@@ -29,7 +29,8 @@ test("super 액션 × 사람 다섯 가지", () => {
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const superActions = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "super");
-  assert.deepEqual(superActions.sort(), ["auditList", "membersApprove", "membersList", "membersSetRoles", "membersSetStatus", "peopleLinkSync"]);
+  assert.deepEqual(superActions.sort(), ["auditList", "membersApprove", "membersList", "membersSetRoles", "membersSetStatus",
+    "ministryTesterFind", "ministryTesterSave", "ministryTesters", "peopleLinkSync"]);
   for (const a of superActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 
@@ -53,7 +54,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "historyRequestDelete", "historyRequestList", "historyRequestSet", "historyRowAdd", "historyRowDelete", "historyRowSave", "historyUploadCheck", "historyUploadSave",
     "ministryAppointed", "ministryCatalogAdmin", "ministryCatalogOrder",
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
-    "ministryPerson", "ministryPhoneClear", "ministrySetStatus", "ministryTesterFind", "ministryTesterSave", "ministryTesters"]);
+    "ministryPerson", "ministryPhoneClear", "ministrySetStatus"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
   assert.deepEqual(knownRoles(), ["bibleevent", "directory", "ministry", "super"]);
 });

@@ -2355,7 +2355,11 @@ test("성경필사 명단 올리기 살펴보기: 40자 한글 이름 150줄도 
 test("시험 참여자: 찾기 → 더하기 → 명단 → 다시 더하기(already) → 빼기 · user_id 안 실음", async () => {
   const [row] = await rest("app_config?select=value&key=eq.ministryTesters", "GET");
   const orig = row ? row.value : null;
-  const tok = people.ministry.token;
+  // 2026-10-02 부터 총괄만(시스템 메뉴) — 사역신청 담당은 세 액션 모두 막힌다
+  for (const a of ["ministryTesters", "ministryTesterFind", "ministryTesterSave"]) {
+    assert.equal((await call(people.ministry.token, a, { name: "ca-test-min", op: "remove", key: "x" })).body.error, "forbidden", a);
+  }
+  const tok = people.super.token;
   const key = "교구|시험|0|||ca-test-min-" + STAMP;
   try {
     const f = await call(tok, "ministryTesterFind", { name: "ca-test-min" });
@@ -2372,7 +2376,7 @@ test("시험 참여자: 찾기 → 더하기 → 명단 → 다시 더하기(alr
     assert.ok(!UUID_RE.test(JSON.stringify(a.body)), "명단 응답에 UUID");
 
     // 신청 현황 줄에 🧪 — 명단에 든 분의 신청은 tester:true(2026-10-01). 앞 시험이 지우고 남은 줄만 본다.
-    const l1 = (await call(tok, "ministryList")).body.list.filter((x) => x.name === "ca-test-min");
+    const l1 = (await call(people.ministry.token, "ministryList")).body.list.filter((x) => x.name === "ca-test-min");
     for (const x of l1) assert.equal(x.tester, true);
 
     const again = await call(tok, "ministryTesterSave", { op: "add", key });
@@ -2390,9 +2394,9 @@ test("시험 참여자: 찾기 → 더하기 → 명단 → 다시 더하기(alr
     const r = await call(tok, "ministryTesterSave", { op: "remove", key });
     assert.equal(r.body.ok, true);
     assert.equal(r.body.testers.some((x) => x.key === key), false);
-    for (const x of (await call(tok, "ministryList")).body.list.filter((y) => y.name === "ca-test-min")) assert.equal(x.tester, false);
+    for (const x of (await call(people.ministry.token, "ministryList")).body.list.filter((y) => y.name === "ca-test-min")) assert.equal(x.tester, false);
 
-    const log = await rest(`admin_audit?select=action,detail&action=eq.ministry.tester&member_id=eq.${people.ministry.memberId}&order=id.desc&limit=2`, "GET");
+    const log = await rest(`admin_audit?select=action,detail&action=eq.ministry.tester&member_id=eq.${people.super.memberId}&order=id.desc&limit=2`, "GET");
     assert.deepEqual(log.map((x) => x.detail.op), ["remove", "add"]);
   } finally {
     await rest("app_config?key=eq.ministryTesters", "DELETE");

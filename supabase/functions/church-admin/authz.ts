@@ -76,9 +76,10 @@ export const ACTION_ROLES: Record<string, string | null> = {
   evPerson: "bibleevent",
   // 사역신청 시험 참여자(2026-09-30) — 기간 밖에도 성경암송 첫 화면에 🤝 사역신청이 보이는 앱 계정. 명단은 app_config.ministryTesters
   // (성경암송 api 가 읽는다). 찾기는 앱 계정(users)을 이름으로 — user_id 는 싣지 않는다. 더하기·빼기는 바꾼 기록 ministry.tester.
-  ministryTesters: "ministry",
-  ministryTesterFind: "ministry",
-  ministryTesterSave: "ministry",
+  // 2026-10-02 친구 요청으로 총괄(super)만 — 메뉴도 「시스템」 묶음으로 옮겼다. 사역신청 담당은 신청 현황의 🧪 딱지만 본다.
+  ministryTesters: "super",
+  ministryTesterFind: "super",
+  ministryTesterSave: "super",
   // 사역신청 번호 보관(2026-10-01 · 교인명부 세션 설계 §6) — 결정 때 번호를 지우지 않고, 신청 현황 「결정된 신청 번호 지우기(N건)」로.
   //   보낸 수(count)가 지금 수와 같을 때만 지운다(그사이 바뀌었으면 conflict · 시험 PROBE 도 이 길로 아무것도 안 바꾼다). 바꾼 기록 ministry.phoneclear.
   ministryPhoneClear: "ministry",

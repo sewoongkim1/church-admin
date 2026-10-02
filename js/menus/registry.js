@@ -15,8 +15,6 @@ export const MENUS = [
     role: "ministry", load: () => import("./ministry/paper.js") },
   { id: "appointed", group: "사역신청", icon: "🎉", label: "임명현황", desc: "임명된 분을 부서·교구·사람별로 · 내려받기",
     role: "ministry", load: () => import("./ministry/appointed.js") },
-  { id: "testers", group: "사역신청", icon: "🧪", label: "시험 참여자", desc: "신청 기간 전에 첫 화면 사역신청을 열어 줄 분 · 더하기·빼기",
-    role: "ministry", load: () => import("./ministry/testers.js") },
   { id: "mn-history", group: "사역신청", icon: "📜", label: "사역 이력", desc: "지난 해 사역 임명 명단 올리기 · 교적 잇기 · 못 맞춘 줄 고치기",
     role: "ministry", load: () => import("./ministry/history.js") },
   { id: "mn-requests", group: "사역신청", icon: "📮", label: "정정 신청", desc: "앱에서 온 사역 이력 정정 신청 보기·처리",
@@ -29,6 +27,10 @@ export const MENUS = [
     role: "bibleevent", load: () => import("./bibleevent/history.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
+  // 🧪 시험 참여자 — 시스템 묶음 · 총괄만(2026-10-02 친구 요청 · 그전에는 사역신청 묶음 · 역할 ministry).
+  //   사역신청 담당이 스스로 시험 참여자를 더하지 않게 서버(authz.ts)도 super 로 막는다.
+  { id: "testers", group: "시스템", icon: "🧪", label: "시험 참여자", desc: "신청 기간 전에 성경암송 첫 화면 사역현황을 열어 줄 분 · 더하기·빼기",
+    role: "super", load: () => import("./ministry/testers.js") },
   { id: "audit", group: "시스템", icon: "📜", label: "바꾼 기록", desc: "누가 언제 무엇을 바꿨나",
     role: "super", load: () => import("./system/audit.js") },
 ];
