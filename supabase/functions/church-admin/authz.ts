@@ -93,6 +93,9 @@ export const ACTION_ROLES: Record<string, string | null> = {
   historyRowDelete: "ministry",
   historyCandidates: "ministry",
   historyLink: "ministry",
+  // 「👥 묶어 보기」(2026-10-04) — 못 맞춘 줄을 목장·이름 묶음으로 보고 한 번에 잇기(바꾼 기록 history.linkgroup)
+  historyGroups: "ministry",
+  historyLinkGroup: "ministry",
   historyRematch: "ministry",
   historyExport: "ministry",
 };

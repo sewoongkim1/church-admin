@@ -176,3 +176,14 @@ test("deepLink — row 는 양의 안전 정수만 · q 는 다듬고 NFC·40자
   assert.equal(deepLink(Object.fromEntries(new URLSearchParams("q=%EA%B9%80%EC%84%B8%EC%9B%85+%ED%99%94%ED%8F%89-20"))).q, "김세웅 화평-20");
   assert.equal(deepLink({ q: "가나다 #123" }).q, "가나다 #123");
 });
+
+// 「👥 묶어 보기」(2026-10-04)
+import { groupSub, groupTeams, exportOnly } from "../js/menus/ministry/history-logic.js";
+test("groupSub·groupTeams·exportOnly — 묶음 한 줄 글 · 부서·팀(겹침 없이) · 내려받기는 못 맞춘 줄로", () => {
+  const g = { mok: "3-12", years: [2012, 2013], n: 2, rows: [{ committee: "찬양부", team: "가" }, { committee: "찬양부", team: "가" }, { committee: "", team: "나" }] };
+  assert.equal(groupSub(g), "3-12 · 2012·2013년 · 2줄");
+  assert.equal(groupSub({ ...g, mok: "" }), "목장 칸 비어 있음 · 2012·2013년 · 2줄");
+  assert.equal(groupTeams(g), "찬양부 가 / 나");
+  assert.deepEqual([exportOnly("groups"), exportOnly("none"), exportOnly("")], ["none", "none", ""]);
+  assert.match(errorText({ ok: false, error: "group-too-big" }), /300줄/);
+});

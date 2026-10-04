@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   srcKey, parseRow, matchAll, teamKey, historyLinkPatch, historyUnlinkPatch, R_MANUAL_NONE,
-  toHPerson, candFp, nameKeyVariants, WEAK_RE,
+  toHPerson, candFp, nameKeyVariants, WEAK_RE, mokNameKey, B_HAND, R_HAND_NONE,
 } from "../supabase/functions/church-admin/history-match.ts";
 
 let pid = 1000;
@@ -512,4 +512,53 @@ test("오타(2021년까지) — 목장 번호 없이 교구만 같아도, 다른
     if (want) { assert.equal(got.person_id, f.person_id); assert.match(got.match_basis, /^이름 한 글자 다름\(오타로 봄\)/); }
     else assert.equal(got.person_id, null, `${year}`);
   }
+});
+
+// ── 사람이 정한 묶음(2026-10-04 「👥 묶어 보기」) — 같은 목장 글자·같은 이름 줄을 따른다 ──────────────────────
+test("mokNameKey — 「목장 글자|이름」 · 목장이 비었거나 자리 표시면 묶지 않는다", () => {
+  assert.equal(mokNameKey({ year: 2012, mok: "3 - 12", name: "가나다 a" }), "3-12|가나다A");
+  assert.equal(mokNameKey({ year: 2012, mok: "가쁨-3", name: "가나다" }), "기쁨-3|가나다");     // 목장 오타는 고쳐 읽은 글자로
+  for (const [year, mok] of [[2012, ""], [2012, "-"], [2024, "기쁨-1"], [2024, "기쁨1"]]) assert.equal(mokNameKey({ year, mok, name: "가나다" }), "", mok);
+  assert.equal(mokNameKey({ year: 2026, mok: "기쁨-1", name: "가나다" }), "기쁨-1|가나다");      // 2026 은 진짜 1목장
+});
+
+test("사람이 이은 묶음 — 같은 목장·이름의 자동 줄도 그분(모든 해) · 강한 자동 맞춤은 덮지 않는다", () => {
+  const a = person({ mok1: "소망", mok3: "소망-5목장" }), b = person({ mok1: "믿음", mok3: "믿음-2목장" });
+  const hand = row({ year: 2012, mok: "3-12", team: "가", link_how: "manual", person_id: b.person_id });
+  const t = row({ year: 2013, mok: "3 - 12", team: "나" });
+  const got = one([hand, t], [a, b], t.id);
+  assert.equal(got.person_id, b.person_id);
+  assert.equal(got.match_basis, B_HAND);
+  assert.ok(!WEAK_RE.test(got.match_basis));                       // 사람이 정한 것을 따른 줄 — 근거 약함이 아니다
+  // 같은 소속으로 강하게 맞는 줄은 그대로(사람이 다른 분으로 이었어도)
+  const strong = row({ year: 2024, mok: "소망-5", team: "다" });
+  const hand2 = row({ year: 2023, mok: "소망-5", team: "라", link_how: "manual", person_id: b.person_id });
+  assert.equal(one([hand2, strong], [a, b], strong.id).person_id, a.person_id);
+});
+
+test("사람이 「이분 아님」으로 둔 묶음 — 같은 목장·이름 자동 줄도 비운다(한 분뿐이어도) · 뒤 규칙이 다시 잇지 않는다", () => {
+  const only = person({ mok1: "소망", mok3: "소망-5목장" });
+  const none = row({ year: 2012, mok: "3-12", team: "가", link_how: "none" });
+  const t = row({ year: 2013, mok: "3-12", team: "나" });
+  const anchor = row({ year: 2024, mok: "소망-5", team: "다" });        // 다른 해에 그분이 강하게 붙어 있어도
+  const res = matchAll([none, t, anchor], [only]);
+  const got = res.find((r) => r.id === t.id);
+  assert.equal(got.person_id, null);
+  assert.equal(got.match_reason, R_HAND_NONE);
+});
+
+test("사람이 이은 묶음 — 정한 것이 갈렸거나(두 분 · 이분과 이분 아님), 목장이 비었으면 따르지 않는다", () => {
+  const a = person({ mok1: "소망", mok3: "소망-5목장" }), b = person({ mok1: "믿음", mok3: "믿음-2목장" });
+  const h1 = row({ year: 2012, mok: "3-12", team: "가", link_how: "manual", person_id: a.person_id });
+  const h2 = row({ year: 2013, mok: "3-12", team: "나", link_how: "manual", person_id: b.person_id });
+  const t = row({ year: 2014, mok: "3-12", team: "다" });
+  assert.equal(one([h1, h2, t], [a, b], t.id).match_basis === B_HAND, false);
+  const hn = row({ year: 2013, mok: "3-12", team: "나", link_how: "none" });            // 「이분」과 「이분 아님」이 함께
+  const tn = row({ year: 2014, mok: "3-12", team: "다" });
+  const gotN = one([h1, hn, tn], [a, b], tn.id);
+  assert.notEqual(gotN.match_basis, B_HAND);
+  assert.notEqual(gotN.match_reason, R_HAND_NONE);
+  const hb = row({ year: 2012, mok: "", team: "가", link_how: "manual", person_id: b.person_id });
+  const tb = row({ year: 2013, mok: "", team: "나" });
+  assert.notEqual(one([hb, tb], [a, b], tb.id).match_basis, B_HAND);
 });

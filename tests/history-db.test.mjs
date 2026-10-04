@@ -948,3 +948,72 @@ test("applyMissingRequest — 교적 직분은 positionLookup 이 없으면 chur
   assert.ok(!cols[0].includes("name") && !cols[0].includes("*"), "직분 말고 다른 칸까지 읽는다: " + JSON.stringify(cols));
   assert.equal(rows[0].position, "은퇴권사");
 });
+
+// ── 「👥 묶어 보기」(2026-10-04) — 못 맞춘 자동 줄을 목장·이름으로 묶기 · 한 묶음 한 번에 잇기 ───────────────────
+import { historyGroupsOf, groupLinkCheck, HISTORY_GROUP_MAX } from "../supabase/functions/church-admin/history-db.ts";
+import { R_NONE, R_HAND_NONE } from "../supabase/functions/church-admin/history-match.ts";
+const G = { committee: "찬양부", role_title: "", position: "집사", renewal: "", src_note: "", person_id: null, link_how: "auto",
+  match_basis: "", match_reason: "교인명부에 같은 이름 2명, 적힌 소속과 같은 분이 없음 — 누군지 못 가림", source: "excel",
+  source_file: "", linked_at: null, deleted_at: null };
+const grows = () => [
+  { ...G, id: 1, year: 2012, team: "가", name: "가나다", mok: "3-12", updated_at: "t1" },
+  { ...G, id: 2, year: 2013, team: "나", name: "가나다", mok: "3 - 12", updated_at: "t2" },
+  { ...G, id: 3, year: 2014, team: "가", name: "라마바", mok: "5-7", match_reason: R_NONE },             // 고를 분 없음
+  { ...G, id: 4, year: 2012, team: "다", name: "가나다", mok: "" },                                        // 목장 없음 — 따로
+  { ...G, id: 5, year: 2012, team: "라", name: "가나다", mok: "3-12", link_how: "none" },                 // 이미 정함
+  { ...G, id: 6, year: 2015, team: "가", name: "사아자", mok: "3-12", person_id: 9, match_basis: "같은 소속" },   // 이어짐
+  { ...G, id: 7, year: 2014, team: "가", name: "차카타", mok: "4-1", match_reason: R_HAND_NONE },          // 사람이 정한 것을 따라 비움
+];
+
+test("historyGroupsOf — 못 맞춘 자동 줄만 목장·이름으로 · 목장 없으면 줄마다 · 고를 분 없는 묶음은 수만 · 최근 해 먼저", () => {
+  const g = historyGroupsOf(grows(), {});
+  assert.equal(g.error, "");
+  assert.deepEqual(g.groups.map((x) => [x.key, x.n, x.years]), [["3-12|가나다", 2, [2012, 2013]], ["#4", 1, [2012]]]);
+  assert.equal(g.nocand, 1);
+  assert.deepEqual(g.groups[0].rows.map((r) => [r.id, r.updated_at]), [[1, "t1"], [2, "t2"]]);
+  assert.equal("person_id" in g.groups[0].rows[0], false);
+  // 해 거르기 · 찾기는 목록과 같은 historyFilter
+  assert.deepEqual(historyGroupsOf(grows(), { years: [2013] }).groups.map((x) => x.key), ["3-12|가나다"]);
+  assert.deepEqual(historyGroupsOf(grows(), { q: "라마바" }).groups.length, 0);
+  assert.equal(historyGroupsOf(grows(), { q: "#5" }).error, "need-directory");
+});
+
+test("groupLinkCheck — 모두 있고 · 못 맞춘 자동 줄이고 · 같은 묶음이고 · 창을 연 때와 같아야", () => {
+  const r = grows();
+  const ok = new Map([[1, "t1"], [2, "t2"]]);
+  assert.equal(groupLinkCheck([r[0], r[1]], [1, 2], ok), "");
+  assert.equal(groupLinkCheck([r[0]], [1, 2], ok), "not-found");
+  assert.equal(groupLinkCheck([r[0], { ...r[1], link_how: "manual", person_id: 3 }], [1, 2], ok), "conflict");
+  assert.equal(groupLinkCheck([r[0], r[2]], [1, 3], new Map([[1, "t1"], [3, undefined]])), "invalid");      // 다른 묶음
+  assert.equal(groupLinkCheck([r[3], { ...r[3], id: 8 }], [4, 8], new Map()), "invalid");                    // 목장 없는 줄 둘
+  assert.equal(groupLinkCheck([r[3]], [4], new Map([[4, r[3].updated_at]])), "");                           // 목장 없는 줄 하나는 된다
+  assert.equal(groupLinkCheck([r[0], r[1]], [1, 2], new Map([[1, "t1"], [2, "old"]])), "conflict");
+});
+
+test("linkGroup — 줄마다 updated_at 으로 잠가 쓰고 기록은 한 번(이름·교인ID 없음) · 어긋나면 아무것도 안 쓴다", async () => {
+  const rows = grows().slice(0, 2);
+  const updates = [];
+  const db = fakeDb((t, calls, qb) => {
+    if (calls.includes("update")) { updates.push(qb.log); return { data: [{ id: 1 }], error: null }; }
+    if (calls.includes("in")) return { data: rows, error: null };
+    if (calls.includes("range")) return page0(qb, []);          // 쓴 뒤 같은 묶음 자동 줄 — 없음(다시 맞추기 안 함)
+    throw new Error("뜻밖의 부름 " + calls.join(","));
+  });
+  const audits = [];
+  const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
+  const ctx = { member: { id: "m1" }, roles: ["ministry"] };
+  const x = await H.linkGroup(ctx, { ids: [1, 2], op: "none", expect: [[1, "t1"], [2, "t2"]] });
+  assert.deepEqual([x.ok, x.written, x.of, x.rematched], [true, 2, 2, true]);
+  assert.equal(updates.length, 2);
+  for (const log of updates) assert.ok(log.some(([n, a]) => n === "eq" && a[0] === "updated_at"));
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0][1], "history.linkgroup");
+  assert.equal(/가나다/.test(JSON.stringify(audits[0][3])), false);
+  updates.length = 0;
+  const y = await H.linkGroup(ctx, { ids: [1, 2], op: "none", expect: [[1, "t1"], [2, "old"]] });
+  assert.deepEqual([y.ok, y.error, updates.length], [false, "conflict", 0]);
+  assert.equal((await H.linkGroup(ctx, { ids: [], op: "none" })).error, "invalid");
+  assert.equal((await H.linkGroup(ctx, { ids: [1], op: "auto" })).error, "invalid");
+  assert.equal((await H.linkGroup(ctx, { ids: Array.from({ length: HISTORY_GROUP_MAX + 1 }, (_, i) => i + 1), op: "none" })).error, "group-too-big");
+  assert.equal(updates.length, 0);
+});

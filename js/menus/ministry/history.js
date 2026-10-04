@@ -9,7 +9,8 @@ import { loadXlsx } from "../../core/xlsx.js";
 import { fileErrorText } from "../bibleevent/upload-logic.js";
 import { openPerson } from "../people/search.js";
 import { parseHistorySheet, findHeader, textToAoa, sendParts, yearOptions, linkState, STATE_TEXT, STATE_CLASS, whyText,
-  mergeChecks, exportAoa, exportName, EDIT_KEYS, REMATCH_KEYS, editPatch, uploadSummary, deepLink } from "./history-logic.js";
+  mergeChecks, exportAoa, exportName, EDIT_KEYS, REMATCH_KEYS, editPatch, uploadSummary, deepLink, groupSub, groupTeams,
+  exportOnly } from "./history-logic.js";
 
 const TITLE = `<h2 class="page-title">📜 사역 이력</h2>`;
 const mqWide = matchMedia("(min-width:1024px)");   // PC 는 표, 폰은 카드
@@ -43,6 +44,25 @@ function tableHtml(rows) {
     `<td><button type="button" class="be-more" data-act="row" data-id="${r.id}" aria-label="${esc(r.name)} 줄 열기">⋯</button></td></tr>`).join("");
   return `<div class="be-tbl-wrap"><table class="be-table mh-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
+
+// 「👥 묶어 보기」(2026-10-04) — 못 맞춘 줄을 목장·이름 묶음으로. ⋯ 를 누르면 묶음 창(한 번에 잇기).
+const NONE_BADGE = `<em class="cb ${STATE_CLASS.none}">${STATE_TEXT.none}</em>`;
+function groupCardHtml(g, i) {
+  return `<div class="be-row"><div class="be-row-h"><div class="be-row-nm"><b>${esc(g.name)}</b>` +
+    `<span class="be-row-sub">${esc(groupSub(g))}</span><span class="be-badges">${NONE_BADGE}</span></div>` +
+    `<button type="button" class="be-more" data-act="group" data-gi="${i}" aria-label="${esc(g.name)} 묶음 열기">⋯</button></div>` +
+    `<div class="mh-why">${esc(groupTeams(g))}</div><div class="mh-why">${esc(g.reason)}</div></div>`;
+}
+function groupTableHtml(groups) {
+  const head = `<tr><th>이름</th><th>목장</th><th>해</th><th>줄</th><th>부서·팀</th><th>교적</th><th><span class="be-sr">열기</span></th></tr>`;
+  const body = groups.map((g, i) => `<tr><td><b>${esc(g.name)}</b></td><td>${esc(g.mok)}</td>` +
+    `<td class="mh-gyears">${g.years.map((y) => `<span>${Number(y)}</span>`).join("·")}</td>` +
+    `<td>${num(g.n)}</td><td>${esc(groupTeams(g))}</td><td>${NONE_BADGE}<div class="mh-why">${esc(g.reason)}</div></td>` +
+    `<td><button type="button" class="be-more" data-act="group" data-gi="${i}" aria-label="${esc(g.name)} 묶음 열기">⋯</button></td></tr>`).join("");
+  return `<div class="be-tbl-wrap"><table class="be-table mh-gtable"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+const groupRowsHtml = (g) => `<ul class="mh-ul mh-grows">` + g.rows.map((r) => `<li>${r.year}년 · ${esc([r.committee, r.team].filter(Boolean).join(" "))}` +
+  `${r.position ? ` · ${esc(r.position)}` : ""}${r.role_title ? ` · ${esc(r.role_title)}` : ""}</li>`).join("") + `</ul>`;
 
 function checkHtml(name, checks) {
   const t = mergeChecks(checks);
@@ -87,6 +107,7 @@ export async function render(el, { call, query }) {
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
   let last = null;          // 마지막 historyList 답
   let rows = [];
+  let groups = [];          // 「👥 묶어 보기」일 때 historyGroups 답의 묶음
   let lastErr = null;       // 마지막 historyList 가 오류였으면 그 답 — 화면을 다시 그려도(돌리기·창 크기) 옛 줄을 되살리지 않게
   let loadSeq = 0;          // load() 가 겹쳐 불려도 늦게 돈 답을 버린다(out-of-order)
   let uploading = false;    // 파일 하나(고르기·붙여넣기·끌어다 놓기)가 parse→pick→check→confirm→save 끝날 때까지
@@ -104,11 +125,13 @@ export async function render(el, { call, query }) {
       <div class="tabs mh-only" role="group" aria-label="교적으로 거르기">
         <button type="button" data-only="" aria-pressed="false">전체</button>
         <button type="button" data-only="none" aria-pressed="false">못 맞춘 줄만</button>
-        <button type="button" data-only="weak" aria-pressed="false">근거 약한 줄만</button></div>
+        <button type="button" data-only="weak" aria-pressed="false">근거 약한 줄만</button>
+        <button type="button" data-only="groups" aria-pressed="false">👥 못 맞춘 분 묶어 보기</button></div>
       <input type="search" class="search" maxlength="40" placeholder="이름·목장·팀·부서 (띄어 쓰면 모두 맞는 줄)"
         aria-label="이름·목장·팀·부서로 찾기 — 띄어 쓰면 낱말이 모두 맞는 줄" value="${esc(f.q)}">
       <p class="muted mh-qhint" id="mh-qhint" hidden>교인ID 는 #번호</p>
       <p class="mh-sum muted"></p>
+      <p class="be-note mh-gsum" hidden></p>
       <div class="mh-list"></div>
       <div class="pp-pager mh-pager"></div>`;
   };
@@ -139,12 +162,22 @@ export async function render(el, { call, query }) {
     if (lastErr) {
       list.innerHTML = `<p class="empty">${esc(errorText(lastErr))}</p>`;
       el.querySelector(".mh-pager").innerHTML = "";
+      el.querySelector(".mh-gsum").hidden = true;
       return;
     }
     if (!last || !last.years.length) {
       list.innerHTML = `<p class="empty">아직 올린 명단이 없어요 — 「📤 엑셀 올리기」로 시작해 주세요</p>`;
-    } else if (!rows.length) list.innerHTML = `<p class="empty">조건에 맞는 줄이 없어요</p>`;
+    } else if (f.only !== "groups" && !rows.length) list.innerHTML = `<p class="empty">조건에 맞는 줄이 없어요</p>`;
+    else if (f.only === "groups") list.innerHTML = !groups.length ? `<p class="empty">고를 분이 있는 못 맞춘 묶음이 없어요</p>`
+      : mqWide.matches ? groupTableHtml(groups) : groups.map(groupCardHtml).join("");
     else list.innerHTML = mqWide.matches ? tableHtml(rows) : rows.map(cardHtml).join("");
+    const gs = el.querySelector(".mh-gsum");
+    gs.hidden = !(f.only === "groups" && last && last.groups);
+    if (!gs.hidden) {
+      gs.textContent = `못 맞춘 줄 ${num(last.rowsTotal)}줄을 목장·이름이 같은 것끼리 묶었어요 — ${num(last.total)}묶음. ` +
+        `⋯ 를 눌러 한 분을 고르면 그 묶음 줄을 모두 한 번에 이어요.` +
+        (last.nocand ? ` 교인명부에 같은 이름이 없는 묶음 ${num(last.nocand)}개는 빼고 보여요(이름이 바뀐 분은 「못 맞춘 줄만」에서 줄을 열어 이름을 고쳐 주세요).` : "");
+    }
     const pg = el.querySelector(".mh-pager");
     if (last && last.total > last.pageSize) {
       const from = last.page * last.pageSize + 1, to = Math.min(last.total, (last.page + 1) * last.pageSize);
@@ -155,10 +188,11 @@ export async function render(el, { call, query }) {
   };
   const load = async () => {
     const mySeq = ++loadSeq;
-    const r = await busy(el, () => call("historyList", f));
+    const r = await busy(el, () => (f.only === "groups"
+      ? call("historyGroups", { years: f.years, q: f.q, page: f.page }) : call("historyList", f)));
     if (!el.isConnected || mySeq !== loadSeq) return false;   // 떠났거나, 더 늦게 부른 load() 가 이미 있다(out-of-order)
     if (!r.ok) {   // 오류(#교인ID 를 사역신청 역할이 찾은 need-directory 포함)는 목록 자리에 — 앞 답의 쪽 넘기기는 거둔다
-      lastErr = r; rows = [];
+      lastErr = r; rows = []; groups = [];
       draw();
       return false;
     }
@@ -166,7 +200,8 @@ export async function render(el, { call, query }) {
       f.page = Math.max(0, Math.ceil(r.total / r.pageSize) - 1);
       return load();
     }
-    last = r; rows = r.rows || []; lastErr = null;
+    last = r; lastErr = null;
+    if (r.groups) { groups = r.groups; rows = []; } else { rows = r.rows || []; groups = []; }
     draw();
     return true;                                       // 이 답으로 last 를 새로 받았다(올린 뒤 최종 수를 여기서 읽는다)
   };
@@ -351,6 +386,49 @@ export async function render(el, { call, query }) {
     refocus(back);
   }
 
+  // ── 묶음 창(「👥 묶어 보기」) — 후보는 첫 줄의 historyCandidates(같은 이름이라 묶음 모두 같다) · 한 번에 historyLinkGroup ──
+  async function openGroup(g) {
+    const d = await busy(el, () => call("historyCandidates", { id: g.rows[0].id }));
+    if (!el.isConnected) return;
+    if (!d.ok) { if (STALE[d.error]) { toast(STALE[d.error]); await load(); } else toast(errorText(d)); return; }
+    let choice = null, staleCode = "", notRematched = false;
+    const out = await openForm({
+      title: `${g.name} · ${g.mok || "목장 칸 비어 있음"} · ${num(g.n)}줄`, okLabel: `${num(g.n)}줄 모두 저장`,
+      html: `<p class="be-ro">${NONE_BADGE} <span>${esc(g.reason)}</span></p>` + groupRowsHtml(g) +
+        `<p class="be-note">고르면 이 묶음 ${num(g.n)}줄을 모두 그분으로 이어요(사람이 이음). 나중에 같은 목장·이름 줄이 더 올라와도 따라 이어요.` +
+        ` 한 분이 아닌 것 같으면 「못 맞춘 줄만」에서 이름으로 찾아 줄마다 고쳐 주세요.</p>` + candHtml(d),
+      onOpen: (root) => {
+        root.addEventListener("click", (e) => {
+          const c = e.target.closest("[data-cand]");
+          if (c) {
+            const v = c.dataset.cand;
+            choice = v === "none" ? { op: "none" } : { op: "pick", pick: Number(v) };
+            for (const b of root.querySelectorAll("[data-cand]")) { const on = b === c; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }
+            return;
+          }
+          const det = e.target.closest("[data-detail]");
+          if (det) { const p = d.candidates[Number(det.dataset.detail)]; if (p && p.person_id) openPerson(call, p.person_id, () => toast(FAMILY_NOTE), det); }
+        });
+      },
+      isDirty: () => choice !== null,
+      onSubmit: async () => {
+        if (!choice) return { ok: false, message: "이분이면 고르거나 「이분 아님」을 눌러 주세요" };
+        const x = await call("historyLinkGroup", { ids: g.rows.map((r) => r.id), expect: g.rows.map((r) => [r.id, r.updated_at]),
+          op: choice.op, pick: choice.pick, fp: d.fp });
+        if (!x.ok && STALE[x.error]) { staleCode = x.error; return { ok: false, message: STALE[x.error] }; }
+        if (!x.ok) return x;
+        if (x.rematched === false) notRematched = true;
+        return { ok: true, value: x };
+      },
+    });
+    if (!out) { if (staleCode) await load(); return; }
+    if (out === true) return;
+    toast((choice && choice.op === "none" ? `${num(out.written)}줄을 「이분 아님」으로 뒀어요` : `${num(out.written)}줄을 이었어요`) +
+      (out.written < out.of ? ` · ${num(out.of - out.written)}줄은 그사이 바뀌어 건너뛰었어요` : "") +
+      (notRematched ? " · 같은 묶음 다른 줄은 「🔄 다시 맞추기」로" : ""));
+    await load();
+  }
+
   async function openAdd() {
     let first = "", notRematched = false;
     const out = await openForm({
@@ -385,14 +463,14 @@ export async function render(el, { call, query }) {
 
   async function exportXlsx() {
     // 화면의 거르기 그대로(해 · 못 맞춘 줄만/근거 약한 줄만 · 찾기) — 서버가 목록과 같은 historyFilter 로 거른다
-    const r = await busy(el, () => call("historyExport", { years: f.years, only: f.only, q: f.q }));
+    const r = await busy(el, () => call("historyExport", { years: f.years, only: exportOnly(f.only), q: f.q }));
     if (!r.ok) { toast(errorText(r)); return; }
     if (!r.rows.length) { toast("내려받을 줄이 없어요"); return; }
     try {
       const XLSX = await loadXlsx();
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(exportAoa(r.rows, r.full)), "사역 이력");
-      XLSX.writeFile(wb, exportName(f.years, f.only, f.q));
+      XLSX.writeFile(wb, exportName(f.years, exportOnly(f.only), f.q));
     } catch (e) { toast(fileErrorText(e && e.message)); }
   }
 
@@ -433,6 +511,7 @@ export async function render(el, { call, query }) {
     else if (act === "export") await exportXlsx();
     else if (act === "prev" || act === "next") { f.page = Math.max(0, f.page + (act === "next" ? 1 : -1)); await load(); }
     else if (act === "row") { const r = rows.find((x) => x.id === Number(b.dataset.id)); if (r) await openRow(r); }
+    else if (act === "group") { const g = groups[Number(b.dataset.gi)]; if (g) { await openGroup(g); refocus(`[data-act="group"][data-gi="${b.dataset.gi}"]`); } }
   });
 
   // 끌어다 놓기 — section 안에서만 받는다. 밖에 떨어뜨려도 브라우저가 그 파일을 열어 화면을 떠나지 않게

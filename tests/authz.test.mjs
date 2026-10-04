@@ -50,7 +50,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const ministryActions = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "ministry");
-  assert.deepEqual(ministryActions.sort(), ["historyCandidates", "historyExport", "historyLink", "historyList", "historyRematch",
+  assert.deepEqual(ministryActions.sort(), ["historyCandidates", "historyExport", "historyGroups", "historyLink", "historyLinkGroup", "historyList", "historyRematch",
     "historyRequestDelete", "historyRequestList", "historyRequestSet", "historyRowAdd", "historyRowDelete", "historyRowSave", "historyUploadCheck", "historyUploadSave",
     "ministryAppointed", "ministryCatalogAdmin", "ministryCatalogOrder",
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",

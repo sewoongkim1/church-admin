@@ -6,7 +6,7 @@
 //   줄 창 후보는 q(찾은 이름) · 올리기 살펴보기는 askedNames(명부에 맞춰 본 이름 · from:"history-check" · 2026-10-01 최종 검토).
 // 교인명부 세션(자세히 창 「이분 것」)이 쓰는 것: rematchHistoryRows(db, ids) · history-match.ts 의 historyLinkPatch·historyUnlinkPatch.
 import { matchAll, srcKey, hKey, teamKey, historyLinkPatch, historyUnlinkPatch, toHPerson, candFp, nameKeyVariants,
-  HISTORY_PEOPLE_COLS, WEAK_RE, nfc } from "./history-match.ts";
+  HISTORY_PEOPLE_COLS, WEAK_RE, nfc, mokNameKey, R_NONE, R_HAND_NONE } from "./history-match.ts";
 import type { HRow, HPerson } from "./history-match.ts";
 import { personLabel } from "./events-person.ts";
 import { positionFromChurch, churchMok } from "./events-people.ts";
@@ -15,6 +15,8 @@ export const HISTORY_MAX_UPLOAD = 3000;      // 한 번에 받는 줄(화면은 
 export const HISTORY_FIELD_MAX = 100;        // 부서·팀·이름·직분·목장·직책·신규/유지 칸
 export const HISTORY_NOTE_MAX = 500;         // 원본 메모
 export const HISTORY_LIST_PAGE = 100;
+export const HISTORY_GROUP_PAGE = 100;       // 「👥 묶어 보기」 한 쪽의 묶음 수
+export const HISTORY_GROUP_MAX = 300;        // 한 묶음을 한 번에 잇는 줄 수(같은 목장·이름 — 실제로는 열 줄 안팎)
 const PAGE = 1000;
 const ROW_COLS = "id,year,committee,team,role_title,name,position,mok,renewal,src_note,person_id,link_how,match_basis,match_reason,source,source_file,linked_at,updated_at";
 const MATCH_COLS = "id,year,committee,team,name,position,mok,renewal,link_how,person_id,match_basis,match_reason,updated_at";
@@ -504,6 +506,61 @@ export async function undoMissingRequest(db: Db, reqId: unknown, memberId: strin
   return r ? { id: Number(r.id), year: r.year, removed: true } : { removed: false };
 }
 
+// 해마다 요약(목록·묶어 보기 공용) — 줄 수 · 이어짐 · 못 맞춤 · 근거 약함
+function yearsSummary(rows: any[]) {
+  const by = new Map<number, { year: number; total: number; linked: number; none: number; weak: number }>();
+  for (const r of rows) {
+    const y = by.get(r.year) ?? { year: r.year, total: 0, linked: 0, none: 0, weak: 0 };
+    y.total++;
+    if (r.person_id !== null) { y.linked++; if (r.match_basis && WEAK_RE.test(r.match_basis)) y.weak++; } else y.none++;
+    by.set(r.year, y);
+  }
+  return [...by.values()].sort((a, b) => b.year - a.year);
+}
+
+// 「👥 묶어 보기」(2026-10-04 · 친구 제안 「교구-목장-이름을 DISTINCT 로 묶어 매핑」) — 못 맞춘 자동 줄을 목장 글자·이름(mokNameKey)으로
+//   묶는다. 새 표 없이 줄마다 「사람이 이음」으로 적고, 같은 묶음에 나중에 올라온 줄은 맞춤 규칙이 따라 잇는다(history-match.ts).
+//   빼는 것: 「이분 아님」 줄(link_how none — 이미 정했다) · 그 결정을 따라 비운 자동 줄(R_HAND_NONE).
+//   목장이 비었거나 자리 표시면 mokNameKey 가 "" — 같은 이름의 다른 분일 수 있어 줄마다 따로(「#줄 id」 묶음).
+//   cand=false — 사유가 모두 「교인명부에 같은 이름이 없음」(고를 분이 없다) · 화면은 수만 알린다.
+const groupRowOut = (r: any) => ({ id: Number(r.id), year: r.year, committee: r.committee, team: r.team, role_title: r.role_title,
+  position: r.position, mok: r.mok, updated_at: r.updated_at });
+export function historyGroupsOf(rows: any[], b: any, opt: { full?: boolean } = {}) {
+  const f = historyFilter(rows, { ...b, only: "none" }, opt);
+  if (f.error) return { error: f.error, groups: [] as any[], nocand: 0 };
+  const by = new Map<string, any[]>();
+  for (const r of f.hit) {
+    if (r.link_how !== "auto" || String(r.match_reason || "").startsWith(R_HAND_NONE)) continue;
+    const k = mokNameKey(r) || `#${r.id}`;
+    const l = by.get(k); if (l) l.push(r); else by.set(k, [r]);
+  }
+  const all = [...by.entries()].map(([key, list]) => {
+    list.sort((x, y) => x.year - y.year || x.id - y.id);
+    const reasons = new Map<string, number>();
+    for (const r of list) { const w = String(r.match_reason || ""); reasons.set(w, (reasons.get(w) ?? 0) + 1); }
+    return {
+      key, name: list[0].name, mok: list[0].mok, n: list.length, years: [...new Set(list.map((r) => Number(r.year)))],
+      last: Number(list[list.length - 1].year),
+      reason: [...reasons.entries()].sort((x, y) => y[1] - x[1])[0][0],
+      cand: !list.every((r) => String(r.match_reason || "").startsWith(R_NONE)),
+      rows: list.map(groupRowOut),
+    };
+  });
+  const groups = all.filter((g) => g.cand)
+    .sort((x, y) => y.last - x.last || String(x.name).localeCompare(String(y.name), "ko") || x.key.localeCompare(y.key));
+  return { error: "", groups, nocand: all.length - groups.length };
+}
+// 한 묶음 잇기 전에 — 보낸 줄이 모두 있고, 아직 못 맞춘 자동 줄이고, 같은 묶음(mokNameKey · 줄 하나면 열쇠가 "" 여도 된다)이고,
+//   창을 연 때(expect)와 같아야 한다. 하나라도 어긋나면 아무것도 쓰지 않는다.
+export function groupLinkCheck(rows: any[], ids: number[], expect: Map<number, string>): "" | "not-found" | "conflict" | "invalid" {
+  if (rows.length !== ids.length) return "not-found";
+  if (rows.some((r) => r.link_how !== "auto" || (r.person_id !== null && r.person_id !== undefined))) return "conflict";
+  const keys = new Set(rows.map((r) => mokNameKey(r)));
+  if (rows.length > 1 && (keys.size !== 1 || keys.has(""))) return "invalid";
+  if (rows.some((r) => expect.get(Number(r.id)) !== r.updated_at)) return "conflict";
+  return "";
+}
+
 export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
   // 쓴 뒤 다시 맞추기 — 실패하거나 명부가 없어 못 맞췄으면 false(응답 rematched:false → 화면이 「🔄 다시 맞추기」를 권한다)
   async function tryRematch(ids: number[], what: string): Promise<boolean> {
@@ -519,13 +576,6 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
   async function list(ctx: HCtx, b: any) {
     const full = isFull(ctx);
     const rows = await all(() => db.from("ministry_history").select(ROW_COLS).is("deleted_at", null).order("id", { ascending: true }));
-    const yearsAll = new Map<number, { year: number; total: number; linked: number; none: number; weak: number }>();
-    for (const r of rows) {
-      const y = yearsAll.get(r.year) ?? { year: r.year, total: 0, linked: 0, none: 0, weak: 0 };
-      y.total++;
-      if (r.person_id !== null) { y.linked++; if (r.match_basis && WEAK_RE.test(r.match_basis)) y.weak++; } else y.none++;
-      yearsAll.set(r.year, y);
-    }
     const { hit, error } = historyFilter(rows, b, { full });
     if (error) return { ok: false, error };            // #교인ID 찾기 — 교인명부·총괄만(줄·수·해 요약도 싣지 않는다)
     hit.sort((a, b2) => b2.year - a.year || String(a.committee).localeCompare(b2.committee, "ko") ||
@@ -534,7 +584,62 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     const shown = hit.slice(page * HISTORY_LIST_PAGE, (page + 1) * HISTORY_LIST_PAGE);
     const dir = await directorySet(db, shown.filter((r) => r.person_id !== null).map((r) => Number(r.person_id)));
     return { ok: true, full, rows: shown.map((r) => rowOut(r, full, r.person_id === null ? undefined : dir.has(Number(r.person_id)))),
-      total: hit.length, page, pageSize: HISTORY_LIST_PAGE, years: [...yearsAll.values()].sort((a, b2) => b2.year - a.year) };
+      total: hit.length, page, pageSize: HISTORY_LIST_PAGE, years: yearsSummary(rows) };
+  }
+
+  // 「👥 묶어 보기」 — 못 맞춘 줄을 목장·이름 묶음으로(historyGroupsOf) · 해·찾기는 목록과 같다 · 쪽마다 HISTORY_GROUP_PAGE 묶음
+  async function groups(ctx: HCtx, b: any) {
+    const full = isFull(ctx);
+    const rows = await all(() => db.from("ministry_history").select(ROW_COLS).is("deleted_at", null).order("id", { ascending: true }));
+    const g = historyGroupsOf(rows, b, { full });
+    if (g.error) return { ok: false, error: g.error };
+    const page = Math.max(0, Math.floor(Number(b.page) || 0));
+    return { ok: true, full, groups: g.groups.slice(page * HISTORY_GROUP_PAGE, (page + 1) * HISTORY_GROUP_PAGE),
+      total: g.groups.length, rowsTotal: g.groups.reduce((s, x) => s + x.n, 0), nocand: g.nocand,
+      page, pageSize: HISTORY_GROUP_PAGE, years: yearsSummary(rows) };
+  }
+
+  // 한 묶음을 한 번에 「이분」·「이분 아님」(줄마다 사람이 이음 · historyLinkPatch) — 후보 고르기는 줄 창과 같다(첫 줄의 차례 번호 + 지문 fp).
+  //   바꾼 기록 history.linkgroup(줄 수·해만 · 이름·교인ID 없음). 쓴 뒤 같은 묶음의 다른 자동 줄만 다시 맞춘다(사람이 정한 것을 따르게).
+  async function linkGroup(ctx: HCtx, b: any) {
+    const op = b.op === "pick" || b.op === "none" ? b.op : "";
+    const ids = Array.isArray(b.ids) ? [...new Set<number>(b.ids.map(idOf))].filter((n) => n > 0) : [];
+    if (!op || !ids.length) return { ok: false, error: "invalid" };
+    if (ids.length > HISTORY_GROUP_MAX) return { ok: false, error: "group-too-big" };
+    const expect = new Map<number, string>((Array.isArray(b.expect) ? b.expect : []).map((x: any) => [idOf(x?.[0]), String(x?.[1] ?? "")]));
+    const rows: any[] = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await db.from("ministry_history").select(ROW_COLS + ",deleted_at").in("id", ids.slice(i, i + 100));
+      if (error) throw error;
+      rows.push(...(data ?? []).filter((r: any) => !r.deleted_at));
+    }
+    rows.sort((x, y) => x.year - y.year || x.id - y.id);
+    const bad = groupLinkCheck(rows, ids, expect);
+    if (bad) return { ok: false, error: bad };
+    let pid: number | null = null;
+    if (op === "pick") {
+      const { list, fp } = await candidatesFor(db, rows[0]);
+      const n = Number(b.pick);
+      if (String(b.fp ?? "") !== fp || !Number.isInteger(n) || n < 0 || n >= list.length) return { ok: false, error: "candidates-changed" };
+      pid = list[n].person_id;
+    }
+    const patch = historyLinkPatch(pid, ctx.member?.id ?? null, new Date().toISOString());
+    let written = 0;
+    for (const r of rows) {
+      const { data, error } = await db.from("ministry_history").update(patch).eq("id", r.id).is("deleted_at", null)
+        .eq("updated_at", r.updated_at).select("id");
+      if (error) throw error;
+      written += (data ?? []).length;
+    }
+    await audit(ctx, "history.linkgroup", String(rows[0].id),
+      { op, n: written, of: rows.length, years: [...new Set(rows.map((r) => Number(r.year)))] });
+    const key = mokNameKey(rows[0]);
+    let rematched = true;
+    if (key && written) {
+      const same = (await loadHistory(db)).filter((r) => r.link_how === "auto" && mokNameKey(r) === key).map((r) => Number(r.id));
+      if (same.length) rematched = await tryRematch(same, "linkgroup");
+    }
+    return { ok: true, written, of: rows.length, rematched };
   }
 
   async function upload(ctx: HCtx, b: any, save: boolean) {
@@ -777,5 +882,5 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     })) };
   }
 
-  return { list, upload, rowAdd, rowSave, rowDelete, candidates, link, rematch, exportRows };
+  return { list, groups, upload, rowAdd, rowSave, rowDelete, candidates, link, linkGroup, rematch, exportRows };
 }

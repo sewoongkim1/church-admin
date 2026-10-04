@@ -190,6 +190,9 @@ const PROBE = {
   historyRowDelete: { id: 0, expect: "" },
   historyCandidates: { id: 0 },
   historyLink: { id: 0, op: "none" },
+  // 「👥 묶어 보기」(2026-10-04) — 없는 해 묶음 · 빈 묶음 잇기(invalid) — 아무것도 쓰지도 기록하지도 않는다
+  historyGroups: { years: [1951] },
+  historyLinkGroup: { ids: [], op: "none" },
   historyRematch: {},
   historyExport: { years: [1951] },
 };

@@ -3,6 +3,7 @@
 // ⚠️ Node 시험(tests/ministry-history-logic.test.mjs)이 읽는다 — 맨 위에서 document·window 를 만지지 않는다.
 import { cellText } from "../bibleevent/upload-logic.js";
 
+const num = (n) => Number(n || 0).toLocaleString("ko-KR");
 export const MAX_SEND = 3000;     // 서버 historyUpload 한 번의 상한(HISTORY_MAX_UPLOAD)과 같다
 // 근거가 약한 맞춤 — 서버 history-match.ts WEAK_RE 와 같은 글(시험이 맞댄다)
 export const WEAK_RE = /^(같은 교구|이름이 한 분뿐|직분으로 가림\(소속 다름\)|가족이 같은 해 같은 목장\(소속 다름\)|다른 해|이름 한 글자 다름)/;
@@ -115,13 +116,19 @@ export function exportName(years, only = "", q = "", now = new Date()) {
   return `사역이력_${years && years.length ? [...years].sort().join("-") : "모든해"}${suffix}_${d}.xlsx`;
 }
 
+// 「👥 묶어 보기」(2026-10-04) — 못 맞춘 줄을 목장·이름 묶음으로(서버 historyGroupsOf). 묶음 한 줄 글 · 그 묶음의 부서·팀.
+export const groupSub = (g) => [g.mok || "목장 칸 비어 있음", `${(g.years || []).join("·")}년`, `${num(g.n)}줄`].join(" · ");
+export const groupTeams = (g) =>
+  [...new Set((g.rows || []).map((r) => [r.committee, r.team].filter(Boolean).join(" ")).filter(Boolean))].join(" / ");
+// 묶어 보기는 「못 맞춘 줄」을 묶은 것 — 내려받기는 「못 맞춘 줄만」과 같은 줄로(서버 historyFilter 는 only:"groups" 를 모른다)
+export const exportOnly = (only) => (only === "groups" ? "none" : only);
+
 // 고치기 창 칸 — 서버 HISTORY_EDIT_KEYS 와 같은 칸
 export const EDIT_KEYS = ["year", "committee", "team", "role_title", "name", "position", "mok", "renewal", "src_note"];
 // 고치면 서버가 다시 맞추는 칸 — 서버 HISTORY_REMATCH_KEYS 와 같은 목록(시험이 맞댄다).
 //   줄 창은 이 칸을 고친 뒤에는 「고른 분(pick)」을 보내지 않는다 — 후보 지문(fp)이 바뀌었을 수 있다.
 export const REMATCH_KEYS = ["year", "name", "position", "mok", "team", "renewal"];
 
-const num = (n) => Number(n || 0).toLocaleString("ko-KR");
 // 넣은 뒤 알림 — 올린 해 전체의 **최종** 수(넣은 뒤 다시 불러온 historyList 의 해마다 요약)로 센다.
 //   넣을 때마다 받은 수를 더하면, 뒤의 해를 넣을 때 다른 해 근거로 이어진 앞의 해 줄을 못 센다(2026-10-01 최종 검토).
 //   yearsSummary 가 없으면(다시 불러오기 실패) 넣은 줄 수만.

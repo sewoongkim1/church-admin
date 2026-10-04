@@ -2452,6 +2452,8 @@ Deno.serve(async (req) => {
       case "historyRowDelete":   return json(await historyApi.rowDelete(ctx, b));
       case "historyCandidates":  return json(await historyApi.candidates(ctx, b));
       case "historyLink":        return json(await historyApi.link(ctx, b));
+      case "historyGroups":      return json(await historyApi.groups(ctx, b));
+      case "historyLinkGroup":   return json(await historyApi.linkGroup(ctx, b));
       case "historyRematch":     return json(await historyApi.rematch(ctx, b));
       case "historyExport":      return json(await historyApi.exportRows(ctx, b));
     }

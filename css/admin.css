@@ -1240,6 +1240,10 @@ body:has(#view > section[aria-busy="true"]){cursor:progress}
 .mh-table td{vertical-align:top}
 /* 해·부서·이름·목장은 한 줄로(교적 칸이 넓어지면 「202/6」처럼 네 자리 해가 갈라졌다 · .be-table 의 overflow-wrap:anywhere) — 팀·교적은 감긴다 */
 .mh-table td:nth-child(1),.mh-table td:nth-child(2),.mh-table td:nth-child(4),.mh-table td:nth-child(6){white-space:nowrap}
+/* 「👥 묶어 보기」 표(2026-10-04) — 이름·목장·줄 수는 한 줄로 · 해는 해와 해 사이에서만 감긴다(「2·014」로 갈라지지 않게) */
+.mh-gtable td{vertical-align:top}
+.mh-gtable td:nth-child(1),.mh-gtable td:nth-child(2),.mh-gtable td:nth-child(4){white-space:nowrap}
+.mh-gyears span{white-space:nowrap}
 .mh-file{font-weight:800;color:var(--navy);margin-bottom:6px;word-break:break-all}
 .mh-ul{margin:0 0 8px;padding-left:18px;font-size:14px;line-height:1.7}
 .mh-reasons{font-size:13px;color:#41506b}

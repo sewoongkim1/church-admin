@@ -64,6 +64,15 @@ export type Affil = {
 const GU_RE = new RegExp("^(" + GU7.join("|") + ")-?(.*)$");
 // 목장 → 지금 교구 표의 열쇠 — 해마다 따로(같은 「3-12」라도 해가 다르면 다른 목장일 수 있다)
 const hintKey = (year: number, mokText: unknown): string => `${year}|${nospace(mokText)}`;
+const NOTE_GIPPEUM1 = "옛 「기쁨-1」은 목장 모름";
+
+// 목장·이름 묶음 열쇠(2026-10-04 「묶어 보기」 · 사람이 정한 것을 같은 묶음에 잇기) — 「목장 글자|이름」(해는 넣지 않는다).
+//   목장이 비었거나 자리 표시(「-」 · 2025년까지 「기쁨-1」)면 "" — 같은 이름의 다른 분일 수 있어 묶지 않는다.
+export function mokNameKey(r: { year: number; mok: unknown; name: unknown }): string {
+  const a = parseRow(r.year, r.mok, "");
+  if (!a.raw || a.raw === "-" || a.notes.includes(NOTE_GIPPEUM1)) return "";
+  return `${a.raw}|${hKey(r.name)}`;
+}
 // hints — matchAll 이 명부와 명단에서 만든 「옛 목장 → 지금 교구」 표(oldMokHints). 없으면 옛 「N-M」 목장은 모름 그대로.
 export function parseRow(year: number, mokText: unknown, position: unknown, hints?: Map<string, string>): Affil {
   let t = nospace(mokText);
@@ -80,7 +89,7 @@ export function parseRow(year: number, mokText: unknown, position: unknown, hint
     else if (/^\d+(목장)?$/.test(rest)) a.mok = Number(/^\d+/.exec(rest)![0]);
     // ⚠️ 2025년 이전 명단의 「기쁨-1」은 목장을 모를 때 쓰던 자리 표시로 본다(교구도 모름 · 2026-10-01 검증 · 친구 확인)
     if (year <= 2025 && a.gu === "기쁨" && a.mok === 1 && !a.men) {
-      a.kind = "모름"; a.gu = ""; a.mok = null; notes.push("옛 「기쁨-1」은 목장 모름");
+      a.kind = "모름"; a.gu = ""; a.mok = null; notes.push(NOTE_GIPPEUM1);
     }
     return a;
   }
@@ -156,7 +165,9 @@ function sameAffil(c: P, a: Affil, year: number): boolean {
 type Pick = { pid: number | null; basis: string; reason: string; strength: number; notes: string[]; cands: P[] };
 const S = { MANUAL: 9, SAME: 5, TIE: 4, CROSS: 4, GU: 2, ONLY: 1, NONE: 0 };
 
-const R_NONE = "교인명부에 같은 이름이 없음";
+export const R_NONE = "교인명부에 같은 이름이 없음";
+export const R_HAND_NONE = "같은 목장·이름 줄을 담당자가 「이분 아님」으로 둠";
+export const B_HAND = "같은 목장·이름 줄을 사람이 이음";
 const R_KID = "교인명부의 같은 이름은 교회학교 학생·직분 없는 청년뿐 — 다른 분으로 봄";
 const R_MISFIT = "교인명부의 같은 이름은 직분과 성별(또는 등록일·나이)이 맞지 않음 — 다른 분으로 봄";
 const R_CLASH = "같은 해에 다른 교구의 같은 이름 줄이 있고 명부엔 한 분 — 어느 줄인지 못 가림";
@@ -359,6 +370,31 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
   const auto = rows.filter((r) => r.link_how === "auto").sort((x, y) => x.id - y.id);
   // anchor = 다른 줄의 근거가 될 만큼 강한 맞춤(같은 소속·직분 가림·다른 해로 이미 이은 것·사람이 이음) — 「같은 팀」·「같은 목장」 두 경로가 같은 문턱을 쓴다
   const isAnchor = (p: Pick): boolean => p.pid !== null && p.strength >= S.TIE;
+
+  // 사람이 정한 묶음(2026-10-04) — 같은 목장 글자·같은 이름(mokNameKey)의 줄을 사람이 「이분」으로 이었으면 자동 줄도 그분,
+  //   「이분 아님」만 있으면 자동 줄도 비운다(「묶어 보기」에서 정한 뒤에 같은 묶음 줄이 더 올라와도 따라가게 · 모든 해).
+  //   사람이 정한 것이 갈리면(이은 분이 둘 이상 · 「이분」과 「이분 아님」이 함께) 따르지 않는다 — 같은 묶음에 다른 분이 섞였다는 뜻이다.
+  //   이은 분이 이 줄의 후보(빼기 통과)에 없으면 따르지 않는다.
+  //   강한 자동 맞춤(같은 소속 등)은 덮지 않는다. 비운 줄은 후보를 비워(cands: []) 뒤 단계가 다시 잇지 않게 한다.
+  const hand = new Map<string, { pids: Set<number>; none: boolean }>();
+  for (const r of rows) {
+    if (r.link_how === "auto") continue;
+    const k = mokNameKey(r);
+    if (!k) continue;
+    const o = hand.get(k) ?? { pids: new Set<number>(), none: false };
+    if (r.link_how === "manual" && r.person_id !== null) o.pids.add(r.person_id);
+    else if (r.link_how === "none") o.none = true;
+    hand.set(k, o);
+  }
+  for (const r of hand.size ? auto : []) {
+    const h = hand.get(mokNameKey(r));
+    const cur = pick.get(r.id)!;
+    if (!h || (cur.pid !== null && cur.strength > S.GU)) continue;
+    if (h.pids.size === 1 && !h.none) {
+      const pid = [...h.pids][0];
+      if (cur.cands.some((c) => c.person_id === pid)) pick.set(r.id, { ...cur, pid, basis: B_HAND, reason: "", strength: S.CROSS });
+    } else if (!h.pids.size && h.none) pick.set(r.id, { ...cur, pid: null, basis: "", reason: R_HAND_NONE, strength: S.NONE, cands: [] });
+  }
 
   // 다른 해로 잇기(설계 §4.4) — 사슬이라 바뀜이 없을 때까지(최대 4번)
   const group = (r: HRow): string => (parseRow(r.year, r.mok, r.position).kind === "청년" ? "청년" : "어른");
