@@ -393,3 +393,123 @@ test("WEAK_RE — 근거 약한 줄 문구만 맞는다", () => {
   assert.ok(!WEAK_RE.test("같은 소속"));
   assert.ok(!WEAK_RE.test("같은 소속 · 직분으로 가림"));
 });
+
+// ── 2021년까지 명단의 느슨한 규칙(2026-10-04) — 새로 이은 줄은 모두 근거 약함 · 2022년부터는 그대로 ──────────
+const voters = (year, mok, gu, n = 2) =>
+  Array.from({ length: n }, (_, i) => {
+    const name = ["라마바", "사아자", "차카타", "파하거"][i] + gu;   // 명부에 한 분뿐인 이름(교구마다 다른 이름)
+    return { p: person({ name, mok1: gu, mok3: `${gu}-1목장` }), r: row({ year, mok, name, team: `표${i}` }) };
+  });
+
+test("parseRow — 옛 「N-M」 목장은 표가 있으면 지금 교구(목장 모름) · 2016년부터·청년·표 없음은 그대로", () => {
+  const h = new Map([["2012|3-12", "소망"], ["2016|3-12", "소망"]]);
+  const a = parseRow(2012, "3 - 12", "집사", h);
+  assert.deepEqual([a.kind, a.gu, a.mok, a.hinted, a.raw], ["교구", "소망", null, true, "3-12"]);
+  assert.ok(a.notes.includes("옛 목장의 지금 교구로 읽음"));
+  assert.equal(parseRow(2012, "3-12", "집사").kind, "모름");        // 표 없이
+  assert.equal(parseRow(2012, "3-13", "집사", h).kind, "모름");     // 표에 없는 목장
+  assert.equal(parseRow(2016, "3-12", "집사", h).kind, "모름");     // 2016년부터 숫자 목장은 표로 읽지 않는다
+  assert.equal(parseRow(2012, "3-12", "청년", h).kind, "청년");     // 직분이 청년·학생이면 그쪽이 먼저
+});
+
+test("옛 목장 → 지금 교구 — 그 목장 사람 둘이 지금 소망이면, 같은 이름 둘 중 소망의 분(근거 약함)", () => {
+  const v = voters(2012, "3-12", "소망");
+  const so = person({ mok1: "소망", mok3: "소망-5목장" }), mid = person({ mok1: "믿음", mok3: "믿음-2목장" });
+  const t = row({ year: 2012, mok: "3-12" });
+  const got = one([...v.map((x) => x.r), t], [...v.map((x) => x.p), so, mid], t.id);
+  assert.equal(got.person_id, so.person_id);
+  assert.match(got.match_basis, /^같은 교구\(목장 모름\).*옛 목장의 지금 교구로 읽음/);
+  assert.ok(WEAK_RE.test(got.match_basis));
+  // 그 목장 줄이 하나뿐(표를 못 만든다) → 예전처럼 못 가림
+  const alone = row({ year: 2012, mok: "3-12" });
+  assert.equal(one([alone], [so, mid]).person_id, null);
+});
+
+test("옛 목장 표 — 두 교구가 1:1 로 맞서면 표를 안 만든다", () => {
+  const a = voters(2012, "3-12", "소망", 1), b = voters(2012, "3-12", "믿음", 1);
+  const so = person({ mok1: "소망", mok3: "소망-5목장" }), mid = person({ mok1: "믿음", mok3: "믿음-2목장" });
+  const t = row({ year: 2012, mok: "3-12" });
+  assert.equal(one([a[0].r, b[0].r, t], [a[0].p, b[0].p, so, mid], t.id).person_id, null);
+});
+
+test("옛 목장 표 — 「이분 아님」 줄은 세지 않고, 사람이 이은 줄은 그분 교구로 센다", () => {
+  const so = person({ mok1: "소망", mok3: "소망-5목장" }), mid = person({ mok1: "믿음", mok3: "믿음-2목장" });
+  const v = voters(2012, "3-12", "소망", 1);
+  const other = person({ name: "거너더", mok1: "소망", mok3: "소망-1목장" });
+  const manual = row({ year: 2012, mok: "3-12", name: "거너더", team: "손", link_how: "manual", person_id: other.person_id });
+  const t = row({ year: 2012, mok: "3-12" });
+  assert.equal(one([v[0].r, manual, t], [v[0].p, other, so, mid], t.id).person_id, so.person_id);
+  const none = row({ year: 2012, mok: "3-12", name: "거너더", team: "손", link_how: "none" });
+  const t2 = row({ year: 2012, mok: "3-12" });
+  assert.equal(one([v[0].r, none, t2], [v[0].p, other, so, mid], t2.id).person_id, null);   // 한 표뿐 → 표 없음
+});
+
+test("옛 목장 표로 읽은 교구도 그해 직분보다 낮은 분은 고르지 않는다 — 권사 줄은 권사에게", () => {
+  const v = voters(2010, "1-26", "화평");
+  const lowJipsa = person({ mok1: "화평", mok3: "화평-3목장", position: "집사" });
+  const gwonsa = person({ mok1: "믿음", mok3: "믿음-4목장", position: "권사" });
+  const t = row({ year: 2010, mok: "1-26", position: "권사" });
+  const got = one([...v.map((x) => x.r), t], [...v.map((x) => x.p), lowJipsa, gwonsa], t.id);
+  assert.equal(got.person_id, gwonsa.person_id);
+  assert.match(got.match_basis, /^직분으로 가림/);
+});
+
+test("이름 교구 줄(2016~2021) — 적힌 교구에 아무도 없으면 그 목장 사람들의 지금 교구로 가린다 · 2022년부터는 안 한다", () => {
+  for (const [year, want] of [[2018, true], [2023, false]]) {
+    const v = voters(year, "섬김-39", "은혜");
+    const eun = person({ mok1: "은혜", mok3: "은혜-7목장" }), hwa = person({ mok1: "화평", mok3: "화평-8목장" });
+    const t = row({ year, mok: "섬김-39" });
+    const got = one([...v.map((x) => x.r), t], [...v.map((x) => x.p), eun, hwa], t.id);
+    if (want) {
+      assert.equal(got.person_id, eun.person_id);
+      assert.equal(got.match_basis, "같은 교구(옛 목장 사람들의 지금 교구)");
+      assert.ok(WEAK_RE.test(got.match_basis));
+    } else assert.equal(got.person_id, null, `${year}`);
+  }
+});
+
+test("다른 해 같은 이름 — 다른 해 줄이 후보 한 분에게 강하게 붙어 있으면 그분 · 2022년부터는 안 한다", () => {
+  for (const [year, want] of [[2013, true], [2023, false]]) {
+    const so = person({ mok1: "소망", mok3: "소망-3목장" }), mid = person({ mok1: "믿음", mok3: "믿음-5목장" });
+    const anchor = row({ year: 2025, mok: "소망-3", team: "다른팀" });
+    const t = row({ year, mok: "" });
+    const res = matchAll([anchor, t], [so, mid]);
+    assert.equal(res.find((r) => r.id === anchor.id).person_id, so.person_id);
+    const got = res.find((r) => r.id === t.id);
+    if (want) { assert.equal(got.person_id, so.person_id); assert.equal(got.match_basis, "다른 해 같은 이름"); assert.ok(WEAK_RE.test(got.match_basis)); }
+    else assert.equal(got.person_id, null, `${year}`);
+  }
+});
+
+test("직분 계급 — 그해 직분 계급 이상인 후보가 한 분뿐이면 그분 · 2022년부터는 안 한다", () => {
+  for (const [year, want] of [[2014, true], [2023, false]]) {
+    const elder = person({ gender: "남", position: "장로", mok1: "소망", mok3: "소망-3목장", birth_year: 1950 });
+    const deacon = person({ gender: "남", position: "집사", mok1: "믿음", mok3: "믿음-5목장", birth_year: 1950 });
+    const t = row({ year, mok: "", position: "장로" });
+    const got = one([t], [elder, deacon]);
+    if (want) { assert.equal(got.person_id, elder.person_id); assert.equal(got.match_basis, "직분으로 가림(소속 다름)"); }
+    else assert.equal(got.person_id, null, `${year}`);
+  }
+});
+
+test("같은 해 겹침 — 옛 목장 표로 읽은 두 줄이 서로 다른 교구여도 지우지 않는다", () => {
+  const me = person({ mok1: "소망", mok3: "소망-5목장" });
+  const v1 = voters(2012, "3-12", "소망"), v2 = voters(2012, "5-7", "믿음");
+  const a = row({ year: 2012, mok: "3-12", team: "가" }), b = row({ year: 2012, mok: "5-7", team: "나" });
+  const res = matchAll([...v1.map((x) => x.r), ...v2.map((x) => x.r), a, b], [...v1.map((x) => x.p), ...v2.map((x) => x.p), me]);
+  assert.equal(res.find((r) => r.id === a.id).person_id, me.person_id);
+  assert.equal(res.find((r) => r.id === b.id).person_id, me.person_id);
+});
+
+test("오타(2021년까지) — 목장 번호 없이 교구만 같아도, 다른 해 같은 팀에 강하게 붙은 분이면 · 2022년부터는 예전 그대로", () => {
+  for (const [year, mok, want] of [[2012, "3-12", true], [2023, "소망", false]]) {
+    const v = voters(2012, "3-12", "소망");
+    const f = person({ mok1: "소망", mok3: "소망-3목장" });
+    const anchor = row({ year: 2025, mok: "소망-3" });
+    const t = row({ year, mok, name: "가나라" });
+    const res = matchAll([...v.map((x) => x.r), anchor, t], [...v.map((x) => x.p), f]);
+    const got = res.find((r) => r.id === t.id);
+    if (want) { assert.equal(got.person_id, f.person_id); assert.match(got.match_basis, /^이름 한 글자 다름\(오타로 봄\)/); }
+    else assert.equal(got.person_id, null, `${year}`);
+  }
+});

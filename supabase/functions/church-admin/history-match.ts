@@ -4,6 +4,8 @@
 //   authz.ts 와 같은 제약(원격 import·enum 금지, node --experimental-strip-types 가 그대로 읽는다).
 // ⚠️ 2026-10-01 독립 검증 다섯 갈래에서 나온 규칙이다. 규칙을 바꾸면 대조 시험(check_real)의 기대값도 함께 본다.
 // ⚠️ 이 모듈은 교인ID 를 돌려준다 — 부르는 쪽(history-db.ts)이 역할에 따라 응답에서 가린다(설계 §5).
+// 2026-10-04 2010~2021 명단을 더하며 그 해들에만 느슨한 규칙을 얹었다(LOOSE_LAST_YEAR · 친구 결정 「틀리더라도 이어 두고
+//   성도님이 사역현황에서 확인」). 새로 이은 줄은 모두 근거 약함(WEAK_RE)이다. 2022~2026 결과는 한 줄도 바뀌지 않는다.
 import { mokNumber, nameKey as pmNameKey, KID_KIND2 } from "./people-match.ts";
 
 export const GU7 = ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨"];
@@ -11,6 +13,15 @@ const TYPO: Record<string, string> = { "가쁨": "기쁨", "믿은": "믿음" };
 const YOUTH_MOK1 = ["청년부", "청년공동체", "청년새가족"];
 const YOUTH_KIND2 = ["청년", "청년군대/유학"];
 const KID_POS = ["학생", "어린이", "고등부", "중등부"];
+// 숫자 교구 「3-12」(교구-목장)를 쓰던 마지막 해 — 2016년에 숫자 교구 9개를 이름 교구 4개로 다시 나눴다(번호 하나가 여러 교구로
+//   갈라져 「3교구 = 소망」 같은 표는 못 만든다). 그래서 목장 하나하나를 「그 목장 사람들이 지금 있는 교구」로 읽는다(oldMokHints).
+export const OLD_MOK_LAST_YEAR = 2015;
+const OLD_MOK_RE = /^\d+-\d+$/;
+// 느슨한 규칙을 쓰는 마지막 해 — 2022~2026 은 2026-10-01 독립 검증을 거친 규칙 그대로 둔다.
+export const LOOSE_LAST_YEAR = 2021;
+// 목장 → 지금 교구 표의 문턱 — 그 목장에서 명부에 같은 이름이 어른 한 분뿐인 줄이 2줄 이상이고, 가장 많은 교구가 절반 이상이며 둘째보다 많을 때
+const HINT_MIN_VOTES = 2;
+const HINT_MIN_SHARE = 0.5;
 
 // ── 사람(교인명부 한 분) — 부르는 쪽이 church_people 에서 이 모양으로 옮긴다(history-db.ts toHPerson)
 export type HPerson = {
@@ -48,15 +59,19 @@ export type Affil = {
   gu: string; mok: number | null; men: boolean; ttae: number | null;   // ttae = 「NN또래」의 NN
   raw: string;                                                          // 목장 글자(띄어쓰기 없음) — 「같은 목장 글자」 견주기
   notes: string[];
+  hinted: boolean;                                                      // 옛 「N-M」 목장을 지금 교구로 읽었다(목장은 모름)
 };
 const GU_RE = new RegExp("^(" + GU7.join("|") + ")-?(.*)$");
-export function parseRow(year: number, mokText: unknown, position: unknown): Affil {
+// 목장 → 지금 교구 표의 열쇠 — 해마다 따로(같은 「3-12」라도 해가 다르면 다른 목장일 수 있다)
+const hintKey = (year: number, mokText: unknown): string => `${year}|${nospace(mokText)}`;
+// hints — matchAll 이 명부와 명단에서 만든 「옛 목장 → 지금 교구」 표(oldMokHints). 없으면 옛 「N-M」 목장은 모름 그대로.
+export function parseRow(year: number, mokText: unknown, position: unknown, hints?: Map<string, string>): Affil {
   let t = nospace(mokText);
   const notes: string[] = [];
   for (const [bad, good] of Object.entries(TYPO)) {
     if (t.startsWith(bad)) { t = good + t.slice(bad.length); notes.push("목장 오타 고쳐 읽음"); }
   }
-  const a: Affil = { kind: "모름", gu: "", mok: null, men: false, ttae: null, raw: t, notes };
+  const a: Affil = { kind: "모름", gu: "", mok: null, men: false, ttae: null, raw: t, notes, hinted: false };
   const m = GU_RE.exec(t);
   if (m) {
     a.kind = "교구"; a.gu = m[1];
@@ -77,6 +92,10 @@ export function parseRow(year: number, mokText: unknown, position: unknown): Aff
   const p = nfc(position);
   if (p === "청년") a.kind = "청년";
   else if (KID_POS.includes(p)) a.kind = "학생";
+  else if (hints && year <= OLD_MOK_LAST_YEAR && OLD_MOK_RE.test(t)) {
+    const g = hints.get(hintKey(year, t));
+    if (g) { a.kind = "교구"; a.gu = g; a.hinted = true; notes.push("옛 목장의 지금 교구로 읽음"); }
+  }
   return a;   // 「2교구 20목장」·「6교구-7」 같은 숫자 교구 · 빈칸 · 「-」 → 모름
 }
 
@@ -147,7 +166,43 @@ type Ctx = {
   byKey: Map<string, P[]>; bySuffixBase: Map<string, P[]>; byGu: Map<string, P[]>; byHousehold: Map<string, P[]>;
   // 같은 해·같은 이름 열쇠·같은 목장 글자 줄이 있는가(가족 근거) — `${year}|${key}|${raw}`
   rowSig: Set<string>;
+  // 목장 → 지금 교구 표(oldMokHints) — 해|목장 글자 → 교구
+  hints: Map<string, string>;
 };
+
+// 목장 → 지금 교구 표(2026-10-04) — 「그 목장 사람들이 지금 어느 교구에 있나」. 2021년까지 줄만 센다.
+//   옛 「N-M」 목장(2015년까지)은 이 표로 교구를 읽고(목장은 모름), 이름 교구 목장(2016~2021)은 적힌 교구로 못 가릴 때 보조로 쓴다
+//   (그 해들은 교구가 4개 → 6개 → 7개로 바뀌어 적힌 교구가 지금 명부와 57~72%만 맞았다 · 목장 단위 다수는 83~88%).
+//   표는 명부에 같은 이름이 어른 한 분뿐인 줄(빼기 전)과 사람이 이은 줄로 센다 — 「이분 아님」 줄은 세지 않는다.
+//   ⚠️ 명단 전체로 만든다 — matchAll 은 늘 모든 해·모든 줄로 부른다(history-db rematchHistoryRows · 살펴보기).
+function oldMokHints(rows: HRow[], ctx: Omit<Ctx, "hints">, byId: Map<number, P>): Map<string, string> {
+  const votes = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (r.year > LOOSE_LAST_YEAR || r.link_how === "none") continue;
+    const t = nospace(r.mok);
+    const old = r.year <= OLD_MOK_LAST_YEAR && OLD_MOK_RE.test(t);
+    if (!old && !(/\d/.test(t) && parseRow(r.year, t, r.position).kind === "교구")) continue;
+    let gu = "";
+    if (r.link_how === "manual") gu = byId.get(r.person_id ?? -1)?.mok1 ?? "";
+    else {
+      const c = (ctx.byKey.get(hKey(r.name)) ?? []).filter((p) => !kidAt(p, r.year) && GU7.includes(p.mok1));
+      if (c.length === 1) gu = c[0].mok1;
+    }
+    if (!GU7.includes(gu)) continue;
+    const k = hintKey(r.year, t);
+    const m = votes.get(k) ?? new Map<string, number>();
+    m.set(gu, (m.get(gu) ?? 0) + 1);
+    votes.set(k, m);
+  }
+  const out = new Map<string, string>();
+  for (const [k, m] of votes) {
+    const tally = [...m.entries()].sort((x, y) => y[1] - x[1]);
+    const total = tally.reduce((s, [, n]) => s + n, 0);
+    const [gu, n] = tally[0];
+    if (total >= HINT_MIN_VOTES && n / total >= HINT_MIN_SHARE && n > (tally[1]?.[1] ?? 0)) out.set(k, gu);
+  }
+  return out;
+}
 
 function candidatesOf(k: string, ctx: Ctx, notes: string[]): P[] {
   let c = [...(ctx.byKey.get(k) ?? [])];
@@ -215,7 +270,7 @@ function tieBreak(list: P[], r: HRow, a: Affil, pos: string, ctx: Ctx): { one: P
 
 function matchOne(r: HRow, ctx: Ctx): Pick {
   const pos = cleanPos(r.position);
-  const a = parseRow(r.year, r.mok, pos);
+  const a = parseRow(r.year, r.mok, pos, ctx.hints);
   const baseNotes = [...a.notes];
   const teenIds = new Set<number>();   // 「학생으로 봄」으로 통과한 교인ID — 최종 고른 분일 때만 근거에 적는다
   const k = hKey(r.name);
@@ -241,7 +296,9 @@ function matchOne(r: HRow, ctx: Ctx): Pick {
     return mk(null, "", `${where}에 같은 이름 ${same.length}명 — 누군지 못 가림`, S.NONE, cands);
   }
   if (a.kind === "교구") {
-    const gu = cands.filter((c) => c.mok1 === a.gu);
+    // 옛 목장 표로 읽은 교구는 「지금 교구」 어림이라, 그해 직분보다 계급이 낮은 분은 고르지 않는다(임직은 거꾸로 가지 않는다 —
+    //   안 그러면 권사 줄이 같은 교구의 집사에게 가 버린다). 그런 분만 남으면 아래 직분 가림이 본다.
+    const gu = cands.filter((c) => c.mok1 === a.gu && (!a.hinted || rank(c.position) >= rank(pos)));
     const base = a.mok === null && !a.men ? "같은 교구(목장 모름)" : "같은 교구(목장 다름)";
     const elsewhere = all.some((c) => c.mok1 !== a.gu && !kidAt(c, r.year)) ? " · 다른 교구에 같은 이름" : "";
     if (gu.length === 1) return mk(gu[0].person_id, base + elsewhere, "", S.GU, cands);
@@ -249,6 +306,12 @@ function matchOne(r: HRow, ctx: Ctx): Pick {
       const t = tieBreak(gu, r, a, pos, ctx);
       if (t.one) return mk(t.one.person_id, `같은 교구 · ${t.how}`, "", S.GU, cands);
       return mk(null, "", `같은 교구에 같은 이름 ${gu.length}명(목장은 명부와 다름) — 누군지 못 가림`, S.NONE, cands);
+    }
+    // 2021년까지 이름 교구 줄 — 적힌 교구에 아무도 없고 여럿이면, 그 목장 사람들이 지금 있는 교구로 가린다(oldMokHints)
+    if (!a.hinted && r.year <= LOOSE_LAST_YEAR && cands.length > 1) {
+      const hg = ctx.hints.get(hintKey(r.year, r.mok));
+      const h = hg && hg !== a.gu ? cands.filter((c) => c.mok1 === hg && rank(c.position) >= rank(pos)) : [];
+      if (h.length === 1) return mk(h[0].person_id, "같은 교구(옛 목장 사람들의 지금 교구)", "", S.GU, cands);
     }
   }
   if (cands.length === 1) {
@@ -271,7 +334,7 @@ export function teamKey(t: unknown): string {
 // auto 줄만 결과를 바꾼다 — manual·none 줄은 그대로 돌려주고, manual 은 다른 해 근거로 쓴다.
 export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
   const ps = people.map(prep);
-  const ctx: Ctx = { byKey: new Map(), bySuffixBase: new Map(), byGu: new Map(), byHousehold: new Map(), rowSig: new Set() };
+  const ctx: Ctx = { byKey: new Map(), bySuffixBase: new Map(), byGu: new Map(), byHousehold: new Map(), rowSig: new Set(), hints: new Map() };
   const push = (m: Map<string, P[]>, k: string, p: P) => { const l = m.get(k); if (l) l.push(p); else m.set(k, [p]); };
   for (const p of ps) {
     push(ctx.byKey, p.key, p);
@@ -279,6 +342,9 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
     if (p.mok1) push(ctx.byGu, p.mok1, p);
     if (p.household) push(ctx.byHousehold, p.household, p);
   }
+  ctx.hints = oldMokHints(rows, ctx, new Map(ps.map((p) => [p.person_id, p])));
+  // 줄 읽기 — 옛 목장 표까지(목장 글자 raw 와 청년 여부는 표와 무관하다 · rowSig·group·sameRowPerson 은 표 없이 읽어도 같다)
+  const parse = (r: HRow): Affil => parseRow(r.year, r.mok, r.position, ctx.hints);
   for (const r of rows) ctx.rowSig.add(`${r.year}|${hKey(r.name)}|${parseRow(r.year, r.mok, r.position).raw}`);
 
   // 1차
@@ -337,6 +403,7 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
         if (found.size) how = "다른 해 같은 팀";
       }
       if (!found.size) {
+        // 표 없이 읽는다 — 옛 「N-M」 줄끼리는 예전처럼 「모름·같은 목장 글자」로 잇는다(해마다 표가 달라 한쪽만 교구로 읽히면 못 잇는다)
         const parsed = parseRow(r.year, r.mok, r.position);
         const raw = parsed.raw;
         const pos = cleanPos(r.position);
@@ -363,6 +430,8 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
   }
 
   // 오타(설계 §4.5) — 「교인명부에 같은 이름이 없음」 교구 줄만
+  //   2021년까지 줄은 느슨하게(2026-10-04) — 목장 모름(옛 목장 표로 읽은 줄 포함)도 보고, 목장 대신 교구만 같으면 된다
+  //   (그 해들의 목장 번호는 지금 명부와 거의 안 맞는다). 다른 해 같은 팀에 그분이 강하게 붙어 있어야 하는 것은 같다.
   const anchoredTeams = new Map<number, Set<string>>();       // 교인ID → 붙은 팀(해 포함)
   for (const r of rows) {
     const p = pick.get(r.id)!;
@@ -372,12 +441,13 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
   for (const r of auto) {
     const cur = pick.get(r.id)!;
     if (cur.pid !== null || cur.reason !== R_NONE) continue;
-    const a = parseRow(r.year, r.mok, r.position);
-    if (a.kind !== "교구" || (a.mok === null && !a.men)) continue;
+    const a = parse(r);
+    const loose = r.year <= LOOSE_LAST_YEAR;
+    if (a.kind !== "교구" || (a.mok === null && !a.men && !loose)) continue;
     const k = hKey(r.name);
     const tk = teamKey(r.team);
     const near = (ctx.byGu.get(a.gu) ?? []).filter((c) => {
-      if (c.key.length !== k.length || kidAt(c, r.year) || !sameAffil(c, a, r.year)) return false;
+      if (c.key.length !== k.length || kidAt(c, r.year) || !(loose ? c.mok1 === a.gu : sameAffil(c, a, r.year))) return false;
       let diff = 0;
       for (let i = 0; i < k.length; i++) if (c.key[i] !== k[i]) diff++;
       if (diff !== 1) return false;
@@ -407,9 +477,35 @@ export function matchAll(rows: HRow[], people: HPerson[]): HResult[] {
     if (s && s.size === 1) pick.set(r.id, { ...p, pid: [...s][0], basis: "이름 한 글자 다름(오타로 봄) · 같은 해 다른 팀 줄과 같은 분", reason: "", strength: S.ONLY });
   }
 
+  // 2021년까지 줄 — 명부에 같은 이름이 여럿이라 못 가린 줄을 두 가지로 더 가린다(2026-10-04 · 둘 다 근거 약함)
+  //   ① 다른 해 같은 이름: 다른 해의 같은 이름 줄이 그 후보 가운데 한 분에게만 강하게 붙어 있으면 그분
+  //   ② 직분 계급: 임직은 거꾸로 가지 않는다 — 그해 직분 계급 이상인 후보가 한 분뿐이면 그분(집사 이상 줄만)
+  for (const r of auto) {
+    const cur = pick.get(r.id)!;
+    if (r.year > LOOSE_LAST_YEAR || cur.pid !== null || cur.cands.length < 2) continue;
+    const allowed = new Set(cur.cands.map((c) => c.person_id));
+    const nk = stripSuffix(hKey(r.name));
+    const g = group(r);
+    const found = new Set<number>();
+    for (const s of byName.get(nk) ?? []) {
+      if (s.year === r.year || group(s) !== g || diffSuffix(r.name, s.name)) continue;
+      const sp = pick.get(s.id)!;
+      if (isAnchor(sp) && allowed.has(sp.pid!)) found.add(sp.pid!);
+    }
+    if (found.size === 1) {
+      pick.set(r.id, { ...cur, pid: [...found][0], basis: "다른 해 같은 이름", reason: "", strength: S.ONLY });
+      continue;
+    }
+    const rk = rank(r.position);
+    const up = rk >= 1 ? cur.cands.filter((c) => rank(c.position) >= rk) : [];
+    if (up.length === 1) pick.set(r.id, { ...cur, pid: up[0].person_id, basis: "직분으로 가림(소속 다름)", reason: "", strength: S.ONLY });
+  }
+
   // 같은 해 겹침(설계 §4.6) — 다른 교구(또는 어른/청년)인 줄이 한 분으로 모이면 약한 쪽을 비운다
+  //   옛 목장 표로 읽은 줄은 넣지 않는다 — 표는 「지금 교구」라 그해 교구가 아니다(같은 해 다른 목장 두 줄이 서로를 지우지 않게)
   const sig = (r: HRow): string | null => {
-    const a = parseRow(r.year, r.mok, r.position);
+    const a = parse(r);
+    if (a.hinted) return null;
     if (a.kind === "교구") return a.gu;
     if (a.kind === "모름") return null;
     return a.kind;
