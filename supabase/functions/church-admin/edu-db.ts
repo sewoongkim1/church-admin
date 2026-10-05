@@ -325,6 +325,9 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     if (error) throw error;
     if (r.ok) await audit(ctx, "edu.enroll.set", String(id), { op, force: b?.force === true, promoted: r.promoted ?? null });
     if (!r?.ok) return r;
+    // 이미 그 상태였으면(edu_staff_set 의 already — 낡은 화면에서 다시 누름 · 바뀐 것 없음) 알림을 부탁하지 않는다(검토 반영 2026-10-06 —
+    //   선착순 즉시 확정 줄은 알림 기록이 없어, 부탁하면 api 가 「확정됐어요」를 늦게 한 번 보내 버렸다)
+    if (r.already) return r;
     // 확정 알림(4단계) — 저장 뒤: 확정이면 그분께 · 다른 op 로 대기 첫 분이 올라갔으면(promoted) 그분께 「자리가 나서 …」
     if (op === "confirm") return await withNotify(r, [id], false);
     if (r.promoted != null) return await withNotify(r, [r.promoted], true);

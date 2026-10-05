@@ -146,6 +146,23 @@ test("확정 알림 — eduEnrollSet: 확정은 그 줄(promoted false) · 다�
   assert.equal(e.log.notify.length, 0);
 });
 
+test("확정 알림 — 이미 그 상태면(edu_staff_set already · 낡은 화면에서 다시 누름) 부탁하지 않는다 · 응답은 SQL 그대로(검토 반영 2026-10-06)", async () => {
+  for (const op of ["confirm", "waitlist", "decline", "reopen"]) {
+    const a = setup({ applyRes: { ok: true, promoted: null, already: true } });
+    assert.deepEqual(await a.edu.eduEnrollSet(CHIEF, { id: 7, op }), { ok: true, promoted: null, already: true }, op);
+    assert.equal(a.log.notify.length, 0, op + " — 바뀐 것이 없는데 알림을 부탁했다");
+    assert.deepEqual(a.log.rpc.map((x) => x[0]), ["edu_staff_set"], op);
+  }
+  // force 로 다시 눌러도 같다(정원 넘김 확인 뒤 — 이미 확정이면 바뀐 것 없음)
+  const f = setup({ applyRes: { ok: true, promoted: null, already: true } });
+  assert.deepEqual(await f.edu.eduEnrollSet(CHIEF, { id: 7, op: "confirm", force: true }), { ok: true, promoted: null, already: true });
+  assert.equal(f.log.notify.length, 0);
+  // already 가 없으면(상태가 바뀜) 예전처럼 부탁한다
+  const g = setup({ applyRes: { ok: true, promoted: null } });
+  assert.deepEqual(await g.edu.eduEnrollSet(CHIEF, { id: 7, op: "confirm" }), { ok: true, promoted: null, notified: 1, notifyError: null });
+  assert.equal(g.log.notify.length, 1);
+});
+
 test("확정 알림 — 실패는 삼킨다(던져도·null 이어도): 저장 응답은 ok · notified 0 · notifyError notify-failed · 기록은 남는다 · dep 가 없으면 그대로", async () => {
   for (const opt of [{ notifyThrows: true }, { notifyRes: null }]) {
     const a = setup({ ...opt, applyRes: { ok: true, promoted: null } });
