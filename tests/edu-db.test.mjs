@@ -419,6 +419,7 @@ test("출석 — 강사 T 는 맡은 강좌 A 의 칸을 쓴다(SQL edu_attendan
   assert.equal(c.log.rpc[0][1].p_state, null);
   const u = setup({ staffRows: T_ROWS, tables: { edu_sessions: SESS_A } });
   assert.deepEqual(await u.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7 }), { ok: false, error: "bad-state" });
+  assert.deepEqual(await u.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7, state: "" }), { ok: false, error: "bad-state" }, "빈 글자는 지우기가 아니다");
   assert.deepEqual(await u.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7, state: "here" }), { ok: false, error: "bad-state" });
   assert.deepEqual(await u.edu.eduAttendSet(TEACHER, { session_id: 0, enrollment_id: 7, state: "late" }), { ok: false, error: "bad-id" });
   assert.equal(u.log.q.length + u.log.rpc.length, 0);
@@ -628,4 +629,28 @@ test("강좌 카드 teachers — 강사 줄은 teachers 로(담당 staff 와 따
   assert.deepEqual(r.courses[0].staff, [{ id: STAFF_M, name: "박담당" }]);
   assert.deepEqual(r.courses[0].teachers, [{ id: TEACH_M, name: "이강사" }, { id: OTHER_M, name: "최옛강사", stale: true }]);
   assert.equal(c.log.q.filter((q) => q.table === "edu_course_staff").length, 1);
+});
+
+test("회차는 id 로 — eduSessions 는 회차마다 id 를 준다 · eduSessionsSave 는 id 를 그대로 SQL 에 넘긴다 · has-attendance 는 그대로 · 기록 안 함", async () => {
+  const a = setup({ staffRows: [], tables: { edu_sessions: [{ id: 51, no: 1, on_date: "2027-03-03", start_time: "19:30:00", end_time: null, topic: "", place: "" },
+    { id: 53, no: 2, on_date: "2027-03-17", start_time: null, end_time: null, topic: "", place: "" }] } });
+  const r = await a.edu.eduSessions(CHIEF, { course_id: COURSE });
+  assert.deepEqual(r.sessions.map((s) => [s.id, s.no, s.start_time]), [[51, 1, "19:30"], [53, 2, null]]);
+  const sel = a.log.q.find((q) => q.table === "edu_sessions").c.calls.find((x) => x[0] === "select");
+  assert.ok(/(^|,)id(,|$)/.test(sel[1]), "eduSessions 가 id 를 읽지 않는다");
+  // 저장 — 가운데(2회 id 52)를 빼고 3회(id 53)를 2회로 당긴 목록 + 새 회차
+  const s = setup({ applyRes: { ok: true, count: 3 } });
+  const body = { course_id: COURSE, sessions: [{ id: 51, no: 1, on_date: "2027-03-03" }, { id: 53, no: 2, on_date: "2027-03-17" }, { no: 3, on_date: "2027-03-24" }] };
+  assert.deepEqual(await s.edu.eduSessionsSave(CHIEF, body), { ok: true, count: 3 });
+  assert.equal(s.log.rpc[0][0], "edu_sessions_replace");
+  assert.deepEqual(s.log.rpc[0][1].p_rows.map((x) => [x.id ?? null, x.no]), [[51, 1], [53, 2], [null, 3]]);
+  assert.deepEqual(s.log.audit, [["edu.sessions", COURSE, { count: 3 }]]);
+  // SQL 이 거절하면(has-attendance) 그대로 돌려주고 기록하지 않는다
+  const h = setup({ applyRes: { ok: false, error: "has-attendance", nos: [2] } });
+  assert.deepEqual(await h.edu.eduSessionsSave(CHIEF, body), { ok: false, error: "has-attendance", nos: [2] });
+  assert.equal(h.log.audit.length, 0);
+  // 틀린 id 는 SQL 에 가기 전에 bad-rows
+  const b = setup();
+  assert.deepEqual(await b.edu.eduSessionsSave(CHIEF, { course_id: COURSE, sessions: [{ id: "x", no: 1, on_date: "2027-03-03" }] }), { ok: false, error: "bad-rows" });
+  assert.equal(b.log.rpc.length, 0);
 });

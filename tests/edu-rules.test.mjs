@@ -7,6 +7,7 @@ import { checkCourse, makeSessions, checkSessions, courseOut, enrollOut, exportR
   attendSummary, attendExportRows, attendSessionOut, kstDate, ATTEND_STATES }
   from "../supabase/functions/church-admin/edu-rules.ts";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 test("checkCourse — 기본값과 다듬기", () => {
   const r = checkCourse({ title: "  제자훈련  1단계 ", kind: "regular", capacity: "20", mode: "auto",
@@ -242,6 +243,11 @@ test("eduAttendRate — 지각=출석 · 공결은 분모에서 뺌 · 체크 �
   for (const [input, want] of ATTEND_RATE_CASES) assert.deepEqual(eduAttendRate(input), want, JSON.stringify(input));
 });
 
+// 출석률 함수 글자의 지문 — 성경암송 tests/edu-front.test.cjs 에 **같은 값**이 박혀 있다(어느 쪽이든 글자가 바뀌면 그쪽 시험이 떨어진다).
+//   규칙을 일부러 바꿀 때는 세 곳(이 파일 edu-rules.ts · 성경암송 js/edu.js · 성경암송 api 복사본)을 같은 글자로 고치고 두 시험의 값을 함께 바꾼다.
+//   지문 = sha256(「function eduAttendRate(c) {」부터 첫 줄머리 「}」까지 · 줄끝 LF)
+const EDU_ATTEND_RATE_SHA256 = "ff0225b92431708dc662d43e5ee9a5b41eb1b6dd3c8a32d0d93e40125b69b323";
+
 test("eduAttendRate — 함수 몸통은 export 없이 한 덩이(성경암송 js/edu.js 에 같은 글자로 옮겨 둔다)", () => {
   const src = readFileSync(new URL("../supabase/functions/church-admin/edu-rules.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const a = src.indexOf("function eduAttendRate(c) {");
@@ -250,13 +256,17 @@ test("eduAttendRate — 함수 몸통은 export 없이 한 덩이(성경암송 j
   const body = src.slice(a, b + 2);
   assert.ok(!/:\s*(any|number|string|boolean)\b|=>/.test(body), "타입 표기·화살표 함수가 들어가면 성경암송(브라우저) 복사본과 같은 글자가 못 된다");
   assert.ok(src.includes("export { eduAttendRate };"));
+  assert.equal(createHash("sha256").update(body).digest("hex"), EDU_ATTEND_RATE_SHA256,
+    "출석률 함수 글자가 바뀌었다 — 성경암송 js/edu.js·api 복사본과 두 시험의 지문을 함께 고칠 것");
 });
 
-test("checkAttendState — 네 값 · null·빈 값은 지움(allowNull) · 그 밖은 bad-state", () => {
+test("checkAttendState — 네 값 · null 만 지움(allowNull) · 빈 글자·칸 빠짐·그 밖은 bad-state", () => {
   for (const s of ATTEND_STATES) assert.deepEqual(checkAttendState(s), { ok: true, state: s });
   assert.deepEqual(checkAttendState(" late "), { ok: true, state: "late" });
   assert.deepEqual(checkAttendState(null), { ok: true, state: null });
-  assert.deepEqual(checkAttendState(""), { ok: true, state: null });
+  assert.deepEqual(checkAttendState(""), { ok: false, error: "bad-state" });
+  assert.deepEqual(checkAttendState(undefined), { ok: false, error: "bad-state" });
+  assert.deepEqual(checkAttendState("", false), { ok: false, error: "bad-state" });
   assert.deepEqual(checkAttendState(null, false), { ok: false, error: "bad-state" });
   assert.deepEqual(checkAttendState("here"), { ok: false, error: "bad-state" });
   assert.deepEqual(checkAttendState("PRESENT"), { ok: false, error: "bad-state" });
@@ -350,4 +360,16 @@ test("attendExportRows — 머리(회차·날짜) · ○/지/결/공 · 빈칸 �
     ["구원론", "2026 가을", "가", "기쁨 3목장", "○", "", "1", "0", "0", "0", "100%"],
     ["구원론", "2026 가을", "나", "", "", "공", "0", "0", "0", "1", ""],
   ]);
+});
+
+test("checkSessions — 회차 id(고칠 회차)는 그대로 실어 보낸다 · 새 회차는 id 없음 · 틀린 id·같은 id 둘은 bad-rows · 빈 id 는 새 회차", () => {
+  const r = checkSessions([{ id: 52, no: 2, on_date: "2027-03-10" }, { no: 1, on_date: "2027-03-03" }, { id: "51", no: 3, on_date: "2027-03-17" }, { id: "", no: 4, on_date: "2027-03-24" }]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.rows.map((x) => [x.id ?? null, x.no]), [[null, 1], [52, 2], [51, 3], [null, 4]]);
+  assert.equal("id" in r.rows[0], false, "새 회차에는 id 칸이 없다(SQL 이 null 로 읽는다)");
+  for (const bad of [0, -1, 1.5, "x", true]) assert.deepEqual(checkSessions([{ id: bad, no: 1, on_date: "2027-03-03" }]), { ok: false, error: "bad-rows" }, String(bad));
+  assert.deepEqual(checkSessions([{ id: 5, no: 1, on_date: "2027-03-03" }, { id: "5", no: 2, on_date: "2027-03-10" }]), { ok: false, error: "bad-rows" });
+  // 번호는 차례일 뿐 — 지우고 당긴 목록(1·2·3)도 그대로 받는다(같은 번호 둘만 dup-no)
+  assert.equal(checkSessions([{ id: 1, no: 1, on_date: "2027-03-03" }, { id: 4, no: 2, on_date: "2027-03-24" }, { id: 5, no: 3, on_date: "2027-03-31" }]).ok, true);
+  assert.equal(checkSessions([{ id: 1, no: 1, on_date: "2027-03-03" }, { id: 4, no: 1, on_date: "2027-03-24" }]).error, "dup-no");
 });

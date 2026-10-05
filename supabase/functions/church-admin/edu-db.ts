@@ -248,7 +248,8 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     const id = norm(b?.course_id);
     if (!UUID.test(id)) return { ok: false, error: "bad-id" };
     if (!(await mayTouch(ctx, id))) return NOT_ASSIGNED;
-    const { data, error } = await db.from("edu_sessions").select("no,on_date,start_time,end_time,topic,place").eq("course_id", id).order("no");
+    // id 를 함께 준다 — 화면은 고칠 회차에 이 id 를 그대로 실어 eduSessionsSave 로 보낸다(회차의 정체는 id · no 는 차례)
+    const { data, error } = await db.from("edu_sessions").select("id,no,on_date,start_time,end_time,topic,place").eq("course_id", id).order("no");
     if (error) throw error;
     return { ok: true, sessions: (data ?? []).map((s: any) => ({ ...s, start_time: s.start_time?.slice(0, 5) ?? null, end_time: s.end_time?.slice(0, 5) ?? null })) };
   }
@@ -258,7 +259,8 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     if (!UUID.test(id)) return { ok: false, error: "bad-id" };
     const s = checkSessions(b?.sessions);
     if (!s.ok) return s;
-    // 한 트랜잭션 · 같은 번호는 id 를 지킨다 · 끝난 강좌는 course-closed (SQL 함수 edu_sessions_replace)
+    // 한 트랜잭션 · **id 로 맞춘다**(id 있는 줄 = 그 회차 고치기 · 목록에 없는 회차 = 지우기 · id 없는 줄 = 새 회차 · no 는 차례만)
+    //   끝난 강좌 course-closed · 출석 있는 회차를 지우려 하면 has-attendance(nos) · 다른 강좌·없는 id 는 bad-rows (SQL 함수 edu_sessions_replace)
     const { data: r, error } = await db.rpc("edu_sessions_replace", { p_course: id, p_rows: s.rows });
     if (error) throw error;
     if (r?.ok) await audit(ctx, "edu.sessions", id, { count: r.count });
@@ -482,13 +484,13 @@ export function makeEdu(db: Db, audit: Audit, deps: {
       counts: { present: n.present, late: n.late, absent: n.absent, excused: n.excused, marked: n.marked, total: list.length }, rows: list };
   }
 
-  // 한 칸 쓰기·지우기 — {session_id, enrollment_id, state}(state null = 지움 · 칸이 없으면 bad-state — 실수로 지우지 않게).
+  // 한 칸 쓰기·지우기 — {session_id, enrollment_id, state}(**state === null 만** 지움 · 칸 빠짐·빈 글자는 bad-state — 실수로 지우지 않게).
   //   강좌는 회차에서 읽어 확인한다(not-assigned) · 같은 강좌·확정·끝난 강좌는 SQL 함수가 본다(wrong-course·not-confirmed·course-closed).
+  //   지우기(null)는 확정이 아닌 줄(같은 강좌)에도 된다 — 기록 합치기 merge-edu-attendance 를 담당자가 풀 수 있게(SQL 함수).
   async function eduAttendSet(ctx: any, b: any) {
     const sid = posInt(b?.session_id), eid = posInt(b?.enrollment_id);
     if (!sid || !eid) return { ok: false, error: "bad-id" };
-    if (b?.state === undefined) return { ok: false, error: "bad-state" };
-    const st = checkAttendState(b.state, true);
+    const st = checkAttendState(b?.state, true);
     if (!st.ok) return st;
     const s = await attSession(sid);
     if (!s) return { ok: false, error: "not-found" };

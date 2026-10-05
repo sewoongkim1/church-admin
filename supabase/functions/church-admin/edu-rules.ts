@@ -78,12 +78,21 @@ export function makeSessions(start: string, count: number, everyDays = 7, t: { s
   return out;
 }
 
+// 회차 목록 확인 — 회차의 정체는 id(2단계 검토 2026-10-05): 고칠 회차는 eduSessions 가 준 id 를 그대로 실어 보내고, 새 회차는 id 없이.
+//   no 는 보여 주는 차례일 뿐(지우고 당겨도 된다 · SQL edu_sessions_replace 가 id 로 맞춘다). 틀린 id·같은 id 둘은 bad-rows(SQL 과 같은 이름).
 export function checkSessions(list: any[]): { ok: true; rows: any[] } | { ok: false; error: string } {
   if (!Array.isArray(list)) return { ok: false, error: "bad-no" };
   if (list.length > 200) return { ok: false, error: "too-many" };
   const seen = new Set<number>();
+  const seenIds = new Set<number>();
   const rows = [];
   for (const s of list) {
+    let id: number | null = null;
+    if (s?.id !== undefined && s?.id !== null && s?.id !== "") {
+      id = typeof s.id === "number" || (typeof s.id === "string" && /^\d+$/.test(s.id)) ? Number(s.id) : NaN;   // 숫자·숫자 글자만(true 같은 값은 1 이 되지 않게)
+      if (!Number.isSafeInteger(id) || id < 1 || seenIds.has(id)) return { ok: false, error: "bad-rows" };
+      seenIds.add(id);
+    }
     const no = Number(s?.no);
     if (!Number.isInteger(no) || no < 1 || no > 200) return { ok: false, error: "bad-no" };
     if (seen.has(no)) return { ok: false, error: "dup-no" };
@@ -92,7 +101,7 @@ export function checkSessions(list: any[]): { ok: true; rows: any[] } | { ok: fa
     if (!isDate(d)) return { ok: false, error: "bad-date" };
     const st = norm(s?.start_time), et = norm(s?.end_time);
     if ((st && !TIME_RE.test(st)) || (et && !TIME_RE.test(et))) return { ok: false, error: "bad-date" };
-    rows.push({ no, on_date: d, start_time: st || null, end_time: et || null,
+    rows.push({ ...(id ? { id } : {}), no, on_date: d, start_time: st || null, end_time: et || null,
       topic: norm(s?.topic).slice(0, 80), place: norm(s?.place).slice(0, 80) });
   }
   rows.sort((a, b) => a.no - b.no);
@@ -302,9 +311,10 @@ function eduAttendRate(c) {
 }
 export { eduAttendRate };
 
-// 한 칸 상태 확인 — null·빈 값은 「지움」(allowNull 일 때만) · 그 밖은 네 값 가운데 하나
+// 한 칸 상태 확인 — **null 만** 「지움」(allowNull 일 때만 · 검토 반영: 빈 글자·칸 빠짐은 지우지 않고 bad-state) · 그 밖은 네 값 가운데 하나
 export function checkAttendState(x: unknown, allowNull = true): { ok: true; state: string | null } | { ok: false; error: string } {
-  if (x === undefined || x === null || x === "") return allowNull ? { ok: true, state: null } : { ok: false, error: "bad-state" };
+  if (x === null) return allowNull ? { ok: true, state: null } : { ok: false, error: "bad-state" };
+  if (x === undefined || x === "") return { ok: false, error: "bad-state" };
   const s = norm(x);
   return ATTEND_STATES.includes(s) ? { ok: true, state: s } : { ok: false, error: "bad-state" };
 }
