@@ -740,7 +740,8 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     if (!rows.length) return [];
     const [courses, att] = await Promise.all([
       inChunks([...new Set(rows.map((r) => String(r.course_id)))], (part) =>
-        deps.allRows(() => db.from("edu_courses").select("id,title,term,starts_on,created_at").in("id", part).order("id"))),
+        deps.allRows(() => db.from("edu_courses").select("id,title,term,starts_on,created_at").in("id", part)
+          .neq("status", "archived").order("id"))),   // 보관한 강좌(시험용으로 치운 것)는 빼고 — 통계 edu_stats 와 같다(검토 2026-10-06)
       inChunks(rows.map((r) => Number(r.id)), (part) =>
         deps.allRows(() => db.from("edu_attendance").select("enrollment_id,state").in("enrollment_id", part).order("enrollment_id").order("session_id"))),
     ]);

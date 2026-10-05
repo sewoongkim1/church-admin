@@ -87,6 +87,7 @@ const COURSES = [
   { id: C(2), title: "교사 연수", term: "2026 하반기", starts_on: null, created_at: "2026-08-01T00:00:00Z" },
   { id: C(3), title: "교사 대학", term: "2027 상반기", starts_on: "2027-02-01", created_at: "2026-12-02T00:00:00Z" },
   { id: C(4), title: "새가족반", term: "", starts_on: null, created_at: "2025-03-01T00:00:00Z" },
+  { id: C(5), title: "보관한 시험 강좌", term: "2027 상반기", starts_on: null, created_at: "2026-12-03T00:00:00Z", status: "archived" },
 ];
 const SECRET = "비밀메모-담당자만";
 const enr = (id, course, user_id, ident_key, status = "confirmed", o = {}) => ({ id, course_id: C(course), user_id: user_id ? U(user_id) : null, ident_key,
@@ -106,7 +107,8 @@ const ENROLLS = [
   enr(112, 3, 8, "교구|화평|20|||김철수"),                                                                 // 14 와 이어진 계정
   enr(113, 1, null, "person|13"),                                                                          // 13
   enr(114, 1, null, "person|110"),                                                                         // 11 과 글자가 겹치는 다른 교인ID — 11 창에 안 보임
-  enr(115, 1, 9, "교회학교|||중등부|2|홍길동"),                                                            // 아무에게도
+  enr(115, 1, 9, "교회학교|||중등부|2|홍길동"),
+  enr(116, 5, null, "person|11", "confirmed"),                                                            // 11 · 보관한 강좌 — 탭에 안 보인다                                                            // 아무에게도
 ];
 // 출석 — 101: 출석 3·지각 1·결석 1·공결 2 → 4/5 = 80% · 103: 결석 2 → 0% · 104: 출석 1(취소 줄도 칸이 남아 있으면 그대로 센다 — 앱 「내 강좌」와 같다) · 102: 없음
 const att = (enrollment_id, session_id, state) => ({ enrollment_id, session_id, state, marked_by: U(99) });
@@ -148,11 +150,11 @@ test("eduLinkedUserIds — 같은 소속에 같은 이름 한 분일 때만(matc
 test("eduRowsForPerson — person|N 은 N 일 때만(계정이 이어져 있어도 남의 person 줄은 안 받는다) · 그 밖은 이어진 계정 줄만 · 같은 줄은 한 번", () => {
   const linked = new Set([U(1), U(2)]);
   const ids = (rows) => rows.map((r) => r.id).sort((a, b) => a - b);
-  assert.deepEqual(ids(eduRowsForPerson(11, ENROLLS, linked)), [101, 102, 103, 104]);
-  assert.deepEqual(ids(eduRowsForPerson(11, [...ENROLLS, ...ENROLLS], linked)), [101, 102, 103, 104], "겹쳐 받아도 한 번");
+  assert.deepEqual(ids(eduRowsForPerson(11, ENROLLS, linked)), [101, 102, 103, 104, 116]);   // 116 = 보관한 강좌(줄 고르기는 받고 강좌 읽기가 뺀다)
+  assert.deepEqual(ids(eduRowsForPerson(11, [...ENROLLS, ...ENROLLS], linked)), [101, 102, 103, 104, 116], "겹쳐 받아도 한 번");
   assert.deepEqual(ids(eduRowsForPerson(12, ENROLLS, new Set([U(3)]))), [105, 106]);
   assert.deepEqual(ids(eduRowsForPerson(110, ENROLLS, new Set())), [114]);
-  assert.deepEqual(ids(eduRowsForPerson(11, ENROLLS, new Set())), [103, 104], "이어진 계정이 없으면 명부 줄만");
+  assert.deepEqual(ids(eduRowsForPerson(11, ENROLLS, new Set())), [103, 104, 116], "이어진 계정이 없으면 명부 줄만");
 });
 
 test("eduTabItems — 칸 지도 일곱 · 학기 새것부터(학기 안에서 시작일 늦은 것부터) · 출석률 eduAttendRate(지각 = 출석 · 공결 뺌 · 체크 없으면 null) · 수료번호(취소됨)", () => {
@@ -186,7 +188,7 @@ test("withEduTab — 배열이면 education 칸과 counts.education · 아니면
 test("eduPersonTab — 홍길동(11): 이어진 두 계정의 줄 + person|11 줄만 · 12 의 계정에 붙은 person|11 줄도 · 11 계정에 붙은 person|12 줄은 아님", async () => {
   const { edu, db, audits } = setup(TABLES());
   const items = await edu.eduPersonTab(11);
-  assert.deepEqual(items.map((x) => x.title), ["제자훈련 1단계", "교사 대학", "교사 연수", "새가족반"]);
+  assert.deepEqual(items.map((x) => x.title), ["제자훈련 1단계", "교사 대학", "교사 연수", "새가족반"], "보관한 강좌(116)는 안 보인다");
   assert.deepEqual(items.map((x) => x.attendPct), [80, null, 0, 100], "출석 칸이 쪽(5줄)을 넘어도 다 센다");
   assert.equal(audits.length, 0, "기록 없음 — 창을 연 people.view 가 이미 있다");
   assert.deepEqual(db.log.unpaged, [], "쪽 넘기기 없이 물은 표가 있다(1,000줄 함정)");

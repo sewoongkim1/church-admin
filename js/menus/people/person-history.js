@@ -39,8 +39,17 @@ export function linkDoneText(how, r) {
 
 // 잇기·풀기 뒤 서버가 다시 준 탭 자료(next)에 교육 칸이 없으면(그때 교육 읽기만 실패) 보던 교육 칸을 그대로 둔다 —
 //   잇기는 교육 줄을 바꾸지 않는다. 그렇게 안 하면 탭 하나가 창에서 갑자기 사라진다.
+//   거꾸로, 처음엔 교육 칸이 없었는데(그 읽기만 실패) 잇기 뒤 자료에 생겼으면 뺀다 — 패널이 없으니 탭 줄만 넷이 되면
+//   교육 탭을 눌러도 빈 칸이 된다(검토 2026-10-06). 창을 다시 열면 교육 탭이 제대로 그려진다.
 export function keepEdu(prev, next) {
-  if (!next || hasEdu(next) || !hasEdu(prev)) return next;
+  if (!next) return next;
+  if (hasEdu(next) && !hasEdu(prev)) {
+    const { education, ...rest } = next;
+    const counts = { ...(next.counts || {}) };
+    delete counts.education;
+    return { ...rest, counts };
+  }
+  if (hasEdu(next) || !hasEdu(prev)) return next;
   return { ...next, counts: { ...(next.counts || {}), education: prev.education.length }, education: prev.education };
 }
 
