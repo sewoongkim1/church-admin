@@ -45,11 +45,13 @@ export function courseToForm(c) {
 }
 
 // 카드 한 줄 — 교육 기간이 있으면 「교육 3/3(수) ~ 5/19(수)」(한쪽만 있으면 한쪽), 없으면 회차에서 읽은 요약
+//   기간이 있어도 회차 수(또는 「회차 없음」)를 붙인다 — 일정이 빈 강좌를 담당자가 알아보게(2026-10-05 검토)
 export function periodSummary(course, list) {
   const a = course?.startsOn, b = course?.endsOn;
-  if (a && b) return a === b ? `교육 ${md(a)}` : `교육 ${md(a)} ~ ${md(b)}`;
-  if (a) return `교육 ${md(a)}부터`;
-  if (b) return `교육 ${md(b)}까지`;
+  const n = list && list.length ? ` · ${list.length}회` : " · 회차 없음";
+  if (a && b) return (a === b ? `교육 ${md(a)}` : `교육 ${md(a)} ~ ${md(b)}`) + n;
+  if (a) return `교육 ${md(a)}부터` + n;
+  if (b) return `교육 ${md(b)}까지` + n;
   return sessionsSummary(list);
 }
 
@@ -84,7 +86,7 @@ export const sessionErrorText = (r) => SESSION_ERR[r?.error] || "";
 const COURSE_ERR = {
   "no-title": "강좌 이름을 적어 주세요", "too-long": "글이 너무 길어요 (이름 80자 · 학기 30자 · 설명 2000자 안쪽)",
   "bad-kind": "종류를 골라 주세요", "bad-capacity": "정원은 1~2000 사이 숫자예요 (비우면 제한 없음)",
-  "bad-mode": "확정 방식을 골라 주세요", "bad-date": "신청 날짜를 확인해 주세요",
+  "bad-mode": "확정 방식을 골라 주세요", "bad-date": "날짜를 확인해 주세요",
   "bad-range": "신청 시작일이 마감일보다 늦어요", "bad-period": "교육 종료일이 시작일보다 빨라요", "bad-pct": "출석률은 0~100 사이 숫자예요",
   "bad-status": "상태를 골라 주세요", "not-found": "강좌를 찾지 못했어요 — 새로 불러올게요",
 };

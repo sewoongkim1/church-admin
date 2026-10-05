@@ -36,10 +36,11 @@ test("교육 기간 — 폼 ↔ 서버 값 되돌림 · 빈 값 · 오류 글", 
 });
 
 test("periodSummary — 기간이 있으면 「교육 3/3(수) ~ 5/19(수)」, 없으면 회차 요약", () => {
-  assert.equal(periodSummary({ startsOn: "2027-03-03", endsOn: "2027-05-19" }, []), "교육 3/3(수) ~ 5/19(수)");
-  assert.equal(periodSummary({ startsOn: "2027-03-03", endsOn: "2027-03-03" }, []), "교육 3/3(수)");
-  assert.equal(periodSummary({ startsOn: "2027-03-03" }, []), "교육 3/3(수)부터");
-  assert.equal(periodSummary({ endsOn: "2027-05-19" }, []), "교육 5/19(수)까지");
+  assert.equal(periodSummary({ startsOn: "2027-03-03", endsOn: "2027-05-19" }, []), "교육 3/3(수) ~ 5/19(수) · 회차 없음");
+  assert.equal(periodSummary({ startsOn: "2027-03-03", endsOn: "2027-05-19" }, [{ no: 1, on_date: "2027-03-03" }, { no: 2, on_date: "2027-03-10" }]), "교육 3/3(수) ~ 5/19(수) · 2회");
+  assert.equal(periodSummary({ startsOn: "2027-03-03", endsOn: "2027-03-03" }, []), "교육 3/3(수) · 회차 없음");
+  assert.equal(periodSummary({ startsOn: "2027-03-03" }, []), "교육 3/3(수)부터 · 회차 없음");
+  assert.equal(periodSummary({ endsOn: "2027-05-19" }, []), "교육 5/19(수)까지 · 회차 없음");
   assert.equal(periodSummary({}, []), "회차 없음");
   const ss = [{ no: 1, on_date: "2027-03-03" }, { no: 2, on_date: "2027-03-10" }];
   assert.equal(periodSummary({ startsOn: null, endsOn: null }, ss), sessionsSummary(ss));
