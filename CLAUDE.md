@@ -149,6 +149,16 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 한 번에 3,000줄(`HISTORY_MAX_UPLOAD`) · 화면은 해마다 나눠 보낸다(`sendParts`). 「이분」·「이분 아님」·「되돌리기」는 줄의 `updated_at` 을 `expect` 로 보낸다(없으면 잠그지 않는다 — 교인명부 세션 옛 부름). `ministry_history_apply` 는 읽었던 맞춤 상태(`old_*`)까지 맞아야 쓴다.
 - 나중: 「이력으로 넘기기」(2027 임명확정 → 이 표 · `order_id` · 교인ID 는 교인명부 세션의 `people_links` 에서) — 설계 §8.
 
+## 교육 (2026-10-05 운영 개시 · 성도님 쪽은 게이트 닫힘)
+
+- 메뉴 📚 **강좌 관리**·📝 **신청 현황** — 역할 `education`(SQL 010). 액션 열하나는 `edu-db.ts` · 순수 규칙 `edu-rules.ts` · 화면 `js/menus/education/`.
+- ⚠️ **표·SQL 함수는 성경암송 저장소 `supabase/edu.sql` 의 것** — 칸·제약·RLS 를 여기서 바꾸지 않는다. 상태는 SQL 함수(`edu_apply(p_staff)`·`edu_cancel(p_staff)`·`edu_staff_set`·`edu_course_refill`·`edu_sessions_replace`)로만 바꾼다. **함수가 새 SQL 함수를 부르면 그 SQL 이 운영에 먼저**(함수 → 화면 순서와 함께).
+- **대신 등록(명부):** 교인ID 는 화면에 안 나간다 — `eduPeopleLookup` 후보 → 화면이 `{name, pick, check:{who_type, group, sub, church_mok, position}}` → 서버가 같은 찾기(`lookupFetch`)를 다시 돌려 확인(`changed`). 앱 계정과 정확히 하나가 맞을 때만 그 계정에, 아니면 `ident_key = person|<교인ID>`. 반려했던 분은 `was-declined` → 확인 → `force`(「반려 유지」).
+- **「같은 분일 수 있어요」**(`maybeDup`) — 살아 있는 줄 가운데 이름이 같고 앱 줄·담당자 줄이 섞인 묶음. 근본(앱 계정과 잇기)은 성경암송 계획 과제 11.
+- 정원을 늘리는 저장에만 `edu_course_refill`(대기자 차례로 확정 · 응답 `promoted`) · 회차 저장은 `edu_sessions_replace` 한 번에(id 보존 · 끝난·보관 강좌 `course-closed`).
+- 응답 칸은 `courseOut`·`enrollOut` 이 정한다(`user_id`·`ident_key` 없음) · 기록 `edu.*` 는 id·수만 · 명부 찾기는 `people.lookup` `from:"education"`.
+- 지우는 길 없음(`on delete restrict`) — 시험 강좌는 `archived`. 노트·함정 전체는 성경암송 `docs/notes/education.md`.
+
 ## 비상 절차
 ① **유일한 총괄 관리자가 카카오 계정을 잃었을 때** — 새 카카오로 로그인·등록 → 작업 폴더에서
 `select id,name,gu,mok,kakao_nickname from admin_members where status='pending'` 로 id 확인 →
