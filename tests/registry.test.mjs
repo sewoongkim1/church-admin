@@ -21,8 +21,8 @@ test("메뉴 모듈 파일이 있다", () => {
   }
 });
 
-test("묶음 차례 — 교인명부가 맨 위(친구 2026-09-30) · 사역신청 · 성경필사(암송) · 시스템", () => {
-  assert.deepEqual([...new Set(MENUS.map((m) => m.group))], ["교인명부", "사역신청", "성경필사(암송)", "시스템"]);
+test("묶음 차례 — 교인명부가 맨 위(친구 2026-09-30) · 사역신청 · 성경필사(암송) · 교육 · 시스템", () => {
+  assert.deepEqual([...new Set(MENUS.map((m) => m.group))], ["교인명부", "사역신청", "성경필사(암송)", "교육", "시스템"]);
   // 한 묶음의 메뉴는 붙어 있다 — 왼쪽 메뉴·처음 화면이 묶음 머리 아래 모아 보인다
   const seen = [];
   for (const m of MENUS) { if (seen.at(-1) !== m.group) seen.push(m.group); }
@@ -35,7 +35,7 @@ test("묶음(대분류)마다 아이콘이 있다", () => {
 
 test("menuGroups — 받은 메뉴만 묶음 차례대로 · 빈 묶음은 없다", () => {
   const gs = menuGroups(menusFor(["super"]));
-  assert.deepEqual(gs.map((g) => g.group), ["교인명부", "사역신청", "성경필사(암송)", "시스템"]);
+  assert.deepEqual(gs.map((g) => g.group), ["교인명부", "사역신청", "성경필사(암송)", "교육", "시스템"]);
   assert.equal(gs[0].icon, GROUP_ICON["교인명부"]);
   assert.deepEqual(gs[0].menus.map((m) => m.id), MENUS.filter((m) => m.group === "교인명부").map((m) => m.id));
   const be = menuGroups(menusFor(["bibleevent"]));
