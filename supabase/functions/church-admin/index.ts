@@ -1447,6 +1447,8 @@ async function historyLinkFor(ctx: Ctx, p: { row: number; person: number; how: s
     const fail = await historyWriteGuarded(p.row, p.expect, h.updated_at, patch);
     if (fail) return fail;
     await audit(ctx, "history.link", String(p.row), { op: p.how === "manual" ? "pick" : "none", year: h.year, by: "directory" });
+    // 같은 목장·이름 자동 줄도 이 결정을 따르게(2026-10-05 · rematchHistoryRows 가 그 묶음을 찾는다) — 실패해도 넘어간다(약속①)
+    try { await rematchHistoryRows(db, [p.row]); } catch (err) { console.error("history rematch after directory link", err); }
   }
   return withHistory({ ok: true, how: p.how, relinked }, await personHistorySafe(p.person));   // 다시 읽기 실패면 history 만 빠진다(peopleLink 와 같다)
 }

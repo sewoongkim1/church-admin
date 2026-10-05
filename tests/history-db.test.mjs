@@ -996,14 +996,14 @@ test("linkGroup — 줄마다 updated_at 으로 잠가 쓰고 기록은 한 번(
   const db = fakeDb((t, calls, qb) => {
     if (calls.includes("update")) { updates.push(qb.log); return { data: [{ id: 1 }], error: null }; }
     if (calls.includes("in")) return { data: rows, error: null };
-    if (calls.includes("range")) return page0(qb, []);          // 쓴 뒤 같은 묶음 자동 줄 — 없음(다시 맞추기 안 함)
+    if (t === "church_people") return { count: 0, error: null };   // 명부가 없다 — 다시 맞추기는 「못 함」(rematched:false)
     throw new Error("뜻밖의 부름 " + calls.join(","));
   });
   const audits = [];
   const H = makeHistory({ db, audit: async (...a) => audits.push(a) });
   const ctx = { member: { id: "m1" }, roles: ["ministry"] };
   const x = await H.linkGroup(ctx, { ids: [1, 2], op: "none", expect: [[1, "t1"], [2, "t2"]] });
-  assert.deepEqual([x.ok, x.written, x.of, x.rematched], [true, 2, 2, true]);
+  assert.deepEqual([x.ok, x.written, x.of, x.rematched], [true, 2, 2, false]);
   assert.equal(updates.length, 2);
   for (const log of updates) assert.ok(log.some(([n, a]) => n === "eq" && a[0] === "updated_at"));
   assert.equal(audits.length, 1);
@@ -1016,4 +1016,27 @@ test("linkGroup — 줄마다 updated_at 으로 잠가 쓰고 기록은 한 번(
   assert.equal((await H.linkGroup(ctx, { ids: [1], op: "auto" })).error, "invalid");
   assert.equal((await H.linkGroup(ctx, { ids: Array.from({ length: HISTORY_GROUP_MAX + 1 }, (_, i) => i + 1), op: "none" })).error, "group-too-big");
   assert.equal(updates.length, 0);
+});
+
+test("rematchHistoryRows(ids) — 그 줄과 같은 목장·이름 자동 줄도 고친다(사람이 이은 줄을 따른다) · 다른 묶음은 그대로 · extraKeys", async () => {
+  const H0 = { committee: "", position: "안수집사", renewal: "", updated_at: "T" };
+  const rows = [
+    { ...H0, id: 1, year: 2018, team: "운영", name: "가나다", mok: "소망-49", link_how: "manual", person_id: 11, match_basis: "사람이 이음", match_reason: "" },
+    { ...H0, id: 2, year: 2018, team: "운영2", name: "가나다", mok: "소망 - 49", link_how: "auto", person_id: 11, match_basis: "이름이 한 분뿐(소속 다름)", match_reason: "" },
+    { ...H0, id: 3, year: 2024, team: "가", name: "가나다", mok: "기쁨-19", link_how: "auto", person_id: null, match_basis: "", match_reason: HISTORY_UNMATCHED_YET },
+  ];
+  const run = async (ids, keys) => {
+    const sent = [];
+    const db = fakeDb((table, calls, qb) => {
+      if (table === "church_people" && !calls.includes("range")) return { count: 1, error: null };
+      if (table === "church_people") return page0(qb, [{ ...PERSON, gender: "남" }]);
+      if (table === "ministry_history") return page0(qb, rows);
+      throw new Error("이 시험이 다루지 않는 호출: " + table);
+    }, async (fn, args) => { sent.push(...args.p); return { data: args.p.length, error: null }; });
+    await rematchHistoryRows(db, ids, keys);
+    return sent.map((x) => [x.id, x.person_id, x.match_basis]);
+  };
+  assert.deepEqual(await run([1]), [[2, 11, "같은 목장·이름 줄을 사람이 이음"]]);       // 3번(다른 묶음)은 고치지 않는다
+  assert.deepEqual(await run([], ["소망-49|가나다"]), [[2, 11, "같은 목장·이름 줄을 사람이 이음"]]);
+  assert.deepEqual(await run([3]), [[3, 11, "같은 소속"]]);
 });

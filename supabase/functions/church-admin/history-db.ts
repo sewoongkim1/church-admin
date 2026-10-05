@@ -112,14 +112,23 @@ const asHRow = (r: any): HRow => ({
 });
 
 // 다시 맞추기 — ids 가 null 이면 auto 줄 전부, 아니면 그 줄들만 고친다(계산은 늘 모든 해를 함께 — 다른 해 줄이 근거다 · 설계 §3.3)
+//   ids 를 주면 그 줄과 **같은 목장·이름(mokNameKey) 묶음의 자동 줄**도 함께 고친다(2026-10-05 친구 요청 「하나를 이어짐으로 고치면
+//   같은 데이터도」) — 사람이 정한 것을 따르는 규칙(history-match.ts)이 그 줄들을 바꾼다. extraKeys — 지금은 그 열쇠가 아닌 줄
+//   (고쳐서 목장·이름이 바뀐 줄의 옛 열쇠 · 뺀 줄의 열쇠)의 묶음도 다시 맞추게.
 //   명부가 비었으면(올린 적 없음) 아무것도 고치지 않는다 — 맞춘 것을 모두 지우지 않게.
 //   패치에는 읽었던 맞춤 상태(old_person_id·old_basis·old_reason)도 싣는다 — apply 는 그 상태 그대로인 줄에만 쓴다.
 //   다시 맞추기는 updated_at 을 올리지 않으므로, 이게 없으면 동시에 돈 두 다시 맞추기 중 늦게 끝난 낡은 쪽이 새 결과를 덮는다.
-export async function rematchHistoryRows(db: Db, ids: number[] | null): Promise<{ changed: number; linked: number; total: number; noDirectory?: boolean }> {
+export async function rematchHistoryRows(db: Db, ids: number[] | null, extraKeys: string[] = []):
+  Promise<{ changed: number; linked: number; total: number; noDirectory?: boolean }> {
   if (!(await hasDirectory(db))) return { changed: 0, linked: 0, total: 0, noDirectory: true };
   const [rows, people] = await Promise.all([loadHistory(db), loadPeople(db)]);
   const res = matchAll(rows.map(asHRow), people);
   const want = ids ? new Set(ids.map(Number)) : null;
+  if (want) {
+    const keys = new Set(extraKeys.filter(Boolean));
+    for (const r of rows) if (want.has(Number(r.id))) { const k = mokNameKey(r); if (k) keys.add(k); }
+    if (keys.size) for (const r of rows) if (r.link_how === "auto" && keys.has(mokNameKey(r))) want.add(Number(r.id));
+  }
   const byId = new Map(rows.map((r) => [Number(r.id), r]));
   const patches: any[] = [];
   for (const x of res) {
@@ -563,9 +572,9 @@ export function groupLinkCheck(rows: any[], ids: number[], expect: Map<number, s
 
 export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
   // 쓴 뒤 다시 맞추기 — 실패하거나 명부가 없어 못 맞췄으면 false(응답 rematched:false → 화면이 「🔄 다시 맞추기」를 권한다)
-  async function tryRematch(ids: number[], what: string): Promise<boolean> {
+  async function tryRematch(ids: number[], what: string, extraKeys: string[] = []): Promise<boolean> {
     try {
-      const m = await rematchHistoryRows(db, ids);
+      const m = await rematchHistoryRows(db, ids, extraKeys);
       return !m.noDirectory;
     } catch (err) {
       console.error("history rematch after " + what, err);
@@ -633,12 +642,7 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     }
     await audit(ctx, "history.linkgroup", String(rows[0].id),
       { op, n: written, of: rows.length, years: [...new Set(rows.map((r) => Number(r.year)))] });
-    const key = mokNameKey(rows[0]);
-    let rematched = true;
-    if (key && written) {
-      const same = (await loadHistory(db)).filter((r) => r.link_how === "auto" && mokNameKey(r) === key).map((r) => Number(r.id));
-      if (same.length) rematched = await tryRematch(same, "linkgroup");
-    }
+    const rematched = written ? await tryRematch(rows.map((r) => Number(r.id)), "linkgroup") : true;   // 같은 묶음 자동 줄까지
     return { ok: true, written, of: rows.length, rematched };
   }
 
@@ -777,7 +781,10 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     await audit(ctx, "history.edit", String(id), { year: t.row.year, fields: Object.keys(upd).filter((k) => k !== "updated_at") });
     // 신규/유지(renewal) 도 다시 맞추기 방아쇠다 — §4.4 「다른 해 같은 팀」이 뒤쪽 해 줄의 신규/유지를 읽는다(HISTORY_REMATCH_KEYS)
     const needRematch = HISTORY_REMATCH_KEYS.some((k) => k in upd) && cur.link_how === "auto";
-    const rematched = needRematch ? await tryRematch([id], "edit") : true;
+    //   사람이 정한 줄(manual·none)의 목장·이름이 바뀌면 — 그 결정을 따르던 옛 묶음 자동 줄과 새 묶음 자동 줄을 다시 맞춘다(2026-10-05)
+    const oldKey = mokNameKey(cur);
+    const handMoved = cur.link_how !== "auto" && oldKey !== mokNameKey({ ...cur, ...t.row });
+    const rematched = needRematch || handMoved ? await tryRematch([id], "edit", handMoved ? [oldKey] : []) : true;
     const fresh = await readRow(db, id);
     // 후보에 영향 줄 수 있는 칸(이름·직분·목장·팀·해·신규유지)을 고쳐 **실제로** 다시 맞춘 것도 이름을 떠본 것이다 —
     // 고치기로 명부를 찔러보는 흔적을 남긴다(2026-10-01 최종 검토 · 올리기 살펴보기와 같은 기준: 명부를 실제로 읽었을 때만).
@@ -787,7 +794,7 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
       await audit(ctx, "people.lookup", "", { from: "history-edit", q: t.row.name, count: fresh && fresh.person_id !== null ? 1 : 0 });
     }
     const out: Record<string, unknown> = { ok: true, row: await outOrNull(db, fresh, isFull(ctx)) };
-    if (needRematch) out.rematched = rematched;
+    if (needRematch || handMoved) out.rematched = rematched;
     return out;
   }
 
@@ -803,6 +810,9 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     if (error) throw error;
     if (!(data ?? []).length) return { ok: false, error: (await readRow(db, id)) ? "conflict" : "not-found" };
     await audit(ctx, "history.delete", String(id), { year: cur.year });
+    // 사람이 정한 줄을 뺐으면 — 그 결정을 따르던 같은 목장·이름 자동 줄을 다시 맞춘다(2026-10-05)
+    const key = cur.link_how !== "auto" ? mokNameKey(cur) : "";
+    if (key) return { ok: true, rematched: await tryRematch([], "delete", [key]) };
     return { ok: true };
   }
 
@@ -844,9 +854,10 @@ export function makeHistory({ db, audit }: { db: Db; audit: Audit }) {
     if (error) throw error;
     if (!(data ?? []).length) return { ok: false, error: expect !== null && (await readRow(db, id)) ? "conflict" : "not-found" };
     await audit(ctx, "history.link", String(id), { op, year: row.year, by: "ministry" });
-    const rematched = op === "auto" ? await tryRematch([id], "link") : true;
+    // 되돌리기(auto)는 이 줄을, 이분·이분 아님은 같은 목장·이름 자동 줄을 다시 맞춘다(2026-10-05 「같은 데이터도」 · rematchHistoryRows)
+    const rematched = await tryRematch([id], "link");
     const out: Record<string, unknown> = { ok: true, row: await outOrNull(db, await readRow(db, id), isFull(ctx)) };
-    if (op === "auto") out.rematched = rematched;
+    out.rematched = rematched;
     return out;
   }
 
