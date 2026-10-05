@@ -56,7 +56,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
     "ministryPerson", "ministryPhoneClear", "ministrySetStatus"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
-  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "education", "educourse", "ministry", "super"]);
+  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "education", "educourse", "ministry", "super", "teacher"]);
 });
 
 test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄만 통과, 사역 담당은 막힘", () => {
@@ -172,6 +172,7 @@ test("education(교육 총괄) 액션 × 사람 — 교육 총괄·총괄만 통
     [{ status: "disabled", roles: ["education"] }, "disabled"],
     [{ status: "active", roles: ["ministry"] }, "forbidden"],
     [{ status: "active", roles: ["educourse"] }, "forbidden"],
+    [{ status: "active", roles: ["teacher"] }, "forbidden"],
     [{ status: "active", roles: ["education"] }, "ok"],
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
@@ -191,12 +192,14 @@ test("교육 신청 현황 액션(역할 배열) × 사람 — 교육 총괄·�
     [{ status: "active", roles: [] }, "forbidden"],
     [{ status: "active", roles: ["ministry"] }, "forbidden"],
     [{ status: "active", roles: ["directory", "bibleevent"] }, "forbidden"],
+    [{ status: "active", roles: ["teacher"] }, "forbidden"],                 // 강사(2단계)는 신청 현황을 못 부른다
     [{ status: "active", roles: ["educourse"] }, "ok"],
     [{ status: "active", roles: ["education"] }, "ok"],
     [{ status: "active", roles: ["ministry", "educourse"] }, "ok"],
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
-  const acts = Object.keys(ACTION_ROLES).filter((k) => Array.isArray(ACTION_ROLES[k]));
+  // 신청 현황 쪽(EDU_BOTH) — 출석부 액션(강사 포함)은 아래 시험이 따로 본다
+  const acts = Object.keys(ACTION_ROLES).filter((k) => Array.isArray(ACTION_ROLES[k]) && !ACTION_ROLES[k].includes("teacher"));
   assert.deepEqual(acts.sort(), ["eduCourses", "eduEnrollAdd", "eduEnrollList", "eduEnrollSet", "eduExport", "eduFeeSet",
     "eduPeopleLookup", "eduSessions"]);
   for (const a of acts) {
@@ -209,4 +212,32 @@ test("교육 신청 현황 액션(역할 배열) × 사람 — 교육 총괄·�
   for (const [a, v] of Object.entries(ACTION_ROLES)) {
     assert.ok(v === null || typeof v === "string" || (Array.isArray(v) && v.length > 0 && v.every((r) => typeof r === "string" && r)), a);
   }
+});
+
+test("출석부 액션(2단계 · 강사 teacher) × 사람 — 교육 총괄·교육 담당·강사·총괄 통과 · 강사는 신청 현황·강좌 관리 액션을 못 부른다", () => {
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["teacher"] }, "pending"],
+    [{ status: "disabled", roles: ["teacher"] }, "disabled"],
+    [{ status: "active", roles: [] }, "forbidden"],
+    [{ status: "active", roles: ["ministry"] }, "forbidden"],
+    [{ status: "active", roles: ["directory", "bibleevent"] }, "forbidden"],
+    [{ status: "active", roles: ["teacher"] }, "ok"],
+    [{ status: "active", roles: ["educourse"] }, "ok"],
+    [{ status: "active", roles: ["education"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  const acts = Object.keys(ACTION_ROLES).filter((k) => Array.isArray(ACTION_ROLES[k]) && ACTION_ROLES[k].includes("teacher"));
+  assert.deepEqual(acts.sort(), ["eduAttendBulk", "eduAttendCourses", "eduAttendExport", "eduAttendSessions", "eduAttendSet", "eduAttendSheet", "eduAttendSummary"]);
+  for (const a of acts) {
+    assert.deepEqual([...ACTION_ROLES[a]].sort(), ["education", "educourse", "teacher"], a);
+    for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
+  }
+  // 강사만 있는 분 — 출석부 밖의 교육 액션은 모두 forbidden(신청 현황 eduEnrollList 포함 · 서버 문에서 막힌다)
+  const teacher = { status: "active", roles: ["teacher"] };
+  const eduOther = Object.keys(ACTION_ROLES).filter((k) => k.startsWith("edu") && !acts.includes(k));
+  assert.ok(eduOther.includes("eduEnrollList") && eduOther.includes("eduEnrollSet") && eduOther.includes("eduExport") && eduOther.includes("eduPeopleLookup"));
+  for (const a of eduOther) assert.equal(canCall(a, teacher), "forbidden", a);
+  assert.equal(canCall("eduEnrollList", teacher), "forbidden");
+  assert.ok(knownRoles().includes("teacher"));
 });

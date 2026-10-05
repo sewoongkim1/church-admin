@@ -9,6 +9,8 @@
 //    tests/server.dev.test.mjs 의 PROBE 에도 한 줄(시험이 빠진 액션을 잡는다).
 // 교육 신청 현황 쪽 — 교육 총괄(education)과 교육 담당(educourse) 둘 다. 담당은 **맡은 강좌만**이고 그것은 edu-db.ts 가 강좌마다 본다(not-assigned).
 const EDU_BOTH = ["education", "educourse"];
+// 출석부(2단계) — 교육 총괄·교육 담당·강사(teacher · SQL 012)
+const EDU_ATTEND = ["education", "educourse", "teacher"];
 export const ACTION_ROLES: Record<string, string | string[] | null> = {
   me: null,
   register: null,
@@ -119,6 +121,17 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   eduFeeSet: EDU_BOTH,
   eduExport: EDU_BOTH,
   eduPeopleLookup: EDU_BOTH,
+  // 출석부(2단계 · 2026-10-05 · SQL 012 강사 teacher) — 교육 총괄·교육 담당·강사. 강좌는 edu-db.ts 가 본다(mayTouch + attendKinds:
+  //   강사는 teacher 줄 · 교육 담당은 manager·teacher 줄 · 아니면 not-assigned). 쓰기는 SQL 함수 edu_attendance_set·edu_attendance_bulk.
+  //   ⚠️ 강사(teacher)를 위 신청 현황 액션(EDU_BOTH)에 넣지 않는다 — 강사는 명단의 이름·소속과 출석만 본다(신청 상태·교재비·메모·명부 찾기 없음).
+  //   응답에 user_id·ident_key·marked_by 없음 · 기록 edu.attend.set·edu.attend.bulk·edu.attend.export(id·수만).
+  eduAttendCourses: EDU_ATTEND,
+  eduAttendSessions: EDU_ATTEND,
+  eduAttendSheet: EDU_ATTEND,
+  eduAttendSet: EDU_ATTEND,
+  eduAttendBulk: EDU_ATTEND,
+  eduAttendSummary: EDU_ATTEND,
+  eduAttendExport: EDU_ATTEND,
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

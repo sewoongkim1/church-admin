@@ -210,6 +210,14 @@ const PROBE = {
   // 강좌별 담당자(2026-10-05) — 후보 읽기만 · 없는 강좌(not-found)라 아무것도 안 바꾼다
   eduStaffCandidates: {},
   eduStaffSet: { course_id: ZERO, member_ids: [] },
+  // 출석부(2단계 · 2026-10-05) — 읽기거나, 틀린 id(bad-id)·없는 강좌(not-found)라 아무것도 안 쓴다
+  eduAttendCourses: {},
+  eduAttendSessions: { course_id: ZERO },
+  eduAttendSheet: { course_id: ZERO, session_id: 0 },
+  eduAttendSet: { session_id: 0, enrollment_id: 0, state: "present" },
+  eduAttendBulk: { session_id: 0, state: "present" },
+  eduAttendSummary: { course_id: ZERO },
+  eduAttendExport: { course_id: ZERO },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 

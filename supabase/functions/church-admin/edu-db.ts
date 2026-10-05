@@ -5,8 +5,13 @@
 // ⚠️ 강좌별 담당자(2026-10-05 · SQL 011 edu_course_staff): 교육 담당(educourse)은 **맡은 강좌만** — 강좌·신청을 건드리는 액션은
 //    모두 mayTouch 를 먼저 지난다(아니면 not-assigned · 아무것도 쓰지 않는다). 교육 총괄(education)·총괄 관리자(super)는 지나간다.
 //    액션 권한(어느 역할이 부르나)은 authz.ts ACTION_ROLES — 여기는 「어느 강좌인가」만 본다.
-import { checkCourse, checkSessions, checkStaffIds, checkTypedIdent, courseOut, eduChief, EDU_STAFF_ROLES, enrollOut, exportRows, maybeDupIds,
-  seatsOpened, staffByCourse, staffCandidateOut, waitOrder, whoOf } from "./edu-rules.ts";
+// ⚠️ 출석부(2단계 · 2026-10-05 · SQL 012 강사 teacher): eduAttend* 는 mayTouch(…, attendKinds(roles)) — 강사는 teacher 줄,
+//    교육 담당은 manager·teacher 줄이 있는 강좌만. 신청 현황 액션은 그대로 manager 줄만(강사는 ACTION_ROLES 에 없어 부르지도 못한다).
+//    출석은 SQL 함수(edu_attendance_set·edu_attendance_bulk)로만 쓴다 — 같은 강좌 확인·확정 확인·잠금 차례는 그쪽.
+//    응답에 marked_by(체크한 담당자)·user_id·ident_key 를 싣지 않는다 · 사람×회차 줄은 allRows 로 읽는다(1,000줄 함정).
+import { attendCounts, attendExportRows, attendKinds, attendSessionOut, attendSummary, checkAttendState, checkCourse, checkSessions,
+  checkStaffIds, checkStaffKind, checkTypedIdent, courseOut, eduChief, EDU_STAFF_ROLES, EDU_STATUS_LABEL, EDU_TEACHER_ROLES, enrollOut,
+  exportRows, kstDate, maybeDupIds, pickSession, seatsOpened, staffByCourse, staffCandidateOut, staffRolesFor, waitOrder, whoOf } from "./edu-rules.ts";
 import { norm } from "./authz.ts";
 
 type Db = any;
@@ -14,8 +19,14 @@ type Audit = (ctx: any, action: string, target: string, detail?: Record<string, 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COURSE_COLS = "id,track,title,kind,term,description,teacher_label,place,fee_note,target,capacity,mode,waitlist,apply_from,apply_to,starts_on,ends_on,prereq_tracks,attend_pct,check_label,status,created_at,updated_at";
 const ENROLL_COLS = "id,course_id,user_id,name,who_type,group_name,sub_name,status,source,waitlist_at,applied_at,decided_at,cancelled_at,fee_paid,staff_note";
-// 강좌 담당자 줄 + 이름·상태(admin_members 두 칸만 붙여 읽는다 — auth_user_id·카카오 칸은 읽지 않는다)
-const STAFF_SEL = "course_id,member_id,admin_members(name,status)";
+// 강좌 담당자 줄 + 이름·상태(admin_members 두 칸만 붙여 읽는다 — auth_user_id·카카오 칸은 읽지 않는다) · kind(manager|teacher)
+const STAFF_SEL = "course_id,member_id,kind,admin_members(name,status)";
+// 담당·강사 stale 판정에 쓰는 역할 줄 — 두 목록을 합쳐 한 번에 읽는다
+const STAFF_ANY_ROLES = [...new Set([...EDU_STAFF_ROLES, ...EDU_TEACHER_ROLES])];
+// 출석부 강좌 칸(edu_courses 에서 필요한 것만)
+const ATT_COURSE_COLS = "id,title,term,status,place,starts_on,ends_on,attend_pct,created_at";
+// 출석부 강좌 목록 차례 — 진행 중 → 모집 중 → 모집 끝 → 준비 중 → 끝(보관은 목록에 없다)
+const ATT_STATUS_ORDER: Record<string, number> = { running: 0, open: 1, closed: 2, draft: 3, done: 4 };
 const CLOSED = new Set(["done", "archived"]);   // edu_apply(p_staff)·edu_staff_set 이 막는 상태와 같다
 const NOT_ASSIGNED = { ok: false as const, error: "not-assigned" };
 
@@ -42,13 +53,15 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     const id = String(ctx?.member?.id ?? "");
     return UUID.test(id) ? id : "";
   };
-  // 이 분이 이 강좌를 만져도 되나 — 총괄(super·education)은 늘 · 그 밖은 (강좌, 나, manager) 줄이 있을 때만
-  async function mayTouch(ctx: any, courseId: string): Promise<boolean> {
+  // 이 분이 이 강좌를 만져도 되나 — 총괄(super·education)은 늘 · 그 밖은 (강좌, 나, kind) 줄이 있을 때만.
+  //   kinds 기본은 manager(신청 현황 액션 · 1단계 그대로) · 출석부 액션은 attendKinds(ctx.roles)(강사 teacher · 교육 담당 manager·teacher).
+  async function mayTouch(ctx: any, courseId: string, kinds: string[] = ["manager"]): Promise<boolean> {
     if (eduChief(ctx?.roles)) return true;
     const mid = memberId(ctx);
-    if (!mid || !UUID.test(courseId)) return false;
-    const { data, error } = await db.from("edu_course_staff").select("course_id")
-      .eq("course_id", courseId).eq("member_id", mid).eq("kind", "manager").limit(1);
+    if (!mid || !UUID.test(courseId) || !kinds.length) return false;
+    let q = db.from("edu_course_staff").select("course_id").eq("course_id", courseId).eq("member_id", mid);
+    q = kinds.length === 1 ? q.eq("kind", kinds[0]) : q.in("kind", kinds);
+    const { data, error } = await q.limit(1);
     if (error) throw error;
     return (data ?? []).length > 0;
   }
@@ -60,20 +73,27 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     if (!data?.course_id) return { ok: false, error: "not-found" };
     return (await mayTouch(ctx, String(data.course_id))) ? null : NOT_ASSIGNED;
   }
-  // 강좌 id 들의 담당자(manager) — 한 질의(쪽 넘기기)로 읽어 강좌별로 묶는다(강좌마다 부르지 않는다).
+  // 강좌 id 들의 담당자(manager)·강사(teacher) — 한 질의(쪽 넘기기)로 읽어 강좌별·kind 별로 묶는다(강좌마다 부르지 않는다).
   //   강좌가 50개까지면 그 강좌만 거르고, 더 많으면 주소가 길어지지 않게 담당 줄 전부를 읽는다(표가 작다 — 강좌마다 몇 분).
-  //   역할을 잃었거나 사용 중이 아닌 분은 stale:true(검토 반영 2026-10-05) — 교육 역할 받은 분 목록도 한 질의(역할 둘의 줄 전부 · 작다).
+  //   역할을 잃었거나 사용 중이 아닌 분은 stale:true(검토 반영 2026-10-05) — 담당은 교육 역할(educourse·education),
+  //   강사는 강사 후보 역할(teacher·education·educourse)이 기준. 역할 줄도 한 질의(세 역할의 줄 전부 · 작다).
   async function staffOf(ids: string[]) {
-    if (!ids.length) return new Map<string, { id: string; name: string; stale?: true }[]>();
+    type L = Map<string, { id: string; name: string; stale?: true }[]>;
+    const empty = { managers: new Map() as L, teachers: new Map() as L };
+    if (!ids.length) return empty;
     const rows = await deps.allRows(() => {
-      let q = db.from("edu_course_staff").select(STAFF_SEL).eq("kind", "manager");
+      let q = db.from("edu_course_staff").select(STAFF_SEL);
       if (ids.length <= 50) q = q.in("course_id", ids);
-      return q.order("course_id").order("member_id");
+      return q.order("course_id").order("kind").order("member_id");
     });
-    if (!rows.length) return staffByCourse(rows, new Set());
+    if (!rows.length) return empty;
     const grants = await deps.allRows(() => db.from("admin_role_grants").select("member_id,role_id")
-      .in("role_id", EDU_STAFF_ROLES).order("member_id").order("role_id"));
-    return staffByCourse(rows, new Set(grants.map((g: any) => String(g.member_id))));
+      .in("role_id", STAFF_ANY_ROLES).order("member_id").order("role_id"));
+    const holders = (roles: string[]) => new Set(grants.filter((g: any) => roles.includes(String(g.role_id))).map((g: any) => String(g.member_id)));
+    return {
+      managers: staffByCourse(rows.filter((r: any) => r.kind !== "teacher"), holders(EDU_STAFF_ROLES)),
+      teachers: staffByCourse(rows.filter((r: any) => r.kind === "teacher"), holders(EDU_TEACHER_ROLES)),
+    };
   }
 
   // 강좌 목록 — 총괄은 모든 강좌, 담당은 맡은 강좌만(학기 목록도 맡은 강좌의 것만). scope 로 어느 쪽인지 알린다.
@@ -102,12 +122,17 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     const list = want ? rows.filter((r) => r.term === want) : rows;
     const counts = await countsOf(list.map((r) => r.id));
     const staff = await staffOf(list.map((r) => r.id));
-    return { ok: true, scope: chief ? "all" : "assigned", terms, courses: list.map((r) => courseOut(r, counts[r.id], staff.get(r.id) || [])) };
+    return { ok: true, scope: chief ? "all" : "assigned", terms,
+      courses: list.map((r) => courseOut(r, counts[r.id], staff.managers.get(r.id) || [], staff.teachers.get(r.id) || [])) };
   }
 
   // 담당자 후보 — 교육 담당(educourse)·교육 총괄(education) 역할이 있는 **사용 중**인 분. id·이름·소속·교육 역할만.
-  async function eduStaffCandidates() {
-    const { data: gs, error } = await db.from("admin_role_grants").select("member_id,role_id").in("role_id", EDU_STAFF_ROLES);
+  //   kind:'teacher'(2단계)면 강사 후보 — 강사(teacher)·교육 총괄·교육 담당 역할. kind 가 없으면 manager. 틀린 kind 는 bad-kind.
+  async function eduStaffCandidates(b?: any) {
+    const k = checkStaffKind(b?.kind);
+    if (!k.ok) return k;
+    const roles = staffRolesFor(k.kind);
+    const { data: gs, error } = await db.from("admin_role_grants").select("member_id,role_id").in("role_id", roles);
     if (error) throw error;
     const rolesBy = new Map<string, string[]>();
     for (const g of (gs ?? []) as any[]) rolesBy.set(g.member_id, [...(rolesBy.get(g.member_id) ?? []), String(g.role_id)]);
@@ -115,7 +140,7 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     const { data: ms, error: e2 } = await db.from("admin_members").select("id,name,type,gu,mok,bu,grade")
       .in("id", [...rolesBy.keys()]).eq("status", "active");
     if (e2) throw e2;
-    const members = ((ms ?? []) as any[]).map((m) => staffCandidateOut(m, rolesBy.get(m.id) ?? []))
+    const members = ((ms ?? []) as any[]).map((m) => staffCandidateOut(m, rolesBy.get(m.id) ?? [], roles))
       .sort((a, z) => a.name.localeCompare(z.name, "ko") || a.who.localeCompare(z.who, "ko") || (a.id < z.id ? -1 : 1));
     return { ok: true, members };
   }
@@ -124,35 +149,40 @@ export function makeEdu(db: Db, audit: Audit, deps: {
   //   이미 맡은 분이 역할을 잃었거나 정지돼도(stale) 남겨 두든 빼든 저장된다 — 역할을 빼도 줄은 남긴다(정지는 잠깐일 수 있고 canCall 이 이미 막는다).
   //   저장으로 조용히 빼지 않는다: 보낸 목록에 있으면 남고, 없으면 빠진다(검토 반영 2026-10-05).
   //   바뀐 것만 빼고 더한다(바뀐 것이 없으면 쓰지도 기록하지도 않는다 · changed:false). 기록 edu.staff.set 은 {course, count}(이름 없음).
+  //   kind:'teacher'(2단계 · 강사)면 강사 줄만 같은 규칙으로(후보 = 강사 후보 · 기록 detail 에 kind:'teacher' 를 더한다). 다른 kind 줄은 안 건드린다.
   async function eduStaffSet(ctx: any, b: any) {
     const course = norm(b?.course_id);
     if (!UUID.test(course)) return { ok: false, error: "bad-id" };
+    const k = checkStaffKind(b?.kind);
+    if (!k.ok) return k;
+    const kind = k.kind;
     const s = checkStaffIds(b?.member_ids);
     if (!s.ok) return s;
     const { data: c, error } = await db.from("edu_courses").select("id").eq("id", course).maybeSingle();
     if (error) throw error;
     if (!c) return { ok: false, error: "not-found" };
-    const { data: cur, error: e1 } = await db.from("edu_course_staff").select("member_id").eq("course_id", course).eq("kind", "manager");
+    const { data: cur, error: e1 } = await db.from("edu_course_staff").select("member_id").eq("course_id", course).eq("kind", kind);
     if (e1) throw e1;
     const before = new Set(((cur ?? []) as any[]).map((r) => String(r.member_id)));
     const add = s.ids.filter((id) => !before.has(id));
     const del = [...before].filter((id) => !s.ids.includes(id));
     if (add.length) {
-      const can = new Set((await eduStaffCandidates()).members.map((m: any) => m.id));
+      const cands: any = await eduStaffCandidates({ kind });
+      const can = new Set((cands.members || []).map((m: any) => m.id));
       if (add.some((id) => !can.has(id))) return { ok: false, error: "bad-member" };
     }
     if (!add.length && !del.length) return { ok: true, count: s.ids.length, changed: false };
     if (del.length) {
-      const { error: ed } = await db.from("edu_course_staff").delete().eq("course_id", course).eq("kind", "manager").in("member_id", del);
+      const { error: ed } = await db.from("edu_course_staff").delete().eq("course_id", course).eq("kind", kind).in("member_id", del);
       if (ed) throw ed;
     }
     if (add.length) {
       // 두 창에서 같은 분을 동시에 더해도 기본 키(course_id, member_id, kind) 충돌로 500 이 나지 않게
       const { error: ea } = await db.from("edu_course_staff")
-        .upsert(add.map((member_id) => ({ course_id: course, member_id, kind: "manager" })), { onConflict: "course_id,member_id,kind", ignoreDuplicates: true });
+        .upsert(add.map((member_id) => ({ course_id: course, member_id, kind })), { onConflict: "course_id,member_id,kind", ignoreDuplicates: true });
       if (ea) throw ea;
     }
-    await audit(ctx, "edu.staff.set", course, { course, count: s.ids.length });
+    await audit(ctx, "edu.staff.set", course, kind === "teacher" ? { course, count: s.ids.length, kind } : { course, count: s.ids.length });
     return { ok: true, count: s.ids.length, changed: true };
   }
 
@@ -248,7 +278,7 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     const counts = await countsOf([id]);
     const staff = await staffOf([id]);
     const dup = maybeDupIds(rows);   // 앱 줄 ↔ 대신 등록 줄 같은 이름(같은 분이 두 자리일 수 있다)
-    return { ok: true, course: courseOut(c, counts[id], staff.get(id) || []),
+    return { ok: true, course: courseOut(c, counts[id], staff.managers.get(id) || [], staff.teachers.get(id) || []),
       enrollments: rows.map((r) => enrollOut(r, r.status === "waitlisted" ? waiting.indexOf(r.id) + 1 : null, dup.has(r.id))) };
   }
 
@@ -343,6 +373,172 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     return deps.peopleLookup(ctx, b);
   }
 
+  // ---------- 출석부(2단계 · 2026-10-05) — 역할 education·educourse·teacher(authz.ts) · 강좌 확인은 attendKinds ----------
+  const posInt = (v: unknown): number => { const n = Number(v); return Number.isInteger(n) && n >= 1 ? n : 0; };
+  const attCourseOut = (c: any) => ({ id: c.id, title: c.title, term: c.term || "", status: c.status,
+    statusLabel: EDU_STATUS_LABEL[c.status] || c.status, place: c.place || "", startsOn: c.starts_on || null, endsOn: c.ends_on || null,
+    attendPct: c.attend_pct ?? null, closed: CLOSED.has(String(c.status)) });
+  const mayAttend = (ctx: any, courseId: string) => mayTouch(ctx, courseId, attendKinds(ctx?.roles));
+  async function attCourse(id: string) {
+    const { data, error } = await db.from("edu_courses").select(ATT_COURSE_COLS).eq("id", id).maybeSingle();
+    if (error) throw error;
+    return data as any;
+  }
+  // 회차 한 줄(그 회차의 강좌를 서버가 읽는다 — 몸통의 course_id 를 믿지 않는다)
+  async function attSession(id: number) {
+    const { data, error } = await db.from("edu_sessions").select("id,course_id,no,on_date,start_time,end_time,topic,place").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return data as any;
+  }
+  const attSessions = (courseId: string) => deps.allRows(() => db.from("edu_sessions").select("id,course_id,no,on_date,start_time,end_time,topic,place")
+    .eq("course_id", courseId).order("on_date").order("no").order("id"));
+  // 확정된 신청 줄(출석부 명단) — 이름·소속 칸만(user_id·ident_key 를 읽지 않는다)
+  const attPeople = (courseId: string) => deps.allRows(() => db.from("edu_enrollments").select("id,name,who_type,group_name,sub_name")
+    .eq("course_id", courseId).eq("status", "confirmed").order("id"));
+  // 출석 줄 — 회차 id 들로(사람×회차라 1,000줄을 넘을 수 있다 → allRows · 차례는 기본 키). marked_by 는 읽지 않는다.
+  const attRows = (sessionIds: number[]) => sessionIds.length
+    ? deps.allRows(() => db.from("edu_attendance").select("enrollment_id,session_id,state")
+      .in("session_id", sessionIds).order("session_id").order("enrollment_id"))
+    : Promise.resolve([] as any[]);
+
+  // 내가 체크할 수 있는 강좌 — 총괄은 보관 아닌 모든 강좌, 그 밖은 내 담당 줄(attendKinds)이 있는 강좌. 진행 중·모집 중 먼저, 같으면 다음 회차가 이른 것.
+  async function eduAttendCourses(ctx: any) {
+    const chief = eduChief(ctx?.roles);
+    let rows: any[];
+    if (chief) {
+      const { data, error } = await db.from("edu_courses").select(ATT_COURSE_COLS).neq("status", "archived")
+        .order("created_at", { ascending: false }).limit(500);
+      if (error) throw error;
+      rows = (data ?? []) as any[];
+    } else {
+      const mid = memberId(ctx);
+      if (!mid) return { ok: true, scope: "assigned", today: kstDate(), courses: [] };
+      const kinds = attendKinds(ctx?.roles);
+      const { data: mine, error: e0 } = await db.from("edu_course_staff").select("course_id")
+        .eq("member_id", mid).in("kind", kinds).limit(500);
+      if (e0) throw e0;
+      const ids = [...new Set(((mine ?? []) as any[]).map((r) => String(r.course_id)))];
+      if (!ids.length) return { ok: true, scope: "assigned", today: kstDate(), courses: [] };
+      const { data, error } = await db.from("edu_courses").select(ATT_COURSE_COLS).in("id", ids).neq("status", "archived")
+        .order("created_at", { ascending: false }).limit(500);
+      if (error) throw error;
+      const allowed = new Set(ids);
+      rows = ((data ?? []) as any[]).filter((r) => allowed.has(String(r.id)) && r.status !== "archived");   // 질의가 틀려도 남의 강좌가 새지 않게
+    }
+    const ids = rows.map((r) => String(r.id));
+    const counts = await countsOf(ids);
+    const today = kstDate();
+    const sess = ids.length ? await deps.allRows(() => {
+      let q = db.from("edu_sessions").select("id,course_id,no,on_date");
+      if (ids.length <= 50) q = q.in("course_id", ids);
+      return q.order("course_id").order("on_date").order("no").order("id");
+    }) : [];
+    const by = new Map<string, any[]>(ids.map((id) => [id, [] as any[]]));
+    for (const s of sess) by.get(String(s.course_id))?.push(s);   // 강좌가 50개를 넘어 회차 전부를 읽었을 때 다른 강좌 회차는 버린다
+    const courses = rows.map((c) => {
+      const ss = by.get(String(c.id)) || [];
+      const next = ss.find((s) => s.on_date >= today) || null;
+      return { ...attCourseOut(c), confirmed: counts[c.id]?.confirmed ?? 0, sessionsCount: ss.length,
+        nextDate: next ? next.on_date : null, hasToday: ss.some((s) => s.on_date === today) };
+    });
+    courses.sort((a, z) => (ATT_STATUS_ORDER[a.status] ?? 9) - (ATT_STATUS_ORDER[z.status] ?? 9)
+      || (a.nextDate ?? "9999").localeCompare(z.nextDate ?? "9999") || a.title.localeCompare(z.title, "ko"));
+    return { ok: true, scope: chief ? "all" : "assigned", today, courses };
+  }
+
+  // 한 강좌의 회차 — 회차마다 체크한 수(지금 확정된 분 가운데) · 확정 수 · 고를 회차(pick: 오늘 → 다음 → 마지막)
+  async function eduAttendSessions(ctx: any, b: any) {
+    const id = norm(b?.course_id);
+    if (!UUID.test(id)) return { ok: false, error: "bad-id" };
+    if (!(await mayAttend(ctx, id))) return NOT_ASSIGNED;
+    const c = await attCourse(id);
+    if (!c) return { ok: false, error: "not-found" };
+    const [ss, people] = await Promise.all([attSessions(id), attPeople(id)]);
+    const live = new Set(people.map((p: any) => Number(p.id)));
+    const rows = await attRows(ss.map((s: any) => Number(s.id)));
+    const marked = new Map<number, number>();
+    for (const r of rows) if (live.has(Number(r.enrollment_id))) marked.set(Number(r.session_id), (marked.get(Number(r.session_id)) || 0) + 1);
+    const today = kstDate();
+    return { ok: true, course: attCourseOut(c), confirmed: people.length, today, pick: pickSession(ss, today),
+      sessions: ss.map((s: any) => ({ ...attendSessionOut(s), marked: marked.get(Number(s.id)) || 0, isToday: s.on_date === today })) };
+  }
+
+  // 한 회차 출석부 — 확정된 분(이름·소속 · 신청 번호 id) + 그 회차 상태(null = 체크 안 함) · 위의 「체크 N/M」 수
+  async function eduAttendSheet(ctx: any, b: any) {
+    const id = norm(b?.course_id);
+    const sid = posInt(b?.session_id);
+    if (!UUID.test(id) || !sid) return { ok: false, error: "bad-id" };
+    if (!(await mayAttend(ctx, id))) return NOT_ASSIGNED;
+    const c = await attCourse(id);
+    if (!c) return { ok: false, error: "not-found" };
+    const s = await attSession(sid);
+    if (!s || String(s.course_id) !== id) return { ok: false, error: "not-found" };   // 다른 강좌의 회차
+    const [people, rows] = await Promise.all([attPeople(id), attRows([sid])]);
+    const st = new Map<number, string>(rows.map((r: any) => [Number(r.enrollment_id), String(r.state)]));
+    const list = people.map((p: any) => ({ id: p.id, name: norm(p.name), who: whoOf(p), state: st.get(Number(p.id)) ?? null }))
+      .sort((a: any, z: any) => a.name.localeCompare(z.name, "ko") || a.who.localeCompare(z.who, "ko") || a.id - z.id);
+    const n = attendCounts(list.map((x: any) => x.state));
+    return { ok: true, course: attCourseOut(c), session: attendSessionOut(s),
+      counts: { present: n.present, late: n.late, absent: n.absent, excused: n.excused, marked: n.marked, total: list.length }, rows: list };
+  }
+
+  // 한 칸 쓰기·지우기 — {session_id, enrollment_id, state}(state null = 지움 · 칸이 없으면 bad-state — 실수로 지우지 않게).
+  //   강좌는 회차에서 읽어 확인한다(not-assigned) · 같은 강좌·확정·끝난 강좌는 SQL 함수가 본다(wrong-course·not-confirmed·course-closed).
+  async function eduAttendSet(ctx: any, b: any) {
+    const sid = posInt(b?.session_id), eid = posInt(b?.enrollment_id);
+    if (!sid || !eid) return { ok: false, error: "bad-id" };
+    if (b?.state === undefined) return { ok: false, error: "bad-state" };
+    const st = checkAttendState(b.state, true);
+    if (!st.ok) return st;
+    const s = await attSession(sid);
+    if (!s) return { ok: false, error: "not-found" };
+    if (!(await mayAttend(ctx, String(s.course_id)))) return NOT_ASSIGNED;
+    const { data: r, error } = await db.rpc("edu_attendance_set", { p_session: sid, p_enrollment: eid, p_state: st.state, p_by: memberId(ctx) || null });
+    if (error) throw error;
+    if (!r) return { ok: false, error: "server" };
+    if (r.ok) await audit(ctx, "edu.attend.set", String(eid), { course: String(s.course_id), session: sid, no: s.no, enrollment: eid });
+    return r;
+  }
+
+  // 「남은 분 모두 ○」 — {session_id, state} · 아직 체크 안 한 확정자만(SQL edu_attendance_bulk) · count = 새로 체크한 수
+  async function eduAttendBulk(ctx: any, b: any) {
+    const sid = posInt(b?.session_id);
+    if (!sid) return { ok: false, error: "bad-id" };
+    const st = checkAttendState(b?.state, false);
+    if (!st.ok) return st;
+    const s = await attSession(sid);
+    if (!s) return { ok: false, error: "not-found" };
+    if (!(await mayAttend(ctx, String(s.course_id)))) return NOT_ASSIGNED;
+    const { data: r, error } = await db.rpc("edu_attendance_bulk", { p_session: sid, p_state: st.state, p_by: memberId(ctx) || null });
+    if (error) throw error;
+    if (!r) return { ok: false, error: "server" };
+    if (r.ok) await audit(ctx, "edu.attend.bulk", String(sid), { course: String(s.course_id), session: sid, no: s.no, count: Number(r.count) || 0 });
+    return r;
+  }
+
+  // 출석 현황 — 확정된 분마다 네 칸 수·출석률(eduAttendRate · 지각=출석 · 공결 뺌 · 체크 안 한 회차 뺌)·회차별 칸 · 기준 미달 below
+  async function eduAttendSummary(ctx: any, b: any) {
+    const id = norm(b?.course_id);
+    if (!UUID.test(id)) return { ok: false, error: "bad-id" };
+    if (!(await mayAttend(ctx, id))) return NOT_ASSIGNED;
+    const c = await attCourse(id);
+    if (!c) return { ok: false, error: "not-found" };
+    const [ss, people] = await Promise.all([attSessions(id), attPeople(id)]);
+    const rows = await attRows(ss.map((s: any) => Number(s.id)));
+    return { ok: true, course: attCourseOut(c), sessions: ss.map(attendSessionOut),
+      people: attendSummary(ss, people, rows, typeof c.attend_pct === "number" ? c.attend_pct : null) };
+  }
+
+  // 출석 현황 엑셀 줄 — 기록 edu.attend.export {course, count, sessions}(수만)
+  async function eduAttendExport(ctx: any, b: any) {
+    const r: any = await eduAttendSummary(ctx, b);
+    if (!r.ok) return r;
+    await audit(ctx, "edu.attend.export", r.course.id, { course: r.course.id, count: r.people.length, sessions: r.sessions.length });
+    return { ok: true, rows: attendExportRows(r.course, r.sessions, r.people) };
+  }
+
   return { eduCourses, eduCourseSave, eduCourseCopy, eduSessions, eduSessionsSave, eduEnrollList, eduEnrollSet,
-    eduEnrollAdd, eduFeeSet, eduExport, eduPeopleLookup, eduStaffCandidates, eduStaffSet, _mayTouch: mayTouch, _whoOf: whoOf };
+    eduEnrollAdd, eduFeeSet, eduExport, eduPeopleLookup, eduStaffCandidates, eduStaffSet,
+    eduAttendCourses, eduAttendSessions, eduAttendSheet, eduAttendSet, eduAttendBulk, eduAttendSummary, eduAttendExport,
+    _mayTouch: mayTouch, _whoOf: whoOf };
 }

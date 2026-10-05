@@ -113,6 +113,24 @@ export const eduChief = (roles: unknown): boolean => Array.isArray(roles) && rol
 // 담당자로 지정할 수 있는 역할 — 교육 담당(맡은 강좌)이 본래 자리이고, 교육 총괄도 지정할 수 있다(이름을 카드에 적어 두려고)
 export const EDU_STAFF_ROLES = ["educourse", "education"];
 export const EDU_STAFF_MAX = 20;
+// 강사(출석부 · 2단계 2026-10-05 · SQL 012) — 강사로 지정할 수 있는 역할: 강사가 본래 자리 · 교육 총괄·교육 담당도(직접 가르치는 분)
+export const EDU_TEACHER_ROLES = ["teacher", "education", "educourse"];
+export const EDU_STAFF_KINDS = ["manager", "teacher"];
+// kind(manager|teacher) → 그 kind 로 지정할 수 있는 역할(후보·stale 판정이 같은 목록을 본다)
+export const staffRolesFor = (kind: string): string[] => (kind === "teacher" ? EDU_TEACHER_ROLES : EDU_STAFF_ROLES);
+// 지정 kind 확인 — 없으면 manager(1단계 화면은 kind 를 안 보낸다)
+export function checkStaffKind(x: unknown): { ok: true; kind: string } | { ok: false; error: string } {
+  if (x === undefined || x === null || x === "") return { ok: true, kind: "manager" };
+  const k = norm(x);
+  return EDU_STAFF_KINDS.includes(k) ? { ok: true, kind: k } : { ok: false, error: "bad-kind" };
+}
+// 출석부 액션에서 「맡은 강좌」로 셀 담당 줄 kind — 총괄(super·education)은 이것을 보기 전에 지나간다(edu-db.ts mayTouch).
+//   강사 줄(teacher)은 늘 센다(출석부 액션을 부를 수 있는 분 = 강사·교육 담당 · canCall 이 이미 걸렀다 — 교육 담당도 강사로 지정될 수 있다).
+//   담당 줄(manager)은 교육 담당(educourse) 역할이 있을 때만 — 역할을 잃고 강사만 남은 분의 옛 담당 줄(stale)로 출석부가 열리지 않게.
+export function attendKinds(roles: unknown): string[] {
+  const rs = Array.isArray(roles) ? roles.map(String) : [];
+  return rs.includes("educourse") ? ["manager", "teacher"] : ["teacher"];
+}
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // 지정 목록 확인 — uuid 배열(겹친 것은 하나로) · 빈 배열 = 담당자 없음
 export function checkStaffIds(x: unknown): { ok: true; ids: string[] } | { ok: false; error: string } {
@@ -138,13 +156,17 @@ export function staffByCourse(rows: any[], eduMembers: Set<string> = new Set()):
   return by;
 }
 // 담당자 후보 한 분 — id·이름·소속(동명이인을 가리려고)·교육 역할만. auth_user_id·카카오 칸은 싣지 않는다.
-export function staffCandidateOut(m: { id: string; name?: string; type?: string; gu?: string; mok?: string; bu?: string; grade?: string }, roles: string[]) {
+//   allowed — 보여 줄 역할(담당 후보는 EDU_STAFF_ROLES · 강사 후보는 EDU_TEACHER_ROLES · staffRolesFor(kind))
+export function staffCandidateOut(m: { id: string; name?: string; type?: string; gu?: string; mok?: string; bu?: string; grade?: string }, roles: string[],
+  allowed: string[] = EDU_STAFF_ROLES) {
   const school = m.type === "교회학교";
   const who = whoOf({ who_type: school ? "교회학교" : "교구", group_name: school ? m.bu : m.gu, sub_name: school ? m.grade : m.mok });
-  return { id: m.id, name: norm(m.name), who, roles: roles.filter((r) => EDU_STAFF_ROLES.includes(r)).sort() };
+  return { id: m.id, name: norm(m.name), who, roles: roles.filter((r) => allowed.includes(r)).sort() };
 }
 
-export function courseOut(r: any, counts: { confirmed: number; waitlisted: number; applied: number }, staff: { id: string; name: string; stale?: boolean }[] = []) {
+// teachers — 강사(계정 · edu_course_staff kind teacher)[{id, name, stale?}] · 화면용 글 teacher(teacher_label)와 별개
+export function courseOut(r: any, counts: { confirmed: number; waitlisted: number; applied: number }, staff: { id: string; name: string; stale?: boolean }[] = [],
+  teachers: { id: string; name: string; stale?: boolean }[] = []) {
   return {
     id: r.id, title: r.title, kind: r.kind, kindLabel: EDU_KIND_LABEL[r.kind] || r.kind, term: r.term || "",
     description: r.description || "", teacher: r.teacher_label || "", place: r.place || "", fee: r.fee_note || "",
@@ -154,6 +176,7 @@ export function courseOut(r: any, counts: { confirmed: number; waitlisted: numbe
     statusLabel: EDU_STATUS_LABEL[r.status] || r.status, updatedAt: r.updated_at || null,
     counts: { confirmed: counts.confirmed || 0, waitlisted: counts.waitlisted || 0, applied: counts.applied || 0 },
     staff: (staff || []).map((x) => (x.stale === true ? { id: x.id, name: x.name, stale: true } : { id: x.id, name: x.name })),
+    teachers: (teachers || []).map((x) => (x.stale === true ? { id: x.id, name: x.name, stale: true } : { id: x.id, name: x.name })),
   };
 }
 
@@ -257,4 +280,90 @@ export function rosterIdent(c: { who_type?: string; group?: string; sub?: string
       sub_name: known ? norm(c.sub) : "", ident_key: "person|" + personId },
     use_app: known && appMatches === 1,
   };
+}
+
+// ---------- 출석부(2단계 · 2026-10-05 · 계획 v2 docs/superpowers/plans/2026-10-05-education-stage2-attendance.md) ----------
+// 출석·지각·결석·공결 — 칸 값은 성경암송 supabase/edu.sql 의 edu_attendance.state CHECK 와 같다(체크 안 한 칸은 줄이 없다 = null).
+export const ATTEND_STATES = ["present", "late", "absent", "excused"];
+export const ATTEND_LABEL: Record<string, string> = { present: "출석", late: "지각", absent: "결석", excused: "공결" };
+export const ATTEND_MARK: Record<string, string> = { present: "○", late: "지", absent: "결", excused: "공" };   // 엑셀 칸
+
+// 출석률 — 친구 결정(2026-10-05): 지각 = 출석 · 공결은 분모에서 뺀다 · 아직 체크 안 한 회차는 분모에 넣지 않는다.
+//   ⚠️ 아래 함수 몸통은 성경암송 js/edu.js(순수 함수 표식 사이)와 **한 글자도 같게** 둔다 — 두 앱이 같은 규칙(시험이 같은 경우를 본다:
+//      이쪽 tests/edu-rules.test.mjs · 그쪽 tests/edu-front.test.cjs · 그쪽 api 의 복사본은 edu-front 가 js/edu.js 와 글자로 맞대 본다).
+//      그래서 export 를 함수 앞에 붙이지 않고 아래 줄에서 내보낸다. 고칠 때는 세 곳을 같은 커밋 차례로.
+//   반올림은 출석×100÷분모(×100 을 먼저 — 29/200 같은 값이 부동소수 때문에 14 로 내려가지 않게).
+function eduAttendRate(c) {
+  var n = function (v) { var x = Number(v); return Number.isFinite(x) && x > 0 ? Math.floor(x) : 0; };
+  var o = c || {};
+  var attended = n(o.present) + n(o.late);
+  var denom = attended + n(o.absent);
+  return { attended: attended, denom: denom, pct: denom > 0 ? Math.round(attended * 100 / denom) : null };
+}
+export { eduAttendRate };
+
+// 한 칸 상태 확인 — null·빈 값은 「지움」(allowNull 일 때만) · 그 밖은 네 값 가운데 하나
+export function checkAttendState(x: unknown, allowNull = true): { ok: true; state: string | null } | { ok: false; error: string } {
+  if (x === undefined || x === null || x === "") return allowNull ? { ok: true, state: null } : { ok: false, error: "bad-state" };
+  const s = norm(x);
+  return ATTEND_STATES.includes(s) ? { ok: true, state: s } : { ok: false, error: "bad-state" };
+}
+
+// 한국 날짜(YYYY-MM-DD) — 서버 시계(UTC)에서
+export const kstDate = (ms: number = Date.now()): string => new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
+
+// 출석부를 열 때 고를 회차 — 오늘 회차가 있으면 그것, 없으면 다음 회차, 다 지났으면 마지막 회차(없으면 null).
+//   sessions 는 {id, no, on_date} — 날짜·번호 차례로 본다.
+export function pickSession(sessions: { id: number; no: number; on_date: string }[], today: string): number | null {
+  const ss = [...(sessions || [])].sort((a, b) => (a.on_date < b.on_date ? -1 : a.on_date > b.on_date ? 1 : a.no - b.no));
+  if (!ss.length) return null;
+  const t = ss.find((s) => s.on_date === today) || ss.find((s) => s.on_date > today) || ss[ss.length - 1];
+  return t.id;
+}
+
+// 회차 한 줄(응답) — id(출석 쓰기에 쓴다)·번호·날짜·시각·주제·장소
+export function attendSessionOut(s: any) {
+  return { id: s.id, no: s.no, date: s.on_date, start: s.start_time ? String(s.start_time).slice(0, 5) : null,
+    end: s.end_time ? String(s.end_time).slice(0, 5) : null, topic: s.topic || "", place: s.place || "" };
+}
+
+// 네 칸 수 + marked(체크한 칸 수) + 출석률(eduAttendRate)
+export function attendCounts(states: (string | null | undefined)[]) {
+  const k: Record<string, number> = { present: 0, late: 0, absent: 0, excused: 0 };
+  for (const s of states || []) if (s && s in k) k[s]++;
+  const r = eduAttendRate(k);
+  return { present: k.present, late: k.late, absent: k.absent, excused: k.excused,
+    marked: k.present + k.late + k.absent + k.excused, attended: r.attended, denom: r.denom, pct: r.pct };
+}
+
+// 출석 현황 — 확정된 분마다 네 칸 수·출석률·회차별 칸(sessions 차례). 출석 줄은 그 강좌 회차·그 분 것만 센다.
+//   attendPct(강좌의 수료 기준 %)보다 낮으면 below:true(체크한 회차가 없으면 pct null · below false).
+//   people 은 신청 줄 {id, name, who_type, group_name, sub_name} — 응답에는 id(신청 번호)·이름·소속만(user_id·ident_key 없음).
+export function attendSummary(sessions: { id: number }[], people: any[], rows: { enrollment_id: number; session_id: number; state: string }[], attendPct: number | null) {
+  const at = new Map<number, Map<number, string>>();
+  for (const r of rows || []) {
+    if (!ATTEND_STATES.includes(r?.state)) continue;
+    const m = at.get(r.enrollment_id) || new Map<number, string>();
+    m.set(r.session_id, r.state);
+    at.set(r.enrollment_id, m);
+  }
+  const out = (people || []).map((p) => {
+    const mine = at.get(p.id) || new Map<number, string>();
+    const cells = (sessions || []).map((s) => mine.get(s.id) ?? null);
+    const c = attendCounts(cells);
+    const below = c.pct !== null && typeof attendPct === "number" && c.pct < attendPct;
+    return { id: p.id, name: norm(p.name), who: whoOf(p), ...c, below, cells };
+  });
+  out.sort((a, b) => a.name.localeCompare(b.name, "ko") || a.who.localeCompare(b.who, "ko") || a.id - b.id);
+  return out;
+}
+
+// 출석 현황 엑셀 줄(머리 포함) — 이름·소속·회차마다 ○/지/결/공(빈칸 = 체크 안 함)·네 칸 수·출석률
+const mdOf = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d || "") ? Number(d.slice(5, 7)) + "/" + Number(d.slice(8, 10)) : "");
+export function attendExportRows(course: { title: string; term?: string }, sessions: { no: number; date?: string; on_date?: string }[], people: any[]): string[][] {
+  const head = ["강좌", "학기", "이름", "소속", ...(sessions || []).map((s) => `${s.no}회 ${mdOf(String(s.date ?? s.on_date ?? ""))}`.trim()),
+    "출석", "지각", "결석", "공결", "출석률"];
+  return [head, ...(people || []).map((p) => [course.title, course.term || "", p.name, p.who,
+    ...(p.cells || []).map((s: string | null) => (s ? ATTEND_MARK[s] || "" : "")),
+    String(p.present ?? 0), String(p.late ?? 0), String(p.absent ?? 0), String(p.excused ?? 0), p.pct === null || p.pct === undefined ? "" : p.pct + "%"])];
 }

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeEdu } from "../supabase/functions/church-admin/edu-db.ts";
+import { eduAttendRate } from "../supabase/functions/church-admin/edu-rules.ts";
 
 const COURSE = "11111111-1111-4111-8111-111111111111";
 const USER = "22222222-2222-4222-8222-222222222222";
@@ -394,4 +395,237 @@ test("eduExport — 기록 target 은 다듬은 강좌 id(몸통 글자 그대�
   const a = setup({ prev: COURSE_ROW, applyRes: [], rows: [] });
   assert.equal((await a.edu.eduExport(CHIEF, { course_id: `  ${COURSE}  ` })).ok, true);
   assert.deepEqual(a.log.audit, [["edu.export", COURSE, { count: 0 }]]);
+});
+
+// ---------- 출석부(2단계 · 2026-10-05) — 강사(teacher)는 강사 줄이 있는 강좌만 · 쓰기는 SQL 함수 · 기록은 id·수만 ----------
+const TEACH_M = "99999999-9999-4999-8999-999999999999";
+const TEACHER = { member: { id: TEACH_M }, roles: ["teacher"] };
+const T_ROWS = [{ course_id: COURSE, member_id: TEACH_M, kind: "teacher" }];   // 강사 T 는 강좌 A(COURSE)만
+const SESS_A = { id: 5, course_id: COURSE, no: 1, on_date: "2026-10-25" };
+const SESS_B = { id: 6, course_id: COURSE_B, no: 1, on_date: "2026-10-26" };
+const asked = (q, ...call) => q.c.calls.some((x) => x.length === call.length && x.every((v, i) => v === call[i]));
+
+test("출석 — 강사 T 는 맡은 강좌 A 의 칸을 쓴다(SQL edu_attendance_set · p_by = T · 기록 id 만) · 지우기 · 한꺼번에", async () => {
+  const a = setup({ staffRows: T_ROWS, tables: { edu_sessions: SESS_A }, applyRes: { ok: true, state: "present" } });
+  assert.deepEqual(await a.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7, state: "present" }), { ok: true, state: "present" });
+  assert.deepEqual(a.log.rpc, [["edu_attendance_set", { p_session: 5, p_enrollment: 7, p_state: "present", p_by: TEACH_M }]]);
+  assert.deepEqual(a.log.audit, [["edu.attend.set", "7", { course: COURSE, session: 5, no: 1, enrollment: 7 }]]);
+  const sq = a.log.q.find((q) => q.table === "edu_course_staff");
+  for (const call of [["eq", "course_id", COURSE], ["eq", "member_id", TEACH_M], ["eq", "kind", "teacher"]]) assert.ok(asked(sq, ...call), JSON.stringify(call));
+  assert.equal(a.log.writes, 0, "표에 직접 쓰지 않는다(SQL 함수만)");
+  // 지우기 — state:null 을 그대로 넘긴다 · 칸이 아예 없으면 bad-state(실수로 지우지 않게 · 아무것도 안 읽음)
+  const c = setup({ staffRows: T_ROWS, tables: { edu_sessions: SESS_A }, applyRes: { ok: true, state: null, cleared: true } });
+  assert.deepEqual(await c.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7, state: null }), { ok: true, state: null, cleared: true });
+  assert.equal(c.log.rpc[0][1].p_state, null);
+  const u = setup({ staffRows: T_ROWS, tables: { edu_sessions: SESS_A } });
+  assert.deepEqual(await u.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7 }), { ok: false, error: "bad-state" });
+  assert.deepEqual(await u.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7, state: "here" }), { ok: false, error: "bad-state" });
+  assert.deepEqual(await u.edu.eduAttendSet(TEACHER, { session_id: 0, enrollment_id: 7, state: "late" }), { ok: false, error: "bad-id" });
+  assert.equal(u.log.q.length + u.log.rpc.length, 0);
+  // 한꺼번에 — null 상태는 bad-state · count 를 기록
+  const b = setup({ staffRows: T_ROWS, tables: { edu_sessions: SESS_A }, applyRes: { ok: true, count: 3 } });
+  assert.deepEqual(await b.edu.eduAttendBulk(TEACHER, { session_id: 5, state: null }), { ok: false, error: "bad-state" });
+  assert.deepEqual(await b.edu.eduAttendBulk(TEACHER, { session_id: 5, state: "present" }), { ok: true, count: 3 });
+  assert.deepEqual(b.log.rpc, [["edu_attendance_bulk", { p_session: 5, p_state: "present", p_by: TEACH_M }]]);
+  assert.deepEqual(b.log.audit, [["edu.attend.bulk", "5", { course: COURSE, session: 5, no: 1, count: 3 }]]);
+  // SQL 이 거절하면(not-confirmed 등) 그대로 돌려주고 기록하지 않는다
+  const r = setup({ staffRows: T_ROWS, tables: { edu_sessions: SESS_A }, applyRes: { ok: false, error: "not-confirmed" } });
+  assert.deepEqual(await r.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7, state: "present" }), { ok: false, error: "not-confirmed" });
+  assert.equal(r.log.audit.length, 0);
+});
+
+test("출석 — 강사 T 는 맡지 않은 강좌 B 에서 not-assigned · 쓰기·SQL 함수·기록 0 · 강좌·명단·출석을 읽지도 않는다", async () => {
+  const NA = { ok: false, error: "not-assigned" };
+  for (const [fn, body] of [
+    ["eduAttendSet", { session_id: 6, enrollment_id: 7, state: "present" }],
+    ["eduAttendSet", { session_id: 6, enrollment_id: 7, state: null }],
+    ["eduAttendBulk", { session_id: 6, state: "present" }],
+    ["eduAttendSessions", { course_id: COURSE_B }],
+    ["eduAttendSheet", { course_id: COURSE_B, session_id: 6 }],
+    ["eduAttendSummary", { course_id: COURSE_B }],
+    ["eduAttendExport", { course_id: COURSE_B }],
+  ]) {
+    const a = setup({ staffRows: T_ROWS, tables: { edu_sessions: SESS_B }, applyRes: { ok: true } });
+    assert.deepEqual(await a.edu[fn](TEACHER, body), NA, fn);
+    assert.equal(a.log.writes, 0, fn + " 썼다");
+    assert.equal(a.log.rpc.length, 0, fn + " SQL 함수를 불렀다");
+    assert.equal(a.log.audit.length, 0, fn + " 기록했다");
+    for (const t of ["edu_courses", "edu_enrollments", "edu_attendance"]) assert.ok(!a.log.q.some((q) => q.table === t), fn + " " + t + " 를 읽었다");
+  }
+});
+
+test("출석 — B 회차 × A 신청: 회차의 강좌(B)로 맡은 강좌를 본다(몸통의 course_id·신청 줄을 믿지 않는다) → not-assigned · 둘 다 맡았으면 SQL 이 wrong-course", async () => {
+  // 강사 T 는 A 만 — 몸통에 course_id: A 를 실어 보내도 회차 6(B)의 강좌로 묻는다
+  const a = setup({ staffRows: T_ROWS, tables: { edu_sessions: SESS_B }, applyRes: { ok: true } });
+  assert.deepEqual(await a.edu.eduAttendSet(TEACHER, { session_id: 6, enrollment_id: 7, state: "present", course_id: COURSE }), { ok: false, error: "not-assigned" });
+  const sq = a.log.q.filter((q) => q.table === "edu_course_staff");
+  assert.equal(sq.length, 1);
+  assert.ok(asked(sq[0], "eq", "course_id", COURSE_B), "B 로 묻지 않았다");
+  assert.ok(!asked(sq[0], "eq", "course_id", COURSE), "몸통의 A 로 물었다");
+  assert.equal(a.log.rpc.length + a.log.writes + a.log.audit.length, 0);
+  // A·B 둘 다 맡은 강사 — 앞 검사는 지나가고 같은 강좌 확인은 SQL 함수(edu_attendance_set)가 한다 → wrong-course 그대로 · 기록 없음
+  const both = [...T_ROWS, { course_id: COURSE_B, member_id: TEACH_M, kind: "teacher" }];
+  const b = setup({ staffRows: both, tables: { edu_sessions: SESS_B }, applyRes: { ok: false, error: "wrong-course" } });
+  assert.deepEqual(await b.edu.eduAttendSet(TEACHER, { session_id: 6, enrollment_id: 7, state: "present" }), { ok: false, error: "wrong-course" });
+  assert.deepEqual(b.log.rpc, [["edu_attendance_set", { p_session: 6, p_enrollment: 7, p_state: "present", p_by: TEACH_M }]]);
+  assert.equal(b.log.audit.length, 0);
+  // 출석부 한 장 — 몸통의 회차가 다른 강좌 것이면 not-found(명단·출석을 읽지 않는다)
+  const s = setup({ staffRows: both, tables: { edu_courses: { id: COURSE, title: "A", status: "running" }, edu_sessions: SESS_B } });
+  assert.deepEqual(await s.edu.eduAttendSheet(TEACHER, { course_id: COURSE, session_id: 6 }), { ok: false, error: "not-found" });
+  assert.ok(!s.log.q.some((q) => q.table === "edu_enrollments" || q.table === "edu_attendance"));
+});
+
+test("출석 강좌 확인 kind — 강사만 있는 분의 옛 담당(manager) 줄로는 안 열린다 · 교육 담당은 강사 줄로도 열린다 · 총괄은 묻지 않는다", async () => {
+  const oldMgr = [{ course_id: COURSE, member_id: TEACH_M, kind: "manager" }];
+  const a = setup({ staffRows: oldMgr, tables: { edu_sessions: SESS_A }, applyRes: { ok: true } });
+  assert.deepEqual(await a.edu.eduAttendSet(TEACHER, { session_id: 5, enrollment_id: 7, state: "present" }), { ok: false, error: "not-assigned" });
+  assert.equal(a.log.rpc.length, 0);
+  const dc = setup({ staffRows: [{ course_id: COURSE, member_id: STAFF_M, kind: "teacher" }], tables: { edu_sessions: SESS_A }, applyRes: { ok: true, state: "late" } });
+  assert.equal((await dc.edu.eduAttendSet(STAFF, { session_id: 5, enrollment_id: 7, state: "late" })).ok, true);
+  const sq = dc.log.q.find((q) => q.table === "edu_course_staff");
+  assert.ok(sq.c.calls.some((x) => x[0] === "in" && x[1] === "kind" && JSON.stringify(x[2]) === JSON.stringify(["manager", "teacher"])));
+  const dm = setup({ staffRows: [{ course_id: COURSE, member_id: STAFF_M, kind: "manager" }], tables: { edu_sessions: SESS_A }, applyRes: { ok: true, state: "late" } });
+  assert.equal((await dm.edu.eduAttendSet(STAFF, { session_id: 5, enrollment_id: 7, state: "late" })).ok, true);
+  for (const ctx of [CHIEF, { member: { id: CHIEF_M }, roles: ["super"] }]) {
+    const c = setup({ staffRows: [], tables: { edu_sessions: SESS_B }, applyRes: { ok: true, state: "present" } });
+    assert.equal((await c.edu.eduAttendSet(ctx, { session_id: 6, enrollment_id: 7, state: "present" })).ok, true);
+    assert.ok(!c.log.q.some((q) => q.table === "edu_course_staff"), "총괄인데 담당 줄을 물었다");
+  }
+  // 신청 현황 쪽 확인(기본 manager)은 강사 줄로 열리지 않는다
+  const m = setup({ staffRows: [{ course_id: COURSE, member_id: STAFF_M, kind: "teacher" }] });
+  assert.equal(await m.edu._mayTouch(STAFF, COURSE), false);
+});
+
+test("출석 현황 — 출석률은 eduAttendRate(지각=출석 · 공결 뺌 · 체크 안 한 회차 뺌) · 회차별 칸 · 기준 미달 · user_id·marked_by 없음 · 엑셀 기록은 수만", async () => {
+  const course = { id: COURSE, title: "구원론", term: "2026 가을", status: "running", attend_pct: 80 };
+  const sessions = [{ id: 51, course_id: COURSE, no: 1, on_date: "2026-10-25", start_time: "19:30:00" }, { id: 52, course_id: COURSE, no: 2, on_date: "2026-11-01" },
+    { id: 53, course_id: COURSE, no: 3, on_date: "2026-11-08" }];
+  const people = [{ id: 71, name: "홍길동", who_type: "교구", group_name: "기쁨", sub_name: "3", user_id: USER },
+    { id: 72, name: "김하나", who_type: "교구", group_name: "소망", sub_name: "1" }];
+  const att = [{ enrollment_id: 71, session_id: 51, state: "present", marked_by: STAFF_M }, { enrollment_id: 71, session_id: 52, state: "late" },
+    { enrollment_id: 71, session_id: 53, state: "absent" }, { enrollment_id: 72, session_id: 51, state: "excused" }, { enrollment_id: 72, session_id: 52, state: "present" }];
+  const mk = () => setup({ rows: people, tables: { edu_courses: course, edu_sessions: sessions, edu_attendance: att } });
+  const a = mk();
+  const r = await a.edu.eduAttendSummary(CHIEF, { course_id: COURSE });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.sessions.map((s) => [s.id, s.no, s.date, s.start]), [[51, 1, "2026-10-25", "19:30"], [52, 2, "2026-11-01", null], [53, 3, "2026-11-08", null]]);
+  const by = Object.fromEntries(r.people.map((p) => [p.id, p]));
+  assert.deepEqual(by[71].cells, ["present", "late", "absent"]);
+  assert.deepEqual([by[71].present, by[71].late, by[71].absent, by[71].excused, by[71].marked], [1, 1, 1, 0, 3]);
+  assert.equal(by[71].pct, eduAttendRate({ present: 1, late: 1, absent: 1, excused: 0 }).pct);
+  assert.equal(by[71].pct, 67); assert.equal(by[71].below, true);
+  assert.equal(by[72].pct, eduAttendRate({ present: 1, late: 0, absent: 0, excused: 1 }).pct);
+  assert.equal(by[72].pct, 100); assert.equal(by[72].below, false);
+  assert.deepEqual(r.course, { id: COURSE, title: "구원론", term: "2026 가을", status: "running", statusLabel: "진행 중", place: "", startsOn: null, endsOn: null, attendPct: 80, closed: false });
+  const txt = JSON.stringify(r);
+  for (const bad of [USER, STAFF_M, "marked_by", "user_id", "ident_key"]) assert.equal(txt.includes(bad), false, bad);
+  // 사람×회차는 쪽 넘기기(allRows)로 — 출석 줄을 회차 id 로 · 기본 키 차례
+  const aq = a.log.q.find((q) => q.table === "edu_attendance");
+  assert.ok(aq.c.calls.some((x) => x[0] === "in" && x[1] === "session_id" && JSON.stringify(x[2]) === "[51,52,53]"));
+  assert.ok(!aq.c.calls.some((x) => x[0] === "select" && /marked_by/.test(x[1])), "marked_by 를 읽었다");
+  const eq = a.log.q.find((q) => q.table === "edu_enrollments");
+  assert.ok(asked(eq, "eq", "status", "confirmed"));
+  assert.ok(!eq.c.calls.some((x) => x[0] === "select" && /user_id|ident_key/.test(x[1])), "신청 줄의 user_id·ident_key 를 읽었다");
+  assert.equal(a.log.audit.length, 0, "현황 보기는 기록하지 않는다");
+  // 엑셀 — 같은 현황에서 · 기록 edu.attend.export {course, count, sessions}
+  const x = mk();
+  const ex = await x.edu.eduAttendExport(CHIEF, { course_id: COURSE });
+  assert.equal(ex.ok, true);
+  assert.deepEqual(ex.rows[0], ["강좌", "학기", "이름", "소속", "1회 10/25", "2회 11/1", "3회 11/8", "출석", "지각", "결석", "공결", "출석률"]);
+  assert.deepEqual(ex.rows[1], ["구원론", "2026 가을", "김하나", "소망 1목장", "공", "○", "", "1", "0", "0", "1", "100%"]);
+  assert.deepEqual(ex.rows[2], ["구원론", "2026 가을", "홍길동", "기쁨 3목장", "○", "지", "결", "1", "1", "1", "0", "67%"]);
+  assert.deepEqual(x.log.audit, [["edu.attend.export", COURSE, { course: COURSE, count: 2, sessions: 3 }]]);
+});
+
+test("출석부 한 장·회차 목록 — 확정자 이름·소속·그 회차 상태 · 체크 수(지금 확정된 분만) · 고를 회차", async () => {
+  const course = { id: COURSE, title: "구원론", term: "", status: "running", attend_pct: 80 };
+  const people = [{ id: 71, name: "홍길동", who_type: "교구", group_name: "기쁨", sub_name: "3" }, { id: 72, name: "김하나", who_type: "교구", group_name: "소망", sub_name: "1" }];
+  const s = setup({ staffRows: T_ROWS, rows: people, tables: { edu_courses: course, edu_sessions: SESS_A, edu_attendance: [{ enrollment_id: 71, session_id: 5, state: "late" }] } });
+  const r = await s.edu.eduAttendSheet(TEACHER, { course_id: COURSE, session_id: 5 });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.rows, [{ id: 72, name: "김하나", who: "소망 1목장", state: null }, { id: 71, name: "홍길동", who: "기쁨 3목장", state: "late" }]);
+  assert.deepEqual(r.counts, { present: 0, late: 1, absent: 0, excused: 0, marked: 1, total: 2 });
+  assert.deepEqual(r.session, { id: 5, no: 1, date: "2026-10-25", start: null, end: null, topic: "", place: "" });
+  // 회차 목록 — 확정이 아닌 분(99)의 출석 줄은 세지 않는다
+  const sessions = [{ id: 51, course_id: COURSE, no: 1, on_date: "2000-01-02" }, { id: 52, course_id: COURSE, no: 2, on_date: "2999-01-09" }];
+  const l = setup({ staffRows: T_ROWS, rows: people, tables: { edu_courses: course, edu_sessions: sessions,
+    edu_attendance: [{ enrollment_id: 71, session_id: 51, state: "present" }, { enrollment_id: 72, session_id: 51, state: "absent" }, { enrollment_id: 99, session_id: 51, state: "present" }] } });
+  const ls = await l.edu.eduAttendSessions(TEACHER, { course_id: COURSE });
+  assert.equal(ls.ok, true);
+  assert.equal(ls.confirmed, 2);
+  assert.deepEqual(ls.sessions.map((x) => [x.id, x.marked, x.isToday]), [[51, 2, false], [52, 0, false]]);
+  assert.equal(ls.pick, 52, "다음 회차");
+  assert.equal(l.log.audit.length + l.log.rpc.length + l.log.writes, 0);
+});
+
+test("eduAttendCourses — 강사는 강사 줄이 있는 강좌만(보관 빼고) · 진행 중 먼저 · 총괄은 모든 강좌(담당 줄을 묻지 않음)", async () => {
+  const A = { id: COURSE, title: "구원론", term: "", status: "open", attend_pct: 80 };
+  const B = { id: COURSE_B, title: "새가족반", term: "", status: "running", attend_pct: 80 };
+  const t = setup({ staffRows: T_ROWS, applyRes: [], tables: { edu_courses: [A, B], edu_sessions: [{ id: 5, course_id: COURSE, no: 1, on_date: "2999-01-01" }] } });
+  const r = await t.edu.eduAttendCourses(TEACHER);
+  assert.equal(r.ok, true); assert.equal(r.scope, "assigned");
+  assert.deepEqual(r.courses.map((c) => c.id), [COURSE], "가짜 db 가 B 까지 줘도 다시 거른다");
+  assert.deepEqual([r.courses[0].sessionsCount, r.courses[0].nextDate, r.courses[0].hasToday, r.courses[0].confirmed], [1, "2999-01-01", false, 0]);
+  const sq = t.log.q.find((q) => q.table === "edu_course_staff");
+  assert.ok(asked(sq, "eq", "member_id", TEACH_M));
+  assert.ok(sq.c.calls.some((x) => x[0] === "in" && x[1] === "kind" && JSON.stringify(x[2]) === '["teacher"]'));
+  const none = setup({ staffRows: [] });
+  assert.deepEqual((await none.edu.eduAttendCourses(TEACHER)).courses, []);
+  assert.ok(!none.log.q.some((q) => q.table === "edu_courses"));
+  const c = setup({ applyRes: [], tables: { edu_courses: [A, B], edu_sessions: [] } });
+  const all = await c.edu.eduAttendCourses(CHIEF);
+  assert.equal(all.scope, "all");
+  assert.deepEqual(all.courses.map((x) => x.id), [COURSE_B, COURSE], "진행 중 먼저");
+  assert.ok(!c.log.q.some((q) => q.table === "edu_course_staff"));
+  assert.ok(c.log.q.find((q) => q.table === "edu_courses").c.calls.some((x) => x[0] === "neq" && x[1] === "status" && x[2] === "archived"));
+});
+
+test("eduStaffSet·eduStaffCandidates kind:'teacher' — 강사 줄만 빼고 더함 · 강사 후보(teacher·education·educourse) · 기록에 kind · 틀린 kind 는 bad-kind", async () => {
+  const bad = setup();
+  assert.deepEqual(await bad.edu.eduStaffSet(CHIEF, { course_id: COURSE, member_ids: [], kind: "boss" }), { ok: false, error: "bad-kind" });
+  assert.deepEqual(await bad.edu.eduStaffCandidates({ kind: "boss" }), { ok: false, error: "bad-kind" });
+  assert.equal(bad.log.q.length, 0);
+  const grants = [{ member_id: TEACH_M, role_id: "teacher" }];
+  const members = [{ id: TEACH_M, name: "이강사", type: "교구", gu: "기쁨", mok: "3" }];
+  const cand = setup({ tables: { admin_role_grants: grants, admin_members: members } });
+  assert.deepEqual(await cand.edu.eduStaffCandidates({ kind: "teacher" }), { ok: true, members: [{ id: TEACH_M, name: "이강사", who: "기쁨 3목장", roles: ["teacher"] }] });
+  const g = cand.log.q.find((q) => q.table === "admin_role_grants");
+  assert.ok(g.c.calls.some((x) => x[0] === "in" && x[1] === "role_id" && ["teacher", "education", "educourse"].every((r) => x[2].includes(r)) && !x[2].includes("super")));
+  // 담당 후보(kind 없음)에는 강사 역할만 가진 분이 안 나온다(역할 목록이 다르다)
+  const mg = setup({ tables: { admin_role_grants: grants, admin_members: members } });
+  await mg.edu.eduStaffCandidates({});
+  assert.ok(!mg.log.q.find((q) => q.table === "admin_role_grants").c.calls.some((x) => x[0] === "in" && x[2].includes("teacher")));
+  // 더하기 — 강사 줄(kind teacher)만 묻고·더한다 · 기록 {course, count, kind}
+  const add = setup({ tables: { edu_courses: { id: COURSE }, admin_role_grants: grants, admin_members: members, edu_course_staff: [] } });
+  assert.deepEqual(await add.edu.eduStaffSet(CHIEF, { course_id: COURSE, member_ids: [TEACH_M], kind: "teacher" }), { ok: true, count: 1, changed: true });
+  const cur = add.log.q.find((q) => q.table === "edu_course_staff");
+  assert.ok(asked(cur, "eq", "kind", "teacher"));
+  const up = add.log.q.flatMap((q) => q.c.calls).filter((x) => x[0] === "upsert");
+  assert.deepEqual(up.map((x) => x[1]), [[{ course_id: COURSE, member_id: TEACH_M, kind: "teacher" }]]);
+  assert.deepEqual(add.log.audit, [["edu.staff.set", COURSE, { course: COURSE, count: 1, kind: "teacher" }]]);
+  // 강사 후보가 아닌 분(담당 역할만 있어도 — 그분은 후보다 · 여기선 역할 없는 분) → bad-member
+  const no = setup({ tables: { edu_courses: { id: COURSE }, admin_role_grants: [], admin_members: [], edu_course_staff: [] } });
+  assert.deepEqual(await no.edu.eduStaffSet(CHIEF, { course_id: COURSE, member_ids: [OTHER_M], kind: "teacher" }), { ok: false, error: "bad-member" });
+  assert.equal(no.log.writes, 0);
+  // 빼기 — 강사 줄만 지운다(담당 줄은 그대로)
+  const out = setup({ tables: { edu_courses: { id: COURSE }, edu_course_staff: [{ member_id: TEACH_M }] } });
+  assert.deepEqual(await out.edu.eduStaffSet(CHIEF, { course_id: COURSE, member_ids: [], kind: "teacher" }), { ok: true, count: 0, changed: true });
+  const del = out.log.q.find((q) => q.c.calls.some((x) => x[0] === "delete"));
+  assert.ok(asked(del, "eq", "kind", "teacher"));
+});
+
+test("강좌 카드 teachers — 강사 줄은 teachers 로(담당 staff 와 따로) · 강사 역할을 잃으면 stale · 한 질의", async () => {
+  const c = setup({ applyRes: [], tables: {
+    edu_courses: [{ ...COURSE_ROW, id: COURSE }],
+    edu_course_staff: [
+      { course_id: COURSE, member_id: STAFF_M, kind: "manager", admin_members: { name: "박담당", status: "active" } },
+      { course_id: COURSE, member_id: TEACH_M, kind: "teacher", admin_members: { name: "이강사", status: "active" } },
+      { course_id: COURSE, member_id: OTHER_M, kind: "teacher", admin_members: { name: "최옛강사", status: "active" } },
+    ],
+    admin_role_grants: [{ member_id: STAFF_M, role_id: "educourse" }, { member_id: TEACH_M, role_id: "teacher" }],
+  } });
+  const r = await c.edu.eduCourses(CHIEF, {});
+  assert.deepEqual(r.courses[0].staff, [{ id: STAFF_M, name: "박담당" }]);
+  assert.deepEqual(r.courses[0].teachers, [{ id: TEACH_M, name: "이강사" }, { id: OTHER_M, name: "최옛강사", stale: true }]);
+  assert.equal(c.log.q.filter((q) => q.table === "edu_course_staff").length, 1);
 });

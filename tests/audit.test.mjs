@@ -291,3 +291,16 @@ test("교육신청 기록 — 이름이 정해져 있고 people.lookup(from 교�
   assert.equal(detailText(R("edu.staff.set", { course: C, count: 0 }, C)), "담당 없음");
   assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 1, from: "education" })), LOOKUP_EDUCATION);
 });
+
+test("출석부 기록(2단계) — 이름이 정해져 있고 detail 은 id·수만(서버 edu-db.ts 와 한 벌) · 강사 지정은 「강사 N분」", () => {
+  for (const a of ["edu.attend.set", "edu.attend.bulk", "edu.attend.export"]) {
+    assert.ok(LABEL[a] && LABEL[a] !== a && /\(교육\)$/.test(LABEL[a]), a);
+  }
+  const C = "11111111-1111-4111-8111-111111111111";
+  assert.equal(detailText(R("edu.attend.set", { course: C, session: 5, no: 3, enrollment: 71 }, "71")), "3회차 · 신청 #71");
+  assert.equal(detailText(R("edu.attend.bulk", { course: C, session: 5, no: 3, count: 12 }, "5")), "3회차 · 12분");
+  assert.equal(detailText(R("edu.attend.export", { course: C, count: 20, sessions: 8 }, C)), "20분 · 회차 8");
+  assert.equal(detailText(R("edu.staff.set", { course: C, count: 1, kind: "teacher" }, C)), "강사 1분");
+  assert.equal(detailText(R("edu.staff.set", { course: C, count: 0, kind: "teacher" }, C)), "강사 없음");
+  assert.equal(detailText(R("edu.staff.set", { course: C, count: 2 }, C)), "담당 2분");
+});

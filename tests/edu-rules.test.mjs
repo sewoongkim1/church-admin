@@ -2,8 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkCourse, makeSessions, checkSessions, courseOut, enrollOut, exportRows, ENROLL_STATUS_LABEL,
   checkTypedIdent, rosterIdentity, rosterIdent, maybeDupIds, seatsOpened, waitOrder,
-  eduChief, checkStaffIds, staffByCourse, staffCandidateOut, EDU_STAFF_MAX }
+  eduChief, checkStaffIds, staffByCourse, staffCandidateOut, EDU_STAFF_MAX,
+  eduAttendRate, checkAttendState, attendKinds, checkStaffKind, staffRolesFor, EDU_TEACHER_ROLES, pickSession, attendCounts,
+  attendSummary, attendExportRows, attendSessionOut, kstDate, ATTEND_STATES }
   from "../supabase/functions/church-admin/edu-rules.ts";
+import { readFileSync } from "node:fs";
 
 test("checkCourse — 기본값과 다듬기", () => {
   const r = checkCourse({ title: "  제자훈련  1단계 ", kind: "regular", capacity: "20", mode: "auto",
@@ -215,4 +218,136 @@ test("staffCandidateOut — id·이름·소속(교구 「기쁨 3목장」 · �
     { id: M1, name: "김 담당", who: "기쁨 3목장", roles: ["educourse"] });
   assert.deepEqual(staffCandidateOut({ id: M2, name: "박", type: "교회학교", bu: "중등부", grade: "2학년", gu: "x" }, ["education", "educourse"]),
     { id: M2, name: "박", who: "중등부 2학년", roles: ["education", "educourse"] });
+});
+
+// ---------- 출석부(2단계 · 2026-10-05) ----------
+// 출석률 시험 경우 — 성경암송 tests/edu-front.test.cjs 와 같은 목록(두 앱이 같은 결과 · 고치면 두 곳을 함께)
+const ATTEND_RATE_CASES = [
+  [{ present: 5, late: 1, absent: 1, excused: 1 }, { attended: 6, denom: 7, pct: 86 }],
+  [{ present: 0, late: 0, absent: 0, excused: 0 }, { attended: 0, denom: 0, pct: null }],
+  [{ excused: 3 }, { attended: 0, denom: 0, pct: null }],
+  [{ absent: 2 }, { attended: 0, denom: 2, pct: 0 }],
+  [{ present: 2, late: 1 }, { attended: 3, denom: 3, pct: 100 }],
+  [{ late: 4, absent: 1, excused: 2 }, { attended: 4, denom: 5, pct: 80 }],
+  [{ present: 1, absent: 7 }, { attended: 1, denom: 8, pct: 13 }],
+  [{ present: 29, absent: 171 }, { attended: 29, denom: 200, pct: 15 }],
+  [{ present: 2, absent: 1 }, { attended: 2, denom: 3, pct: 67 }],
+  [{ present: "3", late: null, absent: -1, excused: "x" }, { attended: 3, denom: 3, pct: 100 }],
+  [{ present: 2.7, absent: 1.2 }, { attended: 2, denom: 3, pct: 67 }],
+  [null, { attended: 0, denom: 0, pct: null }],
+  [undefined, { attended: 0, denom: 0, pct: null }],
+];
+
+test("eduAttendRate — 지각=출석 · 공결은 분모에서 뺌 · 체크 안 한 회차는 없음 · 분모 0 이면 pct null · 반올림은 ×100 먼저", () => {
+  for (const [input, want] of ATTEND_RATE_CASES) assert.deepEqual(eduAttendRate(input), want, JSON.stringify(input));
+});
+
+test("eduAttendRate — 함수 몸통은 export 없이 한 덩이(성경암송 js/edu.js 에 같은 글자로 옮겨 둔다)", () => {
+  const src = readFileSync(new URL("../supabase/functions/church-admin/edu-rules.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const a = src.indexOf("function eduAttendRate(c) {");
+  const b = src.indexOf("\n}\n", a);
+  assert.ok(a > 0 && b > a, "함수를 못 찾았다");
+  const body = src.slice(a, b + 2);
+  assert.ok(!/:\s*(any|number|string|boolean)\b|=>/.test(body), "타입 표기·화살표 함수가 들어가면 성경암송(브라우저) 복사본과 같은 글자가 못 된다");
+  assert.ok(src.includes("export { eduAttendRate };"));
+});
+
+test("checkAttendState — 네 값 · null·빈 값은 지움(allowNull) · 그 밖은 bad-state", () => {
+  for (const s of ATTEND_STATES) assert.deepEqual(checkAttendState(s), { ok: true, state: s });
+  assert.deepEqual(checkAttendState(" late "), { ok: true, state: "late" });
+  assert.deepEqual(checkAttendState(null), { ok: true, state: null });
+  assert.deepEqual(checkAttendState(""), { ok: true, state: null });
+  assert.deepEqual(checkAttendState(null, false), { ok: false, error: "bad-state" });
+  assert.deepEqual(checkAttendState("here"), { ok: false, error: "bad-state" });
+  assert.deepEqual(checkAttendState("PRESENT"), { ok: false, error: "bad-state" });
+});
+
+test("attendKinds — 강사는 teacher 줄만 · 교육 담당은 manager·teacher · 담당 줄은 educourse 역할이 있을 때만", () => {
+  assert.deepEqual(attendKinds(["teacher"]), ["teacher"]);
+  assert.deepEqual(attendKinds(["educourse"]), ["manager", "teacher"]);
+  assert.deepEqual(attendKinds(["educourse", "teacher"]), ["manager", "teacher"]);
+  assert.deepEqual(attendKinds(["ministry"]), ["teacher"]);
+  assert.deepEqual(attendKinds(null), ["teacher"]);
+});
+
+test("checkStaffKind·staffRolesFor — 없으면 manager · teacher · 그 밖은 bad-kind · 강사 후보는 강사·총괄·담당", () => {
+  assert.deepEqual(checkStaffKind(undefined), { ok: true, kind: "manager" });
+  assert.deepEqual(checkStaffKind("teacher"), { ok: true, kind: "teacher" });
+  assert.deepEqual(checkStaffKind("manager"), { ok: true, kind: "manager" });
+  assert.deepEqual(checkStaffKind("boss"), { ok: false, error: "bad-kind" });
+  assert.deepEqual(staffRolesFor("manager"), ["educourse", "education"]);
+  assert.deepEqual([...staffRolesFor("teacher")].sort(), ["education", "educourse", "teacher"]);
+  assert.equal(EDU_TEACHER_ROLES.includes("super"), false);
+  assert.deepEqual(staffCandidateOut({ id: "m", name: "강", type: "교구", gu: "기쁨", mok: "3" }, ["teacher", "ministry"], staffRolesFor("teacher")).roles, ["teacher"]);
+  assert.deepEqual(staffCandidateOut({ id: "m", name: "강" }, ["teacher"]).roles, [], "담당 후보 목록(기본)에는 강사 역할을 보이지 않는다");
+});
+
+test("courseOut teachers — 강사 계정 [{id, name, stale?}] · 없으면 빈 배열 · 화면 글 teacher(teacher_label)와 별개", () => {
+  const n = { confirmed: 0, waitlisted: 0, applied: 0 };
+  const row = { id: "c1", title: "t", kind: "lecture", status: "open", teacher_label: "○○○ 목사" };
+  assert.deepEqual(courseOut(row, n).teachers, []);
+  const o = courseOut(row, n, [], [{ id: "m1", name: "강사", extra: 1 }, { id: "m2", name: "옛강사", stale: true, status: "disabled" }]);
+  assert.deepEqual(o.teachers, [{ id: "m1", name: "강사" }, { id: "m2", name: "옛강사", stale: true }]);
+  assert.equal(o.teacher, "○○○ 목사");
+});
+
+test("pickSession — 오늘 → 다음 → 마지막 · 날짜 차례 · 회차가 없으면 null", () => {
+  const ss = [{ id: 30, no: 3, on_date: "2026-11-08" }, { id: 10, no: 1, on_date: "2026-10-25" }, { id: 20, no: 2, on_date: "2026-11-01" }];
+  assert.equal(pickSession(ss, "2026-11-01"), 20);
+  assert.equal(pickSession(ss, "2026-10-20"), 10);
+  assert.equal(pickSession(ss, "2026-10-26"), 20);
+  assert.equal(pickSession(ss, "2026-12-01"), 30);
+  assert.equal(pickSession([], "2026-10-25"), null);
+});
+
+test("attendSessionOut·kstDate — 칸 · 시각 앞 다섯 자 · 한국 날짜", () => {
+  assert.deepEqual(attendSessionOut({ id: 7, course_id: "c", no: 2, on_date: "2026-10-25", start_time: "19:30:00", end_time: null, topic: null }),
+    { id: 7, no: 2, date: "2026-10-25", start: "19:30", end: null, topic: "", place: "" });
+  assert.equal(kstDate(Date.parse("2026-10-24T15:00:00Z")), "2026-10-25");
+  assert.equal(kstDate(Date.parse("2026-10-24T14:59:59Z")), "2026-10-24");
+});
+
+test("attendCounts·attendSummary — 사람마다 네 칸 수·출석률(eduAttendRate)·회차별 칸 · 다른 회차·모르는 값 무시 · 기준 미달 below · 칸 지도", () => {
+  assert.deepEqual(attendCounts(["present", "late", null, "absent", "excused", "x"]),
+    { present: 1, late: 1, absent: 1, excused: 1, marked: 4, attended: 2, denom: 3, pct: 67 });
+  const sessions = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  const people = [
+    { id: 11, name: "나", who_type: "교구", group_name: "기쁨", sub_name: "3", user_id: "u1", ident_key: "k" },
+    { id: 12, name: "가", who_type: "교구", group_name: "소망", sub_name: "1" },
+    { id: 13, name: "다", who_type: "교회학교", group_name: "중등부", sub_name: "2학년" },
+  ];
+  const rows = [
+    { enrollment_id: 11, session_id: 1, state: "present" }, { enrollment_id: 11, session_id: 2, state: "late" }, { enrollment_id: 11, session_id: 3, state: "absent" },
+    { enrollment_id: 12, session_id: 1, state: "excused" },
+    { enrollment_id: 12, session_id: 99, state: "absent" },          // 다른 강좌 회차 — 칸에 안 들어간다
+    { enrollment_id: 99, session_id: 1, state: "present" },          // 확정이 아닌 분(명단 밖)
+    { enrollment_id: 13, session_id: 2, state: "bogus" },
+  ];
+  const out = attendSummary(sessions, people, rows, 80);
+  assert.deepEqual(out.map((p) => p.name), ["가", "나", "다"]);   // 이름 차례
+  const by = Object.fromEntries(out.map((p) => [p.id, p]));
+  assert.deepEqual(by[11].cells, ["present", "late", "absent"]);
+  const { cells: _c, ...rest } = by[11];
+  assert.deepEqual(rest, { id: 11, name: "나", who: "기쁨 3목장", present: 1, late: 1, absent: 1, excused: 0,
+    marked: 3, attended: 2, denom: 3, pct: 67, below: true });
+  assert.equal(by[11].pct, eduAttendRate({ present: 1, late: 1, absent: 1, excused: 0 }).pct);
+  assert.deepEqual(by[12].cells, ["excused", null, null]);
+  assert.equal(by[12].pct, null); assert.equal(by[12].below, false);   // 공결만 — 분모 0
+  assert.deepEqual(by[13].cells, [null, null, null]);
+  assert.equal(by[13].marked, 0);
+  assert.equal(JSON.stringify(out).includes("u1") || JSON.stringify(out).includes("ident_key"), false);
+  assert.deepEqual(Object.keys(by[11]).sort(), ["absent", "attended", "below", "cells", "denom", "excused", "id", "late", "marked", "name", "pct", "present", "who"]);
+  // 기준이 없으면 below 는 늘 false
+  assert.equal(attendSummary(sessions, people, rows, null).find((p) => p.id === 11).below, false);
+});
+
+test("attendExportRows — 머리(회차·날짜) · ○/지/결/공 · 빈칸 · 수 · 출석률(없으면 빈칸)", () => {
+  const sessions = [{ no: 1, date: "2026-10-25" }, { no: 2, date: "2026-11-01" }];
+  const people = [{ name: "가", who: "기쁨 3목장", cells: ["present", null], present: 1, late: 0, absent: 0, excused: 0, pct: 100 },
+    { name: "나", who: "", cells: [null, "excused"], present: 0, late: 0, absent: 0, excused: 1, pct: null }];
+  assert.deepEqual(attendExportRows({ title: "구원론", term: "2026 가을" }, sessions, people), [
+    ["강좌", "학기", "이름", "소속", "1회 10/25", "2회 11/1", "출석", "지각", "결석", "공결", "출석률"],
+    ["구원론", "2026 가을", "가", "기쁨 3목장", "○", "", "1", "0", "0", "0", "100%"],
+    ["구원론", "2026 가을", "나", "", "", "공", "0", "0", "0", "1", ""],
+  ]);
 });

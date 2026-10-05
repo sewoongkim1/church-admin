@@ -2490,8 +2490,15 @@ Deno.serve(async (req) => {
       case "eduFeeSet":       return json(await edu.eduFeeSet(ctx, b));
       case "eduExport":       return json(await edu.eduExport(ctx, b));
       case "eduPeopleLookup": return json(await edu.eduPeopleLookup(ctx, b));
-      case "eduStaffCandidates": return json(await edu.eduStaffCandidates());
+      case "eduStaffCandidates": return json(await edu.eduStaffCandidates(b));
       case "eduStaffSet":        return json(await edu.eduStaffSet(ctx, b));
+      case "eduAttendCourses":   return json(await edu.eduAttendCourses(ctx));
+      case "eduAttendSessions":  return json(await edu.eduAttendSessions(ctx, b));
+      case "eduAttendSheet":     return json(await edu.eduAttendSheet(ctx, b));
+      case "eduAttendSet":       return json(await edu.eduAttendSet(ctx, b));
+      case "eduAttendBulk":      return json(await edu.eduAttendBulk(ctx, b));
+      case "eduAttendSummary":   return json(await edu.eduAttendSummary(ctx, b));
+      case "eduAttendExport":    return json(await edu.eduAttendExport(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));
