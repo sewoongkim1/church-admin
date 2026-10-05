@@ -247,3 +247,24 @@ test("고치기 폼 — 「강사(출석부)」 칸은 담당자 칸 아래(숨�
   assert.ok(!/data-staff [^>]*disabled/.test(failed), "담당자 칸은 잠그지 않는다");
   assert.equal("tstaff" in formToCourse({ ...v, tstaff: ["t1"] }), false);
 });
+
+import { sessionRowsFrom, sessionsPayload } from "../js/menus/education/courses-logic.js";
+
+test("회차 창 — 받은 회차는 id 를 품고 · 새 줄은 id 없이 · 보낼 때 번호는 지금 차례(서버는 id 로 맞춘다)", () => {
+  const got = [{ id: 11, no: 1, on_date: "2026-10-25", start_time: "14:00", end_time: null, topic: "죄", place: "" },
+    { id: 12, no: 2, on_date: "2026-11-01", start_time: null, end_time: null, topic: null, place: null }];
+  const rows = sessionRowsFrom(got);
+  assert.deepEqual(rows, [{ id: 11, no: 1, on_date: "2026-10-25", start_time: "14:00", end_time: "", topic: "죄", place: "" },
+    { id: 12, no: 2, on_date: "2026-11-01", start_time: "", end_time: "", topic: "", place: "" }]);
+  assert.deepEqual(sessionRowsFrom([{ no: 1, on_date: "2026-10-25" }])[0].id, undefined);   // 옛 서버(id 없음)도 그린다
+  assert.deepEqual(sessionRowsFrom(null), []);
+  // 가운데(1회)를 빼고 새 줄을 더하면 — 남은 회차는 id 그대로 1회로 당겨지고, 새 줄은 id 없이 2회
+  const after = [rows[1], { no: 9, on_date: "2026-11-08", start_time: "", end_time: "", topic: "", place: "" }];
+  assert.deepEqual(sessionsPayload(after), [
+    { id: 12, no: 1, on_date: "2026-11-01", start_time: "", end_time: "", topic: "", place: "" },
+    { no: 2, on_date: "2026-11-08", start_time: "", end_time: "", topic: "", place: "" },
+  ]);
+  // 「이대로 채우기」 줄(makeSessionRows)은 id 가 없다 — 지금 회차를 모두 지우고 새로
+  assert.ok(sessionsPayload(makeSessionRows("2027-03-03", 3, 7)).every((s) => !("id" in s)));
+  assert.deepEqual(sessionsPayload(null), []);
+});

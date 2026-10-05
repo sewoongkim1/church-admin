@@ -7,13 +7,14 @@
 //   바뀐 때만 eduStaffSet {…, kind:'teacher'}. 카드의 「강사 OOO」는 계정(courseOut.teachers) — 글 칸 「강사」(teacher_label)와 별개.
 // ⚠️ 고르기·날짜·시각은 시스템 칸(select·type=date·type=time)이 아니라 picker.js 고르개(pickOne·pickDate·pickTime)로.
 // ⚠️ 새 강좌·복사본은 「준비 중」 — 「모집 중」으로 저장하는 순간 성경암송 앱에 보이므로 그때만 확인 창을 한 번 더 띄운다.
-// ⚠️ 회차 저장은 서버가 통째로 바꾼다(eduSessionsSave — 한 번에 · 같은 번호는 id 유지). 끝난 강좌는 course-closed.
+// ⚠️ 회차 저장은 서버가 통째로 바꾼다(eduSessionsSave — 한 번에 · **회차는 id 로 맞춘다**: 창의 줄이 id 를 품고 가고, 뺀 줄은 지운다 ·
+//    출석이 있는 회차를 빼면 has-attendance 로 아무것도 안 바뀐다 — 창은 그대로 두고 회차 번호를 알린다). 끝난 강좌는 course-closed.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne, pickMany, pickDate, pickTime, fmtDateLabel, fmtTimeLabel } from "../../core/picker.js";
 import {
   KIND_OPTIONS, MODE_OPTIONS, STATUS_OPTIONS, WAITLIST_OPTIONS,
-  formToCourse, courseToForm, checkFormNumbers, sessionsSummary, periodSummary, makeSessionRows, sessionErrorText, courseErrorText, sessionHeadLine,
+  formToCourse, courseToForm, checkFormNumbers, sessionsSummary, periodSummary, makeSessionRows, sessionRowsFrom, sessionsPayload, sessionErrorText, courseErrorText, sessionHeadLine,
   courseSavedText, staffBits, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND, STALE_MARK,
   teacherBits, TEACHER_NO_CAND, TEACHER_ROLE_HINTS, TEACHER_BAD_MEMBER,
 } from "./courses-logic.js";
@@ -197,14 +198,13 @@ const rowHtml = (s, i) => `<div class="card ec-row" data-row="${i}">
 async function openSessionsForm({ call, course }) {
   const r0 = await call("eduSessions", { course_id: course.id });
   if (!r0.ok) { toast(errorText(r0)); return null; }
-  let rows = (r0.sessions || []).map((s) => ({ no: s.no, on_date: s.on_date || "", start_time: s.start_time || "",
-    end_time: s.end_time || "", topic: s.topic || "", place: s.place || "" }));
+  let rows = sessionRowsFrom(r0.sessions);   // 고칠 회차는 id 를 품는다 — 새 줄만 id 없이
   const gen = { start: course.startsOn || "", every: "7", st: "", et: "" };
   let first = "", sync = () => {};
   return openForm({
     title: `🗓️ 회차 — ${course.title}`, okLabel: "저장",
     html: `<div class="card"><b>한 번에 만들기</b>
-        <p class="muted">첫 날부터 몇 회를 한 번에 채워요 — 지금 있는 회차는 바뀌어요 (저장하기 전에는 서버에 가지 않아요)</p>
+        <p class="muted">첫 날부터 몇 회를 한 번에 채워요 — 지금 있는 회차는 지우고 새로 만들어요 (출석이 있는 회차는 지울 수 없어요 · 저장하기 전에는 서버에 가지 않아요)</p>
         <div class="field"><span>첫 날</span>${fieldBtn("data-g", "start", course.startsOn ? dateText(course.startsOn) : "날짜 고르기", !course.startsOn)}</div>
         <div class="ec-pair">
           <label class="field"><span>몇 회</span><input data-g-count value="8" inputmode="numeric" maxlength="3"></label>
@@ -272,7 +272,7 @@ async function openSessionsForm({ call, course }) {
     onSubmit: async () => {
       sync();
       if (rows.some((s) => !s.on_date)) return { ok: false, message: "날짜를 고르지 않은 회차가 있어요" };
-      const r = await call("eduSessionsSave", { course_id: course.id, sessions: rows.map((s) => ({ ...s })) });
+      const r = await call("eduSessionsSave", { course_id: course.id, sessions: sessionsPayload(rows) });
       if (r.ok) return { ok: true, value: rows.length };
       const m = sessionErrorText(r);
       return m ? { ok: false, message: m } : r;

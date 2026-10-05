@@ -74,6 +74,19 @@ export function makeSessionRows(start, count, every = 7, t = {}) {
   return out;
 }
 
+// 회차 창 줄(2단계 검토 2026-10-05) — 회차의 정체는 id(서버 edu_sessions_replace 가 id 로 맞춘다 · no 는 보여 주는 차례일 뿐).
+//   eduSessions 가 준 회차는 id 를 그대로 품고, 창에서 뺀 줄은 서버가 지운다(출석이 있으면 has-attendance · 아무것도 안 바뀜).
+//   새 줄(「＋ 줄 더하기」·「이대로 채우기」)은 id 없이 — 「이대로 채우기」는 그래서 지금 회차를 모두 지우고 새로 만든다.
+export function sessionRowsFrom(list) {
+  return (list || []).map((s) => ({ ...(s.id ? { id: s.id } : {}), no: s.no, on_date: s.on_date || "", start_time: s.start_time || "",
+    end_time: s.end_time || "", topic: s.topic || "", place: s.place || "" }));
+}
+// 창의 줄 → eduSessionsSave 의 sessions(id 는 있을 때만 · 번호는 지금 차례)
+export const sessionsPayload = (rows) => (rows || []).map((s, i) => {
+  const { id, ...rest } = s;
+  return { ...(id ? { id } : {}), ...rest, no: i + 1 };
+});
+
 // 회차 저장 오류 → 한국말(서버 checkSessions·edu_sessions_replace 가 돌려주는 번호들)
 const SESSION_ERR = {
   "course-closed": "끝난 강좌는 회차를 바꿀 수 없어요", "bad-rows": "회차 칸을 확인해 주세요",
