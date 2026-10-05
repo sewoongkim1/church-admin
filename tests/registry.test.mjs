@@ -49,3 +49,11 @@ test("menusFor — super 는 전부, 역할 없으면 없음", () => {
   assert.equal(menusFor(["super"]).length, MENUS.length);
   assert.equal(menusFor(["ministry"]).length, MENUS.filter((m) => m.role === "ministry").length);
 });
+
+test("교육 묶음 — 강좌 관리 다음에 신청 현황 · 둘 다 education 역할", () => {
+  const edu = MENUS.filter((m) => m.group === "교육");
+  assert.deepEqual(edu.map((m) => m.id), ["edu-courses", "edu-enroll"]);
+  assert.deepEqual(edu.map((m) => m.label), ["강좌 관리", "신청 현황"]);
+  assert.ok(edu.every((m) => m.role === "education"));
+  assert.deepEqual(menusFor(["education"]).map((m) => m.id), ["edu-courses", "edu-enroll"]);
+});

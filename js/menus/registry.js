@@ -25,9 +25,11 @@ export const MENUS = [
     role: "bibleevent", load: () => import("./bibleevent/upload.js") },
   { id: "be-history", group: "성경필사(암송)", icon: "👤", label: "사람별 이력·통계", desc: "이름으로 찾기 · 회차별·교구별 · 여러 번 참여",
     role: "bibleevent", load: () => import("./bibleevent/history.js") },
-  // 🎓 교육신청(2026-10-05 · 1단계) — 강좌 관리. 신청 현황은 과제 6.
+  // 🎓 교육신청(2026-10-05 · 1단계) — 강좌 관리 · 신청 현황.
   { id: "edu-courses", group: "교육", icon: "📚", label: "강좌 관리", desc: "강좌 만들기 · 회차 · 지난 학기 복사 · 모집 열기",
     role: "education", load: () => import("./education/courses.js") },
+  { id: "edu-enroll", group: "교육", icon: "📝", label: "신청 현황", desc: "확정·대기·반려 · 대신 등록 · 교재비 · 엑셀",
+    role: "education", load: () => import("./education/enrollments.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
   // 🧪 시험 참여자 — 시스템 묶음 · 총괄만(2026-10-02 친구 요청 · 그전에는 사역신청 묶음 · 역할 ministry).
