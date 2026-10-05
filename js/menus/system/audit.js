@@ -39,7 +39,13 @@ export const LABEL = {
   // 출석부(2단계 · 2026-10-05) — detail 은 서버 edu-db.ts 의 audit() 호출과 한 벌(id·수만 · 이름·상태 없음)
   //   set {course, session, no, enrollment} · bulk {course, session, no, count} · export {course, count, sessions}
   "edu.attend.set": "출석 체크(교육)", "edu.attend.bulk": "출석 한꺼번에 체크(교육)", "edu.attend.export": "출석 현황 내려받음(교육)",
+  // 수료(3단계 · 2026-10-05) — detail 은 서버 edu-db.ts 의 audit() 호출과 한 벌(id·수·칸 이름만 · 이름·번호·이미지 없음)
+  //   check {enrollment, done} · issue {course, count, fresh, restored, ids} · revoke {enrollment} · print {course, count} · settings {fields}
+  "edu.cert.check": "수료 확인 체크(교육)", "edu.cert.issue": "수료 확정(교육)", "edu.cert.revoke": "수료 취소(교육)",
+  "edu.cert.print": "수료증 인쇄(교육)", "edu.cert.settings": "수료증 설정 바꿈(교육)",
 };
+// 수료증 설정 칸 이름(edu.cert.settings 의 fields)
+const CERT_FIELD = { issuer: "발급 명의", body: "문안", seal: "직인" };
 // detail 로 가르는 이름 — 같은 action 을 여러 화면이 남길 때(칸 이름·값은 서버 events-person.ts ministryLookupLog 와 한 벌)
 export const LOOKUP_MINISTRY = "명부 찾기(사역신청·담당자)";
 export const LOOKUP_HISTORY = "명부 찾기(사역 이력)";
@@ -123,6 +129,11 @@ export function detailText(r) {
   if (r.action === "edu.attend.set") return joinDot(d.no != null ? `${d.no}회차` : "", d.enrollment != null ? `신청 #${d.enrollment}` : "");
   if (r.action === "edu.attend.bulk") return joinDot(d.no != null ? `${d.no}회차` : "", `${d.count ?? 0}분`);
   if (r.action === "edu.attend.export") return joinDot(`${d.count ?? 0}분`, `회차 ${d.sessions ?? 0}`);
+  if (r.action === "edu.cert.check") return joinDot(d.enrollment != null ? `신청 #${d.enrollment}` : "", d.done === false ? "체크 풂" : "체크");
+  if (r.action === "edu.cert.issue") return joinDot(`${d.count ?? 0}분`, d.restored ? `되살림 ${d.restored}` : "");
+  if (r.action === "edu.cert.revoke") return d.enrollment != null ? `신청 #${d.enrollment}` : "";
+  if (r.action === "edu.cert.print") return `${d.count ?? 0}분`;
+  if (r.action === "edu.cert.settings") return (Array.isArray(d.fields) ? d.fields : []).map((f) => CERT_FIELD[f] || f).join("·");
   if (r.action === "history.request") {
     return [`#${d.id ?? r.target}`, REQ_KIND[d.kind] || d.kind || "", `${d.from || ""} → ${d.to || ""}`, d.verified ? "본인 확인" : ""].filter(Boolean).join(" · ");
   }

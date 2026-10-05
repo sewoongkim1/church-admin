@@ -377,3 +377,159 @@ export function attendExportRows(course: { title: string; term?: string }, sessi
     ...(p.cells || []).map((s: string | null) => (s ? ATTEND_MARK[s] || "" : "")),
     String(p.present ?? 0), String(p.late ?? 0), String(p.absent ?? 0), String(p.excused ?? 0), p.pct === null || p.pct === undefined ? "" : p.pct + "%"])];
 }
+
+// ---------- 수료(3단계 · 2026-10-05 · 계획 v2 docs/superpowers/plans/2026-10-05-education-stage3-certificates.md) ----------
+// 수료 후보 — 출석률(eduAttendRate)이 강좌 기준(attendPct) 이상 **그리고** 확인 항목(checkLabel)이 있으면 그 체크(checkDone === true).
+//   pct 가 null(체크한 회차가 없거나 공결만)이면 후보가 아니다 · attendPct 가 수가 아니면 후보가 아니다(모르면 고르지 않는다).
+//   화면이 후보를 미리 고르고 **사람이 확정**한다(자동 확정 없음 · SQL edu_issue_certs 는 기준을 보지 않는다).
+export function eduCertCandidate(x: { attend?: any; attendPct?: unknown; checkLabel?: unknown; checkDone?: unknown }): boolean {
+  const pct = eduAttendRate(x?.attend).pct;
+  const need = x?.attendPct;
+  if (pct === null || typeof need !== "number" || !Number.isFinite(need)) return false;
+  if (pct < need) return false;
+  return !norm(x?.checkLabel) || x?.checkDone === true;
+}
+
+// 수료번호 꼴·이름 가리기·문안 채우기 — ⚠️ 아래 세 함수 몸통은 성경암송 supabase/functions/api/index.ts 의 복사본과 **한 글자도 같다**
+//   (진위 확인 eduVerify 의 가린 이름 · 번호 꼴 · 내 수료증 eduCert 의 문안). 이쪽 tests/edu-rules.test.mjs 와 그쪽 tests/edu-front.test.cjs 에
+//   같은 지문(sha256)이 박혀 있다 — 어느 쪽 글자가 바뀌어도 그쪽 시험이 떨어진다. 그래서 eduAttendRate 처럼 export 를 함수 앞에 붙이지 않는다.
+//   번호 꼴은 SQL edu_cert_take(「고척-YYYY-NNNN」 · 9999 다음은 자리가 는다)·칸 제약 edu_enrollments_cert_check 와 같다.
+//   이름 가리기: 한 글자는 그대로 · 두 글자는 뒤를 * · 세 글자 넘으면 처음과 끝만 남긴다(홍길동 → 홍*동 · 남궁가나 → 남**나).
+function maskName(name) {
+  var s = Array.from(String(name == null ? "" : name).normalize("NFC").trim());
+  if (s.length < 2) return s.join("");
+  if (s.length === 2) return s[0] + "*";
+  return s[0] + "*".repeat(s.length - 2) + s[s.length - 1];
+}
+function eduCertNoValid(s) {
+  return typeof s === "string" && /^고척-[0-9]{4}-[0-9]{4,6}$/.test(s);
+}
+function eduCertBody(body, title) {
+  return String(body == null ? "" : body).split("{과정}").join(String(title == null ? "" : title));
+}
+export { maskName, eduCertNoValid, eduCertBody };
+
+// 수료 확정할 신청 번호들 — 양의 정수 · 겹친 것은 하나로 · 1~2000(SQL 한도와 같다)
+export const CERT_IDS_MAX = 2000;
+export function checkCertIds(x: unknown): { ok: true; ids: number[] } | { ok: false; error: string } {
+  if (!Array.isArray(x) || !x.length) return { ok: false, error: "bad-ids" };
+  const seen = new Set<number>();
+  const ids: number[] = [];
+  for (const v of x) {
+    const n = typeof v === "number" || (typeof v === "string" && /^\d+$/.test(v)) ? Number(v) : NaN;
+    if (!Number.isSafeInteger(n) || n < 1) return { ok: false, error: "bad-ids" };
+    if (!seen.has(n)) { seen.add(n); ids.push(n); }
+  }
+  if (ids.length > CERT_IDS_MAX) return { ok: false, error: "too-many" };
+  return { ok: true, ids };
+}
+
+// 번호를 매길 차례 — 고른 분들을 이름 가나다(같으면 소속, 그다음 신청 번호) 차례로. SQL edu_issue_certs 는 받은 **배열 차례대로** 번호를 준다.
+//   rows = 그 강좌의 신청 줄(이름·소속 칸) · rows 에 없는 id 는 맨 뒤(보낸 차례 그대로 — SQL 이 not-found·wrong-course 로 거절한다).
+export function certIssueOrder(rows: any[], ids: number[]): number[] {
+  const by = new Map<number, any>((rows || []).map((r) => [Number(r.id), r]));
+  const known = ids.filter((id) => by.has(id)).map((id) => ({ id, name: norm(by.get(id).name), who: whoOf(by.get(id)) }));
+  known.sort((a, z) => a.name.localeCompare(z.name, "ko") || a.who.localeCompare(z.who, "ko") || a.id - z.id);
+  return [...known.map((x) => x.id), ...ids.filter((id) => !by.has(id))];
+}
+
+// 교육 기간 — 강좌의 starts_on·ends_on, 없으면 첫·마지막 회차(성경암송 api eduPeriod 와 같은 규칙 · 시작일만 있고 마지막 회차가 그보다 앞이면 끝을 비운다)
+export function certPeriod(c: { starts_on?: string | null; ends_on?: string | null }, sessions: { on_date?: string }[]): { from: string | null; to: string | null } {
+  const ds = (sessions || []).map((s) => String(s?.on_date || "")).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const from = c?.starts_on || ds[0] || null;
+  const lastS = ds[ds.length - 1] || null;
+  const to = c?.ends_on || (lastS && (!from || lastS >= from) ? lastS : null);
+  return { from, to };
+}
+
+// 수료 화면 강좌 칸 — 기준(attendPct·checkLabel)·기간·보관 여부(archived 면 확정·체크가 막힌다 — SQL course-archived)
+export function certCourseOut(c: any, sessions: { on_date?: string }[]) {
+  const p = certPeriod(c, sessions);
+  return { id: c.id, title: c.title, term: c.term || "", status: c.status, statusLabel: EDU_STATUS_LABEL[c.status] || c.status,
+    attendPct: c.attend_pct ?? null, checkLabel: c.check_label || null, from: p.from, to: p.to, archived: c.status === "archived" };
+}
+
+// 수료 화면 명단 — 확정된 분마다 출석(attendSummary 와 같은 셈)·확인 체크·후보·수료 칸. 이름 가나다 → 소속 → id 차례.
+//   people 은 신청 줄 {id, name, who_type, group_name, sub_name, check_done, completed, completed_at, cert_no, cert_revoked} —
+//   응답에는 id(신청 번호)·이름·소속과 아래 칸만(user_id·ident_key 없음). certNo 는 수료 취소된 줄에도 준다(revoked 와 함께 — 담당자 화면).
+//   counts.candidates = 후보이면서 아직 수료도 취소도 아닌 분(「후보 N분 수료 확정」의 N — 취소한 분을 저절로 되살리지 않게 뺀다).
+export function certListOut(course: any, sessions: { id: number }[], people: any[], rows: { enrollment_id: number; session_id: number; state: string }[]) {
+  const attendPct = typeof course?.attend_pct === "number" ? course.attend_pct : null;
+  const sum = attendSummary(sessions, people, rows, attendPct);
+  const by = new Map<number, any>((people || []).map((p) => [Number(p.id), p]));
+  const list = sum.map((s) => {
+    const p = by.get(Number(s.id)) || {};
+    const attend = { present: s.present, late: s.late, absent: s.absent, excused: s.excused, marked: s.marked, attended: s.attended, denom: s.denom, pct: s.pct };
+    const checkDone = p.check_done === true;
+    const revoked = p.cert_revoked === true;
+    const completed = p.completed === true && !revoked;
+    const at = p.completed_at ? Date.parse(p.completed_at) : NaN;
+    return { id: s.id, name: s.name, who: s.who, attend, below: s.below, checkDone,
+      candidate: eduCertCandidate({ attend, attendPct, checkLabel: course?.check_label, checkDone }),
+      completed, revoked, certNo: p.cert_no || null, completedOn: isNaN(at) ? null : kstDate(at) };
+  });
+  const counts = { total: list.length, candidates: list.filter((x) => x.candidate && !x.completed && !x.revoked).length,
+    completed: list.filter((x) => x.completed).length, revoked: list.filter((x) => x.revoked).length };
+  return { counts, people: list };
+}
+
+// 인쇄 명단 — 수료(취소 아님) 줄만 {id, name, certNo, issuedOn}(이름 가나다 → 번호). 수료번호 없는 줄은 뺀다.
+export function certPrintPeople(rows: any[]) {
+  return (rows || []).filter((r) => r?.completed === true && r?.cert_revoked !== true && r?.cert_no)
+    .map((r) => { const at = Date.parse(r.completed_at); return { id: r.id, name: norm(r.name), certNo: String(r.cert_no), issuedOn: isNaN(at) ? null : kstDate(at) }; })
+    .sort((a, z) => a.name.localeCompare(z.name, "ko") || (a.certNo < z.certNo ? -1 : a.certNo > z.certNo ? 1 : 0));
+}
+
+// 수료증 설정 — 발급 명의(한 줄 · 60자) · 문안(300자 · 줄바꿈 됨 · {과정} 자리 · 비우면 no-body) · 직인(PNG·JPEG data URL · 300KB 이하 · null = 지움).
+//   보낸 칸만 바꾼다(칸이 없으면 그대로 — 글만 고칠 때 이미지를 다시 보내지 않아도 된다). 아무 칸도 없으면 nothing.
+//   글자 수는 SQL char_length 와 같게(코드 포인트로) 센다. 칸 제약은 v2 supabase/edu.sql 의 edu_cert_settings 가 한 번 더 막는다.
+export const CERT_ISSUER_MAX = 60;
+export const CERT_BODY_MAX = 300;
+export const CERT_SEAL_MAX = 300 * 1024;     // 풀었을 때 바이트
+const SEAL_RE = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/;
+const SEAL_HEAD = "data:image/jpeg;base64,".length;
+export function checkCertSeal(x: unknown): { ok: true; seal: string | null } | { ok: false; error: string } {
+  if (x === null) return { ok: true, seal: null };
+  if (typeof x !== "string") return { ok: false, error: "bad-seal" };
+  if (x.length > SEAL_HEAD + Math.ceil(CERT_SEAL_MAX / 3) * 4) return { ok: false, error: "seal-too-big" };   // 글자 수로 먼저(큰 글을 정규식에 넣지 않게)
+  const m = SEAL_RE.exec(x);
+  if (!m || m[2].length % 4 !== 0) return { ok: false, error: "bad-seal" };
+  const b64 = m[2];
+  const bytes = (b64.length / 4) * 3 - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
+  if (bytes > CERT_SEAL_MAX) return { ok: false, error: "seal-too-big" };
+  // 겉봉만 PNG·JPEG 인 다른 파일(SVG·HTML 등)을 막는다 — 머리 바이트(PNG 89 50 4E 47 0D 0A 1A 0A · JPEG FF D8 FF)
+  if (m[1] === "png" ? !b64.startsWith("iVBORw0KGgo") : !b64.startsWith("/9j/")) return { ok: false, error: "bad-seal" };
+  return { ok: true, seal: x };
+}
+const cpLen = (s: string) => Array.from(s).length;
+export function checkCertSettings(o: any):
+  { ok: true; patch: { issuer?: string; body?: string; seal?: string | null } } | { ok: false; error: string; field?: string } {
+  const x = o && typeof o === "object" ? o : {};
+  const patch: { issuer?: string; body?: string; seal?: string | null } = {};
+  if (x.issuer !== undefined) {
+    if (x.issuer !== null && typeof x.issuer !== "string") return { ok: false, error: "bad-issuer" };
+    const v = norm(x.issuer);
+    if (cpLen(v) > CERT_ISSUER_MAX) return { ok: false, error: "too-long", field: "issuer" };
+    patch.issuer = v;
+  }
+  if (x.body !== undefined) {
+    if (typeof x.body !== "string") return { ok: false, error: "bad-body" };
+    const v = x.body.normalize("NFC").replace(/\r\n?/g, "\n").trim();
+    if (!v) return { ok: false, error: "no-body" };
+    if (/[\u0000-\u0009\u000b-\u001f\u007f]/.test(v)) return { ok: false, error: "bad-body" };
+    if (cpLen(v) > CERT_BODY_MAX) return { ok: false, error: "too-long", field: "body" };
+    patch.body = v;
+  }
+  if (x.seal !== undefined) {
+    const s = checkCertSeal(x.seal);
+    if (!s.ok) return s;
+    patch.seal = s.seal;
+  }
+  if (!Object.keys(patch).length) return { ok: false, error: "nothing" };
+  return { ok: true, patch };
+}
+// 바뀐 칸 이름(차례: issuer·body·seal) — 기록 edu.cert.settings 에는 이것만(이미지·글을 싣지 않는다)
+export function certSettingsChanged(cur: any, patch: { issuer?: string; body?: string; seal?: string | null }): string[] {
+  const c = cur || {};
+  return (["issuer", "body", "seal"] as const).filter((k) => k in patch && (patch[k] ?? null) !== (c[k] ?? null));
+}

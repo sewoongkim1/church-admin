@@ -132,6 +132,18 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   eduAttendBulk: EDU_ATTEND,
   eduAttendSummary: EDU_ATTEND,
   eduAttendExport: EDU_ATTEND,
+  // 수료(3단계 · 2026-10-05 · 계획 v2 docs/superpowers/plans/2026-10-05-education-stage3-certificates.md) — 수료 확정은 교육 총괄 + 그 강좌 교육 담당
+  //   (manager 줄 · edu-db.ts mayTouch 기본 · 아니면 not-assigned). ⚠️ 강사(teacher)는 넣지 않는다 — 강사는 출석만.
+  //   수료·번호·확인 체크는 v2 SQL edu_issue_certs·edu_revoke_cert·edu_check_set(번호는 SQL 한 곳). 응답에 user_id·ident_key 없음 ·
+  //   기록 edu.cert.check·issue·revoke·print(id·수만).
+  eduCertList: EDU_BOTH,
+  eduCheckSet: EDU_BOTH,
+  eduCertIssue: EDU_BOTH,
+  eduCertRevoke: EDU_BOTH,
+  eduCertPrint: EDU_BOTH,
+  // 수료증 설정(발급 명의·문안·직인 이미지) — 교육 총괄만 · 기록 edu.cert.settings 에는 바뀐 칸 이름만(이미지 없음)
+  eduCertSettings: "education",
+  eduCertSettingsSave: "education",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

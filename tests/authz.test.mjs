@@ -177,8 +177,8 @@ test("education(교육 총괄) 액션 × 사람 — 교육 총괄·총괄만 통
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "education");
-  // 강좌 만들기·고치기·복사·회차 저장·담당자 지정은 총괄만(2026-10-05 친구 결정)
-  assert.deepEqual(acts.sort(), ["eduCourseCopy", "eduCourseSave", "eduSessionsSave", "eduStaffCandidates", "eduStaffSet"]);
+  // 강좌 만들기·고치기·복사·회차 저장·담당자 지정은 총괄만(2026-10-05 친구 결정) · 수료증 설정(명의·문안·직인)도 총괄만(3단계)
+  assert.deepEqual(acts.sort(), ["eduCertSettings", "eduCertSettingsSave", "eduCourseCopy", "eduCourseSave", "eduSessionsSave", "eduStaffCandidates", "eduStaffSet"]);
   for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 
@@ -198,10 +198,10 @@ test("교육 신청 현황 액션(역할 배열) × 사람 — 교육 총괄·�
     [{ status: "active", roles: ["ministry", "educourse"] }, "ok"],
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
-  // 신청 현황 쪽(EDU_BOTH) — 출석부 액션(강사 포함)은 아래 시험이 따로 본다
+  // 신청 현황 쪽(EDU_BOTH) — 출석부 액션(강사 포함)은 아래 시험이 따로 본다 · 수료(3단계)도 총괄 + 교육 담당(강사 아님)
   const acts = Object.keys(ACTION_ROLES).filter((k) => Array.isArray(ACTION_ROLES[k]) && !ACTION_ROLES[k].includes("teacher"));
-  assert.deepEqual(acts.sort(), ["eduCourses", "eduEnrollAdd", "eduEnrollList", "eduEnrollSet", "eduExport", "eduFeeSet",
-    "eduPeopleLookup", "eduSessions"]);
+  assert.deepEqual(acts.sort(), ["eduCertIssue", "eduCertList", "eduCertPrint", "eduCertRevoke", "eduCheckSet",
+    "eduCourses", "eduEnrollAdd", "eduEnrollList", "eduEnrollSet", "eduExport", "eduFeeSet", "eduPeopleLookup", "eduSessions"]);
   for (const a of acts) {
     assert.deepEqual([...ACTION_ROLES[a]].sort(), ["education", "educourse"], a);
     for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
@@ -240,4 +240,20 @@ test("출석부 액션(2단계 · 강사 teacher) × 사람 — 교육 총괄·�
   for (const a of eduOther) assert.equal(canCall(a, teacher), "forbidden", a);
   assert.equal(canCall("eduEnrollList", teacher), "forbidden");
   assert.ok(knownRoles().includes("teacher"));
+});
+
+test("수료 액션(3단계) — 강사는 문에서 막힌다 · 교육 담당은 확정·인쇄는 되고 설정은 안 된다 · 총괄은 모두", () => {
+  const teacher = { status: "active", roles: ["teacher"] };
+  const course = { status: "active", roles: ["educourse"] };
+  const chief = { status: "active", roles: ["education"] };
+  const cert = ["eduCertList", "eduCheckSet", "eduCertIssue", "eduCertRevoke", "eduCertPrint"];
+  const settings = ["eduCertSettings", "eduCertSettingsSave"];
+  for (const a of [...cert, ...settings]) {
+    assert.equal(canCall(a, teacher), "forbidden", a);
+    assert.equal(canCall(a, chief), "ok", a);
+    assert.equal(canCall(a, { status: "active", roles: ["super"] }), "ok", a);
+  }
+  for (const a of cert) assert.equal(canCall(a, course), "ok", a);
+  for (const a of settings) assert.equal(canCall(a, course), "forbidden", a);
+  assert.equal(canCall("eduCertSettingsSave", { status: "active", roles: ["educourse", "teacher"] }), "forbidden");
 });

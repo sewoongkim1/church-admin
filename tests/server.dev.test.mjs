@@ -218,6 +218,14 @@ const PROBE = {
   eduAttendBulk: { session_id: 0, state: "present" },
   eduAttendSummary: { course_id: ZERO },
   eduAttendExport: { course_id: ZERO },
+  // 수료(3단계 · 2026-10-05) — 없는 강좌(not-found)·틀린 id(bad-id)·빈 목록(bad-ids)·틀린 직인(bad-seal)이라 아무것도 안 쓴다 · 설정 읽기는 읽기만
+  eduCertList: { course_id: ZERO },
+  eduCheckSet: { enrollment_id: 0, done: true },
+  eduCertIssue: { course_id: ZERO, enrollment_ids: [] },
+  eduCertRevoke: { enrollment_id: 0 },
+  eduCertPrint: { course_id: ZERO },
+  eduCertSettings: {},
+  eduCertSettingsSave: { seal: "x" },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 

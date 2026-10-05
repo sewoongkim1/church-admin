@@ -304,3 +304,18 @@ test("출석부 기록(2단계) — 이름이 정해져 있고 detail 은 id·�
   assert.equal(detailText(R("edu.staff.set", { course: C, count: 0, kind: "teacher" }, C)), "강사 없음");
   assert.equal(detailText(R("edu.staff.set", { course: C, count: 2 }, C)), "담당 2분");
 });
+
+test("수료 기록(3단계) — 이름이 정해져 있고 detail 은 id·수·칸 이름만(서버 edu-db.ts 와 한 벌 · 이름·번호·이미지 없음)", () => {
+  for (const a of ["edu.cert.check", "edu.cert.issue", "edu.cert.revoke", "edu.cert.print", "edu.cert.settings"]) {
+    assert.ok(LABEL[a] && LABEL[a] !== a && /\(교육\)$/.test(LABEL[a]), a);
+  }
+  const C = "11111111-1111-4111-8111-111111111111";
+  assert.equal(detailText(R("edu.cert.check", { enrollment: 71, done: true }, "71")), "신청 #71 · 체크");
+  assert.equal(detailText(R("edu.cert.check", { enrollment: 71, done: false }, "71")), "신청 #71 · 체크 풂");
+  assert.equal(detailText(R("edu.cert.issue", { course: C, count: 3, fresh: 2, restored: 1, ids: [1, 2, 3] }, C)), "3분 · 되살림 1");
+  assert.equal(detailText(R("edu.cert.issue", { course: C, count: 12, fresh: 12, restored: 0, ids: [] }, C)), "12분");
+  assert.equal(detailText(R("edu.cert.revoke", { enrollment: 71 }, "71")), "신청 #71");
+  assert.equal(detailText(R("edu.cert.print", { course: C, count: 20 }, C)), "20분");
+  assert.equal(detailText(R("edu.cert.settings", { fields: ["issuer", "seal"] }, "1")), "발급 명의·직인");
+  assert.equal(detailText(R("edu.cert.settings", { fields: ["body"] }, "1")), "문안");
+});

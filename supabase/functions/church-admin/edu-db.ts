@@ -9,9 +9,13 @@
 //    교육 담당은 manager·teacher 줄이 있는 강좌만. 신청 현황 액션은 그대로 manager 줄만(강사는 ACTION_ROLES 에 없어 부르지도 못한다).
 //    출석은 SQL 함수(edu_attendance_set·edu_attendance_bulk)로만 쓴다 — 같은 강좌 확인·확정 확인·잠금 차례는 그쪽.
 //    응답에 marked_by(체크한 담당자)·user_id·ident_key 를 싣지 않는다 · 사람×회차 줄은 allRows 로 읽는다(1,000줄 함정).
+// ⚠️ 수료(3단계 · 2026-10-05): eduCert* · eduCheckSet 은 신청 현황과 같은 확인(mayTouch 기본 manager 줄 · 강사는 문에서 막힌다).
+//    수료·번호·확인 체크는 SQL 함수(edu_issue_certs·edu_revoke_cert·edu_check_set)로만 쓴다 — 번호는 SQL 한 곳(edu_cert_take)에서만.
+//    수료증 설정(eduCertSettings*)은 교육 총괄만(ACTION_ROLES "education" + 여기서도 eduChief) · 기록에는 바뀐 칸 이름만(이미지 없음).
 import { attendCounts, attendExportRows, attendKinds, attendSessionOut, attendSummary, checkAttendState, checkCourse, checkSessions,
   checkStaffIds, checkStaffKind, checkTypedIdent, courseOut, eduChief, EDU_STAFF_ROLES, EDU_STATUS_LABEL, EDU_TEACHER_ROLES, enrollOut,
-  exportRows, kstDate, maybeDupIds, pickSession, seatsOpened, staffByCourse, staffCandidateOut, staffRolesFor, waitOrder, whoOf } from "./edu-rules.ts";
+  exportRows, kstDate, maybeDupIds, pickSession, seatsOpened, staffByCourse, staffCandidateOut, staffRolesFor, waitOrder, whoOf,
+  certCourseOut, certIssueOrder, certListOut, certPeriod, certPrintPeople, certSettingsChanged, checkCertIds, checkCertSettings, eduCertBody } from "./edu-rules.ts";
 import { norm } from "./authz.ts";
 
 type Db = any;
@@ -539,8 +543,136 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     return { ok: true, rows: attendExportRows(r.course, r.sessions, r.people) };
   }
 
+  // ---------- 수료(3단계 · 2026-10-05) — 역할 education·educourse(authz.ts EDU_BOTH) · 강좌 확인은 mayTouch 기본(manager 줄) ----------
+  const CERT_COURSE_COLS = "id,title,term,status,attend_pct,check_label,starts_on,ends_on";
+  // 수료 명단 칸 — 이름·소속·수료 칸만(user_id·ident_key·staff_note 를 읽지 않는다)
+  const CERT_ENROLL_COLS = "id,name,who_type,group_name,sub_name,check_done,completed,completed_at,cert_no,cert_revoked";
+  async function certCourse(id: string) {
+    const { data, error } = await db.from("edu_courses").select(CERT_COURSE_COLS).eq("id", id).maybeSingle();
+    if (error) throw error;
+    return data as any;
+  }
+  // 수료증 설정 한 줄(v2 edu.sql 이 만들어 둔다 · 없으면 빈 값 — 화면이 「수료증 설정」을 권한다)
+  async function certSettings() {
+    const { data, error } = await db.from("edu_cert_settings").select("issuer,body,seal,updated_at").eq("id", 1).maybeSingle();
+    if (error) throw error;
+    return { issuer: data?.issuer ?? "", body: data?.body ?? "", seal: data?.seal ?? null, updatedAt: data?.updated_at ?? null };
+  }
+
+  // 수료 화면 — 확정된 분마다 출석률·확인 체크·후보·수료번호(취소 포함) + 강좌 기준(attendPct·checkLabel)·기간 + 수(counts)
+  async function eduCertList(ctx: any, b: any) {
+    const id = norm(b?.course_id);
+    if (!UUID.test(id)) return { ok: false, error: "bad-id" };
+    if (!(await mayTouch(ctx, id))) return NOT_ASSIGNED;
+    const c = await certCourse(id);
+    if (!c) return { ok: false, error: "not-found" };
+    const [ss, people] = await Promise.all([attSessions(id), deps.allRows(() => db.from("edu_enrollments").select(CERT_ENROLL_COLS)
+      .eq("course_id", id).eq("status", "confirmed").order("id"))]);
+    const rows = await attRows(ss.map((s: any) => Number(s.id)));
+    const out = certListOut(c, ss, people, rows);
+    return { ok: true, course: certCourseOut(c, ss), counts: out.counts, people: out.people };
+  }
+
+  // 확인 항목 체크 — {enrollment_id, done:boolean} · 맡은 강좌는 그 줄의 강좌로 본다(몸통의 course_id 를 믿지 않는다)
+  //   SQL edu_check_set: 확정자만(not-confirmed) · 마친 강좌도 됨 · 보관 강좌 course-archived. 기록 edu.cert.check {enrollment, done}.
+  async function eduCheckSet(ctx: any, b: any) {
+    const id = posInt(b?.enrollment_id);
+    if (!id) return { ok: false, error: "bad-id" };
+    if (typeof b?.done !== "boolean") return { ok: false, error: "bad-done" };
+    const no = await guardEnrollment(ctx, id);
+    if (no) return no;
+    const { data: r, error } = await db.rpc("edu_check_set", { p_enrollment: id, p_done: b.done });
+    if (error) throw error;
+    if (!r) return { ok: false, error: "server" };
+    if (r.ok) await audit(ctx, "edu.cert.check", String(id), { enrollment: id, done: b.done });
+    return r;
+  }
+
+  // 수료 확정 — {course_id, enrollment_ids:[신청 번호…]} → 이름 가나다 차례로 세워 SQL edu_issue_certs(배열 차례대로 번호) ·
+  //   {ok, issued:[{id, certNo, how:"new"|"restored"|"already"}]}. 한 줄이라도 틀리면 SQL 이 통째로 거절(not-found·wrong-course·not-confirmed + ids).
+  //   기록 edu.cert.issue {course, count, fresh, restored, ids}(새로 수료·되살린 줄만 · 이름·번호 없음) — 바뀐 것이 없으면(모두 already) 기록 안 함.
+  async function eduCertIssue(ctx: any, b: any) {
+    const course = norm(b?.course_id);
+    if (!UUID.test(course)) return { ok: false, error: "bad-id" };
+    const ids = checkCertIds(b?.enrollment_ids);
+    if (!ids.ok) return ids;
+    if (!(await mayTouch(ctx, course))) return NOT_ASSIGNED;
+    // 차례를 정할 이름 — 그 강좌의 신청 줄 전부(쪽 넘기기 · id 를 주소에 싣지 않는다)
+    const rows = await deps.allRows(() => db.from("edu_enrollments").select("id,name,who_type,group_name,sub_name")
+      .eq("course_id", course).order("id"));
+    const order = certIssueOrder(rows, ids.ids);
+    const { data: r, error } = await db.rpc("edu_issue_certs", { p_course: course, p_ids: order, p_by: memberId(ctx) || null });
+    if (error) throw error;
+    if (!r) return { ok: false, error: "server" };
+    if (r.ok) {
+      const list = Array.isArray(r.issued) ? r.issued : [];
+      const fresh = list.filter((x: any) => x.how === "new").map((x: any) => Number(x.id));
+      const restored = list.filter((x: any) => x.how === "restored").map((x: any) => Number(x.id));
+      if (fresh.length + restored.length) {
+        await audit(ctx, "edu.cert.issue", course, { course, count: fresh.length + restored.length, fresh: fresh.length, restored: restored.length,
+          ids: [...fresh, ...restored] });
+      }
+    }
+    return r;
+  }
+
+  // 수료 취소 — {enrollment_id} · 번호는 남는다(진위 확인 「취소됨」 · 다시 확정하면 같은 번호) · 이미 취소면 {ok, already:true} 기록 안 함
+  async function eduCertRevoke(ctx: any, b: any) {
+    const id = posInt(b?.enrollment_id);
+    if (!id) return { ok: false, error: "bad-id" };
+    const no = await guardEnrollment(ctx, id);
+    if (no) return no;
+    const { data: r, error } = await db.rpc("edu_revoke_cert", { p_enrollment: id, p_by: memberId(ctx) || null });
+    if (error) throw error;
+    if (!r) return { ok: false, error: "server" };
+    if (r.ok && !r.already) await audit(ctx, "edu.cert.revoke", String(id), { enrollment: id });
+    return r;
+  }
+
+  // 수료증 인쇄 자료 — 그 강좌의 수료자(취소 아님) 전원 + 설정(명의·문안·직인). 문안의 {과정}은 강좌 제목으로 채워 준다(eduCertBody).
+  //   {ok, course:{id, title, term, from, to}, issuer, body, seal, people:[{id, name, certNo, issuedOn}]} · 기록 edu.cert.print {course, count}.
+  async function eduCertPrint(ctx: any, b: any) {
+    const id = norm(b?.course_id);
+    if (!UUID.test(id)) return { ok: false, error: "bad-id" };
+    if (!(await mayTouch(ctx, id))) return NOT_ASSIGNED;
+    const c = await certCourse(id);
+    if (!c) return { ok: false, error: "not-found" };
+    const [ss, rows, st] = await Promise.all([attSessions(id),
+      deps.allRows(() => db.from("edu_enrollments").select("id,name,completed,completed_at,cert_no,cert_revoked")
+        .eq("course_id", id).eq("completed", true).eq("cert_revoked", false).order("id")),
+      certSettings()]);
+    const people = certPrintPeople(rows);
+    const p = certPeriod(c, ss);
+    await audit(ctx, "edu.cert.print", id, { course: id, count: people.length });
+    return { ok: true, course: { id: c.id, title: c.title, term: c.term || "", from: p.from, to: p.to },
+      issuer: st.issuer, body: eduCertBody(st.body, c.title), seal: st.seal, people };
+  }
+
+  // 수료증 설정 읽기·저장 — 교육 총괄만(문 ACTION_ROLES "education" · 여기서도 한 번 더). body 는 {과정} 이 든 그대로.
+  async function eduCertSettings(ctx: any) {
+    if (!eduChief(ctx?.roles)) return { ok: false, error: "forbidden" };
+    return { ok: true, ...(await certSettings()) };
+  }
+  //   {issuer?, body?, seal?(data URL | null)} — 보낸 칸만 · 바뀐 칸이 없으면 쓰지도 기록하지도 않는다(changed:false).
+  //   기록 edu.cert.settings {fields:[바뀐 칸 이름]}(글·이미지 없음).
+  async function eduCertSettingsSave(ctx: any, b: any) {
+    if (!eduChief(ctx?.roles)) return { ok: false, error: "forbidden" };
+    const s = checkCertSettings(b);
+    if (!s.ok) return s;
+    const cur = await certSettings();
+    const fields = certSettingsChanged(cur, s.patch);
+    if (!fields.length) return { ok: true, changed: false, fields: [] };
+    const patch: Record<string, unknown> = { id: 1, updated_at: new Date().toISOString() };
+    for (const f of fields) patch[f] = (s.patch as any)[f];
+    const { error } = await db.from("edu_cert_settings").upsert(patch, { onConflict: "id" });
+    if (error) throw error;
+    await audit(ctx, "edu.cert.settings", "1", { fields });
+    return { ok: true, changed: true, fields };
+  }
+
   return { eduCourses, eduCourseSave, eduCourseCopy, eduSessions, eduSessionsSave, eduEnrollList, eduEnrollSet,
     eduEnrollAdd, eduFeeSet, eduExport, eduPeopleLookup, eduStaffCandidates, eduStaffSet,
     eduAttendCourses, eduAttendSessions, eduAttendSheet, eduAttendSet, eduAttendBulk, eduAttendSummary, eduAttendExport,
+    eduCertList, eduCheckSet, eduCertIssue, eduCertRevoke, eduCertPrint, eduCertSettings, eduCertSettingsSave,
     _mayTouch: mayTouch, _whoOf: whoOf };
 }

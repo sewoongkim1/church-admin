@@ -164,6 +164,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 정원을 늘리는 저장에만 `edu_course_refill`(대기자 차례로 확정 · 응답 `promoted`) · 회차 저장은 `edu_sessions_replace` 한 번에(id 보존 · 끝난·보관 강좌 `course-closed`).
 - 응답 칸은 `courseOut`·`enrollOut` 이 정한다(`user_id`·`ident_key` 없음) · 기록 `edu.*` 는 id·수만 · 명부 찾기는 `people.lookup` `from:"education"`.
 - 지우는 길 없음(`on delete restrict`) — 시험 강좌는 `archived`. 노트·함정 전체는 성경암송 `docs/notes/education.md`.
+- **수료(3단계 · 2026-10-05 · 개발만):** 액션 `eduCertList`·`eduCheckSet`·`eduCertIssue`·`eduCertRevoke`·`eduCertPrint`(역할 `EDU_BOTH` · manager 줄 · ⚠️ 강사 아님) · `eduCertSettings`·`eduCertSettingsSave`(교육 총괄만 · 서버도 `eduChief`). 수료·번호·확인 체크는 v2 SQL `edu_issue_certs`·`edu_revoke_cert`·`edu_check_set` 만 — **번호를 여기서 짓지 않는다**(SQL `edu_cert_take` 한 곳). 번호 차례 = `certIssueOrder`(이름 가나다 → 소속 → id)로 세워 보낸 배열 차례. 직인은 PNG·JPEG data URL(머리 바이트까지 · 풀어서 300KB · `checkCertSeal`) · 보낸 칸만 저장 · 기록 `edu.cert.settings` 는 바뀐 칸 이름만. `maskName`·`eduCertNoValid`·`eduCertBody` 는 성경암송 api 와 **같은 글자**(함수 앞에 export 금지 · 지문 시험). 번호 있는 줄은 `eduEnrollSet` 이 `has-cert`. 개발 시험 `tests/certs.dev.test.mjs`(설정·번호 차례를 시작 전 값으로 되돌린다).
 - **출석부(2단계 · 2026-10-05)** — 메뉴 ✅ 출석부(역할 `education`·`educourse`·`teacher`) · 강사(`teacher`)는 `edu_course_staff.kind='teacher'` 로 맡은 강좌만 · 신청 현황 액션은 못 부른다 · 출석은 SQL `edu_attendance_set`·`_bulk` 만(확정자만 · 같은 강좌 · 마친 강좌 `course-closed`) · 출석률 `eduAttendRate`(지각=출석 · 공결 뺌) 세 곳 지문 시험 · ⚠️ 회차는 **id 로** 맞춘다(`eduSessionsSave` 가 id 를 품고 보낸다 · 번호는 차례 · 「이대로 채우기」는 일부러 id 없이 — 차례로 id 를 잇지 말 것 · 출석 있는 회차 지우기는 `has-attendance`).
 
 ## 비상 절차

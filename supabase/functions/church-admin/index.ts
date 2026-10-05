@@ -2499,6 +2499,13 @@ Deno.serve(async (req) => {
       case "eduAttendBulk":      return json(await edu.eduAttendBulk(ctx, b));
       case "eduAttendSummary":   return json(await edu.eduAttendSummary(ctx, b));
       case "eduAttendExport":    return json(await edu.eduAttendExport(ctx, b));
+      case "eduCertList":        return json(await edu.eduCertList(ctx, b));
+      case "eduCheckSet":        return json(await edu.eduCheckSet(ctx, b));
+      case "eduCertIssue":       return json(await edu.eduCertIssue(ctx, b));
+      case "eduCertRevoke":      return json(await edu.eduCertRevoke(ctx, b));
+      case "eduCertPrint":       return json(await edu.eduCertPrint(ctx, b));
+      case "eduCertSettings":    return json(await edu.eduCertSettings(ctx));
+      case "eduCertSettingsSave": return json(await edu.eduCertSettingsSave(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));

@@ -654,3 +654,173 @@ test("회차는 id 로 — eduSessions 는 회차마다 id 를 준다 · eduSess
   assert.deepEqual(await b.edu.eduSessionsSave(CHIEF, { course_id: COURSE, sessions: [{ id: "x", no: 1, on_date: "2027-03-03" }] }), { ok: false, error: "bad-rows" });
   assert.equal(b.log.rpc.length, 0);
 });
+
+// ---------- 수료(3단계 · 2026-10-05) — 총괄 + 그 강좌 교육 담당(manager 줄) · 강사 아님 · 쓰기는 SQL 함수 · 기록은 id·수·칸 이름만 ----------
+const M_ROWS = [{ course_id: COURSE, member_id: STAFF_M, kind: "manager" }];   // 교육 담당 STAFF 는 강좌 A(COURSE)만
+const CERT_COURSE = { id: COURSE, title: "구원론", term: "2026 가을", status: "running", attend_pct: 80, check_label: "과제", starts_on: null, ends_on: null };
+const PNG1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+test("수료 — 교육 담당은 맡지 않은 강좌(B)에서 not-assigned · 쓰기·SQL 함수·기록 0 · 강좌·명단을 읽지도 않는다 · 신청 줄은 그 줄의 강좌로", async () => {
+  const NA = { ok: false, error: "not-assigned" };
+  for (const [fn, body] of [
+    ["eduCertList", { course_id: COURSE_B }],
+    ["eduCertIssue", { course_id: COURSE_B, enrollment_ids: [7, 8] }],
+    ["eduCertPrint", { course_id: COURSE_B }],
+    ["eduCheckSet", { enrollment_id: 7, done: true, course_id: COURSE }],     // 몸통에 A 를 실어도 신청 줄(B)의 강좌로 본다
+    ["eduCertRevoke", { enrollment_id: 7, course_id: COURSE }],
+  ]) {
+    const a = setup({ staffRows: M_ROWS, tables: { edu_enrollments: { id: 7, course_id: COURSE_B } }, applyRes: { ok: true, issued: [] } });
+    assert.deepEqual(await a.edu[fn](STAFF, body), NA, fn);
+    assert.equal(a.log.writes, 0, fn + " 썼다");
+    assert.equal(a.log.rpc.length, 0, fn + " SQL 함수를 불렀다");
+    assert.equal(a.log.audit.length, 0, fn + " 기록했다");
+    assert.ok(!a.log.q.some((q) => q.table === "edu_courses" || q.table === "edu_attendance" || q.table === "edu_cert_settings"), fn + " 강좌·출석·설정을 읽었다");
+    const sq = a.log.q.filter((q) => q.table === "edu_course_staff");
+    assert.equal(sq.length, 1, fn);
+    assert.ok(asked(sq[0], "eq", "course_id", COURSE_B) && asked(sq[0], "eq", "kind", "manager"), fn + " B·manager 로 묻지 않았다");
+  }
+  // 강사(teacher 줄)로는 수료가 안 열린다 — 문(ACTION_ROLES)에서도 막히지만 강좌 확인도 manager 줄만 본다
+  const t = setup({ staffRows: [{ course_id: COURSE, member_id: TEACH_M, kind: "teacher" }], applyRes: { ok: true, issued: [] } });
+  assert.deepEqual(await t.edu.eduCertIssue({ member: { id: TEACH_M }, roles: ["teacher", "educourse"] }, { course_id: COURSE, enrollment_ids: [7] }), NA);
+  assert.equal(t.log.rpc.length, 0);
+});
+
+test("eduCertIssue — 이름 가나다 차례로 세워 SQL 에(배열 차례대로 번호) · p_by = 나 · 기록은 새로·되살린 줄의 id·수만 · 모두 already 면 기록 없음", async () => {
+  const rows = [
+    { id: 71, name: "홍길동", who_type: "교구", group_name: "기쁨", sub_name: "3", user_id: USER },
+    { id: 72, name: "김하나", who_type: "교구", group_name: "소망", sub_name: "1" },
+    { id: 73, name: "박둘", who_type: "", group_name: "", sub_name: "" },
+    { id: 74, name: "김하나", who_type: "교구", group_name: "기쁨", sub_name: "2" },
+  ];
+  const issued = [{ id: 74, certNo: "고척-2026-0001", how: "new" }, { id: 72, certNo: "고척-2026-0002", how: "new" },
+    { id: 73, certNo: "고척-2025-0004", how: "restored" }, { id: 71, certNo: "고척-2026-0003", how: "already" }];
+  const a = setup({ staffRows: M_ROWS, rows, applyRes: { ok: true, issued } });
+  const r = await a.edu.eduCertIssue(STAFF, { course_id: COURSE, enrollment_ids: [71, "72", 73, 74, 71] });
+  assert.deepEqual(r, { ok: true, issued });
+  assert.equal(a.log.rpc.length, 1);
+  assert.deepEqual(a.log.rpc[0], ["edu_issue_certs", { p_course: COURSE, p_ids: [74, 72, 73, 71], p_by: STAFF_M }], "김하나(기쁨) → 김하나(소망) → 박둘 → 홍길동");
+  assert.deepEqual(a.log.audit, [["edu.cert.issue", COURSE, { course: COURSE, count: 3, fresh: 2, restored: 1, ids: [74, 72, 73] }]]);
+  assert.equal(JSON.stringify(a.log.audit).includes("김하나") || JSON.stringify(a.log.audit).includes("고척-"), false, "기록에 이름·번호");
+  assert.equal(a.log.writes, 0, "표에 직접 쓰지 않는다(SQL 함수만)");
+  // 이름은 그 강좌의 신청 줄 전부에서(쪽 넘기기) — id 목록을 주소에 싣지 않는다
+  const eq = a.log.q.find((q) => q.table === "edu_enrollments");
+  assert.ok(asked(eq, "eq", "course_id", COURSE) && !eq.c.calls.some((x) => x[0] === "in"));
+  assert.ok(!eq.c.calls.some((x) => x[0] === "select" && /user_id|ident_key/.test(x[1])));
+  // 모두 already — 기록 없음
+  const s = setup({ staffRows: M_ROWS, rows, applyRes: { ok: true, issued: [{ id: 71, certNo: "고척-2026-0003", how: "already" }] } });
+  assert.equal((await s.edu.eduCertIssue(STAFF, { course_id: COURSE, enrollment_ids: [71] })).ok, true);
+  assert.equal(s.log.audit.length, 0);
+  // SQL 거절(확정 아님 등)은 그대로 · 기록 없음
+  const n = setup({ staffRows: M_ROWS, rows, applyRes: { ok: false, error: "not-confirmed", ids: [73] } });
+  assert.deepEqual(await n.edu.eduCertIssue(STAFF, { course_id: COURSE, enrollment_ids: [73] }), { ok: false, error: "not-confirmed", ids: [73] });
+  assert.equal(n.log.audit.length, 0);
+  // 틀린 입력 — 아무것도 안 읽는다
+  const b = setup();
+  assert.deepEqual(await b.edu.eduCertIssue(CHIEF, { course_id: "x", enrollment_ids: [1] }), { ok: false, error: "bad-id" });
+  assert.deepEqual(await b.edu.eduCertIssue(CHIEF, { course_id: COURSE, enrollment_ids: [] }), { ok: false, error: "bad-ids" });
+  assert.deepEqual(await b.edu.eduCertIssue(CHIEF, { course_id: COURSE, enrollment_ids: [0] }), { ok: false, error: "bad-ids" });
+  assert.equal(b.log.q.length + b.log.rpc.length, 0);
+  // 총괄은 담당 줄을 묻지 않는다
+  const c = setup({ rows, applyRes: { ok: true, issued: [] } });
+  await c.edu.eduCertIssue(CHIEF, { course_id: COURSE, enrollment_ids: [72] });
+  assert.ok(!c.log.q.some((q) => q.table === "edu_course_staff"));
+  assert.equal(c.log.rpc[0][1].p_by, CHIEF_M);
+});
+
+test("eduCheckSet·eduCertRevoke — SQL 함수로만 · bad-done · 기록 id 만 · 이미 취소면 기록 없음", async () => {
+  const tables = { edu_enrollments: { id: 7, course_id: COURSE } };
+  const a = setup({ staffRows: M_ROWS, tables, applyRes: { ok: true, done: true } });
+  assert.deepEqual(await a.edu.eduCheckSet(STAFF, { enrollment_id: 7, done: true }), { ok: true, done: true });
+  assert.deepEqual(a.log.rpc, [["edu_check_set", { p_enrollment: 7, p_done: true }]]);
+  assert.deepEqual(a.log.audit, [["edu.cert.check", "7", { enrollment: 7, done: true }]]);
+  const bad = setup({ staffRows: M_ROWS, tables });
+  for (const done of [undefined, null, "true", 1]) assert.deepEqual(await bad.edu.eduCheckSet(STAFF, { enrollment_id: 7, done }), { ok: false, error: "bad-done" }, String(done));
+  assert.deepEqual(await bad.edu.eduCheckSet(STAFF, { enrollment_id: 0, done: true }), { ok: false, error: "bad-id" });
+  assert.equal(bad.log.q.length + bad.log.rpc.length, 0);
+  const nc = setup({ staffRows: M_ROWS, tables, applyRes: { ok: false, error: "not-confirmed" } });
+  assert.deepEqual(await nc.edu.eduCheckSet(STAFF, { enrollment_id: 7, done: true }), { ok: false, error: "not-confirmed" });
+  assert.equal(nc.log.audit.length, 0);
+  const r = setup({ staffRows: M_ROWS, tables, applyRes: { ok: true, certNo: "고척-2026-0001" } });
+  assert.deepEqual(await r.edu.eduCertRevoke(STAFF, { enrollment_id: 7 }), { ok: true, certNo: "고척-2026-0001" });
+  assert.deepEqual(r.log.rpc, [["edu_revoke_cert", { p_enrollment: 7, p_by: STAFF_M }]]);
+  assert.deepEqual(r.log.audit, [["edu.cert.revoke", "7", { enrollment: 7 }]]);
+  const al = setup({ staffRows: M_ROWS, tables, applyRes: { ok: true, already: true, certNo: "고척-2026-0001" } });
+  assert.equal((await al.edu.eduCertRevoke(STAFF, { enrollment_id: 7 })).already, true);
+  assert.equal(al.log.audit.length, 0);
+});
+
+test("eduCertList — 확정자만·출석률(eduAttendRate)·후보·수료 칸 · 강좌 기준·기간 · user_id·ident_key 를 읽지도 싣지도 않는다", async () => {
+  const people = [
+    { id: 71, name: "홍길동", who_type: "교구", group_name: "기쁨", sub_name: "3", check_done: true, completed: true, completed_at: "2026-10-05T01:00:00+00:00", cert_no: "고척-2026-0001", cert_revoked: false, user_id: USER },
+    { id: 72, name: "김하나", who_type: "교구", group_name: "소망", sub_name: "1", check_done: false, completed: false, cert_no: null, cert_revoked: false },
+  ];
+  const sessions = [{ id: 51, course_id: COURSE, no: 1, on_date: "2026-10-25" }, { id: 52, course_id: COURSE, no: 2, on_date: "2026-11-01" }];
+  const att = [{ enrollment_id: 71, session_id: 51, state: "present" }, { enrollment_id: 72, session_id: 51, state: "present" }, { enrollment_id: 72, session_id: 52, state: "present" }];
+  const a = setup({ staffRows: M_ROWS, rows: people, tables: { edu_courses: CERT_COURSE, edu_sessions: sessions, edu_attendance: att } });
+  const r = await a.edu.eduCertList(STAFF, { course_id: COURSE });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.course, { id: COURSE, title: "구원론", term: "2026 가을", status: "running", statusLabel: "진행 중", attendPct: 80, checkLabel: "과제",
+    from: "2026-10-25", to: "2026-11-01", archived: false });
+  assert.deepEqual(r.counts, { total: 2, candidates: 0, completed: 1, revoked: 0 });
+  assert.deepEqual(r.people.map((p) => [p.id, p.candidate, p.checkDone, p.completed, p.certNo, p.attend.pct]), [[72, false, false, false, null, 100], [71, true, true, true, "고척-2026-0001", 100]]);
+  assert.equal(JSON.stringify(r).includes(USER) || /user_id|ident_key|staff_note/.test(JSON.stringify(r)), false);
+  const eq = a.log.q.find((q) => q.table === "edu_enrollments");
+  assert.ok(asked(eq, "eq", "status", "confirmed"));
+  assert.ok(!eq.c.calls.some((x) => x[0] === "select" && /user_id|ident_key|staff_note/.test(x[1])));
+  assert.equal(a.log.audit.length + a.log.rpc.length + a.log.writes, 0, "보기는 기록하지 않는다");
+  const nf = setup({ tables: { edu_courses: null } });
+  assert.deepEqual(await nf.edu.eduCertList(CHIEF, { course_id: COURSE }), { ok: false, error: "not-found" });
+});
+
+test("eduCertPrint — 수료(취소 아님)만 · 문안의 {과정}을 제목으로 · 명의·직인 · 기간 · 기록 edu.cert.print {course, count}", async () => {
+  const rows = [
+    { id: 71, name: "홍길동", completed: true, cert_revoked: false, cert_no: "고척-2026-0002", completed_at: "2026-10-05T01:00:00+00:00", user_id: USER },
+    { id: 72, name: "김하나", completed: true, cert_revoked: false, cert_no: "고척-2026-0001", completed_at: "2026-10-05T01:00:00+00:00" },
+    { id: 73, name: "박둘", completed: false, cert_revoked: true, cert_no: "고척-2026-0003", completed_at: "2026-10-05T01:00:00+00:00" },
+  ];
+  const a = setup({ staffRows: M_ROWS, rows, tables: { edu_courses: { ...CERT_COURSE, starts_on: "2026-10-01", ends_on: "2026-12-20" }, edu_sessions: [],
+    edu_cert_settings: { issuer: "고척교회", body: "위 사람은 「{과정}」 과정을 마쳤습니다.", seal: PNG1, updated_at: "2026-10-05T00:00:00Z" } } });
+  const r = await a.edu.eduCertPrint(STAFF, { course_id: COURSE });
+  assert.deepEqual(r, { ok: true, course: { id: COURSE, title: "구원론", term: "2026 가을", from: "2026-10-01", to: "2026-12-20" },
+    issuer: "고척교회", body: "위 사람은 「구원론」 과정을 마쳤습니다.", seal: PNG1,
+    people: [{ id: 72, name: "김하나", certNo: "고척-2026-0001", issuedOn: "2026-10-05" }, { id: 71, name: "홍길동", certNo: "고척-2026-0002", issuedOn: "2026-10-05" }] });
+  assert.deepEqual(a.log.audit, [["edu.cert.print", COURSE, { course: COURSE, count: 2 }]]);
+  const eq = a.log.q.find((q) => q.table === "edu_enrollments");
+  assert.ok(asked(eq, "eq", "completed", true) && asked(eq, "eq", "cert_revoked", false));
+  assert.equal(JSON.stringify(r).includes(USER), false);
+});
+
+test("수료증 설정 — 교육 총괄만(교육 담당·강사는 forbidden · 아무것도 안 읽고 안 씀) · 보낸 칸 가운데 바뀐 것만 upsert · 기록은 칸 이름만(이미지 없음) · 직인 검사", async () => {
+  const cur = { issuer: "고척교회", body: "위 사람은 「{과정}」 과정을 마쳤습니다.", seal: null, updated_at: "2026-10-05T00:00:00Z" };
+  for (const ctx of [STAFF, TEACHER, { member: { id: STAFF_M }, roles: ["educourse", "teacher"] }]) {
+    const a = setup({ tables: { edu_cert_settings: cur } });
+    assert.deepEqual(await a.edu.eduCertSettingsSave(ctx, { issuer: "x" }), { ok: false, error: "forbidden" });
+    assert.deepEqual(await a.edu.eduCertSettings(ctx), { ok: false, error: "forbidden" });
+    assert.equal(a.log.q.length + a.log.writes + a.log.audit.length, 0);
+  }
+  // 읽기 — {과정} 이 든 그대로
+  const g = setup({ tables: { edu_cert_settings: cur } });
+  assert.deepEqual(await g.edu.eduCertSettings(CHIEF), { ok: true, issuer: "고척교회", body: cur.body, seal: null, updatedAt: cur.updated_at });
+  // 저장 — 명의 그대로 · 직인만 바뀜 → upsert 에 seal(+id·updated_at)만 · 기록 {fields:["seal"]}
+  const s = setup({ tables: { edu_cert_settings: cur } });
+  assert.deepEqual(await s.edu.eduCertSettingsSave(CHIEF, { issuer: "고척교회", seal: PNG1 }), { ok: true, changed: true, fields: ["seal"] });
+  const up = s.log.q.flatMap((q) => q.c.calls).find((x) => x[0] === "upsert");
+  assert.deepEqual(Object.keys(up[1]).sort(), ["id", "seal", "updated_at"]);
+  assert.equal(up[1].id, 1); assert.equal(up[1].seal, PNG1);
+  assert.deepEqual(s.log.audit, [["edu.cert.settings", "1", { fields: ["seal"] }]]);
+  assert.equal(JSON.stringify(s.log.audit).includes("base64"), false, "기록에 이미지");
+  // 바뀐 것 없음 — 쓰지도 기록하지도 않는다
+  const n = setup({ tables: { edu_cert_settings: cur } });
+  assert.deepEqual(await n.edu.eduCertSettingsSave(CHIEF, { issuer: "고척교회", seal: null }), { ok: true, changed: false, fields: [] });
+  assert.equal(n.log.writes + n.log.audit.length, 0);
+  // 직인·글 검사 — 읽기 전에 거절
+  for (const [body, err] of [[{ seal: "data:image/svg+xml;base64,PHN2Zz4=" }, "bad-seal"], [{ seal: "data:image/png;base64,PHN2Zz4=" }, "bad-seal"],
+    [{ seal: "data:image/png;base64,iVBORw0KGgo" + "A".repeat(409600) }, "seal-too-big"], [{ body: "" }, "no-body"], [{}, "nothing"]]) {
+    const x = setup({ tables: { edu_cert_settings: cur } });
+    assert.equal((await x.edu.eduCertSettingsSave(CHIEF, body)).error, err, err);
+    assert.equal(x.log.q.length + x.log.writes + x.log.audit.length, 0, err);
+  }
+  // 총괄 관리자(super)도 된다
+  const sp = setup({ tables: { edu_cert_settings: cur } });
+  assert.equal((await sp.edu.eduCertSettingsSave({ member: { id: CHIEF_M }, roles: ["super"] }, { issuer: "고척교회 담임목사" })).changed, true);
+});

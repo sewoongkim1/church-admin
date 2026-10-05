@@ -4,7 +4,9 @@ import { checkCourse, makeSessions, checkSessions, courseOut, enrollOut, exportR
   checkTypedIdent, rosterIdentity, rosterIdent, maybeDupIds, seatsOpened, waitOrder,
   eduChief, checkStaffIds, staffByCourse, staffCandidateOut, EDU_STAFF_MAX,
   eduAttendRate, checkAttendState, attendKinds, checkStaffKind, staffRolesFor, EDU_TEACHER_ROLES, pickSession, attendCounts,
-  attendSummary, attendExportRows, attendSessionOut, kstDate, ATTEND_STATES }
+  attendSummary, attendExportRows, attendSessionOut, kstDate, ATTEND_STATES,
+  eduCertCandidate, maskName, eduCertNoValid, eduCertBody, checkCertIds, certIssueOrder, certPeriod, certCourseOut, certListOut,
+  certPrintPeople, checkCertSeal, checkCertSettings, certSettingsChanged, CERT_SEAL_MAX }
   from "../supabase/functions/church-admin/edu-rules.ts";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -372,4 +374,226 @@ test("checkSessions — 회차 id(고칠 회차)는 그대로 실어 보낸다 �
   // 번호는 차례일 뿐 — 지우고 당긴 목록(1·2·3)도 그대로 받는다(같은 번호 둘만 dup-no)
   assert.equal(checkSessions([{ id: 1, no: 1, on_date: "2027-03-03" }, { id: 4, no: 2, on_date: "2027-03-24" }, { id: 5, no: 3, on_date: "2027-03-31" }]).ok, true);
   assert.equal(checkSessions([{ id: 1, no: 1, on_date: "2027-03-03" }, { id: 4, no: 1, on_date: "2027-03-24" }]).error, "dup-no");
+});
+
+// ---------- 수료(3단계 · 2026-10-05) ----------
+test("eduCertCandidate — 출석률(eduAttendRate) ≥ 기준 그리고 확인 항목이 있으면 체크 · pct null·기준 모름은 후보 아님", () => {
+  const C = (attend, attendPct, checkLabel = null, checkDone = false) => eduCertCandidate({ attend, attendPct, checkLabel, checkDone });
+  assert.equal(C({ present: 4, absent: 1 }, 80), true, "기준과 같은 80");
+  assert.equal(C({ present: 3, late: 1, absent: 1, excused: 3 }, 80), true, "지각=출석 · 공결 뺌");
+  assert.equal(C({ present: 3, absent: 1 }, 80), false, "75");
+  assert.equal(C({ excused: 3 }, 0), false, "공결만 — pct null");
+  assert.equal(C({}, 0), false, "체크 전 — pct null");
+  assert.equal(C(null, 80), false);
+  assert.equal(C({ absent: 2 }, 0), true, "기준 0 이면 0 도 후보");
+  assert.equal(C({ present: 5 }, 100), true);
+  for (const bad of [null, undefined, "80", NaN, Infinity]) assert.equal(C({ present: 5 }, bad), false, "기준 " + String(bad));
+  assert.equal(C({ present: 5 }, 80, "과제", false), false, "확인 항목 체크 전");
+  assert.equal(C({ present: 5 }, 80, "과제", true), true);
+  assert.equal(C({ present: 5 }, 80, "과제", "true"), false, "true 만");
+  assert.equal(C({ present: 5 }, 80, "   ", false), true, "빈 확인 항목은 없는 것");
+  assert.equal(C({ present: 1, absent: 1 }, 80, "과제", true), false, "체크해도 출석률이 모자라면");
+  // pct 는 eduAttendRate 의 것 그대로(규칙을 두 번 짜지 않았다)
+  for (const [input, want] of ATTEND_RATE_CASES) assert.equal(C(input, 80), want.pct !== null && want.pct >= 80, JSON.stringify(input));
+});
+
+test("maskName — 한 글자 그대로 · 두 글자 뒤를 * · 세 글자 넘으면 처음과 끝만 · NFC·앞뒤 빈칸 · 서로게이트도 한 글자", () => {
+  assert.equal(maskName("홍길동"), "홍*동");
+  assert.equal(maskName("이수"), "이*");
+  assert.equal(maskName("남궁가나"), "남**나");
+  assert.equal(maskName("김"), "김");
+  assert.equal(maskName("제갈공명선"), "제***선");
+  for (const x of ["", null, undefined, "   "]) assert.equal(maskName(x), "", String(x));
+  assert.equal(maskName("  홍길동 "), "홍*동");
+  assert.equal(maskName("홍길동".normalize("NFD")), "홍*동", "자모분리(NFD)도 세 글자");
+  assert.equal(maskName("John"), "J**n");
+  assert.equal(maskName("\u{1F600}가"), "\u{1F600}*");
+});
+
+test("eduCertNoValid — 「고척-YYYY-NNNN」(9999 다음 자리 늚 · 6자리까지) · 앞뒤 빈칸·자모분리·다른 꼴은 아님(부르는 쪽이 NFC·trim)", () => {
+  for (const s of ["고척-2026-0001", "고척-2027-9999", "고척-2026-10000", "고척-2999-123456"]) assert.equal(eduCertNoValid(s), true, s);
+  for (const s of ["고척-2026-001", "고척-26-0001", "고척-2026-1234567", " 고척-2026-0001", "고척-2026-0001 ", "고척 -2026-0001",
+    "X-2026-0001", "고척-2026-000a", "고척_2026_0001", "", null, undefined, 20260001, "고척-2026-0001".normalize("NFD")]) {
+    assert.equal(eduCertNoValid(s), false, String(s));
+  }
+  assert.equal(eduCertNoValid("고척-2026-0001".normalize("NFD").normalize("NFC")), true);
+});
+
+test("eduCertBody — {과정} 을 모두 제목으로 · 없으면 그대로 · 정규식 특수 글자($&)도 글자 그대로 · null 은 빈 글", () => {
+  assert.equal(eduCertBody("위 사람은 「{과정}」 과정을 마쳤습니다.", "제자훈련"), "위 사람은 「제자훈련」 과정을 마쳤습니다.");
+  assert.equal(eduCertBody("{과정} · {과정}", "새가족반"), "새가족반 · 새가족반");
+  assert.equal(eduCertBody("문안만", "x"), "문안만");
+  assert.equal(eduCertBody("「{과정}」", "$& 반"), "「$& 반」");
+  assert.equal(eduCertBody(null, "x"), "");
+  assert.equal(eduCertBody("「{과정}」", null), "「」");
+  assert.equal(eduCertBody("줄\n바꿈 {과정}", "가"), "줄\n바꿈 가");
+});
+
+// 수료 규칙 세 함수 글자의 지문 — 성경암송 tests/edu-front.test.cjs 에 **같은 값**이 박혀 있다(그쪽은 api 복사본을 잰다).
+//   규칙을 일부러 바꿀 때는 두 곳(이 파일 edu-rules.ts · 성경암송 supabase/functions/api/index.ts)을 같은 글자로 고치고 두 시험의 값을 함께 바꾼다.
+//   지문 = sha256(「function 이름(…) {」부터 첫 줄머리 「}」까지 · 줄끝 LF) — eduAttendRate 와 같은 셈.
+const CERT_FN_SHA256 = {
+  "function maskName(name) {": "f75ac72b195255346b43f1e82b89a6ceaf7e35f6a0f73f9116be1cd8588dea78",
+  "function eduCertNoValid(s) {": "add57082b525160f77794f21653de377ecaf2f775be270a0785b63b5d0be47e3",
+  "function eduCertBody(body, title) {": "9061e91bd5d14439e5fd96b52b4f88592623a47be29c248ad5f7146589e104d4",
+};
+test("수료 규칙 세 함수(maskName·eduCertNoValid·eduCertBody) — export 없이 한 덩이씩 · 지문이 성경암송 api 복사본과 같다", () => {
+  const src = readFileSync(new URL("../supabase/functions/church-admin/edu-rules.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  for (const [head, sha] of Object.entries(CERT_FN_SHA256)) {
+    const a = src.indexOf(head);
+    const b = src.indexOf("\n}\n", a);
+    assert.ok(a > 0 && b > a, "함수를 못 찾았다 " + head);
+    assert.equal(src.split(head).length - 1, 1, "둘 이상 " + head);
+    const body = src.slice(a, b + 2);
+    assert.ok(!/:\s*(any|number|string|boolean)\b|=>/.test(body), "타입 표기·화살표 함수가 들어가면 성경암송 복사본과 같은 글자가 못 된다 " + head);
+    assert.equal(createHash("sha256").update(body).digest("hex"), sha,
+      head + " 글자가 바뀌었다 — 성경암송 api 복사본과 두 시험의 지문을 함께 고칠 것");
+  }
+  assert.ok(src.includes("export { maskName, eduCertNoValid, eduCertBody };"));
+});
+
+test("checkCertIds — 양의 정수(숫자 글자도) · 겹친 것은 하나로(처음 차례) · 빈 목록·틀린 값 bad-ids · 2000 넘으면 too-many", () => {
+  assert.deepEqual(checkCertIds([3, "3", 4, "12"]), { ok: true, ids: [3, 4, 12] });
+  for (const bad of [[], null, undefined, "3", [0], [-1], [1.5], ["x"], [true], [null], [{}]]) {
+    assert.deepEqual(checkCertIds(bad), { ok: false, error: "bad-ids" }, JSON.stringify(bad));
+  }
+  assert.deepEqual(checkCertIds(Array.from({ length: 2001 }, (_, i) => i + 1)), { ok: false, error: "too-many" });
+  assert.equal(checkCertIds([...Array.from({ length: 2000 }, (_, i) => i + 1), 1]).ok, true, "겹친 것을 빼면 2000");
+});
+
+test("certIssueOrder — 이름 가나다 → 소속 → 신청 번호 · 이름 다듬기(NFC·빈칸) · 강좌 줄에 없는 id 는 맨 뒤(보낸 차례)", () => {
+  const rows = [
+    { id: 1, name: "다윗", who_type: "교구", group_name: "기쁨", sub_name: "3" },
+    { id: 2, name: "가브리엘", who_type: "교구", group_name: "소망", sub_name: "1" },
+    { id: 3, name: "나단", who_type: "교구", group_name: "기쁨", sub_name: "1" },
+    { id: 4, name: "나단 ", who_type: "교구", group_name: "기쁨", sub_name: "1" },
+    { id: 5, name: "나단", who_type: "교구", group_name: "가나", sub_name: "2" },
+    { id: 6, name: "가브리엘".normalize("NFD"), who_type: "교구", group_name: "소망", sub_name: "1" },
+  ];
+  assert.deepEqual(certIssueOrder(rows, [1, 99, 4, 3, 2, 5, 6, 77]), [2, 6, 5, 3, 4, 1, 99, 77]);
+  assert.deepEqual(certIssueOrder([], [5, 3]), [5, 3]);
+  assert.deepEqual(certIssueOrder(rows, [1]), [1]);
+});
+
+test("certPeriod·certCourseOut — 교육 기간 먼저, 없으면 첫·마지막 회차(날짜 차례) · 시작일 뒤 회차가 없으면 끝은 비움", () => {
+  const ss = [{ on_date: "2027-03-17" }, { on_date: "2027-03-03" }, { on_date: "2027-03-10" }];
+  assert.deepEqual(certPeriod({ starts_on: "2027-03-01", ends_on: "2027-04-30" }, ss), { from: "2027-03-01", to: "2027-04-30" });
+  assert.deepEqual(certPeriod({}, ss), { from: "2027-03-03", to: "2027-03-17" });
+  assert.deepEqual(certPeriod({ starts_on: "2027-05-01" }, ss), { from: "2027-05-01", to: null });
+  assert.deepEqual(certPeriod({ starts_on: "2027-03-01" }, ss), { from: "2027-03-01", to: "2027-03-17" });
+  assert.deepEqual(certPeriod({ ends_on: "2027-06-01" }, ss), { from: "2027-03-03", to: "2027-06-01" });
+  assert.deepEqual(certPeriod({}, []), { from: null, to: null });
+  const c = certCourseOut({ id: "c1", title: "구원론", term: "2027 상반기", status: "archived", attend_pct: 80, check_label: "과제", user_id: "u" }, ss);
+  assert.deepEqual(c, { id: "c1", title: "구원론", term: "2027 상반기", status: "archived", statusLabel: "보관", attendPct: 80, checkLabel: "과제",
+    from: "2027-03-03", to: "2027-03-17", archived: true });
+});
+
+test("certListOut — 출석(attendSummary 와 같은 셈)·확인 체크·후보·수료·취소 · 수(후보는 수료·취소 뺌) · 칸 지도(user_id 없음) · 수료일은 한국 날짜", () => {
+  const course = { attend_pct: 80, check_label: "과제" };
+  const sessions = [{ id: 51 }, { id: 52 }];
+  const people = [
+    { id: 11, name: "홍길동", who_type: "교구", group_name: "기쁨", sub_name: "3", check_done: true, completed: false, cert_no: null, cert_revoked: false, user_id: "u1", ident_key: "k" },
+    { id: 12, name: "김하나", who_type: "교구", group_name: "소망", sub_name: "1", check_done: false, completed: false, cert_no: null, cert_revoked: false },
+    { id: 13, name: "박둘", who_type: "", group_name: "", sub_name: "", check_done: true, completed: true, completed_at: "2026-12-31T15:30:00+00:00", cert_no: "고척-2027-0001", cert_revoked: false },
+    { id: 14, name: "이셋", who_type: "", group_name: "", sub_name: "", check_done: true, completed: false, completed_at: "2026-11-01T01:00:00+00:00", cert_no: "고척-2026-0007", cert_revoked: true },
+    { id: 15, name: "최넷", who_type: "", group_name: "", sub_name: "", check_done: true, completed: false, cert_no: null, cert_revoked: false },
+  ];
+  const rows = [
+    { enrollment_id: 11, session_id: 51, state: "present" }, { enrollment_id: 11, session_id: 52, state: "late" },
+    { enrollment_id: 12, session_id: 51, state: "present" }, { enrollment_id: 12, session_id: 52, state: "present" },
+    { enrollment_id: 13, session_id: 51, state: "present" }, { enrollment_id: 14, session_id: 51, state: "present" },
+    { enrollment_id: 15, session_id: 51, state: "present" }, { enrollment_id: 15, session_id: 52, state: "absent" },
+  ];
+  const out = certListOut(course, sessions, people, rows);
+  const by = Object.fromEntries(out.people.map((p) => [p.id, p]));
+  assert.deepEqual(out.people.map((p) => p.id), [12, 13, 14, 15, 11], "이름 가나다");
+  assert.deepEqual([by[11].candidate, by[12].candidate, by[13].candidate, by[14].candidate, by[15].candidate], [true, false, true, true, false]);
+  assert.deepEqual(by[11].attend, { present: 1, late: 1, absent: 0, excused: 0, marked: 2, attended: 2, denom: 2, pct: 100 });
+  assert.equal(by[15].attend.pct, 50); assert.equal(by[15].below, true);
+  assert.deepEqual([by[13].completed, by[13].revoked, by[13].certNo, by[13].completedOn], [true, false, "고척-2027-0001", "2027-01-01"]);
+  assert.deepEqual([by[14].completed, by[14].revoked, by[14].certNo, by[14].completedOn], [false, true, "고척-2026-0007", "2026-11-01"]);
+  assert.deepEqual([by[11].completed, by[11].revoked, by[11].certNo, by[11].completedOn], [false, false, null, null]);
+  assert.deepEqual(out.counts, { total: 5, candidates: 1, completed: 1, revoked: 1 });
+  assert.deepEqual(Object.keys(by[11]).sort(), ["attend", "below", "candidate", "certNo", "checkDone", "completed", "completedOn", "id", "name", "revoked", "who"]);
+  assert.equal(/u1|ident_key|user_id/.test(JSON.stringify(out)), false);
+  // 확인 항목이 없는 강좌는 출석률만 본다
+  const plain = certListOut({ attend_pct: 80, check_label: null }, sessions, people, rows);
+  assert.equal(plain.people.find((p) => p.id === 12).candidate, true);
+  assert.equal(certListOut({ attend_pct: null }, sessions, people, rows).counts.candidates, 0, "기준을 모르면 후보 없음");
+});
+
+test("certPrintPeople — 수료(취소 아님·번호 있음)만 · 이름 가나다 → 번호 · 발급일은 한국 날짜 · 칸 넷", () => {
+  const rows = [
+    { id: 1, name: "다윗", completed: true, cert_revoked: false, cert_no: "고척-2026-0003", completed_at: "2026-10-05T15:10:00+00:00", user_id: "u" },
+    { id: 2, name: "가브리엘", completed: true, cert_revoked: false, cert_no: "고척-2026-0001", completed_at: "2026-10-05T01:00:00+00:00" },
+    { id: 3, name: "나단", completed: false, cert_revoked: true, cert_no: "고척-2026-0002", completed_at: "2026-10-05T01:00:00+00:00" },
+    { id: 4, name: "라헬", completed: true, cert_revoked: false, cert_no: null },
+    { id: 5, name: "가브리엘", completed: true, cert_revoked: false, cert_no: "고척-2025-0009", completed_at: "2025-03-01T01:00:00+00:00" },
+  ];
+  assert.deepEqual(certPrintPeople(rows), [
+    { id: 5, name: "가브리엘", certNo: "고척-2025-0009", issuedOn: "2025-03-01" },
+    { id: 2, name: "가브리엘", certNo: "고척-2026-0001", issuedOn: "2026-10-05" },
+    { id: 1, name: "다윗", certNo: "고척-2026-0003", issuedOn: "2026-10-06" },
+  ]);
+});
+
+// 직인 — 1×1 PNG · JPEG 머리 · 풀었을 때 300KB 경계
+const PNG1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+const b64Of = (bytes, head = "iVBORw0KGgo") => {
+  const n = Math.ceil(bytes / 3) * 4, pad = (3 - (bytes % 3)) % 3;
+  return head + "A".repeat(n - head.length - pad) + "=".repeat(pad);
+};
+test("checkCertSeal — PNG·JPEG data URL(머리 바이트까지) · 풀어서 300KB 이하 · null 은 지움 · 그 밖 bad-seal", () => {
+  assert.equal(PNG1.length % 4, 0);
+  assert.deepEqual(checkCertSeal(null), { ok: true, seal: null });
+  assert.deepEqual(checkCertSeal("data:image/png;base64," + PNG1), { ok: true, seal: "data:image/png;base64," + PNG1 });
+  assert.equal(checkCertSeal("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==").ok, true);
+  assert.equal(checkCertSeal("data:image/png;base64," + b64Of(CERT_SEAL_MAX)).ok, true, "딱 300KB");
+  assert.equal(checkCertSeal("data:image/jpeg;base64," + b64Of(CERT_SEAL_MAX, "/9j/")).ok, true, "JPEG 딱 300KB");
+  assert.deepEqual(checkCertSeal("data:image/png;base64," + b64Of(CERT_SEAL_MAX + 1)), { ok: false, error: "seal-too-big" });
+  assert.deepEqual(checkCertSeal("data:image/png;base64," + b64Of(2 * 1024 * 1024)), { ok: false, error: "seal-too-big" });
+  for (const bad of [
+    undefined, 5, "", {}, "http://example.test/seal.png",
+    "data:image/svg+xml;base64,PHN2Zz4=",                 // SVG
+    "data:image/png;base64,PHN2Zz4=",                     // 겉봉만 PNG(속은 SVG)
+    "data:image/jpeg;base64," + PNG1,                     // 겉봉 JPEG · 속 PNG
+    "data:image/png;base64,/9j/4AAQ",                     // 겉봉 PNG · 속 JPEG
+    "data:image/PNG;base64," + PNG1, "data:image/jpg;base64,/9j/4AAQ", "data:image/gif;base64,R0lGODlh",
+    "data:image/png;base64," + PNG1.slice(0, -1),         // 4 의 배수 아님
+    "data:image/png;base64,iVBO Rw0KGgo=", "data:image/png;base64,iVBORw0KGgo\n", "data:image/png," + PNG1,
+    "data:image/png;base64,", " data:image/png;base64," + PNG1,
+  ]) assert.deepEqual(checkCertSeal(bad), { ok: false, error: "bad-seal" }, String(bad).slice(0, 50));
+});
+
+test("checkCertSettings — 보낸 칸만 · 명의 60자(한 줄) · 문안 1~300자(줄바꿈·{과정}) · 직인 검사 · 아무 칸도 없으면 nothing", () => {
+  assert.deepEqual(checkCertSettings({}), { ok: false, error: "nothing" });
+  assert.deepEqual(checkCertSettings({ action: "eduCertSettingsSave" }), { ok: false, error: "nothing" });
+  assert.deepEqual(checkCertSettings(null), { ok: false, error: "nothing" });
+  assert.deepEqual(checkCertSettings({ issuer: "  고척교회   담임목사  " }), { ok: true, patch: { issuer: "고척교회 담임목사" } });
+  assert.deepEqual(checkCertSettings({ issuer: null }), { ok: true, patch: { issuer: "" } });
+  assert.deepEqual(checkCertSettings({ issuer: 5 }), { ok: false, error: "bad-issuer" });
+  assert.equal(checkCertSettings({ issuer: "가".repeat(60) }).ok, true);
+  assert.deepEqual(checkCertSettings({ issuer: "가".repeat(61) }), { ok: false, error: "too-long", field: "issuer" });
+  assert.deepEqual(checkCertSettings({ body: "위 사람은 「{과정}」 과정을\r\n마쳤습니다. " }), { ok: true, patch: { body: "위 사람은 「{과정}」 과정을\n마쳤습니다." } });
+  for (const b of ["", "   ", "\n"]) assert.deepEqual(checkCertSettings({ body: b }), { ok: false, error: "no-body" }, JSON.stringify(b));
+  assert.deepEqual(checkCertSettings({ body: null }), { ok: false, error: "bad-body" });
+  assert.deepEqual(checkCertSettings({ body: "탭\u0009글" }), { ok: false, error: "bad-body" });
+  assert.equal(checkCertSettings({ body: "가".repeat(300) }).ok, true);
+  assert.deepEqual(checkCertSettings({ body: "가".repeat(301) }), { ok: false, error: "too-long", field: "body" });
+  assert.equal(checkCertSettings({ body: "\u{1F600}".repeat(300) }).ok, true, "글자 수는 코드 포인트(SQL char_length 와 같다)");
+  assert.deepEqual(checkCertSettings({ body: "\u{1F600}".repeat(301) }), { ok: false, error: "too-long", field: "body" });
+  assert.deepEqual(checkCertSettings({ seal: "data:image/svg+xml;base64,PHN2Zz4=" }), { ok: false, error: "bad-seal" });
+  assert.deepEqual(checkCertSettings({ seal: null }), { ok: true, patch: { seal: null } });
+  assert.deepEqual(checkCertSettings({ issuer: "가", body: "나", seal: "data:image/png;base64," + PNG1 }),
+    { ok: true, patch: { issuer: "가", body: "나", seal: "data:image/png;base64," + PNG1 } });
+  assert.equal(checkCertSettings({ issuer: "가", seal: "bad" }).error, "bad-seal", "한 칸이라도 틀리면 통째로");
+});
+
+test("certSettingsChanged — 보낸 칸 가운데 지금과 다른 것만(차례 issuer·body·seal) · null 과 빈 칸", () => {
+  const cur = { issuer: "고척교회", body: "문안", seal: null };
+  assert.deepEqual(certSettingsChanged(cur, { issuer: "고척교회", body: "새 문안" }), ["body"]);
+  assert.deepEqual(certSettingsChanged(cur, { seal: null }), []);
+  assert.deepEqual(certSettingsChanged(cur, { seal: "data:x" }), ["seal"]);
+  assert.deepEqual(certSettingsChanged({ ...cur, seal: "data:x" }, { seal: null, issuer: "다른" }), ["issuer", "seal"]);
+  assert.deepEqual(certSettingsChanged(null, { issuer: "" }), ["issuer"]);
 });
