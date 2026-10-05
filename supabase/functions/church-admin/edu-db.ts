@@ -36,11 +36,28 @@ const NOT_ASSIGNED = { ok: false as const, error: "not-assigned" };
 
 // deps — peopleLookup: 교인명부에서 이름으로 찾기(후보 모양 · 교인ID 없음) · personPick: 같은 찾기를 서버가 다시 돌려 pick 번째 분의 신원을 만든다
 //        (교인ID 는 서버 안에만 둔다 — 화면은 이름·몇 번째·소속 확인값만 보낸다) · allRows: 1,000줄 쪽 넘기기(index.ts)
+//        eduNotify: 확정 알림 부탁(4단계 · 2026-10-05 · index.ts notifyEduConfirmed → 성경암송 api internalEduNotify) — {sent} 또는 null(부르지 못함)
 export function makeEdu(db: Db, audit: Audit, deps: {
   peopleLookup: (ctx: any, b: any) => Promise<any>;
   personPick: (name: unknown, pick: unknown, check: any) => Promise<{ ok: false; error: string } | { ok: true; ident: any; appUserId: string | null }>;
   allRows: (build: () => any) => Promise<any[]>;
+  eduNotify?: (ids: number[], promoted: boolean) => Promise<{ sent: number } | null>;
 }) {
+  // 확정 알림(4단계 · 2026-10-05) — 저장이 **끝난 뒤**(r 이 성공) 성경암송 api 에 「이분들께 확정 알림」을 부탁한다.
+  //   ⚠️ 알림이 실패해도 저장은 그대로 성공 — 응답에 notified(이번에 알린 신청 수)·notifyError(null 또는 "notify-failed")만 더한다.
+  //   같은 신청에 한 번·확정·앱 계정 확인은 api(edu_notify_claim)가 한다 — 여기서는 신청 번호만 보낸다(이름·user_id 없음).
+  //   promoted = 대기에서 올라간 분(「자리가 나서 …」) · 알릴 번호가 없으면 r 그대로.
+  async function withNotify(r: any, ids: unknown[], promoted: boolean) {
+    const list = [...new Set(ids.map((x) => Number(x)).filter((n) => Number.isSafeInteger(n) && n > 0))];
+    if (!list.length || !deps.eduNotify) return r;
+    try {
+      const n = await deps.eduNotify(list, promoted);
+      return n ? { ...r, notified: Number(n.sent) || 0, notifyError: null } : { ...r, notified: 0, notifyError: "notify-failed" };
+    } catch (_) {
+      return { ...r, notified: 0, notifyError: "notify-failed" };
+    }
+  }
+
   async function countsOf(ids: string[]) {
     const out: Record<string, { confirmed: number; waitlisted: number; applied: number }> = {};
     for (const id of ids) out[id] = { confirmed: 0, waitlisted: 0, applied: 0 };
@@ -205,14 +222,16 @@ export function makeEdu(db: Db, audit: Audit, deps: {
       if (!data) return { ok: false, error: "not-found" };
       // 자리가 늘었으면(정원 ↑ · 제한 없음 · 선착순으로) 대기하신 분부터 채운다 — 안 그러면 다음 앱 신청이 먼저 확정된다(새치기).
       //   선착순·끝나지 않은 강좌만 SQL 함수가 올린다(승인 강좌는 0). 화면이 「대기하신 N분이 확정됐어요」를 띄운다.
-      let promoted = 0;
+      let promoted = 0, ids: unknown[] = [];
       if (seatsOpened(before, c.row)) {
         const { data: rf, error: er } = await db.rpc("edu_course_refill", { p_course: id });
         if (er) throw er;
         promoted = rf?.ok ? Number(rf.promoted) || 0 : 0;
+        ids = rf?.ok && Array.isArray(rf.ids) ? rf.ids : [];   // 올린 신청 번호(4단계 SQL — 옛 SQL 이면 없음 → 알림 없음)
       }
       await audit(ctx, "edu.course.save", id, { status: c.row.status, promoted });
-      return { ok: true, id, promoted };
+      // 올라간 분들께 「자리가 나서 … 확정됐어요」(4단계) — 저장 뒤 · 실패해도 저장은 성공
+      return await withNotify({ ok: true, id, promoted }, ids, true);
     }
     const { data, error } = await db.from("edu_courses").insert(c.row).select("id").single();
     if (error) throw error;
@@ -301,6 +320,10 @@ export function makeEdu(db: Db, audit: Audit, deps: {
       : await db.rpc("edu_staff_set", { p_enrollment: id, p_status: map[op], p_force: b?.force === true });
     if (error) throw error;
     if (r.ok) await audit(ctx, "edu.enroll.set", String(id), { op, force: b?.force === true, promoted: r.promoted ?? null });
+    if (!r?.ok) return r;
+    // 확정 알림(4단계) — 저장 뒤: 확정이면 그분께 · 다른 op 로 대기 첫 분이 올라갔으면(promoted) 그분께 「자리가 나서 …」
+    if (op === "confirm") return await withNotify(r, [id], false);
+    if (r.promoted != null) return await withNotify(r, [r.promoted], true);
     return r;
   }
 
@@ -332,7 +355,9 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     if (data?.ok) {
       const revived = !data.already && (was === "declined" || was === "cancelled");
       await audit(ctx, "edu.enroll.add", String(data.id), { course, app: !!user, status: data.status, already: !!data.already, revived });
-      return revived ? { ...data, revived: true } : data;
+      const out = revived ? { ...data, revived: true } : data;
+      // 확정 알림(4단계) — 앱 계정이 있는 분이 확정으로 들어갔을 때만(이미 있던 줄 already 는 바뀐 것이 없다 · 대기·새가족은 알리지 않는다)
+      return user && data.status === "confirmed" && !data.already ? await withNotify(out, [data.id], false) : out;
     }
     return data;
   }

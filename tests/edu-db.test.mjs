@@ -17,8 +17,10 @@ const STAFF = { member: { id: STAFF_M }, roles: ["educourse"] };
 //   staffRows 를 주면 edu_course_staff 는 **거르기를 지킨다**(eq·in) — 몸통의 course_id 가 아니라 서버가 고른 강좌로 물었는지 본다(IDOR 시험).
 const honour = (list, calls) => list.filter((r) => calls.every(([k, col, v]) =>
   k === "eq" ? r[col] === v : k === "in" ? v.includes(r[col]) : true));
-function setup({ prev = [], pick, applyRes, rows, tables = {}, staffRows } = {}) {
-  const log = { q: [], rpc: [], audit: [], writes: 0, lookups: 0 };
+//   확정 알림(4단계) — deps.eduNotify 는 부른 것을 log.notify 에 [ids, promoted, 그때까지 부른 SQL 함수 수, 그때까지 기록 수] 로 남긴다
+//   (저장·기록 **뒤**에만 불렸는지 본다) · notifyRes 로 돌려줄 값(기본 {sent: ids 수}) · notifyThrows 면 던진다 · noNotify 면 dep 를 안 준다.
+function setup({ prev = [], pick, applyRes, rows, tables = {}, staffRows, notifyRes, notifyThrows, noNotify } = {}) {
+  const log = { q: [], rpc: [], audit: [], writes: 0, lookups: 0, notify: [] };
   const chain = (table) => {
     const c = { calls: [] };
     const m = new Proxy(c, { get(_, k) {
@@ -39,6 +41,11 @@ function setup({ prev = [], pick, applyRes, rows, tables = {}, staffRows } = {})
       return t === "edu_enrollments" ? rows ?? [] : tables[t] ?? [];
     },
     personPick: async () => pick ?? { ok: true, ident: { name: "홍", who_type: "교구", group_name: "기쁨", sub_name: "3", ident_key: "person|9" }, appUserId: null } };
+  if (!noNotify) deps.eduNotify = async (ids, promoted) => {
+    log.notify.push([ids, promoted, log.rpc.length, log.audit.length]);
+    if (notifyThrows) throw new Error("api down");
+    return notifyRes === undefined ? { sent: ids.length } : notifyRes;
+  };
   return { edu: makeEdu(db, audit, deps), log };
 }
 const has = (log, ...call) => log.q[0].c.calls.some((x) => x.length === call.length && x.every((v, i) => v === call[i]));
@@ -111,6 +118,83 @@ test("eduCourseSave — 자리가 늘면 edu_course_refill 을 부르고 promote
   const { id: _i, ...fresh } = body(3).course;
   await n.edu.eduCourseSave({}, { course: fresh });
   assert.equal(n.log.rpc.length, 0);
+  for (const x of [a, b, c, d, n]) assert.equal(x.log.notify.length, 0, "올린 번호(ids)가 없는데 알림을 부탁했다");
+});
+
+// ---------- 확정 알림(4단계 · 2026-10-05) — 저장이 끝난 뒤에만 성경암송 api 에 부탁 · 실패는 삼켜 notifyError 로 ----------
+test("확정 알림 — eduEnrollSet: 확정은 그 줄(promoted false) · 다른 op 가 올린 분(promoted)은 「자리가 나서」(true) · 저장·기록 뒤에만", async () => {
+  const a = setup({ applyRes: { ok: true, promoted: null } });
+  assert.deepEqual(await a.edu.eduEnrollSet(CHIEF, { id: 7, op: "confirm" }), { ok: true, promoted: null, notified: 1, notifyError: null });
+  assert.deepEqual(a.log.notify, [[[7], false, 1, 1]], "저장(SQL 함수 1번)·기록(1줄) 뒤에 한 번");
+  for (const op of ["cancel", "waitlist", "decline", "reopen"]) {
+    const b = setup({ applyRes: { ok: true, promoted: 9 } });
+    assert.deepEqual(await b.edu.eduEnrollSet(CHIEF, { id: 7, op }), { ok: true, promoted: 9, notified: 1, notifyError: null }, op);
+    assert.deepEqual(b.log.notify, [[[9], true, 1, 1]], op + " — 올라간 분께 promoted:true");
+    const c = setup({ applyRes: { ok: true, promoted: null } });
+    assert.deepEqual(await c.edu.eduEnrollSet(CHIEF, { id: 7, op }), { ok: true, promoted: null }, op + " — 올라간 분이 없으면 그대로");
+    assert.equal(c.log.notify.length, 0, op);
+  }
+  // 저장이 거절되면(정원·끝난 강좌·수료 줄) 부르지 않는다 — 응답도 그대로
+  for (const res of [{ ok: false, error: "full" }, { ok: false, error: "course-closed" }, { ok: false, error: "has-cert" }]) {
+    const d = setup({ applyRes: res });
+    assert.deepEqual(await d.edu.eduEnrollSet(CHIEF, { id: 7, op: "confirm" }), res);
+    assert.equal(d.log.notify.length, 0, res.error); assert.equal(d.log.audit.length, 0);
+  }
+  // 틀린 입력·맡지 않은 강좌도 부르지 않는다
+  const e = setup();
+  assert.deepEqual(await e.edu.eduEnrollSet(CHIEF, { id: 7, op: "zzz" }), { ok: false, error: "bad-op" });
+  assert.equal(e.log.notify.length, 0);
+});
+
+test("확정 알림 — 실패는 삼킨다(던져도·null 이어도): 저장 응답은 ok · notified 0 · notifyError notify-failed · 기록은 남는다 · dep 가 없으면 그대로", async () => {
+  for (const opt of [{ notifyThrows: true }, { notifyRes: null }]) {
+    const a = setup({ ...opt, applyRes: { ok: true, promoted: null } });
+    assert.deepEqual(await a.edu.eduEnrollSet(CHIEF, { id: 7, op: "confirm" }), { ok: true, promoted: null, notified: 0, notifyError: "notify-failed" });
+    assert.equal(a.log.audit.length, 1, "저장 기록은 그대로");
+    const b = setup({ ...opt, prev: { capacity: 1, mode: "auto" }, applyRes: { ok: true, promoted: 2, ids: [11, 12] } });
+    assert.deepEqual(await b.edu.eduCourseSave({}, { course: { id: COURSE, title: "제자훈련", kind: "regular", capacity: 3, mode: "auto" } }),
+      { ok: true, id: COURSE, promoted: 2, notified: 0, notifyError: "notify-failed" });
+  }
+  const z = setup({ noNotify: true, applyRes: { ok: true, promoted: null } });
+  assert.deepEqual(await z.edu.eduEnrollSet(CHIEF, { id: 7, op: "confirm" }), { ok: true, promoted: null });
+  // api 가 받았지만 이미 알렸거나 앱 계정이 없어 0 이면 notified 0 · notifyError null
+  const s = setup({ notifyRes: { sent: 0 }, applyRes: { ok: true, promoted: null } });
+  assert.deepEqual(await s.edu.eduEnrollSet(CHIEF, { id: 7, op: "confirm" }), { ok: true, promoted: null, notified: 0, notifyError: null });
+});
+
+test("확정 알림 — eduEnrollAdd: 앱 계정이 있는 분이 확정으로 들어갈 때만(already·대기·거절·새가족·명부 줄은 안 부른다)", async () => {
+  const app = { ok: true, ident: { name: "홍", ident_key: "교구|기쁨|3|||홍" }, appUserId: USER };
+  const a = setup({ pick: app, applyRes: { ok: true, id: 5, status: "confirmed" } });
+  assert.deepEqual(await a.edu.eduEnrollAdd(CHIEF, { course_id: COURSE, name: "홍", pick: 0, check: {} }), { ok: true, id: 5, status: "confirmed", notified: 1, notifyError: null });
+  assert.deepEqual(a.log.notify, [[[5], false, 1, 1]], "edu_apply·기록 뒤에");
+  const r = setup({ pick: app, prev: [{ id: 5, status: "cancelled" }], applyRes: { ok: true, id: 5, status: "confirmed" } });
+  assert.deepEqual(await r.edu.eduEnrollAdd(CHIEF, { course_id: COURSE, name: "홍", pick: 0, check: {} }),
+    { ok: true, id: 5, status: "confirmed", revived: true, notified: 1, notifyError: null }, "되살린 분도");
+  for (const [why, opt, body] of [
+    ["already", { pick: app, applyRes: { ok: true, id: 5, status: "confirmed", already: true } }, { name: "홍", pick: 0, check: {} }],
+    ["대기", { pick: app, applyRes: { ok: true, id: 5, status: "waitlisted" } }, { name: "홍", pick: 0, check: {} }],
+    ["거절", { pick: app, applyRes: { ok: false, error: "not-open" } }, { name: "홍", pick: 0, check: {} }],
+    ["명부 줄(앱 계정 없음)", { applyRes: { ok: true, id: 5, status: "confirmed" } }, { name: "홍", pick: 0, check: {} }],
+    ["새가족(직접 적음)", { applyRes: { ok: true, id: 5, status: "confirmed" } }, { ident: { name: "새가족", who_type: "새가족" } }],
+  ]) {
+    const x = setup(opt);
+    const out = await x.edu.eduEnrollAdd(CHIEF, { course_id: COURSE, ...body });
+    assert.equal(x.log.notify.length, 0, why);
+    assert.ok(!("notified" in (out || {})) && !("notifyError" in (out || {})), why + " — 응답에 알림 칸이 없다");
+  }
+});
+
+test("확정 알림 — eduCourseSave: 정원을 늘려 올라간 분들(edu_course_refill ids)께 promoted:true · 저장·기록 뒤에", async () => {
+  const body = { course: { id: COURSE, title: "제자훈련", kind: "regular", capacity: 3, mode: "auto" } };
+  const a = setup({ prev: { capacity: 1, mode: "auto" }, applyRes: { ok: true, promoted: 2, ids: [11, 12] } });
+  assert.deepEqual(await a.edu.eduCourseSave({}, body), { ok: true, id: COURSE, promoted: 2, notified: 2, notifyError: null });
+  assert.deepEqual(a.log.notify, [[[11, 12], true, 1, 1]]);
+  const b = setup({ prev: { capacity: 1, mode: "auto" }, applyRes: { ok: true, promoted: 0, ids: [] } });
+  assert.deepEqual(await b.edu.eduCourseSave({}, body), { ok: true, id: COURSE, promoted: 0 });
+  assert.equal(b.log.notify.length, 0);
+  const c = setup({ prev: { capacity: 1, mode: "auto" }, applyRes: { ok: false, error: "not-found" } });
+  assert.deepEqual(await c.edu.eduCourseSave({}, body), { ok: true, id: COURSE, promoted: 0 }, "refill 이 거절하면 올린 분도 없다");
+  assert.equal(c.log.notify.length, 0);
 });
 
 test("eduEnrollList — 대기 번호는 시각 없는 줄이 맨 뒤 · 앱 줄 ↔ 대신 등록 줄 같은 이름에 maybeDup · user_id 안 나감", async () => {
@@ -177,6 +261,7 @@ test("담당 확인 — 맡지 않은 강좌는 not-assigned · 쓰기·SQL 함�
     assert.equal(a.log.rpc.length, 0, fn + " SQL 함수를 불렀다");
     assert.equal(a.log.audit.length, 0, fn + " 기록했다");
     assert.equal(a.log.lookups, 0, fn + " 명부를 찾았다");
+    assert.equal(a.log.notify.length, 0, fn + " 확정 알림을 부탁했다");
     assert.ok(!a.log.q.some((q) => q.table === "edu_courses"), fn + " 강좌를 읽었다");
   }
   // 역할만 있고 담당자 줄도 사람 id 도 없는 ctx — 같은 답

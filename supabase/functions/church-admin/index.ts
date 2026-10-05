@@ -455,27 +455,42 @@ async function ministryList() {
   };
 }
 
-// 임명 알림은 성경암송 api 의 내부 액션이 보낸다(한 벌) — 실패해도 상태 바꾸기는 이미 끝났으니 결과만 알린다
-async function notifyAppointed(id: number) {
+// 성경암송 api 의 내부 액션 부르기 — 같은 프로젝트 서비스 키를 x-internal-key 머리로(api 의 sameSecret 문) ·
+//   임명 알림(internalMinistryNotify)·교육 확정 알림(internalEduNotify · 2026-10-05)이 함께 쓴다.
+//   성경암송 api 가 멈춰도 담당자의 저장이 오래 걸리지 않게 8초에서 끊는다. 실패(시간 초과·거절·ok 아님)면 null — 부른 쪽이 「알림 실패」로 알린다.
+async function appApiInternal(body: Record<string, unknown>, label: string): Promise<any | null> {
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   try {
-    // 성경암송 api 가 멈춰도 담당자의 「임명」이 오래 걸리지 않게 8초에서 끊고 「알림 실패」로 알린다.
     const res = await fetch(Deno.env.get("SUPABASE_URL") + "/functions/v1/api", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-internal-key": key },
-      body: JSON.stringify({ action: "internalMinistryNotify", id }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     });
     const j = await res.json().catch(() => null);
     if (!j || j.ok !== true) {
-      console.error("notifyAppointed", res.status, j);
-      return { pushed: 0, pushError: "notify-failed", already: false };
+      console.error(label, res.status, j);
+      return null;
     }
-    return { pushed: Number(j.pushed) || 0, pushError: j.pushError ?? null, already: !!j.already };
+    return j;
   } catch (e) {
-    console.error("notifyAppointed", e);
-    return { pushed: 0, pushError: "notify-failed", already: false };
+    console.error(label, e);
+    return null;
   }
+}
+
+// 임명 알림은 성경암송 api 의 내부 액션이 보낸다(한 벌) — 실패해도 상태 바꾸기는 이미 끝났으니 결과만 알린다
+async function notifyAppointed(id: number) {
+  const j = await appApiInternal({ action: "internalMinistryNotify", id }, "notifyAppointed");
+  if (!j) return { pushed: 0, pushError: "notify-failed", already: false };
+  return { pushed: Number(j.pushed) || 0, pushError: j.pushError ?? null, already: !!j.already };
+}
+
+// 교육 확정 알림(4단계 · 2026-10-05) — 성경암송 api 의 내부 액션(internalEduNotify)이 보낸다(같은 신청에 한 번 · 확정·앱 계정 확인도 그쪽).
+//   edu-db.ts 의 deps.eduNotify — 저장이 끝난 뒤에만 불린다 · null 이면 그쪽이 응답에 notifyError 로 싣는다(저장은 그대로 성공).
+async function notifyEduConfirmed(ids: number[], promoted: boolean): Promise<{ sent: number } | null> {
+  const j = await appApiInternal({ action: "internalEduNotify", kind: "confirmed", enrollment_ids: ids, promoted }, "notifyEduConfirmed");
+  return j ? { sent: Number(j.sent) || 0 } : null;
 }
 
 async function ministrySetStatus(ctx: Ctx, b: any) {
@@ -2051,7 +2066,8 @@ async function eduPersonPick(name: unknown, pick: unknown, check: any) {
   const r = rosterIdent(c, personId, matches);
   return { ok: true as const, ident: r.ident, appUserId: r.use_app ? appId : null };
 }
-const edu = makeEdu(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "education"), personPick: eduPersonPick, allRows });
+const edu = makeEdu(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "education"), personPick: eduPersonPick, allRows,
+  eduNotify: notifyEduConfirmed });   // 확정 알림(4단계) — 저장 뒤 성경암송 api internalEduNotify
 
 // ---------- 성경필사(암송) — 이름을 누르면 교적 창 (Task 16 · 2026-09-30) ----------
 // 설계 §0 「이름을 누르면 교적 창」·§2 evPerson·§3 · 친구 결정 §8-8. 고르는 규칙·응답 모양은 events-person.ts(순수 함수)에 있다.
