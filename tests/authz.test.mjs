@@ -56,7 +56,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
     "ministryPerson", "ministryPhoneClear", "ministrySetStatus"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
-  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "ministry", "super"]);
+  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "education", "ministry", "super"]);
 });
 
 test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄만 통과, 사역 담당은 막힘", () => {
@@ -163,4 +163,18 @@ test("kakaoAvatar — http 는 https 로, 주소가 아니면 비움", () => {
   assert.equal(kakaoAvatar(null), "");
   assert.equal(kakaoAvatar({ avatar_url: "https://evil.example/x.jpg" }), "");
   assert.equal(kakaoAvatar({ avatar_url: "http://img1.kakaocdn.net/dn/a.jpg" }), "https://img1.kakaocdn.net/dn/a.jpg");
+});
+
+test("education 액션 × 사람 — 교육 역할·총괄만 통과", () => {
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["education"] }, "pending"],
+    [{ status: "active", roles: ["ministry"] }, "forbidden"],
+    [{ status: "active", roles: ["education"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "education");
+  assert.deepEqual(acts.sort(), ["eduCourseCopy", "eduCourseSave", "eduCourses", "eduEnrollAdd", "eduEnrollList", "eduEnrollSet",
+    "eduExport", "eduFeeSet", "eduPeopleLookup", "eduSessions", "eduSessionsSave"]);
+  for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });

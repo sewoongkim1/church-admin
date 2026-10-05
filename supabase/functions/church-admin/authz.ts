@@ -98,6 +98,20 @@ export const ACTION_ROLES: Record<string, string | null> = {
   historyLinkGroup: "ministry",
   historyRematch: "ministry",
   historyExport: "ministry",
+  // 교육신청 1단계(2026-10-05 · 설계 v2 docs/superpowers/specs/2026-10-05-education-courses-design.md) — 역할 education.
+  //   강좌 만들기·회차·신청 현황·대신 등록·엑셀. 정원·대기 규칙은 성경암송 supabase/edu.sql 의 SQL 함수가 정한다(여기서 상태를 직접 쓰지 않는다).
+  //   응답에 user_id·ident_key 없음(edu-rules.ts 칸 지도) · 쓰기는 바꾼 기록 edu.*(이름 없이 id·수만).
+  eduCourses: "education",
+  eduCourseSave: "education",
+  eduCourseCopy: "education",
+  eduSessions: "education",
+  eduSessionsSave: "education",
+  eduEnrollList: "education",
+  eduEnrollSet: "education",
+  eduEnrollAdd: "education",
+  eduFeeSet: "education",
+  eduExport: "education",
+  eduPeopleLookup: "education",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

@@ -195,6 +195,18 @@ const PROBE = {
   historyLinkGroup: { ids: [], op: "none" },
   historyRematch: {},
   historyExport: { years: [1951] },
+  // 교육신청(2026-10-05) — 아무것도 만들지도 바꾸지도 않는 입력
+  eduCourses: {},
+  eduCourseSave: { course: { title: "", kind: "lecture" } },      // no-title — 아무것도 안 만든다
+  eduCourseCopy: { id: ZERO },
+  eduSessions: { course_id: ZERO },
+  eduSessionsSave: { course_id: ZERO, sessions: [{ no: 0, on_date: "x" }] },   // bad-no — 아무것도 안 바꾼다
+  eduEnrollList: { course_id: ZERO },
+  eduEnrollSet: { id: 0, op: "confirm" },
+  eduEnrollAdd: { course_id: ZERO, ident: { name: "" } },
+  eduFeeSet: { id: 0, paid: true },
+  eduExport: { course_id: ZERO },
+  eduPeopleLookup: { name: "" },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 

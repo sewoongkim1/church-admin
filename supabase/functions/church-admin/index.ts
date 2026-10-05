@@ -70,6 +70,7 @@ import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, r
 import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, requestAdminOut, requestAuditDetail, requestCounts, requestSetBlock, requestSetNoop, requestSetPatch, ROW_ADMIN_SELECT } from "./history-check.ts";
 // 사역 이력(2026-10-01 · 설계 v2 docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md) — 표 읽기·쓰기는 history-db.ts 한 곳
 import { makeHistory } from "./history-db.ts";
+import { makeEdu } from "./edu-db.ts";
 // 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
 // 빠진 사역을 고쳐서 반영 · 목록의 줄 미리 채우기(2026-10-02) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
@@ -2014,6 +2015,29 @@ async function evPeopleLookup(ctx: Ctx, b: any) {
   return { ok: true, source: { date: src.source_date, total: src.total }, people };
 }
 
+// ---------- 교육신청(2026-10-05) — 교인명부에서 찾기는 성경필사와 같은 함수 · 교인 → 소속·이름 · 같은 신원의 앱 계정(조회만) ----------
+async function eduPersonIdent(personId: number) {
+  if (!Number.isInteger(personId) || personId < 1) return null;
+  const { data, error } = await db.from("church_people").select("person_id," + EV_LOOKUP_COLS).eq("person_id", personId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const c = lookupCandOut(data as any);          // 이름·구분(who_type)·소속(group)·세부(sub) — 성경필사 찾기와 같은 옮겨 적기
+  if (c.who_type !== "교회학교" && c.who_type !== "교구") {
+    // 소속을 못 정한 분 — 앱 계정을 잇지 않고 교인ID 로 신원 키를 만든다(같은 분 두 번 등록 막기)
+    return { ident: { name: c.name, who_type: "", group_name: "", sub_name: "", ident_key: "person|" + personId }, appUserId: null };
+  }
+  const id = c.who_type === "교회학교"
+    ? { type: "교회학교", gu: "", mok: "", bu: c.group, grade: c.sub, name: c.name }
+    : { type: "교구", gu: c.group, mok: c.sub, bu: "", grade: "", name: c.name };
+  const keys = identityCandidates(id);
+  const { data: us, error: e2 } = await db.from("users").select("id").in("identity_key", keys).limit(2);
+  if (e2) throw e2;
+  const appUserId = (us ?? []).length === 1 ? us![0].id : null;     // 하나뿐일 때만 잇는다(둘이면 담당자가 앱 신청으로)
+  return { ident: { name: id.name, who_type: id.type, group_name: id.type === "교구" ? id.gu : id.bu,
+    sub_name: id.type === "교구" ? id.mok : id.grade, ident_key: keys[0] }, appUserId };
+}
+const edu = makeEdu(db, audit, { peopleLookup: evPeopleLookup, personIdent: eduPersonIdent });
+
 // ---------- 성경필사(암송) — 이름을 누르면 교적 창 (Task 16 · 2026-09-30) ----------
 // 설계 §0 「이름을 누르면 교적 창」·§2 evPerson·§3 · 친구 결정 §8-8. 고르는 규칙·응답 모양은 events-person.ts(순수 함수)에 있다.
 // ⚠️ 모양은 **부른 분의 역할**로 여기서 정한다(ctx.roles — 화면이 보낸 것을 믿지 않는다):
@@ -2440,6 +2464,17 @@ Deno.serve(async (req) => {
       case "evUploadCheck":  return json(await evUpload(ctx, b, false));
       case "evUploadSave":   return json(await evUpload(ctx, b, true));
       case "evPeopleLookup": return json(await evPeopleLookup(ctx, b));
+      case "eduCourses":      return json(await edu.eduCourses(b));
+      case "eduCourseSave":   return json(await edu.eduCourseSave(ctx, b));
+      case "eduCourseCopy":   return json(await edu.eduCourseCopy(ctx, b));
+      case "eduSessions":     return json(await edu.eduSessions(b));
+      case "eduSessionsSave": return json(await edu.eduSessionsSave(ctx, b));
+      case "eduEnrollList":   return json(await edu.eduEnrollList(b));
+      case "eduEnrollSet":    return json(await edu.eduEnrollSet(ctx, b));
+      case "eduEnrollAdd":    return json(await edu.eduEnrollAdd(ctx, b));
+      case "eduFeeSet":       return json(await edu.eduFeeSet(ctx, b));
+      case "eduExport":       return json(await edu.eduExport(ctx, b));
+      case "eduPeopleLookup": return json(await edu.eduPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));
