@@ -5,8 +5,8 @@
 // 적힌 것이 적으면(.pd-empty·.pd-few) 창 자체를 좁혀 한 단으로 — 폭 판단이 @container 라 창 폭만 바꾸면 된다.
 import { esc } from "../../core/ui.js";
 import { affText, initialOf, detailSections } from "./people-logic.js";
-// 사역·성경필사 탭(2026-10-01) — 서버가 history 를 줄 때만(옛 서버면 예전 창 그대로)
-import { tabsHtml, histPanelHtml, histTotal, tabOf } from "./person-history.js";
+// 사역·성경필사 탭(2026-10-01) — 서버가 history 를 줄 때만(옛 서버면 예전 창 그대로) · 🎓 교육 탭(2026-10-06)은 history.education 이 있을 때만
+import { tabsHtml, histPanelHtml, histTotal, tabOf, hasEdu } from "./person-history.js";
 
 const has = (v) => v !== undefined && v !== null && String(v).trim() !== "";
 const t = (v) => esc(String(v ?? "").replace(/[\r\n]+/g, " ").trim());
@@ -43,7 +43,8 @@ function mainHtml(secHtml, hist, on) {
   const panel = (k, inner) => `<div class="pd-panel" role="tabpanel" id="pd-panel-${k}" aria-labelledby="pd-tab-${k}" ` +
     `data-pd-panel="${k}" tabindex="0"${k === on ? "" : " data-off"}>${inner}</div>`;
   return tabsHtml(hist, on) + `<div class="pd-panels">${panel("church", church)}` +
-    `${panel("ministry", histPanelHtml("ministry", hist, null))}${panel("bible", histPanelHtml("bible", hist, null))}</div>`;
+    `${panel("ministry", histPanelHtml("ministry", hist, null))}${panel("bible", histPanelHtml("bible", hist, null))}` +
+    `${hasEdu(hist) ? panel("education", histPanelHtml("education", hist, null)) : ""}</div>`;
 }
 
 function familyHtml(p, family) {
@@ -96,5 +97,5 @@ export function personDetailHtml(p, family = [], history = null, tab = "church")
     (aff ? `<p class="pd-aff">${t(aff)}</p>` : "") +
     (age ? `<p class="pd-age">${t(age)}</p>` : "") +
     `</div><div class="pd-tels">${tels || `<p class="pd-none">연락처 없음</p>`}</div></div>` +
-    `<div class="pd-main">${mainHtml(secHtml, hist, tabOf(tab))}</div></div>`;
+    `<div class="pd-main">${mainHtml(secHtml, hist, tabOf(tab, hist))}</div></div>`;
 }

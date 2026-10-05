@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { HIST_TABS, tabOf, tabsHtml, ministryText, statusChip, bibleText, histPanelHtml, unlinkedHtml, histTotal, rowKey,
-  linkDoneText, LINK_STALE }
+  linkDoneText, LINK_STALE, EDU_TAB, hasEdu, tabsFor, linksTab, keepEdu, eduChip, eduMeta, eduPanelHtml }
   from "../js/menus/people/person-history.js";
 import { personDetailHtml } from "../js/menus/people/person-detail.js";
 
@@ -147,4 +147,85 @@ test("linkDoneText — 셋의 알림 · 풀었는데 다시 붙으면 「이분 
     noNL(s);
   }
   assert.ok(linkDoneText("auto", { ok: true, relinked: true }).includes("「이분 아님」"));
+});
+
+// ---------- 🎓 교육 탭(교육신청 4단계 B · 2026-10-06) — 서버 칸 지도 edu-rules.ts eduTabItems ----------
+const E = (o = {}) => ({ term: "2027 상반기", title: "제자훈련 1단계", status: "confirmed", statusLabel: "확정", attendPct: 80, certNo: null,
+  certRevoked: false, ...o });
+const HE = (edu = [E()], ministry = [M()], bible = [B()]) => ({ ...H(ministry, bible), counts: { ministry: ministry.length, bible: bible.length,
+  education: edu.length }, education: edu });
+
+test("교육 탭 — 서버가 education(배열)을 줄 때만 넷째 탭 · 고를 수 있는 탭 · 「아직 안 이어진 기록」은 사역·성경필사만", () => {
+  assert.deepEqual(EDU_TAB, ["education", "🎓 교육"]);
+  assert.equal(hasEdu(HE()), true);
+  assert.equal(hasEdu(H()), false);
+  assert.equal(hasEdu({ ...H(), education: null }), false);
+  assert.deepEqual(tabsFor(H()).map(([k]) => k), ["church", "ministry", "bible"]);
+  assert.deepEqual(tabsFor(HE()).map(([k]) => k), ["church", "ministry", "bible", "education"]);
+  assert.equal(tabOf("education", HE()), "education");
+  assert.equal(tabOf("education", H()), "church", "교육 칸이 없는 창(옛 서버·교육 읽기 실패)에서는 교적");
+  assert.equal(tabOf("education"), "church");
+  assert.equal(tabOf("bible", HE()), "bible");
+  assert.deepEqual(["church", "ministry", "bible", "education"].map(linksTab), [false, true, true, false]);
+  assert.equal(histTotal(HE([E(), E()], [], [])), 2, "교육 기록도 센다(있으면 창을 좁히지 않는다)");
+});
+
+test("교육 탭 줄 — 넷이면 pd-tabs4 · 「🎓 교육 N」 · 고른 탭 · 줄바꿈·data-v·data-fam 없음", () => {
+  const html = tabsHtml(HE([E(), E({ title: "교사 대학" })]), "education");
+  noNL(html); noBad(html);
+  assert.ok(html.includes('class="pd-tabs pd-tabs4"'));
+  assert.ok(html.includes('aria-label="교적 · 사역 · 성경필사 · 교육"'));
+  assert.equal((html.match(/role="tab"/g) || []).length, 4);
+  assert.ok(html.includes("🎓 교육 <em>2</em>"));
+  assert.ok(html.includes('data-pd-tab="education" aria-selected="true" aria-controls="pd-panel-education" tabindex="0"'));
+  assert.ok(tabsHtml(H(), "education").includes('data-pd-tab="church" aria-selected="true"'), "교육 칸이 없으면 교적이 고른 탭");
+  assert.equal(tabsHtml(H(), "church").includes("pd-tabs4"), false);
+});
+
+test("교육 칸 — 학기마다 머리 · 과정 · 상태 칩(신청 파랑·대기 노랑·확정 초록·취소·반려 회색) · 출석률(없으면 —) · 수료번호(취소됨) · 빈 칸 · esc", () => {
+  const items = [E({ certNo: "고척-2027-0001" }), E({ title: "교사 대학", status: "waitlisted", statusLabel: "대기", attendPct: null }),
+    E({ term: "2026 하반기", title: "교사 연수", status: "cancelled", statusLabel: "취소", attendPct: 0, certNo: "고척-2026-0003", certRevoked: true }),
+    E({ term: "", title: "새가족반", status: "declined", statusLabel: "반려", attendPct: 100 })];
+  const html = histPanelHtml("education", HE(items), { unlinked: { state: "ready", rows: [], open: {} } });
+  noNL(html); noBad(html);
+  assert.equal(html, eduPanelHtml(items), "교육 칸에는 「아직 안 이어진 기록」이 붙지 않는다");
+  assert.equal((html.match(/class="pd-eh"/g) || []).length, 3, "학기 머리 셋(2027 상반기 · 2026 하반기 · 학기 없음)");
+  assert.ok(html.includes('<p class="pd-eh">2027 상반기</p>') && html.includes('<p class="pd-eh">학기 없음</p>'));
+  assert.ok(html.includes("출석률 80% · 수료번호 고척-2027-0001"));
+  assert.ok(html.includes("출석률 —"));
+  assert.ok(html.includes("출석률 0% · 수료번호 고척-2026-0003 (취소됨)"));
+  assert.ok(html.includes('<span class="mn-rowi-st s3">확정</span>') && html.includes('<span class="mn-rowi-st s2">대기</span>'));
+  assert.ok(html.includes('<span class="mn-rowi-st s4">취소</span>') && html.includes('<span class="mn-rowi-st s4">반려</span>'));
+  assert.equal((html.match(/pd-er off/g) || []).length, 2, "취소·반려 줄은 흐리게");
+  assert.equal(/data-pd-act/.test(html), false, "교육 줄에는 잇기·풀기 단추가 없다");
+  assert.equal(eduChip("applied", "신청"), '<span class="mn-rowi-st s1">신청</span>');
+  assert.ok(histPanelHtml("education", HE([]), null).includes("이어진 교육 기록이 없어요"));
+  assert.ok(eduPanelHtml(undefined).includes("이어진 교육 기록이 없어요"));
+  const bad = eduPanelHtml([E({ title: '<img src=x onerror="1">', term: "<b>학기</b>", certNo: '"><script>' })]);
+  assert.equal(/<img|<script|<b>/.test(bad), false, "서버 글자는 esc");
+  assert.equal(eduMeta({ attendPct: "80" }), "출석률 —", "숫자가 아니면 —");
+});
+
+test("keepEdu — 잇기 뒤 서버 답에 교육 칸이 빠지면 보던 교육 칸을 그대로(탭이 사라지지 않게) · 있으면 새 것 · 처음부터 없으면 그대로", () => {
+  const prev = HE([E()]), next = H([M({ row: 9 })], []);
+  const k = keepEdu(prev, next);
+  assert.deepEqual(k.education, prev.education);
+  assert.equal(k.counts.education, 1);
+  assert.deepEqual(k.ministry, next.ministry);
+  assert.equal(keepEdu(prev, HE([])).education.length, 0, "새 답에 교육 칸이 있으면 새 것");
+  assert.equal(keepEdu(H(), next), next);
+  assert.equal(keepEdu(prev, null), null);
+});
+
+test("personDetailHtml — 교육 칸이 있으면 탭 넷 · 교육 칸 · 교육 탭으로 열기 · 교육 기록만 있어도 창을 좁히지 않는다", () => {
+  const P = { name: "홍길동", kind2: "장년", registered: "2026-08-02" };
+  const html = personDetailHtml(P, [], HE([E()], [], []), "education");
+  noNL(html); noBad(html);
+  assert.ok(html.includes('class="pd-wrap pd-tabbed"'), "교육 기록이 있으면 좁히지 않는다");
+  assert.ok(html.includes('data-pd-panel="education" tabindex="0">'), "교육 칸이 켜진 채");
+  assert.ok(html.includes('data-pd-panel="church" tabindex="0" data-off'));
+  assert.ok(html.includes("제자훈련 1단계"));
+  const old = personDetailHtml(P, [], H(), "education");
+  assert.equal(old.includes('data-pd-panel="education"'), false, "교육 칸이 없으면 칸도 없다");
+  assert.ok(old.includes('data-pd-panel="church" tabindex="0">'), "보던 탭이 교육이어도 교적으로");
 });

@@ -241,6 +241,13 @@ export async function historyOrNull<T>(read: () => Promise<T>, log: (e: unknown)
 export function withHistory<T extends Record<string, unknown>>(res: T, history: unknown): T & { history?: unknown } {
   return history === null || history === undefined ? res : { ...res, history };
 }
+// 🎓 교육 탭(4단계 B · 2026-10-06) — 사역·성경필사 탭 자료에 교육 줄(edu-rules.ts eduTabItems 칸 지도)과 그 수를 붙인다.
+//   items 가 배열이 아니면(교육 표 읽기만 실패 — index.ts eduTabSafe 가 null) 칸째 뺀다 → 화면은 교육 탭만 안 그린다(사역·성경필사 탭은 그대로).
+//   ⚠️ 교육 읽기가 실패했다고 history 전체를 null 로 만들지 않는다(사역·성경필사 탭까지 사라진다).
+export function withEduTab<H extends { counts: Record<string, number> }>(h: H, items: unknown): H & { education?: unknown[] } {
+  if (!Array.isArray(items)) return h;
+  return { ...h, counts: { ...h.counts, education: items.length }, education: items };
+}
 // 사람이 정한 줄 — manual(이분 것) · none(이분 아님). 자동이 다시 덮지 않는다(link_how).
 export function linkPatch(kind: LinkKind, row: number, how: "manual" | "none", personId: number, memberId: string | null, nowIso: string) {
   return { kind, row_id: row, person_id: how === "manual" ? personId : null, link_how: how,

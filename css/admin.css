@@ -820,6 +820,22 @@ a.mn-tel.sm{padding:2px 8px}
     overflow-y:auto;overscroll-behavior:contain}
   .dlg.pd .pd-panel[data-pd-panel="ministry"][data-off],.dlg.pd .pd-panel[data-pd-panel="bible"][data-off]{display:none}
 }
+/* 「자세히」 창 🎓 교육 탭(4단계 B · 2026-10-06) — 본문 person-history.js eduPanelHtml(학기 머리 + 줄: 과정 · 상태 칩 / 출석률 · 수료번호).
+   탭이 넷(.pd-tabs4)이면 좁은 창(안쪽 480px 아래 — 폰)에서 두 줄 두 칸(한 줄에 넷이 안 들어가 넷째만 아랫줄로 떨어지지 않게).
+   ⚠️ PC 는 사역·성경필사 칸과 같이 contain:size — 창 높이에 끼지 않고 그 안에서만 스크롤(1366×657 무스크롤). 새 규칙만(위 규칙은 안 바꾼다). */
+@container (max-width:479px){
+  .dlg.pd .pd-tabs4{display:grid;grid-template-columns:1fr 1fr}
+  .dlg.pd .pd-tabs4 .pd-tab{justify-content:center;width:100%;padding:0 8px}
+}
+.dlg.pd .pd-eg+.pd-eg{margin-top:14px}
+.dlg.pd .pd-eh{margin:0;padding-bottom:4px;border-bottom:1px solid var(--border);font-size:14px;font-weight:800;color:var(--navy)}
+.dlg.pd .pd-hl-e .pd-hr{grid-template-columns:minmax(0,1fr) auto}
+.dlg.pd .pd-em{grid-column:1/-1;font-size:13px;line-height:1.4;color:var(--ink-2);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dlg.pd .pd-er.off .pd-ht{color:var(--ink-2)}
+@container (min-width:720px){
+  .dlg.pd .pd-panel[data-pd-panel="education"]{display:block;contain:size;overflow-y:auto;overscroll-behavior:contain}
+  .dlg.pd .pd-panel[data-pd-panel="education"][data-off]{display:none}
+}
 
 /* 공용 고르개(js/core/picker.js · 2026-09-29) — 시스템 <select>·날짜·시각 창 대신.
    좁은 화면(≤719px) = 바텀 시트 · 넓은 화면 = 단추 아래 작은 판. z-index 는 확인 창(50) 위 · 알림(60) 아래 */
@@ -1536,4 +1552,53 @@ body.ec-cert-on{overflow:hidden}
   .ecert-tools .btn{flex:0 0 auto;min-width:220px}
   .ecert-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
   .be-box:has(.ecert-set){max-width:720px}
+}
+
+/* 📊 교육 통계(2026-10-06 · 교육 4단계 C) — js/menus/education/stats.js · 접두사 est- · 새 규칙만(위 규칙은 안 바꾼다). 색은 토큰만.
+   폰(먼저): 강좌별 표(.est-t)의 줄 하나 = 카드 한 장 — 제목 줄 + 숫자 여덟 칸(네 개씩 두 줄 · 칸 이름은 td 의 data-l) · 머리 줄(thead)은 숨긴다 ·
+   합계 줄은 남색 테두리 카드. 교구·부서별은 칸이 넷이라 폰에서도 표(.pp-stat 그대로).
+   넓은 화면(720px~): 같은 표를 진짜 표로(머리 줄 · 숫자 오른쪽 맞춤 · 합계 줄 굵게 · 넘치면 표만 옆으로 밀린다 .est-tw) · PC(1024px~): 읽기 좋은 폭 1000px */
+.est-top{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.est-term{flex:1 1 200px;justify-content:flex-start;text-align:left}
+.est-term b{margin-left:2px;color:var(--navy-dark);font-weight:800;overflow-wrap:anywhere}
+.est-export{flex:1 1 160px}
+.est-note{margin:0 0 4px;line-height:1.5;word-break:keep-all}
+.est-t{display:block;width:100%;border-collapse:collapse}
+.est-t thead{display:none}
+.est-t tbody,.est-t tfoot{display:flex;flex-direction:column;gap:8px}
+.est-t tfoot{margin-top:8px}
+.est-t tr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 6px;padding:10px 12px 12px;background:#fff;
+  border:1px solid var(--border);border-radius:12px}
+.est-t tfoot tr{border:2px solid var(--navy);background:var(--ghost-bg)}
+.est-t .est-c{grid-column:1/-1;display:flex;flex-direction:column;gap:1px;text-align:left;font-weight:400}
+.est-ct{font-size:15px;font-weight:800;line-height:1.35;color:var(--ink);word-break:keep-all;overflow-wrap:anywhere}
+.est-cs{font-size:13px;color:var(--ink-2)}
+.est-t td{display:flex;flex-direction:column;gap:1px;min-width:0;font-size:16px;font-weight:800;color:var(--navy-dark);
+  font-variant-numeric:tabular-nums}
+.est-t td::before{content:attr(data-l);font-size:12px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+.est-g td small{font-size:12px;font-weight:400}
+@media (min-width:720px){
+  .est-tw{overflow-x:auto;margin-bottom:8px;border:1px solid var(--border);background:#fff}
+  .est-t{display:table}
+  .est-t thead{display:table-header-group}
+  .est-t tbody{display:table-row-group}
+  .est-t tfoot{display:table-footer-group;margin:0}
+  .est-t tr{display:table-row;padding:0;border:0;border-radius:0;background:none}
+  .est-t tfoot tr{border:0;background:none}
+  .est-t th,.est-t td{display:table-cell;padding:7px 8px;border-bottom:1px solid var(--light);font-size:14px;font-weight:700;color:var(--ink);
+    text-align:right;vertical-align:middle;white-space:nowrap}
+  .est-t td::before{content:none}
+  .est-t thead th{background:var(--light);color:var(--gray);font-size:13px}
+  .est-t thead th:first-child,.est-t .est-c{text-align:left;white-space:normal}
+  .est-t .est-c{min-width:160px;padding-left:12px}
+  .est-ct,.est-cs{display:block}
+  .est-ct{font-size:14px}
+  .est-cs{font-size:12px;font-weight:400}
+  .est-t tbody tr:last-child th,.est-t tbody tr:last-child td{border-bottom:0}
+  .est-t tfoot th,.est-t tfoot td{border-top:2px solid var(--border);border-bottom:0;font-weight:800;color:var(--navy-dark);background:var(--ghost-bg)}
+}
+@media (min-width:1024px){
+  .est-page{max-width:1000px}
+  .est-term{flex:0 1 auto;min-width:260px}
+  .est-export{flex:0 0 auto;min-width:200px}
 }

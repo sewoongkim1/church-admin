@@ -7,8 +7,10 @@
 //    open[`${tab}Notme`] 가 서로 다른 값 — 2026-10-01 친구 결정 · person-history.js unlinkedHtml).
 // ⚠️ 창이 닫힌 뒤 답이 오면 그리지 않는다(dlg.isConnected).
 // ⚠️ 이 파일은 Node 시험이 (person-popup.js → search.js 를 거쳐) 불러 본다 — 맨 위에서 document·window 를 만지지 않는다.
+// 🎓 교육 탭(4단계 B · 2026-10-06) — 탭 목록은 tabsFor(history)(교육 칸이 있을 때만 넷) · 교육 탭은 읽기만이라
+//    「아직 안 이어진 기록」을 부르지 않는다(linksTab) · 잇기 뒤 서버 답에 교육 칸이 빠졌으면 보던 교육 칸을 그대로 둔다(keepEdu).
 import { toast, busy, errorText } from "../../core/ui.js";
-import { HIST_TABS, tabOf, tabsHtml, histPanelHtml, rowKey, linkDoneText } from "./person-history.js";
+import { tabsFor, tabOf, tabsHtml, histPanelHtml, rowKey, linkDoneText, linksTab, keepEdu } from "./person-history.js";
 
 let lastTab = "church";
 // 마지막 「자세히」 창이 보던 탭 — 가족으로 넘어갈 때 그대로 연다(search.js 가 다시 내보내고 person-popup.js 가 쓴다).
@@ -18,13 +20,13 @@ export const detailTab = () => lastTab;
 export function bindPersonTabs({ dlg, call, personId, history, tab }) {
   const main = dlg && dlg.querySelector(".pd-main");
   if (!main || !history || !main.querySelector(".pd-tabs")) return;
-  const s = { tab: tabOf(tab), history, confirm: null, unlinked: { state: "idle", open: { ministry: false, bible: false }, rows: [] } };
+  const s = { tab: tabOf(tab, history), history, confirm: null, unlinked: { state: "idle", open: { ministry: false, bible: false }, rows: [] } };
   lastTab = s.tab;
   const ui = () => ({ confirm: s.confirm, unlinked: s.unlinked });
 
   function draw(focusSel) {
     main.querySelector(".pd-tabs").outerHTML = tabsHtml(s.history, s.tab);
-    for (const [k] of HIST_TABS) {
+    for (const [k] of tabsFor(s.history)) {
       const p = main.querySelector(`[data-pd-panel="${k}"]`);
       if (!p) continue;
       if (k !== "church") p.innerHTML = histPanelHtml(k, s.history, ui());
@@ -42,17 +44,17 @@ export function bindPersonTabs({ dlg, call, personId, history, tab }) {
     draw();
   }
   function show(k, focus) {
-    s.tab = tabOf(k);
+    s.tab = tabOf(k, s.history);
     lastTab = s.tab;
     s.confirm = null;
     draw(focus ? `[data-pd-tab="${s.tab}"]` : null);
-    if (s.tab !== "church") loadUnlinked();
+    if (linksTab(s.tab)) loadUnlinked();
   }
   async function link(kind, row, how) {
     const r = await busy(main, () => call("peopleLink", { kind, row: Number(row), person: personId, how }));
     if (!dlg.isConnected) return;
     if (!r || !r.ok) { toast(errorText(r)); return; }
-    if (r.history) s.history = r.history;   // 없으면(서버가 탭 자료 다시 읽기에 실패 · 쓰기는 됐다) 옛 탭 그대로 — 알림이 「다시 열면」을 덧붙인다
+    if (r.history) s.history = keepEdu(s.history, r.history);   // 없으면(서버가 탭 자료 다시 읽기에 실패 · 쓰기는 됐다) 옛 탭 그대로 — 알림이 「다시 열면」을 덧붙인다
     const again = how === "auto" && r.relinked;
     s.confirm = again ? { key: rowKey(kind, row), relinked: true } : null;
     toast(linkDoneText(how, r));
@@ -86,12 +88,12 @@ export function bindPersonTabs({ dlg, call, personId, history, tab }) {
   main.addEventListener("keydown", (e) => {
     const tb = e.target instanceof Element ? e.target.closest("[data-pd-tab]") : null;
     if (!tb) return;
-    const keys = HIST_TABS.map(([k]) => k), i = keys.indexOf(tb.dataset.pdTab);
+    const keys = tabsFor(s.history).map(([k]) => k), i = keys.indexOf(tb.dataset.pdTab);
     const j = e.key === "ArrowRight" ? (i + 1) % keys.length : e.key === "ArrowLeft" ? (i + keys.length - 1) % keys.length
       : e.key === "Home" ? 0 : e.key === "End" ? keys.length - 1 : -1;
     if (j < 0) return;
     e.preventDefault();
     show(keys[j], true);
   });
-  if (s.tab !== "church") loadUnlinked();
+  if (linksTab(s.tab)) loadUnlinked();
 }

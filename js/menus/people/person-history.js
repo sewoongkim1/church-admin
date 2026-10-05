@@ -4,16 +4,25 @@
 // ⚠️ 단추에 data-v · data-fam · data-fam-all 을 쓰지 않는다 — ui.js dialog 는 본문 안 button[data-v] 를 「닫기」로,
 //    search.js·person-popup.js 는 data-fam 을 가족 단추로 읽는다. 탭은 data-pd-tab, 나머지는 data-pd-act(+ data-kind · data-row).
 // ⚠️ 서버가 준 칸 지도(people-links.ts …Item)만 그린다 — 메모·사유·전화·앱 계정은 응답에 아예 없다.
+// 🎓 교육 탭(4단계 B · 2026-10-06) — 서버가 history.education(배열 · edu-rules.ts eduTabItems 칸 지도)을 줄 때만 넷째 탭.
+//   교육 표 읽기만 실패했거나 옛 서버면 칸째 없다 → 탭 셋 그대로(사역·성경필사 탭은 그대로). 교육 줄은 잇기·풀기·「아직 안 이어진 기록」이 없다(읽기만).
 import { esc } from "../../core/ui.js";
 import { SHORT, CLS } from "../ministry/status-logic.js";
 import { statLabel } from "../bibleevent/history-logic.js";
 import { whoText } from "../bibleevent/roster-logic.js";
 
 export const HIST_TABS = [["church", "교적"], ["ministry", "🤝 사역"], ["bible", "✍️ 성경필사"]];
+export const EDU_TAB = ["education", "🎓 교육"];
+export const hasEdu = (h) => Array.isArray(h?.education);
+// 이 창의 탭들 — 교육 칸이 있으면 넷(교적 · 사역 · 성경필사 · 교육)
+export const tabsFor = (h) => (hasEdu(h) ? [...HIST_TABS, EDU_TAB] : HIST_TABS);
 const KEYS = HIST_TABS.map(([k]) => k);
-export const tabOf = (v) => (KEYS.includes(v) ? v : "church");
+// 고를 수 있는 탭인가 — 교육은 그 창에 교육 칸이 있을 때만(가족으로 넘어가며 보던 탭이 교육인데 그분 창엔 없으면 교적)
+export const tabOf = (v, h) => (KEYS.includes(v) || (v === EDU_TAB[0] && hasEdu(h)) ? v : "church");
+// 「아직 안 이어진 기록」을 불러올 탭 — 사역·성경필사만(교육 줄은 잇는 길이 없다)
+export const linksTab = (k) => k === "ministry" || k === "bible";
 export const rowKey = (kind, row) => `${kind}:${row}`;
-export const histTotal = (h) => (Number(h?.counts?.ministry) || 0) + (Number(h?.counts?.bible) || 0);
+export const histTotal = (h) => (Number(h?.counts?.ministry) || 0) + (Number(h?.counts?.bible) || 0) + (Number(h?.counts?.education) || 0);
 const t = (v) => esc(String(v ?? "").replace(/[\r\n]+/g, " ").trim());
 const join = (...xs) => xs.map((x) => String(x ?? "").trim()).filter(Boolean).join(" · ");
 
@@ -28,11 +37,21 @@ export function linkDoneText(how, r) {
   return r?.history ? base : base + LINK_STALE;
 }
 
-// 탭 줄 — 오른쪽 칸 맨 위. 숫자 = 이분과 이어진 기록 수(서버 counts).
+// 잇기·풀기 뒤 서버가 다시 준 탭 자료(next)에 교육 칸이 없으면(그때 교육 읽기만 실패) 보던 교육 칸을 그대로 둔다 —
+//   잇기는 교육 줄을 바꾸지 않는다. 그렇게 안 하면 탭 하나가 창에서 갑자기 사라진다.
+export function keepEdu(prev, next) {
+  if (!next || hasEdu(next) || !hasEdu(prev)) return next;
+  return { ...next, counts: { ...(next.counts || {}), education: prev.education.length }, education: prev.education };
+}
+
+// 탭 줄 — 오른쪽 칸 맨 위. 숫자 = 이분과 이어진 기록 수(서버 counts). 넷이면 pd-tabs4(좁은 창에서 두 줄 두 칸 — css)
 export function tabsHtml(history, tab) {
-  const on = tabOf(tab);
-  const n = { ministry: Number(history?.counts?.ministry) || 0, bible: Number(history?.counts?.bible) || 0 };
-  return `<div class="pd-tabs" role="tablist" aria-label="교적 · 사역 · 성경필사">` + HIST_TABS.map(([k, label]) => {
+  const on = tabOf(tab, history);
+  const list = tabsFor(history);
+  const n = { ministry: Number(history?.counts?.ministry) || 0, bible: Number(history?.counts?.bible) || 0,
+    education: Number(history?.counts?.education) || 0 };
+  return `<div class="pd-tabs${list.length > 3 ? " pd-tabs4" : ""}" role="tablist" aria-label="${list.length > 3 ? "교적 · 사역 · 성경필사 · 교육" : "교적 · 사역 · 성경필사"}">` +
+    list.map(([k, label]) => {
     const sel = k === on;
     return `<button type="button" class="pd-tab${sel ? " on" : ""}" role="tab" id="pd-tab-${k}" data-pd-tab="${k}" ` +
       `aria-selected="${sel}" aria-controls="pd-panel-${k}" tabindex="${sel ? 0 : -1}">${label}${k === "church" ? "" : ` <em>${n[k]}</em>`}</button>`;
@@ -73,9 +92,44 @@ function linkedRow(tab, r, year, ui) {
   return `<li class="pd-hr">${y}<span class="pd-ht">${t(text)}${manual}</span>${chip}${tail}</li>`;
 }
 
-const EMPTY = { ministry: "이어진 사역 기록이 없어요", bible: "이어진 성경필사 기록이 없어요" };
-// 사역·성경필사 칸 하나 — 이어진 줄(사역은 해 내림차순 · 같은 해는 해 칸을 비운다) + 「아직 안 이어진 기록」
+const EMPTY = { ministry: "이어진 사역 기록이 없어요", bible: "이어진 성경필사 기록이 없어요", education: "이어진 교육 기록이 없어요" };
+
+// ---------- 🎓 교육 칸(4단계 B · 2026-10-06) — 서버 칸 지도 eduTabItems {term, title, status, statusLabel, attendPct, certNo, certRevoked} ----------
+// 상태 칩 색은 사역 칩과 같은 넷(mn-rowi-st): 신청 s1(파랑) · 대기 s2(노랑) · 확정 s3(초록) · 취소·반려 s4(회색)
+const EDU_CLS = { applied: "s1", waitlisted: "s2", confirmed: "s3", cancelled: "s4", declined: "s4" };
+export function eduChip(status, label) {
+  const s = String(status ?? "");
+  return `<span class="mn-rowi-st ${EDU_CLS[s] || "s1"}">${t(label || s)}</span>`;
+}
+// 「출석률 92% · 수료번호 고척-2027-0001」 — 체크한 회차가 없으면 「출석률 —」 · 수료를 취소한 번호는 「(취소됨)」 · 번호가 없으면 수료 칸을 안 쓴다
+export function eduMeta(r) {
+  const p = r?.attendPct;
+  const pct = typeof p === "number" && Number.isFinite(p) ? `${p}%` : "—";
+  const cert = r?.certNo ? `수료번호 ${r.certNo}${r.certRevoked ? " (취소됨)" : ""}` : "";
+  return join(`출석률 ${pct}`, cert);
+}
+function eduRow(r) {
+  const off = r?.status === "cancelled" || r?.status === "declined";
+  return `<li class="pd-hr pd-er${off ? " off" : ""}"><span class="pd-ht">${t(r?.title)}</span>${eduChip(r?.status, r?.statusLabel)}` +
+    `<span class="pd-em">${t(eduMeta(r))}</span></li>`;
+}
+// 교육 칸 — 학기마다 한 묶음(학기 이름을 머리로 · 서버가 학기 새것부터 세운 차례 그대로 붙어 있는 같은 학기를 묶는다)
+export function eduPanelHtml(items) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return `<p class="pd-none">${EMPTY.education}</p>`;
+  const groups = [];
+  for (const r of list) {
+    const term = String(r?.term ?? "").trim();
+    const g = groups[groups.length - 1];
+    if (g && g.term === term) g.rows.push(r); else groups.push({ term, rows: [r] });
+  }
+  return groups.map((g) => `<div class="pd-eg"><p class="pd-eh">${t(g.term || "학기 없음")}</p>` +
+    `<ul class="pd-hl pd-hl-e">${g.rows.map(eduRow).join("")}</ul></div>`).join("");
+}
+
+// 사역·성경필사 칸 하나 — 이어진 줄(사역은 해 내림차순 · 같은 해는 해 칸을 비운다) + 「아직 안 이어진 기록」 · 교육 칸은 eduPanelHtml(읽기만)
 export function histPanelHtml(tab, history, ui) {
+  if (tab === EDU_TAB[0]) return eduPanelHtml(history?.education);
   const items = (tab === "ministry" ? history?.ministry : history?.bible) || [];
   let prev = null;
   const rows = items.map((r) => {

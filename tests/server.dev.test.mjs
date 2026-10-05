@@ -226,6 +226,8 @@ const PROBE = {
   eduCertPrint: { course_id: ZERO },
   eduCertSettings: {},
   eduCertSettingsSave: { seal: "x" },
+  // 교육 통계(4단계 C · 2026-10-06) — 읽기만 · 없는 학기라 빈 목록(SQL edu_stats 한 번)
+  eduStats: { term: "ca-test-probe-none" },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
@@ -2650,10 +2652,12 @@ test("「자세히」 창 탭(peoplePerson history): 이어진 기록만 · 칸 
   const r = await call(people.directory.token, "peoplePerson", { id: PL.ids[0] });
   assert.equal(r.body.ok, true, JSON.stringify(r.body));
   const h = r.body.history;
-  assert.deepEqual(Object.keys(h).sort(), ["bible", "counts", "ministry"]);
+  // 🎓 교육 탭(4단계 B · 2026-10-06) — education 칸(이 시험 교인은 교육 기록 0 · 자세한 것은 tests/edu-tab-stats.dev.test.mjs)
+  assert.deepEqual(Object.keys(h).sort(), ["bible", "counts", "education", "ministry"]);
   assert.deepEqual(h.ministry.map((x) => [x.kind, x.row]), [["order", PL.orders.o1]]);
   assert.deepEqual(h.bible.map((x) => [x.kind, x.row]), [["signup", PL.signups.s1]]);
-  assert.deepEqual(h.counts, { ministry: 1, bible: 1 });
+  assert.deepEqual(h.counts, { ministry: 1, bible: 1, education: 0 });
+  assert.deepEqual(h.education, []);
   assert.deepEqual(Object.keys(h.ministry[0]).sort(), MIN_ITEM_KEYS);
   assert.deepEqual(Object.keys(h.bible[0]).sort(), BIB_ITEM_KEYS);
   assert.deepEqual([h.ministry[0].committee, h.ministry[0].team, h.ministry[0].status, h.ministry[0].how], ["시험부", "시험팀", "신청완료", "auto"]);

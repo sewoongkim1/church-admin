@@ -173,12 +173,15 @@ test("education(교육 총괄) 액션 × 사람 — 교육 총괄·총괄만 통
     [{ status: "active", roles: ["ministry"] }, "forbidden"],
     [{ status: "active", roles: ["educourse"] }, "forbidden"],
     [{ status: "active", roles: ["teacher"] }, "forbidden"],
+    [{ status: "active", roles: ["directory"] }, "forbidden"],
     [{ status: "active", roles: ["education"] }, "ok"],
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "education");
-  // 강좌 만들기·고치기·복사·회차 저장·담당자 지정은 총괄만(2026-10-05 친구 결정) · 수료증 설정(명의·문안·직인)도 총괄만(3단계)
-  assert.deepEqual(acts.sort(), ["eduCertSettings", "eduCertSettingsSave", "eduCourseCopy", "eduCourseSave", "eduSessionsSave", "eduStaffCandidates", "eduStaffSet"]);
+  // 강좌 만들기·고치기·복사·회차 저장·담당자 지정은 총괄만(2026-10-05 친구 결정) · 수료증 설정(명의·문안·직인)도 총괄만(3단계) ·
+  //   📊 교육 통계도 총괄만(4단계 C · 2026-10-06 — 교육 담당·강사·교인명부 역할은 forbidden)
+  assert.deepEqual(acts.sort(), ["eduCertSettings", "eduCertSettingsSave", "eduCourseCopy", "eduCourseSave", "eduSessionsSave", "eduStaffCandidates",
+    "eduStaffSet", "eduStats"]);
   for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 

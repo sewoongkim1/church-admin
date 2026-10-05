@@ -144,6 +144,10 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   // 수료증 설정(발급 명의·문안·직인 이미지) — 교육 총괄만 · 기록 edu.cert.settings 에는 바뀐 칸 이름만(이미지 없음)
   eduCertSettings: "education",
   eduCertSettingsSave: "education",
+  // 📊 교육 통계(4단계 C · 2026-10-06) — 교육 총괄만(edu-db.ts 도 eduChief 로 한 번 더). 읽기만 · 숫자만이라 기록 없음(📊 교인 현황과 같다).
+  //   수는 v2 SQL edu_stats(p_term) 한 번(jsonb — 신청 줄을 받아 세지 않는다). 응답에 이름·user_id 없음(edu-rules.ts statsOut).
+  //   교인명부 「🎓 교육」 탭(4단계 B)은 액션을 따로 두지 않는다 — peoplePerson·peopleLink(directory)의 history.education 으로 간다.
+  eduStats: "education",
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

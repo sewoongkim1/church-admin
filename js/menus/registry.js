@@ -40,6 +40,9 @@ export const MENUS = [
   //   ⚠️ 강사(teacher)는 넣지 않는다 — 강사는 출석만(서버 authz.ts EDU_BOTH 도 강사를 문에서 forbidden). 「수료증 설정」 단추는 총괄만.
   { id: "edu-cert", group: "교육", icon: "🎓", label: "수료", desc: "수료 기준·후보 · 수료 확정·취소 · 수료증 인쇄",
     roles: ["education", "educourse"], load: () => import("./education/certs.js") },
+  // 📊 교육 통계(2026-10-06 · 4단계 C) — 교육 총괄만(서버 authz.ts eduStats "education" · edu-db.ts eduChief). 교육 묶음 맨 끝.
+  { id: "edu-stats", group: "교육", icon: "📊", label: "교육 통계", desc: "학기별 강좌마다 신청·확정·출석률·수료 · 교구별 · 엑셀",
+    role: "education", load: () => import("./education/stats.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
   // 🧪 시험 참여자 — 시스템 묶음 · 총괄만(2026-10-02 친구 요청 · 그전에는 사역신청 묶음 · 역할 ministry).

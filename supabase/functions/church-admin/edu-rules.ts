@@ -3,6 +3,9 @@
 //   ⚠️ 정원·대기·취소 마감은 여기 없다 — 성경암송 supabase/edu.sql 의 SQL 함수 한 곳(edu_apply·edu_cancel·edu_staff_set).
 //   ⚠️ 응답 칸 지도(courseOut·enrollOut)에 user_id·ident_key 를 싣지 않는다(API 에 JWT 가 없다).
 import { norm } from "./authz.ts";
+// 교인명부 「🎓 교육」 탭(4단계 B) — 앱 계정 → 교인 찾기는 성경암송 「사역 이력 확인」과 같은 규칙(matchLoginPerson · readLoginWho)
+import { LOOKUP_BAD, loginNameKey, matchLoginPerson, nameKey } from "./people-match.ts";
+import { readLoginWho } from "./history-check.ts";
 
 export const EDU_KINDS = ["regular", "lecture", "training"] as const;
 export const EDU_KIND_LABEL: Record<string, string> = { regular: "정규 과정", lecture: "특강·세미나", training: "교사·사역자 교육" };
@@ -534,4 +537,135 @@ export function checkCertSettings(o: any):
 export function certSettingsChanged(cur: any, patch: { issuer?: string; body?: string; seal?: string | null }): string[] {
   const c = cur || {};
   return (["issuer", "body", "seal"] as const).filter((k) => k in patch && (patch[k] ?? null) !== (c[k] ?? null));
+}
+
+// ---------- 교인명부 「🎓 교육」 탭(4단계 B · 2026-10-06 · 계획 v2 docs/superpowers/plans/2026-10-05-education-stage4.md B) ----------
+// 그분의 교육 기록 = ① 그분과 **이어진 앱 계정**의 신청 + ② ident_key 「person|<교인ID>」 줄(담당자가 명부에서 골라 대신 등록한 줄).
+// 「이어진 앱 계정」 = 그 계정의 로그인(교구·목장·이름 / 교회학교·부서·이름)으로 명부를 찾으면 **이분 한 분만** 나오는 계정 —
+//   people-match.ts matchLoginPerson(성경암송 「사역 이력 확인」이 앱 계정 → 교인을 찾는 그 규칙)을 그대로 쓴다. 사역·성경필사 탭의
+//   자동 잇기 ①「맞음」(같은 소속에 같은 이름 한 분)과 같은 기준이다. 같은 소속에 같은 이름이 둘이거나(여럿) 목장을 모르면(99) 어느 분께도
+//   잇지 않는다 — 「이름이 명부에 한 분뿐」으로는 잇지 않는다(친구 결정 2026-10-01 · 남의 기록이 이 창에 보이지 않게).
+//   신청 줄은 people_links 에 잇지 않는다(그 표는 사역신청·성경필사 줄만 — SQL 006 CHECK) · 사람이 「이분 것」으로 잇는 길도 없다(창을 열 때마다 셈).
+// ⚠️ 「person|N」 줄은 그 교인 N 의 것이다(담당자가 명부에서 고른 분) — 그 줄이 다른 분과 이어진 앱 계정에 붙어 있어도 그 계정 주인의
+//    탭에는 넣지 않는다(한 줄이 두 분 창에 함께 보이지 않게). 그 밖의 줄(앱 신청·직접 입력 staff|…)은 계정으로만 고른다.
+// ⚠️ 응답은 eduTabItems 칸 지도로만 — user_id·ident_key·staff_note(메모)·이름·교인ID 없음(tests/edu-person-tab.test.mjs 가 키 집합을 대조).
+const PERSON_KEY_RE = /^person\|(\d+)$/;
+export function personIdOfKey(k: unknown): number | null {
+  const m = PERSON_KEY_RE.exec(String(k ?? ""));
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+// 이름이 비슷한 앱 계정을 넓게 읽어 올 ilike 꼴 — 이름 열쇠(빈칸 없음)의 글자 사이마다 %(「홍 길동」처럼 빈칸을 넣어 등록한 계정도 잡힌다).
+//   넓게 잡힌 계정은 eduLinkedUserIds 가 이름 열쇠로 다시 거른다. 물을 수 없는 이름(" \ , ( ) — LOOKUP_BAD)이면 "" = 묻지 않는다
+//   (그런 이름의 계정은 matchLoginPerson 쪽 loginNameKey 도 null 이라 어느 분께도 이어지지 않는다 — 두 길이 같다).
+export function eduNamePattern(key: unknown): string {
+  const k = nameKey(key);
+  if (!k || LOOKUP_BAD.test(k)) return "";
+  return "%" + Array.from(k).map((ch) => (ch === "%" || ch === "_" ? "\\" + ch : ch)).join("%") + "%";
+}
+
+// 이분과 이어진 앱 계정 id 들 — person = {person_id, name_key}(church_people) · cands = 명부에서 **같은 이름 열쇠**인 분 전부
+//   {person_id, kind2, mok1, mok3, school_dept} · users = 앱 계정 {id, type, gu, mok, bu, grade, name}(넓게 읽어 와도 된다 — 이름 열쇠가 같은 계정만 본다)
+export function eduLinkedUserIds(person: { person_id: unknown; name_key: unknown }, cands: any[], users: any[]): Set<string> {
+  const pid = Number(person?.person_id);
+  const key = nameKey(person?.name_key);
+  const out = new Set<string>();
+  if (!Number.isSafeInteger(pid) || pid <= 0 || !key || LOOKUP_BAD.test(key)) return out;
+  for (const u of users || []) {
+    const w = readLoginWho(u);
+    if (!w || !u?.id || loginNameKey(w) !== key) continue;
+    if (matchLoginPerson(cands || [], w).personId === pid) out.add(String(u.id));
+  }
+  return out;
+}
+
+// 이분의 신청 줄만 — person|N 줄은 N 이 이분일 때만 · 그 밖(앱 신청·직접 입력)은 이어진 계정(linked)의 줄만 · 같은 줄은 한 번
+export function eduRowsForPerson(personId: number, rows: any[], linked: Set<string>): any[] {
+  const seen = new Set<number>();
+  const out: any[] = [];
+  for (const r of rows || []) {
+    const id = Number(r?.id);
+    if (!Number.isSafeInteger(id) || id <= 0 || seen.has(id)) continue;
+    const owner = personIdOfKey(r?.ident_key);
+    const mine = owner !== null ? owner === personId : !!r?.user_id && linked.has(String(r.user_id));
+    if (!mine) continue;
+    seen.add(id);
+    out.push(r);
+  }
+  return out;
+}
+
+// 탭 한 줄 — 학기 · 과정 · 상태(신청·확정·대기·취소·반려) · 출석률(eduAttendRate · 체크한 회차가 없으면 null — 화면 「—」) ·
+//   수료번호(수료를 취소한 줄도 번호는 남는다 — certRevoked:true 면 화면이 「(취소됨)」)
+export type EduTabItem = { term: string; title: string; status: string; statusLabel: string; attendPct: number | null;
+  certNo: string | null; certRevoked: boolean };
+const cmpCode = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);   // 코드 포인트 차례(localeCompare 는 ICU 에 따라 다르다)
+// rows = 이분의 신청 줄 {id, course_id, status, cert_no, cert_revoked} · courses = {id, title, term, starts_on, created_at} ·
+//   att = 그 줄들의 출석 칸 {enrollment_id, state} — 출석률은 그 줄의 출석 칸 전부로(성경암송 앱 「내 강좌」의 출석과 같은 셈 · 지각 = 출석 · 공결 뺌).
+// 차례(학기 새것부터): 학기마다 그 학기 강좌의 날(시작일 — 없으면 만든 날) 가운데 가장 늦은 날이 늦은 학기부터 → 학기 글자 →
+//   같은 학기 안에서는 강좌 날이 늦은 것부터 → 제목 → 신청 번호가 큰 것부터. 강좌를 못 찾은 줄은 뺀다(on delete restrict 라 없다).
+export function eduTabItems(rows: any[], courses: any[], att: { enrollment_id: unknown; state: unknown }[]): EduTabItem[] {
+  const cBy = new Map<string, any>((courses || []).map((c) => [String(c?.id), c]));
+  const k = new Map<number, Record<string, number>>();
+  for (const a of att || []) {
+    const st = String(a?.state ?? "");
+    if (!ATTEND_STATES.includes(st)) continue;
+    const id = Number(a?.enrollment_id);
+    const m = k.get(id) || { present: 0, late: 0, absent: 0, excused: 0 };
+    m[st]++;
+    k.set(id, m);
+  }
+  const dayOf = (c: any) => String(c?.starts_on || c?.created_at || "").slice(0, 10);
+  const list = (rows || []).flatMap((r) => {
+    const c = cBy.get(String(r?.course_id));
+    return c ? [{ r, c, day: dayOf(c), term: norm(c.term), title: norm(c.title) }] : [];
+  });
+  const termDay = new Map<string, string>();
+  for (const x of list) if ((termDay.get(x.term) ?? "") < x.day) termDay.set(x.term, x.day);
+  list.sort((a, b) => cmpCode(termDay.get(b.term) ?? "", termDay.get(a.term) ?? "") || cmpCode(b.term, a.term) ||
+    cmpCode(b.day, a.day) || cmpCode(a.title, b.title) || Number(b.r.id) - Number(a.r.id));
+  return list.map(({ r, term, title }) => {
+    const certNo = r.cert_no ? String(r.cert_no) : null;
+    return { term, title, status: String(r.status ?? ""), statusLabel: ENROLL_STATUS_LABEL[r.status] || String(r.status ?? ""),
+      attendPct: eduAttendRate(k.get(Number(r.id))).pct, certNo, certRevoked: certNo !== null && r.cert_revoked === true };
+  });
+}
+
+// ---------- 📊 교육 통계(4단계 C · 2026-10-06) — 수는 v2 SQL edu_stats(p_term) 가 묶는다(1,000줄 함정) · 여기는 칸 지도·합계만 ----------
+// 학기 — 없음·null·빈 글자 = 전체(📚 강좌 관리 학기 고르기와 같다 · 학기가 빈 강좌는 「전체」에서만 보인다) · 글자 = 그 학기(30자까지 — checkCourse 와 같은 한도)
+export function checkStatsTerm(x: unknown): { ok: true; term: string | null } | { ok: false; error: string } {
+  if (x === undefined || x === null) return { ok: true, term: null };
+  if (typeof x !== "string") return { ok: false, error: "bad-term" };
+  const t = norm(x);
+  if (t.length > LIMITS.term) return { ok: false, error: "bad-term" };
+  return { ok: true, term: t || null };
+}
+// 평균 출석률(출석률 합 ÷ 센 분 · 반올림 — SQL attend_avg 와 같다) · 수료율(수료 ÷ 확정 · ×100 을 먼저) — 나눌 것이 없으면 null(화면 「—」)
+export const statsAvg = (sum: number, n: number): number | null => (n > 0 ? Math.round(sum / n) : null);
+export const statsRate = (part: number, whole: number): number | null => (whole > 0 ? Math.round(part * 100 / whole) : null);
+const STAT_KEYS = ["applied", "confirmed", "waitlisted", "cancelled", "declined", "completed"] as const;
+// SQL 응답(jsonb) → 화면 칸 지도. 숫자는 0 이상의 정수로 · 강좌 차례는 SQL 그대로(만든 때 늦은 것부터) · 합계(total)는 강좌들을 더해서
+//   (평균 출석률은 강좌들의 출석률 합·센 분을 더해 다시 나눈다 — 평균의 평균이 아니다). 소속 차례·이름은 화면(stats-logic.js)이 정한다.
+export function statsOut(d: any) {
+  const num = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0; };
+  const courses = (Array.isArray(d?.courses) ? d.courses : []).map((c: any) => {
+    const o: Record<string, any> = { id: String(c?.id ?? ""), title: norm(c?.title), term: norm(c?.term), status: String(c?.status ?? ""),
+      statusLabel: EDU_STATUS_LABEL[c?.status] || String(c?.status ?? "") };
+    for (const key of STAT_KEYS) o[key] = num(c?.[key]);
+    o.attendN = num(c?.attend_n);
+    o.attendSum = num(c?.attend_sum);
+    o.attendAvg = statsAvg(o.attendSum, o.attendN);
+    o.completeRate = statsRate(o.completed, o.confirmed);
+    return o;
+  });
+  const total: Record<string, any> = { courses: courses.length };
+  for (const key of [...STAT_KEYS, "attendN", "attendSum"]) total[key] = courses.reduce((s: number, c: any) => s + c[key], 0);
+  total.attendAvg = statsAvg(total.attendSum, total.attendN);
+  total.completeRate = statsRate(total.completed, total.confirmed);
+  const groups = (Array.isArray(d?.groups) ? d.groups : []).map((g: any) => ({ whoType: norm(g?.who_type), group: norm(g?.group_name),
+    confirmed: num(g?.confirmed), completed: num(g?.completed) }));
+  const terms = [...new Set((Array.isArray(d?.terms) ? d.terms : []).map((t: unknown) => norm(t)).filter(Boolean))];
+  return { term: d?.term ? norm(d.term) : null, terms, courses, groups, total };
 }

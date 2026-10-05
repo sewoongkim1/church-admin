@@ -60,8 +60,8 @@ import { historyTabs, unlinkedRows, movedOrderIds, parseLink, linkPatch, unlinkR
 // b6 「사역 이력」 표 잇기(2026-10-01 · b6 설계 §7 약속) — 잇는 모양·다시 맞추기는 b6 모듈 그대로
 import { historyLinkPatch, historyUnlinkPatch } from "./history-match.ts";
 import { linkNameOk, historyNameMatches } from "./people-links.ts";
-// 탭 자료 읽기가 실패해도 「자세히」 창·잇기 쓰기는 그대로(2026-10-02 가지 마지막 검토)
-import { historyOrNull, withHistory } from "./people-links.ts";
+// 탭 자료 읽기가 실패해도 「자세히」 창·잇기 쓰기는 그대로(2026-10-02 가지 마지막 검토) · 🎓 교육 탭(4단계 B · 2026-10-06 · withEduTab)
+import { historyOrNull, withHistory, withEduTab } from "./people-links.ts";
 import { rematchHistoryRows } from "./history-db.ts";
 // 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
@@ -1320,19 +1320,24 @@ async function personHistory(personId: number) {
   const links = await allRows(() => db.from("people_links").select("kind,row_id,link_how")
     .eq("person_id", personId).in("link_how", ["auto", "manual"]).order("kind", { ascending: true }).order("row_id", { ascending: true }));
   const ids = (k: string) => links.filter((l) => l.kind === k).map((l) => Number(l.row_id));
-  const [orders, signups, history, moved] = await Promise.all([
+  const [orders, signups, history, moved, education] = await Promise.all([
     rowsByIds("ministry_orders", ORDER_TAB_COLS, ids("order")),
     rowsByIds("event_signups", SIGNUP_TAB_COLS, ids("signup")),
     historyRowsOf(personId),
     movedOrders(ids("order")),
+    eduTabSafe(personId),   // 🎓 교육 탭(4단계 B) — 실패하면 null(그 탭만 빠진다 · withEduTab)
   ]);
   const events = await rowsByIds("events", EVENT_TAB_COLS, signups.map((s) => s.event_id));
-  return historyTabs({ links, orders, signups, events, history, moved });
+  return withEduTab(historyTabs({ links, orders, signups, events, history, moved }), education);
 }
 // 탭 자료 — 실패하면 null(오류는 서버 기록에만). 「자세히」 창·잇기 쓰기 응답이 이것을 쓴다(people-links.ts historyOrNull).
 //   예: 함수가 SQL 006 보다 먼저 나가 people_links 가 없을 때(PGRST205 · 개발 함수는 한 벌을 함께 쓴다) · ministry_history 권한 오류.
 const personHistorySafe = (personId: number) =>
   historyOrNull(() => personHistory(personId), (e) => console.error("personHistory", personId, e));
+// 🎓 교육 탭 자료(4단계 B · 2026-10-06 · edu-db.ts eduPersonTab) — 교육 표 읽기가 실패해도(edu 표·SQL 이 아직 없는 DB 등) 사역·성경필사 탭과
+//   「자세히」 창은 그대로 — null 이면 withEduTab 이 education 칸째 뺀다(화면은 교육 탭만 안 그린다). 오류는 서버 기록에만.
+const eduTabSafe = (personId: number) =>
+  historyOrNull(() => edu.eduPersonTab(personId), (e) => console.error("eduPersonTab", personId, e));
 
 // 이름이 같고 아직 안 이어진 기록 — 이름으로 넓게 찾는다(신청·명단 전부를 읽어 메모리에서 nameKey 로 · evHistory 와 같은 방식 · 느리다).
 // 창의 탭을 누를 때 한 번 부른다. 기록은 남기지 않는다(창을 연 people.view 가 이미 있다).
@@ -2522,6 +2527,7 @@ Deno.serve(async (req) => {
       case "eduCertPrint":       return json(await edu.eduCertPrint(ctx, b));
       case "eduCertSettings":    return json(await edu.eduCertSettings(ctx));
       case "eduCertSettingsSave": return json(await edu.eduCertSettingsSave(ctx, b));
+      case "eduStats":           return json(await edu.eduStats(ctx, b));   // 📊 교육 통계(4단계 C · 2026-10-06)
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));

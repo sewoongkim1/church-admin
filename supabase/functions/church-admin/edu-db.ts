@@ -12,11 +12,15 @@
 // ⚠️ 수료(3단계 · 2026-10-05): eduCert* · eduCheckSet 은 신청 현황과 같은 확인(mayTouch 기본 manager 줄 · 강사는 문에서 막힌다).
 //    수료·번호·확인 체크는 SQL 함수(edu_issue_certs·edu_revoke_cert·edu_check_set)로만 쓴다 — 번호는 SQL 한 곳(edu_cert_take)에서만.
 //    수료증 설정(eduCertSettings*)은 교육 총괄만(ACTION_ROLES "education" + 여기서도 eduChief) · 기록에는 바뀐 칸 이름만(이미지 없음).
+// ⚠️ 4단계 B·C(2026-10-06): eduPersonTab(교인명부 「🎓 교육」 탭 — index.ts personHistory 가 부른다 · 문은 peoplePerson·peopleLink 의 directory)
+//    · eduStats(📊 교육 통계 — 교육 총괄만 · 수는 v2 SQL edu_stats 한 번). 둘 다 읽기만 · 기록 없음.
 import { attendCounts, attendExportRows, attendKinds, attendSessionOut, attendSummary, checkAttendState, checkCourse, checkSessions,
   checkStaffIds, checkStaffKind, checkTypedIdent, courseOut, eduChief, EDU_STAFF_ROLES, EDU_STATUS_LABEL, EDU_TEACHER_ROLES, enrollOut,
   exportRows, kstDate, maybeDupIds, pickSession, seatsOpened, staffByCourse, staffCandidateOut, staffRolesFor, waitOrder, whoOf,
-  certCourseOut, certIssueOrder, certListOut, certPeriod, certPrintPeople, certSettingsChanged, checkCertIds, checkCertSettings, eduCertBody } from "./edu-rules.ts";
+  certCourseOut, certIssueOrder, certListOut, certPeriod, certPrintPeople, certSettingsChanged, checkCertIds, checkCertSettings, eduCertBody,
+  checkStatsTerm, eduLinkedUserIds, eduNamePattern, eduRowsForPerson, eduTabItems, statsOut } from "./edu-rules.ts";
 import { norm } from "./authz.ts";
+import { nameKey } from "./people-match.ts";
 
 type Db = any;
 type Audit = (ctx: any, action: string, target: string, detail?: Record<string, unknown>) => Promise<void>;
@@ -695,9 +699,68 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     return { ok: true, changed: true, fields };
   }
 
+  // ---------- 교인명부 「🎓 교육」 탭(4단계 B · 2026-10-06 · 계획 v2 docs/superpowers/plans/2026-10-05-education-stage4.md B) ----------
+  //   index.ts personHistory 가 부른다 — 문은 그 액션(peoplePerson·peopleLink · 역할 directory)이 이미 지났다(교육 역할을 따로 보지 않는다 ·
+  //   사역·성경필사 탭과 같은 「교인명부 역할이면 그분 참여를 본다」).
+  //   이분과 이어진 앱 계정(edu-rules.ts eduLinkedUserIds — matchLoginPerson)의 신청 + ident_key 「person|교인ID」 줄 → 칸 지도 eduTabItems.
+  //   ⚠️ user_id·ident_key 는 고르는 데만 읽는다(응답 칸에 없다) · staff_note(메모)·신청자 이름은 읽지도 않는다 · 줄은 쪽 넘기기(allRows) — 1,000줄 함정.
+  //   ⚠️ 기록(audit)을 남기지 않는다 — 창을 연 people.view 가 이미 있다(사역·성경필사 탭과 같다).
+  const TAB_ENROLL_COLS = "id,course_id,user_id,ident_key,status,cert_no,cert_revoked";
+  // .in() 은 주소에 실린다 — 200개씩 나눠 묻는다(쪽 넘기기는 allRows)
+  const inChunks = async (ids: unknown[], read: (part: any[]) => Promise<any[]>): Promise<any[]> => {
+    const out: any[] = [];
+    for (let i = 0; i < ids.length; i += 200) out.push(...(await read(ids.slice(i, i + 200))));
+    return out;
+  };
+  async function eduPersonTab(personId: number) {
+    const pid = Number(personId);
+    if (!Number.isSafeInteger(pid) || pid <= 0) return [];
+    const { data: p, error } = await db.from("church_people").select("person_id,name_key").eq("person_id", pid).maybeSingle();
+    if (error) throw error;
+    if (!p) return [];
+    // 이분과 같은 이름 열쇠인 명부 분들(「같은 소속 한 분」인지 보려고) · 이름이 비슷한 앱 계정(넓게 — eduLinkedUserIds 가 다시 거른다)
+    let linked = new Set<string>();
+    const pattern = eduNamePattern(p.name_key);
+    if (pattern) {
+      const key = nameKey(p.name_key);
+      const [cands, users] = await Promise.all([
+        deps.allRows(() => db.from("church_people").select("person_id,kind2,mok1,mok3,school_dept").eq("name_key", key).order("person_id")),
+        deps.allRows(() => db.from("users").select("id,type,gu,mok,bu,grade,name").ilike("name", pattern).order("id")),
+      ]);
+      linked = eduLinkedUserIds({ person_id: pid, name_key: key }, cands, users);
+    }
+    const [byUser, byKey] = await Promise.all([
+      inChunks([...linked], (part) => deps.allRows(() => db.from("edu_enrollments").select(TAB_ENROLL_COLS).in("user_id", part).order("id"))),
+      deps.allRows(() => db.from("edu_enrollments").select(TAB_ENROLL_COLS).eq("ident_key", "person|" + pid).order("id")),
+    ]);
+    const rows = eduRowsForPerson(pid, [...byUser, ...byKey], linked);
+    if (!rows.length) return [];
+    const [courses, att] = await Promise.all([
+      inChunks([...new Set(rows.map((r) => String(r.course_id)))], (part) =>
+        deps.allRows(() => db.from("edu_courses").select("id,title,term,starts_on,created_at").in("id", part).order("id"))),
+      inChunks(rows.map((r) => Number(r.id)), (part) =>
+        deps.allRows(() => db.from("edu_attendance").select("enrollment_id,state").in("enrollment_id", part).order("enrollment_id").order("session_id"))),
+    ]);
+    return eduTabItems(rows, courses, att);
+  }
+
+  // ---------- 📊 교육 통계(4단계 C · 2026-10-06) — 교육 총괄만(문 ACTION_ROLES "education" · 여기서도 eduChief — 수료증 설정과 같다) ----------
+  //   {term?} — 없음·null·빈 글자 = 전체 · 글자 = 그 학기(edu-rules.ts checkStatsTerm). 수는 v2 SQL edu_stats(p_term) 한 번(jsonb 하나 —
+  //   신청 줄을 받아 세지 않는다 · 1,000줄 함정) → statsOut 칸 지도(강좌·소속·학기 목록·합계 — 이름·user_id 없음).
+  //   기록 없음 — 숫자만이다(📊 교인 현황 peopleStats 와 같다 · 엑셀도 화면이 이 응답으로 만든다).
+  async function eduStats(ctx: any, b: any) {
+    if (!eduChief(ctx?.roles)) return { ok: false, error: "forbidden" };
+    const t = checkStatsTerm(b?.term);
+    if (!t.ok) return t;
+    const { data, error } = await db.rpc("edu_stats", { p_term: t.term });
+    if (error) throw error;
+    return { ok: true, ...statsOut(data) };
+  }
+
   return { eduCourses, eduCourseSave, eduCourseCopy, eduSessions, eduSessionsSave, eduEnrollList, eduEnrollSet,
     eduEnrollAdd, eduFeeSet, eduExport, eduPeopleLookup, eduStaffCandidates, eduStaffSet,
     eduAttendCourses, eduAttendSessions, eduAttendSheet, eduAttendSet, eduAttendBulk, eduAttendSummary, eduAttendExport,
     eduCertList, eduCheckSet, eduCertIssue, eduCertRevoke, eduCertPrint, eduCertSettings, eduCertSettingsSave,
+    eduPersonTab, eduStats,
     _mayTouch: mayTouch, _whoOf: whoOf };
 }
