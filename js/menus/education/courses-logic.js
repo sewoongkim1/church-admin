@@ -80,3 +80,12 @@ const COURSE_ERR = {
   "bad-status": "상태를 골라 주세요", "not-found": "강좌를 찾지 못했어요 — 새로 불러올게요",
 };
 export const courseErrorText = (r) => COURSE_ERR[r?.error] || "";
+
+// 회차 줄 머리 한 줄 — 「2회 · 3/10(수) 19:30~21:00」 (날짜가 없으면 안내)
+export function sessionHeadLine(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s?.on_date || "");
+  if (!m) return `${s?.no}회 · 날짜를 골라 주세요`;
+  const wd = WD[new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()];
+  const t = s.start_time ? (s.end_time ? `${s.start_time}~${s.end_time}` : s.start_time) : "";
+  return `${s.no}회 · ${+m[2]}/${+m[3]}(${wd})${t ? " " + t : ""}`;
+}

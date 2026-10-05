@@ -8,7 +8,7 @@ import { openForm } from "../../core/modal.js";
 import { pickOne, pickDate, pickTime, fmtDateLabel, fmtTimeLabel } from "../../core/picker.js";
 import {
   KIND_OPTIONS, MODE_OPTIONS, STATUS_OPTIONS, WAITLIST_OPTIONS,
-  formToCourse, courseToForm, checkFormNumbers, sessionsSummary, makeSessionRows, sessionErrorText, courseErrorText,
+  formToCourse, courseToForm, checkFormNumbers, sessionsSummary, makeSessionRows, sessionErrorText, courseErrorText, sessionHeadLine,
 } from "./courses-logic.js";
 
 const TITLE = `<h2 class="page-title">📚 강좌 관리</h2>`;
@@ -121,11 +121,10 @@ function openCourseForm({ call, course = null, term = "" }) {
 // ---------- 회차 창 ----------
 const fieldBtn = (attr, i, text, empty) => `<button type="button" class="pk-field${empty ? " empty" : ""}" ${attr}="${i}" aria-haspopup="dialog" aria-expanded="false">` +
   `<span class="pk-field-v">${esc(text)}</span><span class="pk-field-x" aria-hidden="true"></span></button>`;
-const rowHtml = (s, i) => `<div class="card" data-row="${i}">
-  <div class="be-2col"><div class="field"><span><b>${esc(s.no)}회</b></span></div>
-    <div class="field"><button type="button" class="btn danger" data-del="${i}">이 줄 빼기</button></div></div>
+const rowHtml = (s, i) => `<div class="card ec-row" data-row="${i}">
+  <div class="ec-head"><b>${esc(sessionHeadLine(s))}</b><button type="button" class="btn danger" data-del="${i}">빼기</button></div>
   <div class="field"><span>날짜</span>${fieldBtn("data-sd", i, s.on_date ? dateText(s.on_date) : "날짜 고르기", !s.on_date)}</div>
-  <div class="be-2col">
+  <div class="ec-pair">
     <div class="field"><span>시작</span>${fieldBtn("data-st", i, s.start_time ? fmtTimeLabel(s.start_time) : "시각 고르기", !s.start_time)}</div>
     <div class="field"><span>끝</span>${fieldBtn("data-et", i, s.end_time ? fmtTimeLabel(s.end_time) : "시각 고르기", !s.end_time)}</div>
   </div>
@@ -144,10 +143,10 @@ async function openSessionsForm({ call, course }) {
     html: `<div class="card"><b>한 번에 만들기</b>
         <p class="muted">첫 날부터 몇 회를 한 번에 채워요 — 지금 있는 회차는 바뀌어요 (저장하기 전에는 서버에 가지 않아요)</p>
         <div class="field"><span>첫 날</span>${fieldBtn("data-g", "start", "날짜 고르기", true)}</div>
-        <div class="be-2col">
+        <div class="ec-pair">
           <label class="field"><span>몇 회</span><input data-g-count value="8" inputmode="numeric" maxlength="3"></label>
           <div class="field"><span>간격</span>${fieldBtn("data-g", "every", "매주", false)}</div></div>
-        <div class="be-2col">
+        <div class="ec-pair">
           <div class="field"><span>시작 시각</span>${fieldBtn("data-g", "st", "시각 고르기", true)}</div>
           <div class="field"><span>끝 시각</span>${fieldBtn("data-g", "et", "시각 고르기", true)}</div></div>
         <button type="button" class="btn" data-make>이대로 채우기</button></div>

@@ -74,7 +74,7 @@ function backThen(fn) {
   history.back();
 }
 
-export function openForm({ title = "", html = "", okLabel = "저장", cancelLabel = "닫기", danger = false,
+export function openForm({ title = "", html = "", okLabel = "저장", cancelLabel = "닫기", danger = false, hideOk = false,
   onOpen = () => {}, isDirty = () => false, onSubmit = async () => ({ ok: true }) } = {}) {
   bindPop();
   return new Promise((resolve) => {
@@ -100,6 +100,8 @@ export function openForm({ title = "", html = "", okLabel = "저장", cancelLabe
     box.querySelector(".be-ask-t").textContent = DIRTY_TEXT;
     box.querySelector(".be-cancel").textContent = cancelLabel;
     box.querySelector(".be-ok").textContent = okLabel;
+    // hideOk — 「저장」 단추를 숨긴다(칸마다 제 단추가 있는 창). 창이 열린 뒤에는 box 의 data-hide-ok 를 켜고 끄면 된다(css/admin.css).
+    if (hideOk) box.dataset.hideOk = "1";
     box.querySelector(".be-body").innerHTML = html;   // 부르는 쪽이 사람·서버 글자를 esc 로 감싼 HTML
     const err = box.querySelector(".be-err"), ask = box.querySelector(".be-ask"), main = box.querySelector(".be-main");
 

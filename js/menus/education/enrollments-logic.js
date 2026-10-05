@@ -28,10 +28,29 @@ const WORDS = { full: "정원이 찼어요", "too-late": "이미 시작한 강�
   changed: "명부가 바뀌었어요. 다시 찾아 주세요", "was-declined": "반려했던 분이에요" };   // 과제 4 검토 반영(2026-10-05)
 export function errorWord(code) { return WORDS[code] || `저장하지 못했어요 (${code})`; }
 
-// 엑셀 파일 이름 — 교육신청_{제목}_{오늘}.xlsx · 파일 이름에 못 쓰는 글자(\ / : * ? " < > |)는 뺀다
+// 엑셀 파일 이름 — 교육신청_{제목}_{오늘}.xlsx · 파일 이름에 못 쓰는 글자(\ / : * ? " < > |)·제어 글자는 빼고,
+//   끝의 점·빈칸(윈도가 떼어 버린다)도 빼고, 제목은 60자까지만.
 export function exportFileName(title, today) {
-  const t = String(title || "").replace(/[\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim() || "강좌";
+  let t = String(title || "").replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim();
+  t = Array.from(t).slice(0, 60).join("").replace(/[. ]+$/, "").trim() || "강좌";
   return `교육신청_${t}_${today}.xlsx`;
+}
+
+// 아는 오류 코드인가(모르면 공용 errorText 로)
+export const hasErrorWord = (code) => Object.prototype.hasOwnProperty.call(WORDS, code);
+
+// 찾은 후보 카드 → eduEnrollAdd 인자(교인ID 는 없다 — 이름·차례·소속 확인값 다섯 칸)
+export function pickArgs(searched, i, p) {
+  const q = p || {};
+  return { name: searched, pick: i, check: { who_type: q.who_type || "", group: q.group || "", sub: q.sub || "", church_mok: q.church_mok || "", position: q.position || "" } };
+}
+
+// 신청 시각 짧게 — 「1/22 19:00 신청」 (한국 시각)
+export function shortApplied(iso) {
+  const t = Date.parse(iso || "");
+  if (isNaN(t)) return "";
+  const d = new Date(t + 9 * 3600 * 1000), p = (n) => String(n).padStart(2, "0");
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} 신청`;
 }
 
 // 대신 등록이 성공했을 때 알릴 말

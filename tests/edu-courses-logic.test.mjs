@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers } from "../js/menus/education/courses-logic.js";
+import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers, sessionHeadLine } from "../js/menus/education/courses-logic.js";
 
 test("formToCourse — 빈 정원은 null · 숫자는 숫자", () => {
   assert.equal(formToCourse({ title: "a", kind: "lecture", capacity: "" }).capacity, null);
@@ -80,4 +80,10 @@ test("checkFormNumbers — 정원·출석률", () => {
   assert.equal(checkFormNumbers({ capacity: "", attendPct: "101" }), "출석률은 0~100 숫자로 적어 주세요");
   assert.equal(formToCourse({ title: "a", capacity: "", attendPct: "" }).attend_pct, 80);
   assert.equal(formToCourse({ title: "a", capacity: "" }).capacity, null);
+});
+
+test("sessionHeadLine — 「2회 · 3/10(수) 19:30~21:00」", () => {
+  assert.equal(sessionHeadLine({ no: 2, on_date: "2027-03-10", start_time: "19:30", end_time: "21:00" }), "2회 · 3/10(수) 19:30~21:00");
+  assert.equal(sessionHeadLine({ no: 1, on_date: "2027-03-10", start_time: "19:30", end_time: "" }), "1회 · 3/10(수) 19:30");
+  assert.equal(sessionHeadLine({ no: 3, on_date: "", start_time: "", end_time: "" }), "3회 · 날짜를 골라 주세요");
 });

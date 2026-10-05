@@ -3,17 +3,16 @@
 //   규칙(묶음·단추·문구)은 enrollments-logic.js(시험). 정원·대기·대기 올림은 SQL 함수 한 곳 — 여기서 상태를 직접 바꾸지 않는다.
 // ⚠️ 교인ID 는 화면에 오지 않는다 — 대신 등록은 찾은 이름·몇 번째·소속 확인값(check)만 서버로 보내고 서버가 같은 찾기를 다시 돌려 확인한다.
 // ⚠️ 고르기는 picker.js(pickOne)만 — 시스템 select·date·time 칸 금지. 서버 글자는 모두 esc.
-import { esc, toast, dialog, busy, errorText, kstTime } from "../../core/ui.js";
+import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
-import { fileErrorText } from "../bibleevent/upload-logic.js";
-import { groupByStatus, actionsFor, capacityLine, errorWord, exportFileName, addDoneText, confirmTextFor } from "./enrollments-logic.js";
+import { groupByStatus, actionsFor, capacityLine, errorWord, exportFileName, addDoneText, confirmTextFor, hasErrorWord, pickArgs, shortApplied } from "./enrollments-logic.js";
 
 const TITLE = `<h2 class="page-title">📝 신청 현황</h2>`;
 const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 // 알려진 말이면 errorWord, 아니면(연결·권한 등) 공용 errorText
-const failText = (r) => { const w = errorWord(r?.error); return w.startsWith("저장하지 못했어요 (") ? errorText(r) : w; };
+const failText = (r) => (hasErrorWord(r?.error) ? errorWord(r.error) : errorText(r));
 const SECTIONS = [["applied", "승인 기다림"], ["confirmed", "확정"], ["waitlisted", "대기"]];
 const FOLDED = [["cancelled", "취소"], ["declined", "반려"]];
 
@@ -22,16 +21,15 @@ let lastCourseId = "";   // 메뉴를 나갔다 와도 보던 강좌를 기억(�
 // ---------- 줄 ----------
 function rowHtml(e) {
   const acts = actionsFor(e).map((a) => `<button type="button" class="btn${a.danger ? " danger" : ""}" data-op="${a.op}">${esc(a.label)}</button>`).join("");
-  return `<div class="card" data-eid="${esc(e.id)}">
-    <div><b>${esc(e.name)}</b> ${e.status === "waitlisted" ? `<span class="badge">대기 ${esc(e.waitNo || "")}번</span> ` : ""}<span class="badge">${e.source === "staff" ? "담당자" : "앱"}</span></div>
-    <div class="muted">${esc(e.who || "")}</div>
-    <div class="muted">${esc(kstTime(e.appliedAt))} 신청</div>
-    <label class="muted"><input type="checkbox" data-fee ${e.feePaid ? "checked" : ""}> 교재비 냄</label>
-    <div><button type="button" class="btn" data-memo>${e.note ? "메모: " + esc(e.note) : "메모 쓰기"}</button></div>
-    <div class="acts">${acts}</div>
+  return `<div class="card ee-row" data-eid="${esc(e.id)}">
+    <div class="ee-l1"><div class="ee-who"><b>${esc(e.name)}</b>${e.status === "waitlisted" ? ` <span class="badge">대기 ${esc(e.waitNo || "")}번</span>` : ""} <span class="badge">${e.source === "staff" ? "담당자" : "앱"}</span></div>
+      <label class="ee-fee"><input type="checkbox" data-fee ${e.feePaid ? "checked" : ""}> 교재비</label></div>
+    <div class="ee-l2">${esc(e.who || "")}${e.who ? " · " : ""}${esc(shortApplied(e.appliedAt))}</div>
+    ${e.note ? `<div class="ee-memo">메모: ${esc(e.note)}</div>` : ""}
+    <div class="ee-acts"><button type="button" class="btn" data-memo>메모</button>${acts}</div>
   </div>`;
 }
-const sectionHtml = (list, label) => `<h3>${esc(label)} <small class="muted">${list.length}명</small></h3>` +
+const sectionHtml = (list, label) => `<h3 class="ee-h">${esc(label)} <small class="muted">${list.length}명</small></h3>` +
   (list.length ? list.map(rowHtml).join("") : `<p class="empty">없어요</p>`);
 
 // ---------- 메모 창 ----------
@@ -53,10 +51,10 @@ function openNoteForm({ call, e }) {
 
 // ---------- 대신 등록 창 ----------
 const candLine = (p) => [p.who_type, p.group, p.sub].filter(Boolean).join(" · ");
-const candCard = (p, i) => `<div class="card" data-cand="${i}">
+const candCard = (p, i) => `<div class="card ee-row" data-cand="${i}">
   <div><b>${esc(p.name)}</b></div><div class="muted">${esc(candLine(p))}</div>
   ${p.church_mok || p.position ? `<div class="muted">${esc([p.church_mok, p.position].filter(Boolean).join(" · "))}</div>` : ""}
-  <div class="acts"><button type="button" class="btn primary" data-reg="${i}">등록</button></div></div>`;
+  <div class="ee-acts"><button type="button" class="btn primary" data-reg="${i}">등록</button></div></div>`;
 
 // → 하나라도 등록했으면 true
 async function openAddForm({ call, course }) {
@@ -77,12 +75,12 @@ async function openAddForm({ call, course }) {
   };
 
   return openForm({
-    title: `＋ 대신 등록 — ${course.title}`, okLabel: "등록", cancelLabel: "닫기",
+    title: `＋ 대신 등록 — ${course.title}`, okLabel: "등록", cancelLabel: "닫기", hideOk: true,   // 찾기 쪽은 카드마다 「등록」이 있다
     html: `<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="pick" class="on">교인명부에서 찾기</button>
         <button type="button" role="tab" data-tab="typed">직접 입력(새가족 등)</button></div>
       <div data-panel="pick">
         <label class="field"><span>이름</span><input data-q maxlength="40" autocomplete="off" placeholder="이름을 쓰고 찾기를 눌러 주세요"></label>
-        <button type="button" class="btn" data-find>찾기</button>
+        <button type="button" class="btn ee-find" data-find>찾기</button>
         <div data-res></div></div>
       <div data-panel="typed" hidden>
         <label class="field"><span>이름</span><input data-t="name" maxlength="40" autocomplete="off"></label>
@@ -90,8 +88,7 @@ async function openAddForm({ call, course }) {
         <label class="field"><span>소속 <small>(안 써도 돼요)</small></span><input data-t="group" maxlength="40" autocomplete="off"></label>
         <label class="field"><span>세부 <small>(안 써도 돼요)</small></span><input data-t="sub" maxlength="40" autocomplete="off"></label></div>`,
     onOpen: (root) => {
-      const ok = root.querySelector(".be-ok"), res = root.querySelector("[data-res]"), q = root.querySelector("[data-q]");
-      ok.style.display = "none";   // 찾기 쪽은 카드마다 「등록」이 있다
+      const res = root.querySelector("[data-res]"), q = root.querySelector("[data-q]");
       first = JSON.stringify(typedVals(root));
       const find = async () => {
         const name = q.value;
@@ -111,7 +108,7 @@ async function openAddForm({ call, course }) {
           tab = t.dataset.tab;
           root.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b === t));
           root.querySelectorAll("[data-panel]").forEach((p) => { p.hidden = p.dataset.panel !== tab; });
-          ok.style.display = tab === "pick" ? "none" : "";
+          if (tab === "pick") root.dataset.hideOk = "1"; else delete root.dataset.hideOk;
           return;
         }
         if (ev.target.closest("[data-find]")) { await find(); return; }
@@ -123,8 +120,7 @@ async function openAddForm({ call, course }) {
         let done = false;
         try {
           // name 은 찾을 때 넣은 그 글자 · pick 은 받은 목록의 차례(0부터) · check 는 그 카드의 다섯 칸 그대로
-          const r = await addCall({ name: searched, pick: i,
-            check: { who_type: p.who_type || "", group: p.group || "", sub: p.sub || "", church_mok: p.church_mok || "", position: p.position || "" } });
+          const r = await addCall(pickArgs(searched, i, p));
           if (!root.isConnected || r.kept) return;
           if (r.ok) { added = true; done = true; toast(`${p.name} — ${addDoneText(r)}`); reg.textContent = "등록됨"; return; }
           if (r.error === "changed") { cands = []; res.innerHTML = `<p class="empty">${esc(errorWord("changed"))}</p>`; toast(errorWord("changed")); return; }
@@ -160,25 +156,29 @@ export async function render(el, { call }) {
     courses = r.courses || [];
     return true;
   };
-  const loadList = async () => {
-    if (!cur) return true;
-    const r = await call("eduEnrollList", { course_id: cur.id });
-    if (!r.ok) {
-      if (r.error === "not-found") { toast("그 강좌를 찾지 못했어요"); cur = null; lastCourseId = ""; return true; }
-      toast(errorText(r)); return false;
-    }
-    cur = { ...cur, ...r.course }; list = r.enrollments || [];
-    return true;
+  // 강좌 c 의 명단을 불러와 cur·list 로 — 실패하면 아무것도 바꾸지 않고 그 오류를 돌려준다(보던 강좌가 그대로 남는다)
+  //   → { ok:true } · { ok:false, gone:true }(그 강좌가 없어졌다) · { ok:false, error }
+  const loadFor = async (c) => {
+    const r = await call("eduEnrollList", { course_id: c.id });
+    if (!r.ok) return r.error === "not-found" ? { ok: false, gone: true } : { ok: false, error: r };
+    cur = { ...c, ...r.course }; list = r.enrollments || [];
+    return { ok: true };
   };
-  const refresh = async () => { if (await loadList()) draw(); };
+  const refresh = async () => {
+    const r = await loadFor(cur);
+    if (r.gone) { toast("그 강좌를 찾지 못했어요"); cur = null; list = []; lastCourseId = ""; }
+    else if (!r.ok) { toast(errorText(r.error)); return; }
+    draw();
+  };
 
   const draw = () => {
-    const head = `${TITLE}<div class="acts"><button type="button" class="btn" data-act="course">${cur ? esc(`${cur.title}${cur.term ? " · " + cur.term : ""} · ${cur.statusLabel}`) : "강좌 고르기"}</button></div>`;
-    if (!cur) { el.innerHTML = head + `<p class="empty">${courses.length ? "강좌를 골라 주세요" : "아직 강좌가 없어요 — 「📚 강좌 관리」에서 먼저 만들어 주세요"}</p>`; return; }
+    if (!courses.length) { el.innerHTML = TITLE + `<p class="empty">아직 강좌가 없어요 — 「📚 강좌 관리」에서 먼저 만들어 주세요</p>`; return; }
+    const head = `${TITLE}<div class="ee-top"><button type="button" class="btn wide" data-act="course">${cur ? esc(`${cur.title}${cur.term ? " · " + cur.term : ""} · ${cur.statusLabel}`) : "강좌 고르기"}</button></div>`;
+    if (!cur) { el.innerHTML = head + `<p class="empty">강좌를 골라 주세요</p>`; return; }
     const g = groupByStatus(list);
     const folded = FOLDED.reduce((n, [k]) => n + (g[k] || []).length, 0);
     el.innerHTML = head + `<p class="muted">${esc(capacityLine(cur))}</p>
-      <div class="acts"><button type="button" class="btn" data-act="export">엑셀로 내려받기</button>
+      <div class="ee-tools"><button type="button" class="btn" data-act="export">엑셀로 내려받기</button>
         <button type="button" class="btn primary" data-act="add">＋ 대신 등록</button></div>
       ${SECTIONS.map(([k, l]) => sectionHtml(g[k] || [], l)).join("")}
       <details data-fold ${foldOpen ? "open" : ""}><summary>취소·반려 ${folded}명</summary>
@@ -187,7 +187,11 @@ export async function render(el, { call }) {
 
   if (!(await loadCourses())) return;
   cur = courses.find((c) => c.id === lastCourseId) || null;
-  if (cur) await loadList();
+  if (cur) {
+    const r = await loadFor(cur);
+    if (r.gone) { cur = null; lastCourseId = ""; }
+    else if (!r.ok) { el.innerHTML = TITLE + `<p class="empty">${esc(errorText(r.error))}</p>`; return; }
+  }
   draw();
 
   el.addEventListener("toggle", (e) => { if (e.target.matches("[data-fold]")) foldOpen = e.target.open; }, true);
@@ -202,7 +206,7 @@ export async function render(el, { call }) {
       }
       toast(failText(r)); await refresh(); return;
     }
-    toast(r.promoted ? "대기 첫 분이 확정됐어요" : "바꿨어요");
+    toast(r.promoted ? "대기 첫 분이 확정됐어요" : force ? "정원을 넘겨 확정했어요" : "바꿨어요");
     await refresh();
   }
 
@@ -214,7 +218,7 @@ export async function render(el, { call }) {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r.rows), "신청 현황");
       XLSX.writeFile(wb, exportFileName(cur.title, kstToday()));
-    } catch (err) { toast(fileErrorText(err && err.message)); }
+    } catch { toast("엑셀 파일을 만들지 못했어요"); }
   }
 
   el.addEventListener("click", async (ev) => {
@@ -225,9 +229,12 @@ export async function render(el, { call }) {
         const got = await pickOne({ anchor: a, title: "강좌", value: cur ? cur.id : "",
           options: courses.map((c) => ({ value: c.id, label: `${c.title} · ${c.term || "학기 없음"} · ${c.statusLabel}` })) });
         if (got === null || (cur && got === cur.id)) return;
-        cur = courses.find((c) => c.id === got) || null; lastCourseId = cur ? cur.id : "";
-        list = [];
-        await busy(el, refresh);
+        const next = courses.find((c) => c.id === got);
+        if (!next) return;
+        const r = await busy(el, () => loadFor(next));   // 실패하면 보던 강좌가 그대로 남는다
+        if (r.gone) { toast("그 강좌를 찾지 못했어요"); return; }
+        if (!r.ok) { toast(errorText(r.error)); return; }
+        lastCourseId = cur.id; draw();
         return;
       }
       if (!cur || pending.has(act)) return;
