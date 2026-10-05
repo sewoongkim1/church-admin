@@ -164,6 +164,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 정원을 늘리는 저장에만 `edu_course_refill`(대기자 차례로 확정 · 응답 `promoted`) · 회차 저장은 `edu_sessions_replace` 한 번에(id 보존 · 끝난·보관 강좌 `course-closed`).
 - 응답 칸은 `courseOut`·`enrollOut` 이 정한다(`user_id`·`ident_key` 없음) · 기록 `edu.*` 는 id·수만 · 명부 찾기는 `people.lookup` `from:"education"`.
 - 지우는 길 없음(`on delete restrict`) — 시험 강좌는 `archived`. 노트·함정 전체는 성경암송 `docs/notes/education.md`.
+- **출석부(2단계 · 2026-10-05)** — 메뉴 ✅ 출석부(역할 `education`·`educourse`·`teacher`) · 강사(`teacher`)는 `edu_course_staff.kind='teacher'` 로 맡은 강좌만 · 신청 현황 액션은 못 부른다 · 출석은 SQL `edu_attendance_set`·`_bulk` 만(확정자만 · 같은 강좌 · 마친 강좌 `course-closed`) · 출석률 `eduAttendRate`(지각=출석 · 공결 뺌) 세 곳 지문 시험 · ⚠️ 회차는 **id 로** 맞춘다(`eduSessionsSave` 가 id 를 품고 보낸다 · 번호는 차례 · 「이대로 채우기」는 일부러 id 없이 — 차례로 id 를 잇지 말 것 · 출석 있는 회차 지우기는 `has-attendance`).
 
 ## 비상 절차
 ① **유일한 총괄 관리자가 카카오 계정을 잃었을 때** — 새 카카오로 로그인·등록 → 작업 폴더에서

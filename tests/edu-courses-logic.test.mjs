@@ -69,7 +69,7 @@ test("makeSessionRows — 매주 8회 · 3/3(수) ~ 4/21(수)", () => {
 
 test("오류 글 — 회차·강좌", () => {
   assert.equal(sessionErrorText({ error: "course-closed" }), "끝난 강좌는 회차를 바꿀 수 없어요");
-  assert.equal(sessionErrorText({ error: "bad-rows" }), "회차 칸을 확인해 주세요");
+  assert.equal(sessionErrorText({ error: "bad-rows" }), "회차 목록이 그사이 바뀌었어요 — 창을 닫고 다시 열어 주세요");
   for (const e of ["bad-no", "bad-date", "dup-no", "too-many"]) assert.ok(sessionErrorText({ error: e }), e);
   assert.equal(sessionErrorText({ error: "zzz" }), "");
   assert.ok(courseErrorText({ error: "bad-range" }));
@@ -198,10 +198,10 @@ test("stale 담당 — 카드 글 「이름(역할 없음)」 · staffBits · �
 import { teacherBits, teacherLine, TEACHER_NO_CAND, TEACHER_ROLE_HINTS, TEACHER_BAD_MEMBER, STAFF_ROLE_HINTS } from "../js/menus/education/courses-logic.js";
 
 test("회차 창 has-attendance — 「출석이 있는 회차(3회, 5회)는 지울 수 없어요」(창은 그대로)", () => {
-  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: [3, 5] }), "출석이 있는 회차(3회, 5회)는 지울 수 없어요");
-  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: [8] }), "출석이 있는 회차(8회)는 지울 수 없어요");
-  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: ["2", "x", -1] }), "출석이 있는 회차(2회)는 지울 수 없어요");
-  assert.equal(sessionErrorText({ ok: false, error: "has-attendance" }), "출석이 있는 회차는 지울 수 없어요");
+  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: [3, 5] }), "출석이 있는 회차(3회, 5회)는 지울 수 없어요 — 창을 닫고 다시 열면 원래대로 돌아와요");
+  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: [8] }), "출석이 있는 회차(8회)는 지울 수 없어요 — 창을 닫고 다시 열면 원래대로 돌아와요");
+  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: ["2", "x", -1] }), "출석이 있는 회차(2회)는 지울 수 없어요 — 창을 닫고 다시 열면 원래대로 돌아와요");
+  assert.equal(sessionErrorText({ ok: false, error: "has-attendance" }), "출석이 있는 회차는 지울 수 없어요 — 창을 닫고 다시 열면 원래대로 돌아와요");
 });
 
 test("teacherBits · teacherLine — 「강사 김OO, 박OO(역할 없음)」 · 없으면 빈 글(카드에 줄 없음) · 글 칸 teacher 와 별개", () => {

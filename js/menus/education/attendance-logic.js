@@ -106,8 +106,8 @@ export const attendErrorText = (r) => ATTEND_ERR[r?.error] || "";
 
 // 쓰기가 거절된 뒤 무엇을 다시 불러올지 — 강좌째(맡은 강좌에서 빠졌다) · 출석부만(상태가 바뀌었다) · 없음(되돌리기만)
 export function reloadAfter(code) {
-  if (code === "not-assigned") return "courses";
-  if (["course-closed", "not-confirmed", "wrong-course", "not-found"].includes(code)) return "sheet";
+  if (code === "not-assigned" || code === "wrong-course") return "courses";   // 다른 강좌의 회차 — 같은 출석부를 다시 물어도 같은 답이라 강좌째(검토 2026-10-05)
+  if (["course-closed", "not-confirmed", "not-found"].includes(code)) return "sheet";
   return "";
 }
 
@@ -140,5 +140,8 @@ export const EMPTY_ASSIGNED = "맡은 강좌가 아직 없어요 — 교육 총�
 export const EMPTY_ALL = "아직 강좌가 없어요 — 「📚 강좌 관리」에서 먼저 만들어 주세요";
 export const NO_SESSIONS = "회차가 아직 없어요 — 「📚 강좌 관리」의 「회차」에서 넣어요";
 export const NO_PEOPLE = "확정된 분이 아직 없어요 — 「📝 신청 현황」에서 확정하면 여기 보여요";
+// 맡은 강좌만 보는 분(강사·교육 담당) — 그 메뉴를 못 열 수 있어 총괄께 부탁하라고(검토 2026-10-05)
+export const NO_SESSIONS_ASSIGNED = "회차가 아직 없어요 — 교육 총괄께 회차를 넣어 달라고 말씀해 주세요";
+export const NO_PEOPLE_ASSIGNED = "확정된 분이 아직 없어요 — 확정되면 여기 보여요";
 export const CLOSED_NOTE = "마친 강좌예요 — 출석은 볼 수만 있어요";
 export const FUTURE_NOTE = "아직 오지 않은 회차예요";

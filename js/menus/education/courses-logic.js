@@ -89,7 +89,7 @@ export const sessionsPayload = (rows) => (rows || []).map((s, i) => {
 
 // 회차 저장 오류 → 한국말(서버 checkSessions·edu_sessions_replace 가 돌려주는 번호들)
 const SESSION_ERR = {
-  "course-closed": "끝난 강좌는 회차를 바꿀 수 없어요", "bad-rows": "회차 칸을 확인해 주세요",
+  "course-closed": "끝난 강좌는 회차를 바꿀 수 없어요", "bad-rows": "회차 목록이 그사이 바뀌었어요 — 창을 닫고 다시 열어 주세요",
   "bad-no": "회차 번호를 확인해 주세요 (1~200)", "bad-date": "날짜와 시각을 확인해 주세요",
   "dup-no": "회차 번호가 겹쳐요", "too-many": "회차는 200개까지예요",
 };
@@ -97,7 +97,7 @@ const SESSION_ERR = {
 export const sessionErrorText = (r) => {
   if (r?.error === "has-attendance") {
     const nos = Array.isArray(r.nos) ? r.nos.filter((n) => Number.isInteger(Number(n)) && Number(n) > 0).map((n) => `${Number(n)}회`) : [];
-    return nos.length ? `출석이 있는 회차(${nos.join(", ")})는 지울 수 없어요` : "출석이 있는 회차는 지울 수 없어요";
+    return (nos.length ? `출석이 있는 회차(${nos.join(", ")})는 지울 수 없어요` : "출석이 있는 회차는 지울 수 없어요") + " — 창을 닫고 다시 열면 원래대로 돌아와요";
   }
   return SESSION_ERR[r?.error] || "";
 };

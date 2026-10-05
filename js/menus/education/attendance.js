@@ -13,7 +13,7 @@ import { loadXlsx } from "../../core/xlsx.js";
 import {
   STATES, STATE_LABEL, STATE_MARK, NO_MARK, courseLabel, courseOptions, initialCourse, sessionChip, sessionLine, isFuture, countRows, countsLine, nextState,
   remaining, bulkLabel, bulkAsk, bulkDoneText, buttonAria, attendErrorText, reloadAfter, summaryHead, belowCount, personCounts, pctText,
-  cellsFor, attendFileName, EMPTY_ASSIGNED, EMPTY_ALL, NO_SESSIONS, NO_PEOPLE, CLOSED_NOTE, FUTURE_NOTE,
+  cellsFor, attendFileName, EMPTY_ASSIGNED, EMPTY_ALL, NO_SESSIONS, NO_PEOPLE, NO_SESSIONS_ASSIGNED, NO_PEOPLE_ASSIGNED, CLOSED_NOTE, FUTURE_NOTE,
 } from "./attendance-logic.js";
 
 const TITLE = `<h2 class="page-title">✅ 출석부</h2>`;
@@ -131,7 +131,7 @@ export async function render(el, { call }) {
 
   const sheetHtml = () => {
     const list = (ses && ses.sessions) || [];
-    if (!list.length) return `<p class="empty">${esc(NO_SESSIONS)}</p>`;
+    if (!list.length) return `<p class="empty">${esc(scope === "assigned" ? NO_SESSIONS_ASSIGNED : NO_SESSIONS)}</p>`;
     const chips = `<div class="ea-chips" aria-label="회차">${list.map((s) => {
       const on = s.id === sid;
       return `<button type="button" class="ea-chip${on ? " on" : ""}" data-sid="${esc(s.id)}" aria-pressed="${on}">${s.isToday ? `<i>오늘</i>` : ""}${esc(sessionChip(s, ses.confirmed))}</button>`;
@@ -145,7 +145,7 @@ export async function render(el, { call }) {
       `<div class="ea-bar"><b>${esc(sessionLine(sheet.session))}</b><span data-counts>${esc(countsLine(c))}</span></div>` +
       notes.map((t) => `<p class="ea-note">${esc(t)}</p>`).join("") +
       (closed ? "" : `<div class="ea-bulkw"${n ? "" : " hidden"}><button type="button" class="btn primary wide ea-bulk" data-act="bulk">${esc(bulkLabel(n))}</button></div>`) +
-      (sheet.rows.length ? `<div class="ea-list">${sheet.rows.map((r) => rowHtml(r, closed)).join("")}</div>` : `<p class="empty">${esc(NO_PEOPLE)}</p>`);
+      (sheet.rows.length ? `<div class="ea-list">${sheet.rows.map((r) => rowHtml(r, closed)).join("")}</div>` : `<p class="empty">${esc(scope === "assigned" ? NO_PEOPLE_ASSIGNED : NO_PEOPLE)}</p>`);
   };
 
   const sumHtml = () => {
@@ -155,7 +155,7 @@ export async function render(el, { call }) {
         <button type="button" class="btn ea-export" data-act="export">엑셀로 내려받기</button></div>
       <p class="muted ea-legend">${LEGEND} <span class="ea-lg-tip">줄을 누르면 회차별로 보여요</span></p>` +
       (sum.people.length ? `<div class="ea-plist">${sum.people.map((p) => personHtml(p, sum.sessions, opened.has(p.id))).join("")}</div>`
-        : `<p class="empty">${esc(NO_PEOPLE)}</p>`);
+        : `<p class="empty">${esc(scope === "assigned" ? NO_PEOPLE_ASSIGNED : NO_PEOPLE)}</p>`);
   };
 
   const draw = () => {

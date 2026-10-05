@@ -105,7 +105,8 @@ test("오류 말 — 출석부가 받는 코드 · 모르면 빈 글(공용 erro
   assert.equal(attendErrorText({ error: "network" }), "");
   assert.equal(attendErrorText(null), "");
   assert.equal(reloadAfter("not-assigned"), "courses");
-  for (const c of ["course-closed", "not-confirmed", "wrong-course", "not-found"]) assert.equal(reloadAfter(c), "sheet", c);
+  for (const c of ["course-closed", "not-confirmed", "not-found"]) assert.equal(reloadAfter(c), "sheet", c);
+  assert.equal(reloadAfter("wrong-course"), "courses");
   for (const c of ["network", "bad-state", "server", undefined]) assert.equal(reloadAfter(c), "", String(c));
 });
 
