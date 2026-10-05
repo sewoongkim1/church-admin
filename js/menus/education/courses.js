@@ -12,7 +12,7 @@ import { pickOne, pickMany, pickDate, pickTime, fmtDateLabel, fmtTimeLabel } fro
 import {
   KIND_OPTIONS, MODE_OPTIONS, STATUS_OPTIONS, WAITLIST_OPTIONS,
   formToCourse, courseToForm, checkFormNumbers, sessionsSummary, periodSummary, makeSessionRows, sessionErrorText, courseErrorText, sessionHeadLine,
-  courseSavedText, staffLine, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND,
+  courseSavedText, staffBits, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND, STALE_MARK,
 } from "./courses-logic.js";
 
 const TITLE = `<h2 class="page-title">📚 강좌 관리</h2>`;
@@ -273,13 +273,20 @@ function openCopyForm({ call, course }) {
 }
 
 // ---------- 목록 ----------
+// 카드 담당 줄 — 역할을 잃었거나 정지된 분(stale)은 흐리게 「(역할 없음)」(줄은 남아 있다 · 고치기에서 뺄 수 있다)
+function staffHtml(c) {
+  const bits = staffBits(c);
+  if (!bits.length) return "담당 없음";
+  return "담당 " + bits.map((b) => (b.stale ? `<span class="ec-stale">${esc(b.name)}${esc(STALE_MARK)}</span>` : esc(b.name))).join(", ");
+}
+
 function courseCard(c, sessions) {
   const n = c.counts || {};
   return `<div class="card" data-id="${esc(c.id)}">
     <div><b>${esc(c.title)}</b> <span class="badge">${esc(c.statusLabel)}</span></div>
     <div class="muted">${esc(c.kindLabel)}${c.term ? " · " + esc(c.term) : ""}</div>
     <div class="muted">${esc(sessions)}</div>
-    <div class="muted ec-staff">${esc(staffLine(c))}</div>
+    <div class="muted ec-staff">${staffHtml(c)}</div>
     <div class="muted">정원 ${c.capacity == null ? "제한 없음" : esc(c.capacity)} · 확정 ${esc(n.confirmed || 0)} · 대기 ${esc(n.waitlisted || 0)} · 승인 기다림 ${esc(n.applied || 0)}</div>
     <div class="acts"><button type="button" class="btn" data-act="edit">고치기</button>
       <button type="button" class="btn" data-act="sessions">회차</button>

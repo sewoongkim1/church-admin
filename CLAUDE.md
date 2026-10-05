@@ -155,6 +155,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - **강좌별 담당자(2026-10-05 · SQL 011):** 역할 둘 — `education` = **교육 총괄**(강좌·회차·복사·담당자 지정 · 모든 강좌) · `educourse` = **교육 담당(맡은 강좌)**(📝 신청 현황만 — 목록·상태·대신 등록·교재비·메모·엑셀).
   담당 줄은 이 저장소 표 `edu_course_staff`(강좌, 담당자 `admin_members.id`, `kind` manager · 2단계 teacher). `ACTION_ROLES` 값이 **배열이면 그 가운데 하나**(메뉴는 `roles: [...]` · `menuRoles`).
   ⚠️ 「맡은 강좌만」은 **서버가** 강좌마다 본다(`edu-db.ts` `mayTouch` — 신청 줄은 그 줄의 강좌를 먼저 읽는다) → 아니면 `not-assigned`(아무것도 쓰지 않음) · `eduCourses` 는 맡은 강좌만 준다(`scope`) · 명부 찾기도 `course_id` 가 맡은 강좌여야. 새 교육 액션을 둘 다에게 열면 `mayTouch` 를 꼭 지나게.
+  역할을 빼거나 정지해도 담당 줄은 **남긴다**(`canCall` 이 이미 막고 정지는 잠깐일 수 있다) → `courseOut.staff` 의 `stale:true`(카드에 흐리게 「(역할 없음)」) · `eduStaffSet` 은 **새로 더하는 분만** 후보 확인(남긴 stale 분은 그대로 저장 · 조용히 빼지 않는다).
 - ⚠️ **표·SQL 함수는 성경암송 저장소 `supabase/edu.sql` 의 것**(관리 화면 전용 `edu_course_staff` 만 여기 011) — 칸·제약·RLS 를 여기서 바꾸지 않는다. 상태는 SQL 함수(`edu_apply(p_staff)`·`edu_cancel(p_staff)`·`edu_staff_set`·`edu_course_refill`·`edu_sessions_replace`)로만 바꾼다. **함수가 새 SQL 함수를 부르면 그 SQL 이 운영에 먼저**(함수 → 화면 순서와 함께).
 - **대신 등록(명부):** 교인ID 는 화면에 안 나간다 — `eduPeopleLookup` 후보 → 화면이 `{name, pick, check:{who_type, group, sub, church_mok, position}}` → 서버가 같은 찾기(`lookupFetch`)를 다시 돌려 확인(`changed`). 앱 계정과 정확히 하나가 맞을 때만 그 계정에, 아니면 `ident_key = person|<교인ID>`. 반려했던 분은 `was-declined` → 확인 → `force`(「반려 유지」).
 - **「같은 분일 수 있어요」**(`maybeDup`) — 살아 있는 줄 가운데 이름이 같고 앱 줄·담당자 줄이 섞인 묶음. 근본(앱 계정과 잇기)은 성경암송 계획 과제 11.

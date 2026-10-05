@@ -184,18 +184,30 @@ test("checkStaffIds — uuid 배열만 · 겹친 것·대소문자는 하나로 
   assert.equal(checkStaffIds(many.slice(0, EDU_STAFF_MAX)).ok, true);
 });
 
-test("staffByCourse · courseOut staff — 강좌별 [{id, name}] 이름 차례 · 없으면 빈 배열 · id·이름 밖의 칸은 안 나간다", () => {
+test("staffByCourse · courseOut staff — 강좌별 [{id, name}] 이름 차례 · 없으면 빈 배열 · id·이름(·stale) 밖의 칸은 안 나간다", () => {
+  const edu = new Set([M1, M2]);
   const by = staffByCourse([
-    { course_id: "c1", member_id: M2, admin_members: { name: "박담당" }, auth_user_id: "x" },
-    { course_id: "c1", member_id: M1, admin_members: { name: "김담당" } },
+    { course_id: "c1", member_id: M2, admin_members: { name: "박담당", status: "active" }, auth_user_id: "x" },
+    { course_id: "c1", member_id: M1, admin_members: { name: "김담당", status: "active" } },
     { course_id: "c2", member_id: M1, admin_members: null },
     { course_id: null, member_id: M1 },
-  ]);
+  ], edu);
   assert.deepEqual(by.get("c1"), [{ id: M1, name: "김담당" }, { id: M2, name: "박담당" }]);
-  assert.deepEqual(by.get("c2"), [{ id: M1, name: "" }]);
+  assert.deepEqual(by.get("c2"), [{ id: M1, name: "", stale: true }]);   // 담당자 줄을 못 읽으면 사용 중으로 보지 않는다
   const row = { id: "c1", title: "t", kind: "lecture", status: "open" }, n = { confirmed: 0, waitlisted: 0, applied: 0 };
   assert.deepEqual(courseOut(row, n).staff, []);
   assert.deepEqual(courseOut(row, n, [{ id: M1, name: "김담당", extra: 1 }]).staff, [{ id: M1, name: "김담당" }]);
+  assert.deepEqual(courseOut(row, n, [{ id: M1, name: "김담당", stale: true, status: "disabled" }]).staff, [{ id: M1, name: "김담당", stale: true }]);
+});
+
+test("staffByCourse — stale: 정지·대기(사용 중 아님) 또는 교육 역할 없음 · 역할 목록을 안 주면 모두 stale", () => {
+  const rows = [
+    { course_id: "c1", member_id: M1, admin_members: { name: "가", status: "active" } },
+    { course_id: "c1", member_id: M2, admin_members: { name: "나", status: "disabled" } },
+  ];
+  assert.deepEqual(staffByCourse(rows, new Set([M1, M2])).get("c1"), [{ id: M1, name: "가" }, { id: M2, name: "나", stale: true }]);
+  assert.deepEqual(staffByCourse(rows, new Set([M2])).get("c1"), [{ id: M1, name: "가", stale: true }, { id: M2, name: "나", stale: true }]);
+  assert.deepEqual(staffByCourse(rows).get("c1").map((x) => x.stale), [true, true]);
 });
 
 test("staffCandidateOut — id·이름·소속(교구 「기쁨 3목장」 · 교회학교 「중등부 2학년」)·교육 역할만", () => {

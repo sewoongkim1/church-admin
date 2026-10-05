@@ -122,13 +122,16 @@ export function checkStaffIds(x: unknown): { ok: true; ids: string[] } | { ok: f
   if (ids.length > EDU_STAFF_MAX) return { ok: false, error: "too-many" };
   return { ok: true, ids: ids.sort() };
 }
-// edu_course_staff 줄(admin_members(name) 을 붙여 읽은 것) → 강좌 id 별 [{id, name}](이름 차례) — 응답에는 담당자 id·이름만
-export function staffByCourse(rows: any[]): Map<string, { id: string; name: string }[]> {
-  const by = new Map<string, { id: string; name: string }[]>();
+// edu_course_staff 줄(admin_members(name,status) 을 붙여 읽은 것) → 강좌 id 별 [{id, name, stale?}](이름 차례) — 응답에는 담당자 id·이름(+stale)만
+//   eduMembers = 교육 역할(educourse·education)을 가진 담당자 id 들. 사용 중(active)이 아니거나 그 역할이 없으면 stale:true
+//   (역할을 뺐거나 정지 — 줄은 남긴다 · 화면이 흐리게 「(역할 없음)」 · 검토 반영 2026-10-05).
+export function staffByCourse(rows: any[], eduMembers: Set<string> = new Set()): Map<string, { id: string; name: string; stale?: true }[]> {
+  const by = new Map<string, { id: string; name: string; stale?: true }[]>();
   for (const r of rows || []) {
     if (!r?.course_id || !r?.member_id) continue;
     const list = by.get(r.course_id) || [];
-    list.push({ id: r.member_id, name: norm(r.admin_members?.name) });
+    const stale = r.admin_members?.status !== "active" || !eduMembers.has(String(r.member_id));
+    list.push(stale ? { id: r.member_id, name: norm(r.admin_members?.name), stale: true } : { id: r.member_id, name: norm(r.admin_members?.name) });
     by.set(r.course_id, list);
   }
   for (const list of by.values()) list.sort((a, b) => a.name.localeCompare(b.name, "ko") || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -141,7 +144,7 @@ export function staffCandidateOut(m: { id: string; name?: string; type?: string;
   return { id: m.id, name: norm(m.name), who, roles: roles.filter((r) => EDU_STAFF_ROLES.includes(r)).sort() };
 }
 
-export function courseOut(r: any, counts: { confirmed: number; waitlisted: number; applied: number }, staff: { id: string; name: string }[] = []) {
+export function courseOut(r: any, counts: { confirmed: number; waitlisted: number; applied: number }, staff: { id: string; name: string; stale?: boolean }[] = []) {
   return {
     id: r.id, title: r.title, kind: r.kind, kindLabel: EDU_KIND_LABEL[r.kind] || r.kind, term: r.term || "",
     description: r.description || "", teacher: r.teacher_label || "", place: r.place || "", fee: r.fee_note || "",
@@ -150,7 +153,7 @@ export function courseOut(r: any, counts: { confirmed: number; waitlisted: numbe
     attendPct: r.attend_pct, checkLabel: r.check_label || null, status: r.status,
     statusLabel: EDU_STATUS_LABEL[r.status] || r.status, updatedAt: r.updated_at || null,
     counts: { confirmed: counts.confirmed || 0, waitlisted: counts.waitlisted || 0, applied: counts.applied || 0 },
-    staff: (staff || []).map((x) => ({ id: x.id, name: x.name })),
+    staff: (staff || []).map((x) => (x.stale === true ? { id: x.id, name: x.name, stale: true } : { id: x.id, name: x.name })),
   };
 }
 

@@ -13,12 +13,16 @@ const STAFF = { member: { id: STAFF_M }, roles: ["educourse"] };
 
 // 가짜 db — 이어 붙인 질의를 기록하고, 표마다 tables[표] 를(없으면 prev 를) 돌려주고, edu_apply 를 부른 횟수를 센다
 //   allRows(쪽 넘기기)는 build() 의 표를 보고 — 신청 줄(edu_enrollments)이면 rows, 그 밖은 tables[표] 를 돌려준다.
-function setup({ prev = [], pick, applyRes, rows, tables = {} } = {}) {
+//   staffRows 를 주면 edu_course_staff 는 **거르기를 지킨다**(eq·in) — 몸통의 course_id 가 아니라 서버가 고른 강좌로 물었는지 본다(IDOR 시험).
+const honour = (list, calls) => list.filter((r) => calls.every(([k, col, v]) =>
+  k === "eq" ? r[col] === v : k === "in" ? v.includes(r[col]) : true));
+function setup({ prev = [], pick, applyRes, rows, tables = {}, staffRows } = {}) {
   const log = { q: [], rpc: [], audit: [], writes: 0, lookups: 0 };
   const chain = (table) => {
     const c = { calls: [] };
     const m = new Proxy(c, { get(_, k) {
-      if (k === "then") return (res) => res({ data: table in tables ? tables[table] : prev, error: null });
+      if (k === "then") return (res) => res({ data: table === "edu_course_staff" && staffRows ? honour(staffRows, c.calls)
+        : table in tables ? tables[table] : prev, error: null });
       if (k === "update" || k === "insert" || k === "delete" || k === "upsert") log.writes++;
       return (...a) => { c.calls.push([k, ...a]); return m; };
     } });
@@ -199,8 +203,9 @@ test("담당 확인 — 교육 총괄·총괄 관리자는 edu_course_staff 를 
 test("eduCourses — 교육 담당은 맡은 강좌만(학기도 그것만 · scope assigned) · 총괄은 전부 · 담당자 이름이 붙는다", async () => {
   const A = { ...COURSE_ROW, id: COURSE, term: "2027 상반기" };
   const B = { ...COURSE_ROW, id: COURSE_B, title: "새가족반", term: "2027 하반기" };
-  const staffRows = [{ course_id: COURSE, member_id: STAFF_M, admin_members: { name: "박담당" } },
-    { course_id: COURSE, member_id: CHIEF_M, admin_members: { name: "김총괄" } }];
+  const staffRows = [{ course_id: COURSE, member_id: STAFF_M, admin_members: { name: "박담당", status: "active" } },
+    { course_id: COURSE, member_id: CHIEF_M, admin_members: { name: "김총괄", status: "active" } }];
+  const eduGrants = [{ member_id: STAFF_M, role_id: "educourse" }, { member_id: CHIEF_M, role_id: "education" }];
   // 담당 — 맡은 강좌 id 를 먼저 묻고 그 id 로 강좌를 거른다(가짜 db 가 B 까지 돌려줘도 응답에서 다시 거른다)
   const a = setup({ applyRes: [], tables: { edu_course_staff: [{ course_id: COURSE }], edu_courses: [A, B] } });
   a.log.q.length = 0;
@@ -217,7 +222,7 @@ test("eduCourses — 교육 담당은 맡은 강좌만(학기도 그것만 · sc
   assert.deepEqual(await e.edu.eduCourses(STAFF, {}), { ok: true, scope: "assigned", terms: [], courses: [] });
   assert.ok(!e.log.q.some((q) => q.table === "edu_courses"));
   // 총괄 — 전부 · 담당자 줄은 한 번(쪽 넘기기)으로 읽어 강좌마다 붙인다(N+1 없음) · 이름 차례 · id·이름만
-  const c = setup({ applyRes: [], tables: { edu_courses: [A, B], edu_course_staff: staffRows } });
+  const c = setup({ applyRes: [], tables: { edu_courses: [A, B], edu_course_staff: staffRows, admin_role_grants: eduGrants } });
   const all = await c.edu.eduCourses(CHIEF, {});
   assert.equal(all.scope, "all");
   assert.deepEqual(all.courses.map((x) => x.id), [COURSE, COURSE_B]);
@@ -284,4 +289,109 @@ test("eduStaffCandidates — 사용 중인 교육 역할 분만 · id·이름·�
   assert.ok(!m.c.calls.some((x) => x[0] === "select" && /auth_user_id|kakao/.test(x[1])));
   const none = setup({ tables: { admin_role_grants: [] } });
   assert.deepEqual(await none.edu.eduStaffCandidates(), { ok: true, members: [] });
+});
+
+// ---------- 검토 반영(2026-10-05) ----------
+const OTHER_M = "66666666-6666-4666-8666-666666666666";
+
+test("eduStaffSet — 역할을 잃은(stale) 분을 그대로 두고 저장하면 된다 · 새로 더하는 분만 후보 확인 · 새 분이 후보가 아니면 bad-member(아무것도 안 씀)", async () => {
+  // 이미 맡은 STAFF_M 이 역할을 잃었다(후보 목록에 없다)
+  const keep = setup({ tables: { edu_courses: { id: COURSE }, edu_course_staff: [{ member_id: STAFF_M }], admin_role_grants: [], admin_members: [] } });
+  assert.deepEqual(await keep.edu.eduStaffSet(CHIEF, { course_id: COURSE, member_ids: [STAFF_M] }), { ok: true, count: 1, changed: false });
+  assert.equal(keep.log.writes, 0);
+  assert.ok(!keep.log.q.some((q) => q.table === "admin_role_grants"), "더하는 분이 없는데 후보를 확인했다");
+  // stale 분을 남기고 후보 한 분을 더한다 — 더하는 분만 upsert · 빼는 것 없음
+  const add = setup({ tables: { edu_courses: { id: COURSE }, edu_course_staff: [{ member_id: STAFF_M }],
+    admin_role_grants: [{ member_id: CHIEF_M, role_id: "education" }], admin_members: [{ id: CHIEF_M, name: "김총괄" }] } });
+  assert.deepEqual(await add.edu.eduStaffSet(CHIEF, { course_id: COURSE, member_ids: [STAFF_M, CHIEF_M] }), { ok: true, count: 2, changed: true });
+  const up = add.log.q.flatMap((q) => q.c.calls).filter((x) => x[0] === "upsert");
+  assert.deepEqual(up.map((x) => x[1]), [[{ course_id: COURSE, member_id: CHIEF_M, kind: "manager" }]]);
+  assert.equal(add.log.writes, 1);
+  // stale 분을 남기고 후보가 아닌 분을 새로 더하려 하면 bad-member — 지우기·더하기·기록 없음
+  const bad = setup({ tables: { edu_courses: { id: COURSE }, edu_course_staff: [{ member_id: STAFF_M }],
+    admin_role_grants: [{ member_id: CHIEF_M, role_id: "education" }], admin_members: [{ id: CHIEF_M, name: "김총괄" }] } });
+  assert.deepEqual(await bad.edu.eduStaffSet(CHIEF, { course_id: COURSE, member_ids: [STAFF_M, OTHER_M] }), { ok: false, error: "bad-member" });
+  assert.equal(bad.log.writes, 0); assert.equal(bad.log.audit.length, 0);
+  // 빼는 것도 된다(stale 분을 목록에서 빼면 그 줄만 delete)
+  const out = setup({ tables: { edu_courses: { id: COURSE }, edu_course_staff: [{ member_id: STAFF_M }, { member_id: CHIEF_M }] } });
+  assert.deepEqual(await out.edu.eduStaffSet(CHIEF, { course_id: COURSE, member_ids: [CHIEF_M] }), { ok: true, count: 1, changed: true });
+  const del = out.log.q.find((q) => q.c.calls.some((x) => x[0] === "delete"));
+  assert.ok(del.c.calls.some((x) => x[0] === "in" && x[1] === "member_id" && JSON.stringify(x[2]) === JSON.stringify([STAFF_M])));
+});
+
+test("staffOf — 사용 중이 아니거나 교육 역할이 없으면 stale:true · 칸은 id·name(·stale)만", async () => {
+  const M2 = "77777777-7777-4777-8777-777777777777", M3 = "88888888-8888-4888-8888-888888888888";
+  const a = setup({ applyRes: [], tables: {
+    edu_courses: [{ ...COURSE_ROW, id: COURSE }],
+    edu_course_staff: [
+      { course_id: COURSE, member_id: STAFF_M, admin_members: { name: "가담당", status: "active" } },
+      { course_id: COURSE, member_id: M2, admin_members: { name: "나역할뺌", status: "active" } },
+      { course_id: COURSE, member_id: M3, admin_members: { name: "다정지", status: "disabled" } },
+    ],
+    admin_role_grants: [{ member_id: STAFF_M, role_id: "educourse" }, { member_id: M3, role_id: "educourse" }],
+  } });
+  const r = await a.edu.eduCourses(CHIEF, {});
+  assert.deepEqual(r.courses[0].staff, [
+    { id: STAFF_M, name: "가담당" },
+    { id: M2, name: "나역할뺌", stale: true },
+    { id: M3, name: "다정지", stale: true },
+  ]);
+  const g = a.log.q.find((q) => q.table === "admin_role_grants");
+  assert.ok(g.c.calls.some((x) => x[0] === "in" && x[1] === "role_id" && x[2].includes("educourse") && x[2].includes("education")));
+  // 담당 줄이 없으면 역할 표를 읽지 않는다
+  const e = setup({ applyRes: [], tables: { edu_courses: [{ ...COURSE_ROW, id: COURSE }], edu_course_staff: [] } });
+  assert.deepEqual((await e.edu.eduCourses(CHIEF, {})).courses[0].staff, []);
+  assert.ok(!e.log.q.some((q) => q.table === "admin_role_grants"));
+});
+
+test("IDOR — 몸통의 course_id 가 맡은 강좌(A)여도 신청 줄의 강좌(B)로 묻는다 → not-assigned · 쓰기 0 · A 줄이면 통과", async () => {
+  const staffRows = [{ course_id: COURSE, member_id: STAFF_M, kind: "manager" }];
+  for (const [fn, body] of [["eduEnrollSet", { id: 7, op: "confirm", course_id: COURSE }], ["eduFeeSet", { id: 7, paid: true, note: "x", course_id: COURSE }]]) {
+    const a = setup({ staffRows, tables: { edu_enrollments: { id: 7, course_id: COURSE_B } }, applyRes: { ok: true } });
+    assert.deepEqual(await a.edu[fn](STAFF, body), { ok: false, error: "not-assigned" }, fn);
+    assert.equal(a.log.writes, 0, fn); assert.equal(a.log.rpc.length, 0, fn); assert.equal(a.log.audit.length, 0, fn);
+    const sq = a.log.q.filter((q) => q.table === "edu_course_staff");
+    assert.equal(sq.length, 1, fn);
+    assert.ok(sq[0].c.calls.some((x) => x[0] === "eq" && x[1] === "course_id" && x[2] === COURSE_B), fn + " B 로 묻지 않았다");
+    assert.ok(!sq[0].c.calls.some((x) => x[0] === "eq" && x[1] === "course_id" && x[2] === COURSE), fn + " 몸통의 A 로 물었다");
+    // 같은 몸통 · 신청 줄이 A 면 통과
+    const ok = setup({ staffRows, tables: { edu_enrollments: { id: 7, course_id: COURSE } }, applyRes: { ok: true } });
+    assert.equal((await ok.edu[fn](STAFF, body)).ok, true, fn);
+    assert.equal(ok.log.rpc.length + ok.log.writes, 1, fn);
+  }
+  // 거르기를 지키는 가짜라도 다른 담당자·다른 kind 줄로는 통과하지 않는다
+  const t = setup({ staffRows: [{ course_id: COURSE, member_id: OTHER_M, kind: "manager" }, { course_id: COURSE, member_id: STAFF_M, kind: "teacher" }],
+    tables: { edu_enrollments: { id: 7, course_id: COURSE } } });
+  assert.deepEqual(await t.edu.eduFeeSet(STAFF, { id: 7, paid: true }), { ok: false, error: "not-assigned" });
+  assert.equal(t.log.writes, 0);
+});
+
+test("eduPeopleLookup — 담당은 맡은 강좌 + 끝·보관이 아닌 강좌만(course-closed) · 맡지 않은 강좌는 강좌를 읽지도 않는다 · 총괄은 course_id 없이도", async () => {
+  const staffRows = [{ course_id: COURSE, member_id: STAFF_M, kind: "manager" }];
+  for (const status of ["done", "archived"]) {
+    const a = setup({ staffRows, tables: { edu_courses: { status } } });
+    assert.deepEqual(await a.edu.eduPeopleLookup(STAFF, { name: "홍", course_id: COURSE }), { ok: false, error: "course-closed" }, status);
+    assert.equal(a.log.lookups, 0, status);
+  }
+  for (const status of ["draft", "open", "closed", "running"]) {
+    const a = setup({ staffRows, tables: { edu_courses: { status } } });
+    assert.equal((await a.edu.eduPeopleLookup(STAFF, { name: "홍", course_id: COURSE })).ok, true, status);
+    assert.equal(a.log.lookups, 1, status);
+  }
+  const nb = setup({ staffRows, tables: { edu_courses: { status: "open" } } });
+  assert.deepEqual(await nb.edu.eduPeopleLookup(STAFF, { name: "홍", course_id: COURSE_B }), { ok: false, error: "not-assigned" });
+  assert.ok(!nb.log.q.some((q) => q.table === "edu_courses")); assert.equal(nb.log.lookups, 0);
+  const gone = setup({ staffRows, tables: { edu_courses: null } });
+  assert.deepEqual(await gone.edu.eduPeopleLookup(STAFF, { name: "홍", course_id: COURSE }), { ok: false, error: "not-found" });
+  // 총괄 — course_id 없이 바로 찾는다(강좌·담당 줄 읽지 않음) · 끝난 강좌의 창에서는 같은 course-closed
+  const c = setup({ tables: { edu_courses: { status: "done" } } });
+  assert.equal((await c.edu.eduPeopleLookup(CHIEF, { name: "홍" })).ok, true);
+  assert.equal(c.log.q.length, 0);
+  assert.deepEqual(await c.edu.eduPeopleLookup(CHIEF, { name: "홍", course_id: COURSE }), { ok: false, error: "course-closed" });
+});
+
+test("eduExport — 기록 target 은 다듬은 강좌 id(몸통 글자 그대로가 아니다)", async () => {
+  const a = setup({ prev: COURSE_ROW, applyRes: [], rows: [] });
+  assert.equal((await a.edu.eduExport(CHIEF, { course_id: `  ${COURSE}  ` })).ok, true);
+  assert.deepEqual(a.log.audit, [["edu.export", COURSE, { count: 0 }]]);
 });

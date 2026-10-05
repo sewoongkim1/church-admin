@@ -14,8 +14,9 @@ type Audit = (ctx: any, action: string, target: string, detail?: Record<string, 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COURSE_COLS = "id,track,title,kind,term,description,teacher_label,place,fee_note,target,capacity,mode,waitlist,apply_from,apply_to,starts_on,ends_on,prereq_tracks,attend_pct,check_label,status,created_at,updated_at";
 const ENROLL_COLS = "id,course_id,user_id,name,who_type,group_name,sub_name,status,source,waitlist_at,applied_at,decided_at,cancelled_at,fee_paid,staff_note";
-// 강좌 담당자 줄 + 이름(admin_members 한 칸만 붙여 읽는다 — auth_user_id·카카오 칸은 읽지 않는다)
-const STAFF_SEL = "course_id,member_id,admin_members(name)";
+// 강좌 담당자 줄 + 이름·상태(admin_members 두 칸만 붙여 읽는다 — auth_user_id·카카오 칸은 읽지 않는다)
+const STAFF_SEL = "course_id,member_id,admin_members(name,status)";
+const CLOSED = new Set(["done", "archived"]);   // edu_apply(p_staff)·edu_staff_set 이 막는 상태와 같다
 const NOT_ASSIGNED = { ok: false as const, error: "not-assigned" };
 
 // deps — peopleLookup: 교인명부에서 이름으로 찾기(후보 모양 · 교인ID 없음) · personPick: 같은 찾기를 서버가 다시 돌려 pick 번째 분의 신원을 만든다
@@ -61,14 +62,18 @@ export function makeEdu(db: Db, audit: Audit, deps: {
   }
   // 강좌 id 들의 담당자(manager) — 한 질의(쪽 넘기기)로 읽어 강좌별로 묶는다(강좌마다 부르지 않는다).
   //   강좌가 50개까지면 그 강좌만 거르고, 더 많으면 주소가 길어지지 않게 담당 줄 전부를 읽는다(표가 작다 — 강좌마다 몇 분).
+  //   역할을 잃었거나 사용 중이 아닌 분은 stale:true(검토 반영 2026-10-05) — 교육 역할 받은 분 목록도 한 질의(역할 둘의 줄 전부 · 작다).
   async function staffOf(ids: string[]) {
-    if (!ids.length) return new Map<string, { id: string; name: string }[]>();
+    if (!ids.length) return new Map<string, { id: string; name: string; stale?: true }[]>();
     const rows = await deps.allRows(() => {
       let q = db.from("edu_course_staff").select(STAFF_SEL).eq("kind", "manager");
       if (ids.length <= 50) q = q.in("course_id", ids);
       return q.order("course_id").order("member_id");
     });
-    return staffByCourse(rows);
+    if (!rows.length) return staffByCourse(rows, new Set());
+    const grants = await deps.allRows(() => db.from("admin_role_grants").select("member_id,role_id")
+      .in("role_id", EDU_STAFF_ROLES).order("member_id").order("role_id"));
+    return staffByCourse(rows, new Set(grants.map((g: any) => String(g.member_id))));
   }
 
   // 강좌 목록 — 총괄은 모든 강좌, 담당은 맡은 강좌만(학기 목록도 맡은 강좌의 것만). scope 로 어느 쪽인지 알린다.
@@ -115,7 +120,9 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     return { ok: true, members };
   }
 
-  // 강좌의 담당자(manager)를 통째로 바꾼다 — 빈 배열이면 담당자 없음. 강좌가 있어야 하고, 모두 사용 중 · 교육 역할이 있어야 한다.
+  // 강좌의 담당자(manager)를 통째로 바꾼다 — 빈 배열이면 담당자 없음. 강좌가 있어야 하고, **새로 더하는 분만** 사용 중 · 교육 역할이어야 한다.
+  //   이미 맡은 분이 역할을 잃었거나 정지돼도(stale) 남겨 두든 빼든 저장된다 — 역할을 빼도 줄은 남긴다(정지는 잠깐일 수 있고 canCall 이 이미 막는다).
+  //   저장으로 조용히 빼지 않는다: 보낸 목록에 있으면 남고, 없으면 빠진다(검토 반영 2026-10-05).
   //   바뀐 것만 빼고 더한다(바뀐 것이 없으면 쓰지도 기록하지도 않는다 · changed:false). 기록 edu.staff.set 은 {course, count}(이름 없음).
   async function eduStaffSet(ctx: any, b: any) {
     const course = norm(b?.course_id);
@@ -125,15 +132,15 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     const { data: c, error } = await db.from("edu_courses").select("id").eq("id", course).maybeSingle();
     if (error) throw error;
     if (!c) return { ok: false, error: "not-found" };
-    if (s.ids.length) {
-      const can = new Set((await eduStaffCandidates()).members.map((m: any) => m.id));
-      if (s.ids.some((id) => !can.has(id))) return { ok: false, error: "bad-member" };
-    }
     const { data: cur, error: e1 } = await db.from("edu_course_staff").select("member_id").eq("course_id", course).eq("kind", "manager");
     if (e1) throw e1;
     const before = new Set(((cur ?? []) as any[]).map((r) => String(r.member_id)));
     const add = s.ids.filter((id) => !before.has(id));
     const del = [...before].filter((id) => !s.ids.includes(id));
+    if (add.length) {
+      const can = new Set((await eduStaffCandidates()).members.map((m: any) => m.id));
+      if (add.some((id) => !can.has(id))) return { ok: false, error: "bad-member" };
+    }
     if (!add.length && !del.length) return { ok: true, count: s.ids.length, changed: false };
     if (del.length) {
       const { error: ed } = await db.from("edu_course_staff").delete().eq("course_id", course).eq("kind", "manager").in("member_id", del);
@@ -317,14 +324,22 @@ export function makeEdu(db: Db, audit: Audit, deps: {
   async function eduExport(ctx: any, b: any) {
     const r = await eduEnrollList(ctx, b);   // 맡은 강좌 확인도 여기서(not-assigned 면 기록 없이 그대로)
     if (!r.ok) return r;
-    await audit(ctx, "edu.export", String(b.course_id), { count: r.enrollments.length });
+    await audit(ctx, "edu.export", norm(b?.course_id), { count: r.enrollments.length });   // eduEnrollList 가 검사한 그 꼴(norm · uuid)
     return { ok: true, rows: exportRows(r.course, r.enrollments) };
   }
 
-  // 대신 등록의 명부 찾기 — 담당은 맡은 강좌의 창에서만(course_id 를 함께 보낸다). 총괄은 그대로.
-  //   교육 담당 역할만으로 교인명부를 이름으로 떠볼 수 없게(맡은 강좌가 없으면 not-assigned).
+  // 대신 등록의 명부 찾기 — 담당은 맡은 강좌의 창에서만(course_id 를 함께 보낸다 · 아니면 not-assigned).
+  //   교육 담당 역할만으로 교인명부를 이름으로 떠볼 수 없게. 총괄은 course_id 없이도 된다(mayTouch 가 통과시킨다).
+  //   course_id 가 있으면(화면은 늘 보낸다) 끝난·보관 강좌는 course-closed — edu_apply(p_staff) 가 어차피 받지 않는 강좌다(검토 반영 2026-10-05).
   async function eduPeopleLookup(ctx: any, b: any) {
-    if (!eduChief(ctx?.roles) && !(await mayTouch(ctx, norm(b?.course_id)))) return NOT_ASSIGNED;
+    const course = norm(b?.course_id);
+    if (!(await mayTouch(ctx, course))) return NOT_ASSIGNED;
+    if (UUID.test(course)) {
+      const { data: c, error } = await db.from("edu_courses").select("status").eq("id", course).maybeSingle();
+      if (error) throw error;
+      if (!c) return { ok: false, error: "not-found" };
+      if (CLOSED.has(String(c.status))) return { ok: false, error: "course-closed" };
+    }
     return deps.peopleLookup(ctx, b);
   }
 

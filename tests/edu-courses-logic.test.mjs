@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers, sessionHeadLine, courseSavedText, periodSummary,
-  staffLine, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND } from "../js/menus/education/courses-logic.js";
+  staffLine, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND, staffBits, STALE_MARK, STALE_HINT } from "../js/menus/education/courses-logic.js";
 
 test("formToCourse — 빈 정원은 null · 숫자는 숫자", () => {
   assert.equal(formToCourse({ title: "a", kind: "lecture", capacity: "" }).capacity, null);
@@ -141,13 +141,15 @@ test("staffLine — 「담당 김OO, 박OO」 · 없으면 「담당 없음」",
   assert.equal(staffLine(null), "담당 없음");
 });
 
-test("staffOptions — 후보(소속 · 교육 총괄 표시) + 지금 맡았지만 후보가 아닌 분은 「역할 없음 · 빼 주세요」", () => {
+test("staffOptions — 후보(소속 · 교육 총괄 표시) + 지금 맡았지만 후보가 아닌 분(stale)은 「역할 없음 — 빼 주세요」", () => {
   const cands = [{ id: "a", name: "김담당", who: "기쁨 3목장", roles: ["educourse"] }, { id: "b", name: "박총괄", who: "", roles: ["education", "educourse"] }];
-  assert.deepEqual(staffOptions(cands, [{ id: "a", name: "김담당" }, { id: "z", name: "옛담당" }]), [
+  assert.deepEqual(staffOptions(cands, [{ id: "a", name: "김담당" }, { id: "z", name: "옛담당", stale: true }]), [
     { value: "a", label: "김담당", hint: "기쁨 3목장" },
     { value: "b", label: "박총괄", hint: "교육 총괄" },
-    { value: "z", label: "옛담당", hint: "역할 없음 · 빼 주세요" },
+    { value: "z", label: "옛담당", hint: "역할 없음 — 빼 주세요", stale: true },
   ]);
+  // 후보에 들어 있는데 서버가 stale 로 준 경우(드묾)도 표시는 stale 로
+  assert.deepEqual(staffOptions(cands, [{ id: "a", name: "김담당", stale: true }])[0], { value: "a", label: "김담당", hint: STALE_HINT, stale: true });
   assert.deepEqual(staffOptions([], []), []);
   assert.deepEqual(staffOptions(null, null), []);
 });
@@ -181,4 +183,13 @@ test("고치기 폼 — 담당자 칸(고른 분 이름 · 숨은 칸 JSON) · �
   assert.ok(courseFormHtml(v, true).includes("data-staff"));
   // 담당자는 강좌 저장(formToCourse)에 섞이지 않는다 — eduStaffSet 이 따로 보낸다
   assert.equal("staff" in formToCourse({ ...v, staff: ["a"] }), false);
+});
+
+test("stale 담당 — 카드 글 「이름(역할 없음)」 · staffBits · 폼 단추 글에도 표시", () => {
+  const c = { staff: [{ id: "a", name: "김담당" }, { id: "z", name: "옛담당", stale: true }, { id: "y", name: "" }] };
+  assert.deepEqual(staffBits(c), [{ name: "김담당", stale: false }, { name: "옛담당", stale: true }]);
+  assert.equal(staffLine(c), "담당 김담당, 옛담당(역할 없음)");
+  assert.equal(STALE_MARK, "(역할 없음)");
+  const opts = staffOptions([{ id: "a", name: "김담당", who: "", roles: ["educourse"] }], c.staff);
+  assert.equal(staffFieldText(["a", "z"], opts), "김담당, 옛담당(역할 없음)");
 });

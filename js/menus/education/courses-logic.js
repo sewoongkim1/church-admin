@@ -111,26 +111,39 @@ export function sessionHeadLine(s) {
 // 후보가 한 분도 없을 때 폼에 띄우는 안내(역할을 먼저 줘야 고를 수 있다)
 export const STAFF_NO_CAND = "⚙️ 담당자·역할에서 「교육 담당(맡은 강좌)」 역할을 먼저 주세요";
 
-// 카드 한 줄 — 「담당 김OO, 박OO」 · 없으면 「담당 없음」
-export function staffLine(c) {
-  const names = ((c && c.staff) || []).map((x) => x && x.name).filter(Boolean);
-  return names.length ? `담당 ${names.join(", ")}` : "담당 없음";
+// 역할을 잃었거나 정지된 담당(서버 courseOut.staff 의 stale:true — 줄은 남아 있다 · 검토 반영 2026-10-05)
+export const STALE_MARK = "(역할 없음)";
+export const STALE_HINT = "역할 없음 — 빼 주세요";
+
+// 카드 담당 이름들 — [{name, stale}] (이름 없는 줄은 뺀다). 화면은 stale 을 흐리게 그린다.
+export function staffBits(c) {
+  return ((c && c.staff) || []).filter((x) => x && x.name).map((x) => ({ name: x.name, stale: x.stale === true }));
 }
 
-// 고르개 선택지 — 후보(사용 중 · 교육 역할) + 지금 맡고 있지만 후보가 아닌 분(역할을 뺐거나 정지 — 빼 달라는 표시)
-//   hint 는 소속(동명이인을 가리려고) · 교육 총괄이면 「교육 총괄」을 덧붙인다
+// 카드 한 줄(글) — 「담당 김OO, 박OO(역할 없음)」 · 없으면 「담당 없음」
+export function staffLine(c) {
+  const bits = staffBits(c);
+  return bits.length ? `담당 ${bits.map((b) => b.name + (b.stale ? STALE_MARK : "")).join(", ")}` : "담당 없음";
+}
+
+// 고르개 선택지 — 후보(사용 중 · 교육 역할) + 지금 맡고 있지만 후보가 아닌 분(stale — 역할을 뺐거나 정지 · 「역할 없음 — 빼 주세요」)
+//   hint 는 소속(동명이인을 가리려고) · 교육 총괄이면 「교육 총괄」을 덧붙인다. stale 분도 지금 맡고 있으니 체크된 채 나온다(values = 지금 담당).
 export function staffOptions(cands, current) {
   const out = (cands || []).map((m) => ({ value: m.id, label: m.name,
     hint: [m.who, (m.roles || []).includes("education") ? "교육 총괄" : ""].filter(Boolean).join(" · ") }));
-  const known = new Set(out.map((o) => o.value));
-  for (const x of current || []) if (x && !known.has(x.id)) out.push({ value: x.id, label: x.name || "(이름 없음)", hint: "역할 없음 · 빼 주세요" });
+  for (const x of current || []) {
+    if (!x) continue;
+    const o = out.find((y) => y.value === x.id);
+    if (o) { if (x.stale === true) Object.assign(o, { hint: STALE_HINT, stale: true }); continue; }
+    out.push({ value: x.id, label: x.name || "(이름 없음)", hint: STALE_HINT, stale: true });
+  }
   return out;
 }
 
-// 폼 단추 글 — 고른 분의 이름(선택지 차례) · 없으면 「담당자 없음」
+// 폼 단추 글 — 고른 분의 이름(선택지 차례 · stale 은 「(역할 없음)」) · 없으면 「담당자 없음」
 export function staffFieldText(ids, options) {
-  const by = new Map((options || []).map((o) => [o.value, o.label]));
-  const names = (ids || []).map((id) => by.get(id)).filter(Boolean);
+  const by = new Map((options || []).map((o) => [o.value, o]));
+  const names = (ids || []).map((id) => by.get(id)).filter(Boolean).map((o) => o.label + (o.stale ? STALE_MARK : ""));
   return names.length ? names.join(", ") : "담당자 없음";
 }
 
