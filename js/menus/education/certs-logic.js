@@ -119,7 +119,7 @@ const CERT_ERR = {
 // 서버 답 → 한국말(모르면 빈 글 — 부르는 쪽이 공용 errorText 로) · too-long 은 칸(field)으로 가른다
 //   ids 가 붙은 거절(not-confirmed·wrong-course·not-found)은 그 분들 이름을 덧붙인다(people 에서 찾은 것만 · 다섯 분까지)
 export function certErrorText(r, people) {
-  if (r?.error === "too-long") return r.field === "body" ? "문안은 300자까지 적을 수 있어요" : r.field === "issuer" ? "발급 명의는 60자까지 적을 수 있어요" : "";
+  if (r?.error === "too-long") return r.field === "body" ? "문안은 300자까지 적을 수 있어요" : r.field === "issuer" ? `발급 명의는 ${ISSUER_MAX}자까지 적을 수 있어요` : "";
   const base = CERT_ERR[r?.error] || "";
   if (!base || !Array.isArray(r?.ids) || !r.ids.length) return base;
   const by = new Map((people || []).map((p) => [Number(p.id), p.name]));
@@ -141,7 +141,7 @@ export const printCerts = (d) => (d?.people || []).map((p) => ({ name: p.name, t
 export const NO_PRINT = "수료한 분이 아직 없어요 — 먼저 수료를 확정해 주세요";
 
 // ---------- 수료증 설정 ----------
-export const ISSUER_MAX = 60, BODY_MAX = 300;
+export const ISSUER_MAX = 26, BODY_MAX = 300;   // 명의 26자 — 서버 CERT_ISSUER_MAX 와 같다(직인까지 틀 안)
 export const BODY_HINT = "{과정} 자리에 강좌 이름이 들어가요";
 const cpLen = (s) => Array.from(String(s || "")).length;
 // 문안 {과정} 채우기(서버 eduCertBody 와 같은 셈 — 미리보기용)

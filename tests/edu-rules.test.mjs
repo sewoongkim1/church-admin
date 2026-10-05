@@ -567,15 +567,15 @@ test("checkCertSeal — PNG·JPEG data URL(머리 바이트까지) · 풀어서 
   ]) assert.deepEqual(checkCertSeal(bad), { ok: false, error: "bad-seal" }, String(bad).slice(0, 50));
 });
 
-test("checkCertSettings — 보낸 칸만 · 명의 60자(한 줄) · 문안 1~300자(줄바꿈·{과정}) · 직인 검사 · 아무 칸도 없으면 nothing", () => {
+test("checkCertSettings — 보낸 칸만 · 명의 26자(한 줄 · 직인까지 틀 안) · 문안 1~300자(줄바꿈·{과정}) · 직인 검사 · 아무 칸도 없으면 nothing", () => {
   assert.deepEqual(checkCertSettings({}), { ok: false, error: "nothing" });
   assert.deepEqual(checkCertSettings({ action: "eduCertSettingsSave" }), { ok: false, error: "nothing" });
   assert.deepEqual(checkCertSettings(null), { ok: false, error: "nothing" });
   assert.deepEqual(checkCertSettings({ issuer: "  고척교회   담임목사  " }), { ok: true, patch: { issuer: "고척교회 담임목사" } });
   assert.deepEqual(checkCertSettings({ issuer: null }), { ok: true, patch: { issuer: "" } });
   assert.deepEqual(checkCertSettings({ issuer: 5 }), { ok: false, error: "bad-issuer" });
-  assert.equal(checkCertSettings({ issuer: "가".repeat(60) }).ok, true);
-  assert.deepEqual(checkCertSettings({ issuer: "가".repeat(61) }), { ok: false, error: "too-long", field: "issuer" });
+  assert.equal(checkCertSettings({ issuer: "가".repeat(26) }).ok, true);
+  assert.deepEqual(checkCertSettings({ issuer: "가".repeat(27) }), { ok: false, error: "too-long", field: "issuer" });
   assert.deepEqual(checkCertSettings({ body: "위 사람은 「{과정}」 과정을\r\n마쳤습니다. " }), { ok: true, patch: { body: "위 사람은 「{과정}」 과정을\n마쳤습니다." } });
   for (const b of ["", "   ", "\n"]) assert.deepEqual(checkCertSettings({ body: b }), { ok: false, error: "no-body" }, JSON.stringify(b));
   assert.deepEqual(checkCertSettings({ body: null }), { ok: false, error: "bad-body" });

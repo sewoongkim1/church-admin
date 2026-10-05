@@ -485,7 +485,7 @@ export function certPrintPeople(rows: any[]) {
 // 수료증 설정 — 발급 명의(한 줄 · 60자) · 문안(300자 · 줄바꿈 됨 · {과정} 자리 · 비우면 no-body) · 직인(PNG·JPEG data URL · 300KB 이하 · null = 지움).
 //   보낸 칸만 바꾼다(칸이 없으면 그대로 — 글만 고칠 때 이미지를 다시 보내지 않아도 된다). 아무 칸도 없으면 nothing.
 //   글자 수는 SQL char_length 와 같게(코드 포인트로) 센다. 칸 제약은 v2 supabase/edu.sql 의 edu_cert_settings 가 한 번 더 막는다.
-export const CERT_ISSUER_MAX = 60;
+export const CERT_ISSUER_MAX = 26;   // 수료증 한 줄에 직인까지 틀 안에 드는 길이(검토 2026-10-05 — 30자쯤 넘으면 직인이 잘린다)
 export const CERT_BODY_MAX = 300;
 export const CERT_SEAL_MAX = 300 * 1024;     // 풀었을 때 바이트
 const SEAL_RE = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/;

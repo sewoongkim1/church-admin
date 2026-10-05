@@ -185,7 +185,7 @@ test("certErrorText — 서버 오류 코드마다 한국말 · too-long 은 칸
 });
 
 test("신청 현황 — 번호 있는 줄의 has-cert 거절 말(3단계)", () => {
-  assert.equal(errorWord("has-cert"), "수료번호가 있는 분은 취소·변경할 수 없어요 — 「🎓 수료」에서 먼저 수료를 취소해 주세요");
+  assert.equal(errorWord("has-cert"), "수료한 분은 취소·변경할 수 없어요 — 「🎓 수료」에서 먼저 수료를 취소해 주세요");
 });
 
 test("printCerts — eduCertPrint 답을 한 장씩 · 받은 차례 그대로", () => {
