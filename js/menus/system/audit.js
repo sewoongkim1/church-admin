@@ -34,6 +34,8 @@ export const LABEL = {
   "edu.course.save": "강좌 저장(교육)", "edu.course.copy": "강좌 복사(교육)", "edu.sessions": "회차 저장(교육)",
   "edu.enroll.set": "신청 상태 바꿈(교육)", "edu.enroll.add": "대신 등록(교육)", "edu.enroll.fee": "교재비·메모 고침(교육)",
   "edu.export": "신청 명단 내려받음(교육)",
+  // 강좌별 담당자(2026-10-05) — detail {course, count}(이름 없음 · target 도 강좌 id)
+  "edu.staff.set": "강좌 담당자 지정(교육)",
 };
 // detail 로 가르는 이름 — 같은 action 을 여러 화면이 남길 때(칸 이름·값은 서버 events-person.ts ministryLookupLog 와 한 벌)
 export const LOOKUP_MINISTRY = "명부 찾기(사역신청·담당자)";
@@ -111,6 +113,7 @@ export function detailText(r) {
   if (r.action === "ministry.paper") return `저장 ${d.saved} · 새 계정 ${d.created} · 그대로 ${d.same} · 오류 ${d.errors}`;
   if (r.action === "ministry.tester") return [d.op === "add" ? "더함" : "뺌", d.name, d.who].filter(Boolean).join(" · ");
   if (r.action === "ministry.phoneclear") return `결정된 신청 ${d.count ?? 0}건의 번호`;
+  if (r.action === "edu.staff.set") return (d.count ?? 0) > 0 ? `담당 ${d.count}분` : "담당 없음";
   if (r.action === "history.request") {
     return [`#${d.id ?? r.target}`, REQ_KIND[d.kind] || d.kind || "", `${d.from || ""} → ${d.to || ""}`, d.verified ? "본인 확인" : ""].filter(Boolean).join(" · ");
   }

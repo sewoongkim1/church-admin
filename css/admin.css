@@ -1317,3 +1317,5 @@ section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:
 /* 같은 분일 수 있는 줄(앱 신청 ↔ 대신 등록 같은 이름) · 직접 입력 세부 칸 안내 — 최종 검토 2026-10-05 */
 .badge.dup{border:1px solid var(--gold);background:var(--cream);color:var(--navy-dark);white-space:nowrap}
 .ee-hint{margin:-4px 0 8px;line-height:1.4}
+/* 강좌 폼 「담당자」 칸 아래 안내(후보가 없을 때 — 역할을 먼저 주라는 말) · 2026-10-05 강좌별 담당자 */
+.ec-hint{margin:6px 0 0;font-size:13px;line-height:1.45;word-break:keep-all;overflow-wrap:anywhere}

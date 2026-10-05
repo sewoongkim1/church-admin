@@ -106,3 +106,41 @@ export function sessionHeadLine(s) {
   const t = s.start_time ? (s.end_time ? `${s.start_time}~${s.end_time}` : s.start_time) : "";
   return `${s.no}회 · ${+m[2]}/${+m[3]}(${wd})${t ? " " + t : ""}`;
 }
+
+// ---------- 강좌별 담당자(2026-10-05 · 서버 eduStaffCandidates·eduStaffSet · courseOut.staff) ----------
+// 후보가 한 분도 없을 때 폼에 띄우는 안내(역할을 먼저 줘야 고를 수 있다)
+export const STAFF_NO_CAND = "⚙️ 담당자·역할에서 「교육 담당(맡은 강좌)」 역할을 먼저 주세요";
+
+// 카드 한 줄 — 「담당 김OO, 박OO」 · 없으면 「담당 없음」
+export function staffLine(c) {
+  const names = ((c && c.staff) || []).map((x) => x && x.name).filter(Boolean);
+  return names.length ? `담당 ${names.join(", ")}` : "담당 없음";
+}
+
+// 고르개 선택지 — 후보(사용 중 · 교육 역할) + 지금 맡고 있지만 후보가 아닌 분(역할을 뺐거나 정지 — 빼 달라는 표시)
+//   hint 는 소속(동명이인을 가리려고) · 교육 총괄이면 「교육 총괄」을 덧붙인다
+export function staffOptions(cands, current) {
+  const out = (cands || []).map((m) => ({ value: m.id, label: m.name,
+    hint: [m.who, (m.roles || []).includes("education") ? "교육 총괄" : ""].filter(Boolean).join(" · ") }));
+  const known = new Set(out.map((o) => o.value));
+  for (const x of current || []) if (x && !known.has(x.id)) out.push({ value: x.id, label: x.name || "(이름 없음)", hint: "역할 없음 · 빼 주세요" });
+  return out;
+}
+
+// 폼 단추 글 — 고른 분의 이름(선택지 차례) · 없으면 「담당자 없음」
+export function staffFieldText(ids, options) {
+  const by = new Map((options || []).map((o) => [o.value, o.label]));
+  const names = (ids || []).map((id) => by.get(id)).filter(Boolean);
+  return names.length ? names.join(", ") : "담당자 없음";
+}
+
+// 두 id 목록이 같은가(차례 무관) — 같으면 eduStaffSet 을 부르지 않는다
+export function sameIds(a, b) {
+  const x = [...new Set(a || [])].sort(), y = [...new Set(b || [])].sort();
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
+// 강좌는 저장됐는데 담당자 저장이 실패했을 때 알릴 말(창은 닫는다 — 새 강좌를 두 번 만들지 않게)
+export function staffSaveFailText(message) {
+  return `강좌는 저장했어요 — 담당자는 저장하지 못했어요${message ? ` (${message})` : ""}. 다시 「고치기」로 골라 주세요`;
+}

@@ -282,8 +282,12 @@ test("history.add·edit·delete(from:request) — 되살림 · 정정 신청으�
 });
 
 test("교육신청 기록 — 이름이 정해져 있고 people.lookup(from 교육신청)은 따로 불린다", () => {
-  for (const a of ["edu.course.save", "edu.course.copy", "edu.sessions", "edu.enroll.set", "edu.enroll.add", "edu.enroll.fee", "edu.export"]) {
+  for (const a of ["edu.course.save", "edu.course.copy", "edu.sessions", "edu.enroll.set", "edu.enroll.add", "edu.enroll.fee", "edu.export", "edu.staff.set"]) {
     assert.ok(LABEL[a] && LABEL[a] !== a && /\(교육\)$/.test(LABEL[a]), a);
   }
+  // 강좌별 담당자(2026-10-05) — 서버 edu-db.ts eduStaffSet 의 detail {course, count}(이름 없음)
+  const C = "11111111-1111-4111-8111-111111111111";
+  assert.equal(detailText(R("edu.staff.set", { course: C, count: 2 }, C)), "담당 2분");
+  assert.equal(detailText(R("edu.staff.set", { course: C, count: 0 }, C)), "담당 없음");
   assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 1, from: "education" })), LOOKUP_EDUCATION);
 });

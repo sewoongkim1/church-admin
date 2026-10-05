@@ -4,9 +4,12 @@
 //   ⚠️ enum·namespace 처럼 「타입만 지워서는 안 되는」 TS 문법도 쓰지 않는다.
 
 // 액션마다 필요한 역할. null = 로그인만 되어 있으면(등록 전·대기·정지인 분도 자기 상태는 알아야 한다).
+//   배열이면 그 가운데 하나만 있어도 된다(교육 — 총괄 education 과 맡은 강좌 담당 educourse · 2026-10-05).
 // ⚠️ 새 액션을 만들면 반드시 여기에 한 줄 — 없으면 unknown-action 으로 막힌다(열리는 쪽으로 틀리지 않게).
 //    tests/server.dev.test.mjs 의 PROBE 에도 한 줄(시험이 빠진 액션을 잡는다).
-export const ACTION_ROLES: Record<string, string | null> = {
+// 교육 신청 현황 쪽 — 교육 총괄(education)과 교육 담당(educourse) 둘 다. 담당은 **맡은 강좌만**이고 그것은 edu-db.ts 가 강좌마다 본다(not-assigned).
+const EDU_BOTH = ["education", "educourse"];
+export const ACTION_ROLES: Record<string, string | string[] | null> = {
   me: null,
   register: null,
   membersList: "super",
@@ -98,20 +101,24 @@ export const ACTION_ROLES: Record<string, string | null> = {
   historyLinkGroup: "ministry",
   historyRematch: "ministry",
   historyExport: "ministry",
-  // 교육신청 1단계(2026-10-05 · 설계 v2 docs/superpowers/specs/2026-10-05-education-courses-design.md) — 역할 education.
+  // 교육신청 1단계(2026-10-05 · 설계 v2 docs/superpowers/specs/2026-10-05-education-courses-design.md) — 역할 education(교육 총괄).
   //   강좌 만들기·회차·신청 현황·대신 등록·엑셀. 정원·대기 규칙은 성경암송 supabase/edu.sql 의 SQL 함수가 정한다(여기서 상태를 직접 쓰지 않는다).
   //   응답에 user_id·ident_key 없음(edu-rules.ts 칸 지도) · 쓰기는 바꾼 기록 edu.*(이름 없이 id·수만).
-  eduCourses: "education",
+  // 강좌별 담당자(2026-10-05 친구 요청 · SQL 011 edu_course_staff) — 강좌·회차·복사·담당자 지정은 총괄만,
+  //   신청 현황(목록·상태·대신 등록·교재비·메모·엑셀·명부 찾기)과 읽기(강좌·회차)는 총괄·담당 둘 다(담당은 맡은 강좌만 — edu-db.ts mayTouch).
   eduCourseSave: "education",
   eduCourseCopy: "education",
-  eduSessions: "education",
   eduSessionsSave: "education",
-  eduEnrollList: "education",
-  eduEnrollSet: "education",
-  eduEnrollAdd: "education",
-  eduFeeSet: "education",
-  eduExport: "education",
-  eduPeopleLookup: "education",
+  eduStaffCandidates: "education",
+  eduStaffSet: "education",
+  eduCourses: EDU_BOTH,
+  eduSessions: EDU_BOTH,
+  eduEnrollList: EDU_BOTH,
+  eduEnrollSet: EDU_BOTH,
+  eduEnrollAdd: EDU_BOTH,
+  eduFeeSet: EDU_BOTH,
+  eduExport: EDU_BOTH,
+  eduPeopleLookup: EDU_BOTH,
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";
@@ -125,14 +132,15 @@ export function canCall(action: string, member: { status: MemberStatus; roles: s
   if (!member) return "not-registered";
   if (member.status === "pending") return "pending";
   if (member.status !== "active") return "disabled";
-  if (member.roles.includes("super") || member.roles.includes(need)) return "ok";
+  const needs = Array.isArray(need) ? need : [need];
+  if (member.roles.includes("super") || needs.some((r) => member.roles.includes(r))) return "ok";
   return "forbidden";
 }
 
-// 서버가 아는 역할 이름 — 메뉴 목록(js/menus/registry.js)이 이 밖의 역할을 쓰면 시험이 실패한다.
+// 서버가 아는 역할 이름 — 메뉴 목록(js/menus/registry.js)이 이 밖의 역할을 쓰면 시험이 실패한다. 배열은 펼쳐 담는다.
 export function knownRoles(): string[] {
   const s = new Set<string>(["super"]);
-  for (const v of Object.values(ACTION_ROLES)) if (v) s.add(v);
+  for (const v of Object.values(ACTION_ROLES)) for (const r of Array.isArray(v) ? v : v ? [v] : []) s.add(r);
   return [...s].sort();
 }
 

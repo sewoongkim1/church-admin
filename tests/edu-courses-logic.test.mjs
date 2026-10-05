@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers, sessionHeadLine, courseSavedText, periodSummary } from "../js/menus/education/courses-logic.js";
+import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers, sessionHeadLine, courseSavedText, periodSummary,
+  staffLine, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND } from "../js/menus/education/courses-logic.js";
 
 test("formToCourse — 빈 정원은 null · 숫자는 숫자", () => {
   assert.equal(formToCourse({ title: "a", kind: "lecture", capacity: "" }).capacity, null);
@@ -130,4 +131,54 @@ test("courseSavedText — 정원을 늘려 대기하신 분이 확정되면 그 
   assert.equal(courseSavedText(0), "저장했어요");
   assert.equal(courseSavedText(undefined), "저장했어요");
   assert.equal(courseSavedText(2), "저장했어요 — 대기하신 2분이 확정됐어요");
+});
+
+// ---------- 강좌별 담당자(2026-10-05) ----------
+test("staffLine — 「담당 김OO, 박OO」 · 없으면 「담당 없음」", () => {
+  assert.equal(staffLine({ staff: [{ id: "a", name: "김담당" }, { id: "b", name: "박담당" }] }), "담당 김담당, 박담당");
+  assert.equal(staffLine({ staff: [] }), "담당 없음");
+  assert.equal(staffLine({}), "담당 없음");
+  assert.equal(staffLine(null), "담당 없음");
+});
+
+test("staffOptions — 후보(소속 · 교육 총괄 표시) + 지금 맡았지만 후보가 아닌 분은 「역할 없음 · 빼 주세요」", () => {
+  const cands = [{ id: "a", name: "김담당", who: "기쁨 3목장", roles: ["educourse"] }, { id: "b", name: "박총괄", who: "", roles: ["education", "educourse"] }];
+  assert.deepEqual(staffOptions(cands, [{ id: "a", name: "김담당" }, { id: "z", name: "옛담당" }]), [
+    { value: "a", label: "김담당", hint: "기쁨 3목장" },
+    { value: "b", label: "박총괄", hint: "교육 총괄" },
+    { value: "z", label: "옛담당", hint: "역할 없음 · 빼 주세요" },
+  ]);
+  assert.deepEqual(staffOptions([], []), []);
+  assert.deepEqual(staffOptions(null, null), []);
+});
+
+test("staffFieldText · sameIds · staffSaveFailText · 안내 글", () => {
+  const opts = [{ value: "a", label: "김담당" }, { value: "b", label: "박담당" }];
+  assert.equal(staffFieldText(["b", "a"], opts), "박담당, 김담당");
+  assert.equal(staffFieldText([], opts), "담당자 없음");
+  assert.equal(staffFieldText(["x"], opts), "담당자 없음");
+  assert.equal(sameIds(["a", "b"], ["b", "a"]), true);
+  assert.equal(sameIds(["a"], ["a", "b"]), false);
+  assert.equal(sameIds([], undefined), true);
+  assert.match(staffSaveFailText("맡은 강좌가 아니에요"), /^강좌는 저장했어요 — 담당자는 저장하지 못했어요 \(맡은 강좌가 아니에요\)/);
+  assert.equal(STAFF_NO_CAND, "⚙️ 담당자·역할에서 「교육 담당(맡은 강좌)」 역할을 먼저 주세요");
+});
+
+test("고치기 폼 — 담당자 칸(고른 분 이름 · 숨은 칸 JSON) · 후보가 없으면 역할 안내 · 후보를 못 불러오면 잠금", () => {
+  const v = { id: "x", title: "t", kind: "regular", term: "", capacity: "", mode: "auto", waitlist: "on", status: "draft", attendPct: 80, applyFrom: "", applyTo: "", prereq: [] };
+  const opts = [{ value: "a", label: "김담당" }, { value: "b", label: "박담당" }];
+  const html = courseFormHtml(v, false, { ids: ["b"], opts, cands: [{ id: "a" }, { id: "b" }] });
+  assert.ok(html.includes("담당자") && html.includes("data-staff") && html.includes("박담당"));
+  assert.ok(html.includes('data-f="staff" value="[&quot;b&quot;]"'), "고른 id 가 숨은 칸에");
+  assert.ok(!html.includes(STAFF_NO_CAND));
+  assert.ok(html.indexOf("강사") < html.indexOf("data-staff"), "강사 칸 다음에 온다");
+  const none = courseFormHtml(v, false, { ids: [], opts: [], cands: [] });
+  assert.ok(none.includes("담당자 없음") && none.includes("⚙️ 담당자·역할에서"));
+  assert.ok(none.includes("「교육 담당(맡은 강좌)」 역할을 먼저 주세요"));
+  const failed = courseFormHtml(v, false, { ids: [], opts: [], cands: null });
+  assert.ok(failed.includes("담당자 후보를 불러오지 못했어요") && /data-staff[^>]*disabled/.test(failed));
+  // 옛 부름(셋째 인자 없음)도 그린다 — 후보 없음으로
+  assert.ok(courseFormHtml(v, true).includes("data-staff"));
+  // 담당자는 강좌 저장(formToCourse)에 섞이지 않는다 — eduStaffSet 이 따로 보낸다
+  assert.equal("staff" in formToCourse({ ...v, staff: ["a"] }), false);
 });

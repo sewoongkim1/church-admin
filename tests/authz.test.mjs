@@ -56,7 +56,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
     "ministryPerson", "ministryPhoneClear", "ministrySetStatus"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
-  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "education", "ministry", "super"]);
+  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "education", "educourse", "ministry", "super"]);
 });
 
 test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄만 통과, 사역 담당은 막힘", () => {
@@ -165,17 +165,48 @@ test("kakaoAvatar — http 는 https 로, 주소가 아니면 비움", () => {
   assert.equal(kakaoAvatar({ avatar_url: "http://img1.kakaocdn.net/dn/a.jpg" }), "https://img1.kakaocdn.net/dn/a.jpg");
 });
 
-test("education 액션 × 사람 — 교육 역할·총괄만 통과", () => {
+test("education(교육 총괄) 액션 × 사람 — 교육 총괄·총괄만 통과 · 교육 담당(맡은 강좌)은 막힘", () => {
   const cases = [
     [null, "not-registered"],
     [{ status: "pending", roles: ["education"] }, "pending"],
     [{ status: "disabled", roles: ["education"] }, "disabled"],
     [{ status: "active", roles: ["ministry"] }, "forbidden"],
+    [{ status: "active", roles: ["educourse"] }, "forbidden"],
     [{ status: "active", roles: ["education"] }, "ok"],
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "education");
-  assert.deepEqual(acts.sort(), ["eduCourseCopy", "eduCourseSave", "eduCourses", "eduEnrollAdd", "eduEnrollList", "eduEnrollSet",
-    "eduExport", "eduFeeSet", "eduPeopleLookup", "eduSessions", "eduSessionsSave"]);
+  // 강좌 만들기·고치기·복사·회차 저장·담당자 지정은 총괄만(2026-10-05 친구 결정)
+  assert.deepEqual(acts.sort(), ["eduCourseCopy", "eduCourseSave", "eduSessionsSave", "eduStaffCandidates", "eduStaffSet"]);
   for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
+});
+
+test("교육 신청 현황 액션(역할 배열) × 사람 — 교육 총괄·교육 담당·총괄 통과 · 대기·정지·다른 역할은 막힘", () => {
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["educourse"] }, "pending"],
+    [{ status: "pending", roles: ["education"] }, "pending"],
+    [{ status: "disabled", roles: ["educourse"] }, "disabled"],
+    [{ status: "disabled", roles: ["education", "educourse"] }, "disabled"],
+    [{ status: "active", roles: [] }, "forbidden"],
+    [{ status: "active", roles: ["ministry"] }, "forbidden"],
+    [{ status: "active", roles: ["directory", "bibleevent"] }, "forbidden"],
+    [{ status: "active", roles: ["educourse"] }, "ok"],
+    [{ status: "active", roles: ["education"] }, "ok"],
+    [{ status: "active", roles: ["ministry", "educourse"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  const acts = Object.keys(ACTION_ROLES).filter((k) => Array.isArray(ACTION_ROLES[k]));
+  assert.deepEqual(acts.sort(), ["eduCourses", "eduEnrollAdd", "eduEnrollList", "eduEnrollSet", "eduExport", "eduFeeSet",
+    "eduPeopleLookup", "eduSessions"]);
+  for (const a of acts) {
+    assert.deepEqual([...ACTION_ROLES[a]].sort(), ["education", "educourse"], a);
+    for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
+  }
+  // 배열 안의 역할도 서버가 아는 역할
+  assert.ok(knownRoles().includes("educourse"));
+  // 모든 액션의 값은 null·글자·글자 배열 셋 가운데 하나(빈 배열 금지 — 아무도 못 부르는 액션이 된다)
+  for (const [a, v] of Object.entries(ACTION_ROLES)) {
+    assert.ok(v === null || typeof v === "string" || (Array.isArray(v) && v.length > 0 && v.every((r) => typeof r === "string" && r)), a);
+  }
 });

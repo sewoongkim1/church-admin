@@ -69,3 +69,8 @@ test("성경필사(암송) 오류 코드 — 모두 한국말(「처리하지 �
 test("교인명부 잇기 오류 코드 — 한국말(2026-10-01)", () => {
   for (const c of ["no-directory", "other-name", "not-linked", "bad-kind"]) assert.notEqual(errorText({ error: c }), "처리하지 못했어요", c);
 });
+
+test("교육 강좌별 담당자 오류 코드 — 한국말(2026-10-05)", () => {
+  assert.equal(errorText({ error: "not-assigned" }), "맡은 강좌가 아니에요");
+  assert.notEqual(errorText({ error: "bad-member" }), "처리하지 못했어요");
+});

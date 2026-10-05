@@ -106,7 +106,42 @@ export function whoOf(r: { who_type?: string; group_name?: string; sub_name?: st
   return g + (s ? " " + (/^\d+$/.test(s) ? s + "목장" : s) : "");
 }
 
-export function courseOut(r: any, counts: { confirmed: number; waitlisted: number; applied: number }) {
+// ---------- 강좌별 담당자(2026-10-05 · SQL 011 edu_course_staff) ----------
+// 교육 총괄 — 모든 강좌를 만지는 역할(총괄 관리자 super 와 교육 총괄 education). 그 밖(educourse)은 맡은 강좌만(edu-db.ts mayTouch).
+export const EDU_CHIEF_ROLES = ["super", "education"];
+export const eduChief = (roles: unknown): boolean => Array.isArray(roles) && roles.some((r) => EDU_CHIEF_ROLES.includes(String(r)));
+// 담당자로 지정할 수 있는 역할 — 교육 담당(맡은 강좌)이 본래 자리이고, 교육 총괄도 지정할 수 있다(이름을 카드에 적어 두려고)
+export const EDU_STAFF_ROLES = ["educourse", "education"];
+export const EDU_STAFF_MAX = 20;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// 지정 목록 확인 — uuid 배열(겹친 것은 하나로) · 빈 배열 = 담당자 없음
+export function checkStaffIds(x: unknown): { ok: true; ids: string[] } | { ok: false; error: string } {
+  if (!Array.isArray(x)) return { ok: false, error: "bad-id" };
+  const ids = [...new Set(x.map((v) => norm(v).toLowerCase()))];
+  if (ids.some((v) => !UUID_RE.test(v))) return { ok: false, error: "bad-id" };
+  if (ids.length > EDU_STAFF_MAX) return { ok: false, error: "too-many" };
+  return { ok: true, ids: ids.sort() };
+}
+// edu_course_staff 줄(admin_members(name) 을 붙여 읽은 것) → 강좌 id 별 [{id, name}](이름 차례) — 응답에는 담당자 id·이름만
+export function staffByCourse(rows: any[]): Map<string, { id: string; name: string }[]> {
+  const by = new Map<string, { id: string; name: string }[]>();
+  for (const r of rows || []) {
+    if (!r?.course_id || !r?.member_id) continue;
+    const list = by.get(r.course_id) || [];
+    list.push({ id: r.member_id, name: norm(r.admin_members?.name) });
+    by.set(r.course_id, list);
+  }
+  for (const list of by.values()) list.sort((a, b) => a.name.localeCompare(b.name, "ko") || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return by;
+}
+// 담당자 후보 한 분 — id·이름·소속(동명이인을 가리려고)·교육 역할만. auth_user_id·카카오 칸은 싣지 않는다.
+export function staffCandidateOut(m: { id: string; name?: string; type?: string; gu?: string; mok?: string; bu?: string; grade?: string }, roles: string[]) {
+  const school = m.type === "교회학교";
+  const who = whoOf({ who_type: school ? "교회학교" : "교구", group_name: school ? m.bu : m.gu, sub_name: school ? m.grade : m.mok });
+  return { id: m.id, name: norm(m.name), who, roles: roles.filter((r) => EDU_STAFF_ROLES.includes(r)).sort() };
+}
+
+export function courseOut(r: any, counts: { confirmed: number; waitlisted: number; applied: number }, staff: { id: string; name: string }[] = []) {
   return {
     id: r.id, title: r.title, kind: r.kind, kindLabel: EDU_KIND_LABEL[r.kind] || r.kind, term: r.term || "",
     description: r.description || "", teacher: r.teacher_label || "", place: r.place || "", fee: r.fee_note || "",
@@ -115,6 +150,7 @@ export function courseOut(r: any, counts: { confirmed: number; waitlisted: numbe
     attendPct: r.attend_pct, checkLabel: r.check_label || null, status: r.status,
     statusLabel: EDU_STATUS_LABEL[r.status] || r.status, updatedAt: r.updated_at || null,
     counts: { confirmed: counts.confirmed || 0, waitlisted: counts.waitlisted || 0, applied: counts.applied || 0 },
+    staff: (staff || []).map((x) => ({ id: x.id, name: x.name })),
   };
 }
 

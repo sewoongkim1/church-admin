@@ -1,5 +1,7 @@
 // 📝 신청 현황 — 강좌 고르기 · 묶음별 명단 · 확정/대기/반려/취소/다시 받기 · 정원 넘겨 확정 · 대신 등록 · 교재비·메모 · 엑셀
-//   (교육신청 1단계 과제 6 · 2026-10-05) 서버: eduCourses·eduEnrollList·eduEnrollSet·eduEnrollAdd·eduFeeSet·eduExport·eduPeopleLookup (역할 education)
+//   (교육신청 1단계 과제 6 · 2026-10-05) 서버: eduCourses·eduEnrollList·eduEnrollSet·eduEnrollAdd·eduFeeSet·eduExport·eduPeopleLookup
+//   역할 education(교육 총괄 — 모든 강좌) · educourse(교육 담당 — 맡은 강좌만 · 2026-10-05). 강좌 고르기는 eduCourses 가 준 목록 그대로
+//   (서버가 담당에게는 맡은 강좌만 준다 · scope "assigned"). 맡지 않은 강좌는 서버가 not-assigned 로 막는다 — 여기서 숨기는 것은 편의일 뿐.
 //   규칙(묶음·단추·문구)은 enrollments-logic.js(시험). 정원·대기·대기 올림은 SQL 함수 한 곳 — 여기서 상태를 직접 바꾸지 않는다.
 // ⚠️ 교인ID 는 화면에 오지 않는다 — 대신 등록은 찾은 이름·몇 번째·소속 확인값(check)만 서버로 보내고 서버가 같은 찾기를 다시 돌려 확인한다.
 // ⚠️ 고르기는 picker.js(pickOne)만 — 시스템 select·date·time 칸 금지. 서버 글자는 모두 esc.
@@ -96,7 +98,7 @@ async function openAddForm({ call, course }) {
         const name = q.value;
         if (!name.trim()) { res.innerHTML = `<p class="empty">이름을 써 주세요</p>`; return; }
         res.innerHTML = `<p class="empty">찾는 중…</p>`;
-        const r = await call("eduPeopleLookup", { name });
+        const r = await call("eduPeopleLookup", { name, course_id: course.id });   // 담당은 맡은 강좌의 창에서만 찾을 수 있다(서버가 강좌를 본다)
         if (!root.isConnected) return;
         if (!r.ok) { cands = []; res.innerHTML = `<p class="empty">${esc(failText(r))}</p>`; return; }
         if (r.source === null) { cands = []; res.innerHTML = `<p class="empty">교인명부가 없어 직접 입력으로 넣어 주세요</p>`; return; }
@@ -149,32 +151,40 @@ async function openAddForm({ call, course }) {
 // ---------- 화면 ----------
 export async function render(el, { call }) {
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
-  let courses = [], cur = null, list = [], foldOpen = false;
+  let courses = [], cur = null, list = [], foldOpen = false, scope = "all";
   const pending = new Set();   // 같은 줄·같은 단추를 두 번 누르는 것 막기
 
   const loadCourses = async () => {
     const r = await call("eduCourses", {});
     if (!r.ok) { el.innerHTML = TITLE + `<p class="empty">${esc(errorText(r))}</p>`; return false; }
     courses = r.courses || [];
+    scope = r.scope === "assigned" ? "assigned" : "all";
     return true;
   };
   // 강좌 c 의 명단을 불러와 cur·list 로 — 실패하면 아무것도 바꾸지 않고 그 오류를 돌려준다(보던 강좌가 그대로 남는다)
-  //   → { ok:true } · { ok:false, gone:true }(그 강좌가 없어졌다) · { ok:false, error }
+  //   → { ok:true } · { ok:false, gone:"강좌를 놓을 까닭" }(그 강좌가 없어졌다 · 담당에서 빠졌다) · { ok:false, error }
   const loadFor = async (c) => {
     const r = await call("eduEnrollList", { course_id: c.id });
-    if (!r.ok) return r.error === "not-found" ? { ok: false, gone: true } : { ok: false, error: r };
+    if (!r.ok && r.error === "not-found") return { ok: false, gone: "그 강좌를 찾지 못했어요" };
+    if (!r.ok && r.error === "not-assigned") return { ok: false, gone: errorText(r) };   // 그사이 담당에서 빠졌다
+    if (!r.ok) return { ok: false, error: r };
     cur = { ...c, ...r.course }; list = r.enrollments || [];
     return { ok: true };
   };
   const refresh = async () => {
     const r = await loadFor(cur);
-    if (r.gone) { toast("그 강좌를 찾지 못했어요"); cur = null; list = []; lastCourseId = ""; }
+    if (r.gone) { toast(r.gone); cur = null; list = []; lastCourseId = ""; }
     else if (!r.ok) { toast(errorText(r.error)); return; }
     draw();
   };
 
   const draw = () => {
-    if (!courses.length) { el.innerHTML = TITLE + `<p class="empty">아직 강좌가 없어요 — 「📚 강좌 관리」에서 먼저 만들어 주세요</p>`; return; }
+    if (!courses.length) {
+      el.innerHTML = TITLE + `<p class="empty">${scope === "assigned"
+        ? "맡은 강좌가 아직 없어요 — 교육 총괄께 「📚 강좌 관리」에서 담당자로 넣어 달라고 말씀해 주세요"
+        : "아직 강좌가 없어요 — 「📚 강좌 관리」에서 먼저 만들어 주세요"}</p>`;
+      return;
+    }
     const head = `${TITLE}<div class="ee-top"><button type="button" class="btn wide" data-act="course">${cur ? esc(`${cur.title}${cur.term ? " · " + cur.term : ""} · ${cur.statusLabel}`) : "강좌 고르기"}</button></div>`;
     if (!cur) { el.innerHTML = head + `<p class="empty">강좌를 골라 주세요</p>`; return; }
     const g = groupByStatus(list);
@@ -234,7 +244,7 @@ export async function render(el, { call }) {
         const next = courses.find((c) => c.id === got);
         if (!next) return;
         const r = await busy(el, () => loadFor(next));   // 실패하면 보던 강좌가 그대로 남는다
-        if (r.gone) { toast("그 강좌를 찾지 못했어요"); return; }
+        if (r.gone) { toast(r.gone); return; }
         if (!r.ok) { toast(errorText(r.error)); return; }
         lastCourseId = cur.id; draw();
         return;

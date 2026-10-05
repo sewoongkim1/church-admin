@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkCourse, makeSessions, checkSessions, courseOut, enrollOut, exportRows, ENROLL_STATUS_LABEL,
-  checkTypedIdent, rosterIdentity, rosterIdent, maybeDupIds, seatsOpened, waitOrder }
+  checkTypedIdent, rosterIdentity, rosterIdent, maybeDupIds, seatsOpened, waitOrder,
+  eduChief, checkStaffIds, staffByCourse, staffCandidateOut, EDU_STAFF_MAX }
   from "../supabase/functions/church-admin/edu-rules.ts";
 
 test("checkCourse — 기본값과 다듬기", () => {
@@ -155,4 +156,51 @@ test("seatsOpened — 선착순에서 자리가 늘 때만(정원 ↑ · 제한 
   assert.equal(seatsOpened({ capacity: null, mode: "auto" }, { capacity: null, mode: "auto" }), false);
   assert.equal(seatsOpened({ capacity: null, mode: "auto" }, { capacity: 5, mode: "auto" }), false);
   assert.equal(seatsOpened({ capacity: 1, mode: "auto" }, { capacity: 9, mode: "approve" }), false, "승인 강좌는 올리지 않는다");
+});
+
+// ---------- 강좌별 담당자(2026-10-05) ----------
+const M1 = "44444444-4444-4444-8444-444444444444", M2 = "55555555-5555-4555-8555-555555555555";
+
+test("eduChief — super·education 만 모든 강좌 · educourse·다른 역할·이상한 값은 아니다", () => {
+  assert.equal(eduChief(["education"]), true);
+  assert.equal(eduChief(["super"]), true);
+  assert.equal(eduChief(["educourse", "education"]), true);
+  assert.equal(eduChief(["educourse"]), false);
+  assert.equal(eduChief(["ministry", "directory"]), false);
+  assert.equal(eduChief([]), false);
+  assert.equal(eduChief(undefined), false);
+  assert.equal(eduChief("education"), false);   // 글자 하나는 배열이 아니다(includes 로 「education」 안의 글자를 맞추지 않게)
+});
+
+test("checkStaffIds — uuid 배열만 · 겹친 것·대소문자는 하나로 · 빈 배열 = 담당자 없음 · 20분까지", () => {
+  assert.deepEqual(checkStaffIds([]), { ok: true, ids: [] });
+  assert.deepEqual(checkStaffIds([M2, M1, M1.toUpperCase(), ` ${M2} `]), { ok: true, ids: [M1, M2] });
+  assert.deepEqual(checkStaffIds("x"), { ok: false, error: "bad-id" });
+  assert.deepEqual(checkStaffIds(null), { ok: false, error: "bad-id" });
+  assert.deepEqual(checkStaffIds([M1, "nope"]), { ok: false, error: "bad-id" });
+  assert.deepEqual(checkStaffIds([M1, null]), { ok: false, error: "bad-id" });
+  const many = Array.from({ length: EDU_STAFF_MAX + 1 }, (_, i) => `44444444-4444-4444-8444-${String(i).padStart(12, "0")}`);
+  assert.deepEqual(checkStaffIds(many), { ok: false, error: "too-many" });
+  assert.equal(checkStaffIds(many.slice(0, EDU_STAFF_MAX)).ok, true);
+});
+
+test("staffByCourse · courseOut staff — 강좌별 [{id, name}] 이름 차례 · 없으면 빈 배열 · id·이름 밖의 칸은 안 나간다", () => {
+  const by = staffByCourse([
+    { course_id: "c1", member_id: M2, admin_members: { name: "박담당" }, auth_user_id: "x" },
+    { course_id: "c1", member_id: M1, admin_members: { name: "김담당" } },
+    { course_id: "c2", member_id: M1, admin_members: null },
+    { course_id: null, member_id: M1 },
+  ]);
+  assert.deepEqual(by.get("c1"), [{ id: M1, name: "김담당" }, { id: M2, name: "박담당" }]);
+  assert.deepEqual(by.get("c2"), [{ id: M1, name: "" }]);
+  const row = { id: "c1", title: "t", kind: "lecture", status: "open" }, n = { confirmed: 0, waitlisted: 0, applied: 0 };
+  assert.deepEqual(courseOut(row, n).staff, []);
+  assert.deepEqual(courseOut(row, n, [{ id: M1, name: "김담당", extra: 1 }]).staff, [{ id: M1, name: "김담당" }]);
+});
+
+test("staffCandidateOut — id·이름·소속(교구 「기쁨 3목장」 · 교회학교 「중등부 2학년」)·교육 역할만", () => {
+  assert.deepEqual(staffCandidateOut({ id: M1, name: " 김  담당 ", type: "교구", gu: "기쁨", mok: "3", auth_user_id: "x", kakao_avatar: "y" }, ["educourse", "ministry"]),
+    { id: M1, name: "김 담당", who: "기쁨 3목장", roles: ["educourse"] });
+  assert.deepEqual(staffCandidateOut({ id: M2, name: "박", type: "교회학교", bu: "중등부", grade: "2학년", gu: "x" }, ["education", "educourse"]),
+    { id: M2, name: "박", who: "중등부 2학년", roles: ["education", "educourse"] });
 });

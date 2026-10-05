@@ -1,4 +1,5 @@
 // 메뉴 목록 — 메뉴 하나 = 한 줄. role 은 서버 authz.ts 가 아는 역할이어야 한다(tests/registry.test.mjs).
+//   여러 역할 가운데 하나만 있어도 보이는 메뉴는 roles: [...] (role 을 배열로 써도 같다 · menuRoles 가 읽는다 · 2026-10-05 교육 담당).
 // ⚠️ 여기서 숨기는 것은 편의일 뿐, 막는 것은 서버다.
 // 줄 차례 = 왼쪽 메뉴·처음 화면의 차례. 묶음(group)이 대분류, 줄이 중분류다 — 한 묶음의 줄은 붙여 둔다.
 // 교인명부가 맨 위(친구 2026-09-30).
@@ -25,11 +26,12 @@ export const MENUS = [
     role: "bibleevent", load: () => import("./bibleevent/upload.js") },
   { id: "be-history", group: "성경필사(암송)", icon: "👤", label: "사람별 이력·통계", desc: "이름으로 찾기 · 회차별·교구별 · 여러 번 참여",
     role: "bibleevent", load: () => import("./bibleevent/history.js") },
-  // 🎓 교육신청(2026-10-05 · 1단계) — 강좌 관리 · 신청 현황.
-  { id: "edu-courses", group: "교육", icon: "📚", label: "강좌 관리", desc: "강좌 만들기 · 회차 · 지난 학기 복사 · 모집 열기",
+  // 🎓 교육신청(2026-10-05 · 1단계) — 강좌 관리(교육 총괄만 · 담당자 지정도 여기) · 신청 현황(교육 총괄 = 모든 강좌 ·
+  //   교육 담당(맡은 강좌) = 지정받은 강좌만 — 서버 edu-db.ts 가 강좌마다 막는다 not-assigned).
+  { id: "edu-courses", group: "교육", icon: "📚", label: "강좌 관리", desc: "강좌 만들기 · 회차 · 담당자 · 지난 학기 복사 · 모집 열기",
     role: "education", load: () => import("./education/courses.js") },
   { id: "edu-enroll", group: "교육", icon: "📝", label: "신청 현황", desc: "확정·대기·반려 · 대신 등록 · 교재비 · 엑셀",
-    role: "education", load: () => import("./education/enrollments.js") },
+    roles: ["education", "educourse"], load: () => import("./education/enrollments.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
   // 🧪 시험 참여자 — 시스템 묶음 · 총괄만(2026-10-02 친구 요청 · 그전에는 사역신청 묶음 · 역할 ministry).
@@ -43,9 +45,16 @@ export const MENUS = [
 // 묶음(대분류) 머리의 아이콘 — 메뉴 줄(중분류)의 아이콘과 겹치지 않게 고른다
 export const GROUP_ICON = { "교인명부": "👥", "사역신청": "🤝", "성경필사(암송)": "✍️", "교육": "🎓", "시스템": "⚙️" };
 
+// 메뉴 하나가 받는 역할들 — roles 배열 · role 배열 · role 글자 하나 모두 배열로
+export function menuRoles(m) {
+  if (Array.isArray(m && m.roles)) return m.roles;
+  if (Array.isArray(m && m.role)) return m.role;
+  return m && m.role ? [m.role] : [];
+}
+
 export function menusFor(roles) {
   const r = new Set(roles || []);
-  return MENUS.filter((m) => r.has("super") || r.has(m.role));
+  return MENUS.filter((m) => r.has("super") || menuRoles(m).some((x) => r.has(x)));
 }
 
 // 받은 메뉴를 묶음 차례(MENUS 에 처음 나온 차례)대로 — [{ group, icon, menus }] · 메뉴가 없는 묶음은 뺀다

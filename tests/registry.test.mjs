@@ -1,11 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { MENUS, menusFor, GROUP_ICON, menuGroups } from "../js/menus/registry.js";
+import { MENUS, menusFor, menuRoles, GROUP_ICON, menuGroups } from "../js/menus/registry.js";
 import { knownRoles } from "../supabase/functions/church-admin/authz.ts";
 
-test("메뉴 역할은 서버가 아는 역할", () => {
-  for (const m of MENUS) assert.ok(knownRoles().includes(m.role), `${m.id}: ${m.role}`);
+test("메뉴 역할은 서버가 아는 역할 — 메뉴마다 하나 이상", () => {
+  for (const m of MENUS) {
+    const rs = menuRoles(m);
+    assert.ok(rs.length > 0, `${m.id}: 역할 없음`);
+    for (const r of rs) assert.ok(knownRoles().includes(r), `${m.id}: ${r}`);
+  }
+});
+
+test("menuRoles — roles 배열 · role 배열 · role 글자 하나", () => {
+  assert.deepEqual(menuRoles({ roles: ["a", "b"] }), ["a", "b"]);
+  assert.deepEqual(menuRoles({ role: ["a", "b"] }), ["a", "b"]);
+  assert.deepEqual(menuRoles({ role: "a" }), ["a"]);
+  assert.deepEqual(menuRoles({}), []);
 });
 
 test("메뉴 id 는 겹치지 않고 주소에 쓸 수 있다", () => {
@@ -47,13 +58,18 @@ test("menusFor — super 는 전부, 역할 없으면 없음", () => {
   assert.equal(menusFor([]).length, 0);
   assert.equal(menusFor(undefined).length, 0);
   assert.equal(menusFor(["super"]).length, MENUS.length);
-  assert.equal(menusFor(["ministry"]).length, MENUS.filter((m) => m.role === "ministry").length);
+  assert.equal(menusFor(["ministry"]).length, MENUS.filter((m) => menuRoles(m).includes("ministry")).length);
 });
 
-test("교육 묶음 — 강좌 관리 다음에 신청 현황 · 둘 다 education 역할", () => {
+test("교육 묶음 — 강좌 관리(교육 총괄만) 다음에 신청 현황(교육 총괄·교육 담당)", () => {
   const edu = MENUS.filter((m) => m.group === "교육");
   assert.deepEqual(edu.map((m) => m.id), ["edu-courses", "edu-enroll"]);
   assert.deepEqual(edu.map((m) => m.label), ["강좌 관리", "신청 현황"]);
-  assert.ok(edu.every((m) => m.role === "education"));
+  assert.deepEqual(menuRoles(edu[0]), ["education"]);
+  assert.deepEqual([...menuRoles(edu[1])].sort(), ["education", "educourse"]);
   assert.deepEqual(menusFor(["education"]).map((m) => m.id), ["edu-courses", "edu-enroll"]);
+  // 교육 담당(맡은 강좌)은 신청 현황만 — 강좌 관리는 안 보인다(서버도 eduCourseSave 를 forbidden 으로 막는다)
+  assert.deepEqual(menusFor(["educourse"]).map((m) => m.id), ["edu-enroll"]);
+  assert.deepEqual(menuGroups(menusFor(["educourse"])).map((g) => g.group), ["교육"]);
+  assert.deepEqual(menusFor(["ministry", "educourse"]).filter((m) => m.group === "교육").map((m) => m.id), ["edu-enroll"]);
 });

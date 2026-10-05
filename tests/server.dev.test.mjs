@@ -207,6 +207,9 @@ const PROBE = {
   eduFeeSet: { id: 0, paid: true },
   eduExport: { course_id: ZERO },
   eduPeopleLookup: { name: "" },
+  // 강좌별 담당자(2026-10-05) — 후보 읽기만 · 없는 강좌(not-found)라 아무것도 안 바꾼다
+  eduStaffCandidates: {},
+  eduStaffSet: { course_id: ZERO, member_ids: [] },
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 
