@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers, sessionHeadLine, courseSavedText } from "../js/menus/education/courses-logic.js";
+import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers, sessionHeadLine, courseSavedText, periodSummary } from "../js/menus/education/courses-logic.js";
 
 test("formToCourse — 빈 정원은 null · 숫자는 숫자", () => {
   assert.equal(formToCourse({ title: "a", kind: "lecture", capacity: "" }).capacity, null);
@@ -20,6 +20,29 @@ test("courseToForm ↔ formToCourse 되돌림", () => {
   assert.equal(back.fee_note, "교재비 1만 원");
   assert.equal(back.attend_pct, 80);
   assert.equal(back.id, "x");
+});
+
+test("교육 기간 — 폼 ↔ 서버 값 되돌림 · 빈 값 · 오류 글", () => {
+  const c = { id: "x", title: "t", kind: "regular", startsOn: "2027-03-03", endsOn: "2027-05-19" };
+  const f = courseToForm(c);
+  assert.equal(f.startsOn, "2027-03-03");
+  const back = formToCourse(f);
+  assert.equal(back.starts_on, "2027-03-03");
+  assert.equal(back.ends_on, "2027-05-19");
+  const none = formToCourse(courseToForm({ id: "y", title: "t", kind: "regular", startsOn: null, endsOn: null }));
+  assert.equal(none.starts_on, "");
+  assert.equal(none.ends_on, "");
+  assert.equal(courseErrorText({ error: "bad-period" }), "교육 종료일이 시작일보다 빨라요");
+});
+
+test("periodSummary — 기간이 있으면 「교육 3/3(수) ~ 5/19(수)」, 없으면 회차 요약", () => {
+  assert.equal(periodSummary({ startsOn: "2027-03-03", endsOn: "2027-05-19" }, []), "교육 3/3(수) ~ 5/19(수)");
+  assert.equal(periodSummary({ startsOn: "2027-03-03", endsOn: "2027-03-03" }, []), "교육 3/3(수)");
+  assert.equal(periodSummary({ startsOn: "2027-03-03" }, []), "교육 3/3(수)부터");
+  assert.equal(periodSummary({ endsOn: "2027-05-19" }, []), "교육 5/19(수)까지");
+  assert.equal(periodSummary({}, []), "회차 없음");
+  const ss = [{ no: 1, on_date: "2027-03-03" }, { no: 2, on_date: "2027-03-10" }];
+  assert.equal(periodSummary({ startsOn: null, endsOn: null }, ss), sessionsSummary(ss));
 });
 
 test("sessionsSummary", () => {
@@ -63,6 +86,20 @@ test("고치기 폼 — id 가 폼 값에 실리고 payload 까지 살아남는�
   assert.equal(vals.id, c.id);
   assert.equal(formToCourse(vals).id, c.id);
   assert.equal(vals.title, "제자훈련");
+});
+
+test("고치기 폼 — 교육 시작일·종료일이 폼 칸에 실리고 payload 까지 간다", () => {
+  const c = { id: "11111111-1111-1111-1111-111111111111", title: "t", kind: "regular", term: "", capacity: null, mode: "auto", waitlist: true,
+    applyFrom: "2027-02-01", applyTo: "2027-02-28", startsOn: "2027-03-03", endsOn: "2027-05-19", attendPct: 80, status: "draft", prereq: [] };
+  const html = courseFormHtml(courseToForm(c), false);
+  const vals = fieldsOf(html);
+  assert.equal(vals.startsOn, "2027-03-03");
+  assert.equal(vals.endsOn, "2027-05-19");
+  assert.ok(html.includes("교육 시작일") && html.includes("교육 종료일"));
+  assert.ok(html.indexOf("신청 마감일") < html.indexOf("교육 시작일"), "신청 기간 다음에 온다");
+  const body = formToCourse(vals);
+  assert.equal(body.starts_on, "2027-03-03");
+  assert.equal(body.ends_on, "2027-05-19");
 });
 
 test("새 강좌 폼 — id 칸은 비고 payload 에 id 가 없다", () => {

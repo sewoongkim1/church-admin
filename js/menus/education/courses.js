@@ -8,7 +8,7 @@ import { openForm } from "../../core/modal.js";
 import { pickOne, pickDate, pickTime, fmtDateLabel, fmtTimeLabel } from "../../core/picker.js";
 import {
   KIND_OPTIONS, MODE_OPTIONS, STATUS_OPTIONS, WAITLIST_OPTIONS,
-  formToCourse, courseToForm, checkFormNumbers, sessionsSummary, makeSessionRows, sessionErrorText, courseErrorText, sessionHeadLine,
+  formToCourse, courseToForm, checkFormNumbers, sessionsSummary, periodSummary, makeSessionRows, sessionErrorText, courseErrorText, sessionHeadLine,
   courseSavedText,
 } from "./courses-logic.js";
 
@@ -37,7 +37,7 @@ const FORM_PICKS = {
   kind: { label: "종류", opts: KIND_OPTIONS }, mode: { label: "확정 방식", opts: MODE_OPTIONS },
   waitlist: { label: "대기 받기", opts: WAITLIST_OPTIONS }, status: { label: "상태", opts: STATUS_OPTIONS },
 };
-const DATE_LABEL = { applyFrom: "신청 시작일", applyTo: "신청 마감일" };
+const DATE_LABEL = { applyFrom: "신청 시작일", applyTo: "신청 마감일", startsOn: "교육 시작일", endsOn: "교육 종료일" };
 const dateText = (v) => (v ? `${v.slice(0, 4)}년 ${fmtDateLabel(v)}` : "고르기");
 
 export function courseFormHtml(v, isNew) {
@@ -56,6 +56,7 @@ export function courseFormHtml(v, isNew) {
     txt("capacity", "정원", v.capacity, `inputmode="numeric" maxlength="4" placeholder="비우면 제한 없음"`, "비우면 제한 없음") +
     pick("mode") + pick("waitlist") +
     `<div class="be-2col">${date("applyFrom")}${date("applyTo")}</div>` +
+    `<div class="be-2col">${date("startsOn")}${date("endsOn")}</div>` +
     txt("attendPct", "수료 기준 출석률 (%)", v.attendPct, `inputmode="numeric" maxlength="3"`, "기본 80") +
     txt("checkLabel", "담당자 확인 항목", v.checkLabel, `maxlength="40" placeholder="예: 과제"`, "비우면 출석률만") +
     `<label class="field"><span>설명</span><textarea data-f="description" maxlength="2000" rows="4">${esc(v.description)}</textarea></label>` +
@@ -72,7 +73,7 @@ const readForm = (root) => {
 function openCourseForm({ call, course = null, term = "" }) {
   const v = course ? courseToForm(course)
     : { id: "", title: "", kind: "regular", term, description: "", teacher: "", place: "", fee: "", target: "", track: "", capacity: "",
-        mode: "auto", waitlist: "on", applyFrom: "", applyTo: "", attendPct: 80, checkLabel: "", status: "draft", prereq: [] };
+        mode: "auto", waitlist: "on", applyFrom: "", applyTo: "", startsOn: "", endsOn: "", attendPct: 80, checkLabel: "", status: "draft", prereq: [] };
   let first = "", gone = false;
   return openForm({
     title: course ? "✏️ 강좌 고치기" : "＋ 새 강좌", okLabel: course ? "저장" : "만들기", html: courseFormHtml(v, !course),
@@ -89,8 +90,9 @@ function openCourseForm({ call, course = null, term = "" }) {
         if (d) {
           const k = d.dataset.date, cur = readForm(root);
           // 기간이라 반대쪽 끝을 넘지 못하게 — 시작일은 마감일까지, 마감일은 시작일부터
+          const PAIR = { applyFrom: ["", "applyTo"], applyTo: ["applyFrom", ""], startsOn: ["", "endsOn"], endsOn: ["startsOn", ""] }[k];
           const got = await pickDate({ anchor: d, title: DATE_LABEL[k], value: cur[k],
-            min: k === "applyTo" ? cur.applyFrom : "", max: k === "applyFrom" ? cur.applyTo : "" });
+            min: PAIR[0] ? cur[PAIR[0]] : "", max: PAIR[1] ? cur[PAIR[1]] : "" });
           if (got !== null && d.isConnected) setPick(root, k, DATE_LABEL[k], got, dateText(got), !got);
         }
       });
@@ -137,13 +139,13 @@ async function openSessionsForm({ call, course }) {
   if (!r0.ok) { toast(errorText(r0)); return null; }
   let rows = (r0.sessions || []).map((s) => ({ no: s.no, on_date: s.on_date || "", start_time: s.start_time || "",
     end_time: s.end_time || "", topic: s.topic || "", place: s.place || "" }));
-  const gen = { start: "", every: "7", st: "", et: "" };
+  const gen = { start: course.startsOn || "", every: "7", st: "", et: "" };
   let first = "", sync = () => {};
   return openForm({
     title: `🗓️ 회차 — ${course.title}`, okLabel: "저장",
     html: `<div class="card"><b>한 번에 만들기</b>
         <p class="muted">첫 날부터 몇 회를 한 번에 채워요 — 지금 있는 회차는 바뀌어요 (저장하기 전에는 서버에 가지 않아요)</p>
-        <div class="field"><span>첫 날</span>${fieldBtn("data-g", "start", "날짜 고르기", true)}</div>
+        <div class="field"><span>첫 날</span>${fieldBtn("data-g", "start", course.startsOn ? dateText(course.startsOn) : "날짜 고르기", !course.startsOn)}</div>
         <div class="ec-pair">
           <label class="field"><span>몇 회</span><input data-g-count value="8" inputmode="numeric" maxlength="3"></label>
           <div class="field"><span>간격</span>${fieldBtn("data-g", "every", "매주", false)}</div></div>
@@ -258,7 +260,7 @@ export async function render(el, { call }) {
     // 카드마다 회차 요약 — 강좌 수만큼 나란히 부른다(한 학기 열 개 안팎)
     const all = await Promise.all(data.courses.map((c) => call("eduSessions", { course_id: c.id })));
     sess = {};
-    data.courses.forEach((c, i) => { sess[c.id] = all[i].ok ? sessionsSummary(all[i].sessions) : "회차를 불러오지 못했어요"; });
+    data.courses.forEach((c, i) => { sess[c.id] = c.startsOn || c.endsOn ? periodSummary(c, all[i].ok ? all[i].sessions : []) : all[i].ok ? sessionsSummary(all[i].sessions) : "회차를 불러오지 못했어요"; });
     return true;
   };
   const draw = () => {

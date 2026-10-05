@@ -47,6 +47,9 @@ export function checkCourse(x: any): { ok: true; row: Record<string, unknown> } 
   const from = txt("apply_from"), to = txt("apply_to");
   if ((from && !isDate(from)) || (to && !isDate(to))) return { ok: false, error: "bad-date" };
   if (from && to && from > to) return { ok: false, error: "bad-range" };
+  const sOn = txt("starts_on"), eOn = txt("ends_on");   // 교육 기간(신청 기간과 별개) — 비어도 된다
+  if ((sOn && !isDate(sOn)) || (eOn && !isDate(eOn))) return { ok: false, error: "bad-date" };
+  if (sOn && eOn && sOn > eOn) return { ok: false, error: "bad-period" };
   const pct = o.attend_pct === undefined || o.attend_pct === "" ? 80 : Number(o.attend_pct);
   if (!Number.isInteger(pct) || pct < 0 || pct > 100) return { ok: false, error: "bad-pct" };
   const status = txt("status") || "draft";
@@ -58,7 +61,7 @@ export function checkCourse(x: any): { ok: true; row: Record<string, unknown> } 
       title, kind, term: txt("term"), description: desc, teacher_label: txt("teacher_label"), place: txt("place"),
       fee_note: txt("fee_note"), target: txt("target"), track: txt("track"), capacity, mode,
       waitlist: o.waitlist === undefined ? true : o.waitlist === true,
-      apply_from: from || null, apply_to: to || null, prereq_tracks: prereq, attend_pct: pct,
+      apply_from: from || null, apply_to: to || null, starts_on: sOn || null, ends_on: eOn || null, prereq_tracks: prereq, attend_pct: pct,
       check_label: txt("check_label") || null, status,
     },
   };
@@ -108,7 +111,7 @@ export function courseOut(r: any, counts: { confirmed: number; waitlisted: numbe
     id: r.id, title: r.title, kind: r.kind, kindLabel: EDU_KIND_LABEL[r.kind] || r.kind, term: r.term || "",
     description: r.description || "", teacher: r.teacher_label || "", place: r.place || "", fee: r.fee_note || "",
     target: r.target || "", track: r.track || "", capacity: r.capacity ?? null, mode: r.mode, waitlist: !!r.waitlist,
-    applyFrom: r.apply_from || null, applyTo: r.apply_to || null, prereq: r.prereq_tracks || [],
+    applyFrom: r.apply_from || null, applyTo: r.apply_to || null, startsOn: r.starts_on || null, endsOn: r.ends_on || null, prereq: r.prereq_tracks || [],
     attendPct: r.attend_pct, checkLabel: r.check_label || null, status: r.status,
     statusLabel: EDU_STATUS_LABEL[r.status] || r.status, updatedAt: r.updated_at || null,
     counts: { confirmed: counts.confirmed || 0, waitlisted: counts.waitlisted || 0, applied: counts.applied || 0 },

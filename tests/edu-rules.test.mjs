@@ -27,6 +27,24 @@ test("checkCourse — 틀린 값", () => {
   assert.equal(checkCourse({ title: "a", kind: "lecture", status: "x" }).error, "bad-status");
 });
 
+test("checkCourse — 교육 기간(starts_on·ends_on)", () => {
+  const ok = checkCourse({ title: "a", kind: "lecture", starts_on: "2027-03-03", ends_on: "2027-05-19" });
+  assert.equal(ok.row.starts_on, "2027-03-03");
+  assert.equal(ok.row.ends_on, "2027-05-19");
+  const empty = checkCourse({ title: "a", kind: "lecture", starts_on: "", ends_on: "  " });
+  assert.equal(empty.row.starts_on, null);
+  assert.equal(empty.row.ends_on, null);
+  assert.equal(checkCourse({ title: "a", kind: "lecture" }).row.starts_on, null);
+  assert.equal(checkCourse({ title: "a", kind: "lecture", starts_on: "2027-03-03" }).ok, true);          // 한쪽만도 된다
+  assert.equal(checkCourse({ title: "a", kind: "lecture", starts_on: "2027-03-03", ends_on: "2027-03-03" }).ok, true);   // 같은 날
+  assert.equal(checkCourse({ title: "a", kind: "lecture", starts_on: "2027-13-01" }).error, "bad-date");
+  assert.equal(checkCourse({ title: "a", kind: "lecture", ends_on: "내일" }).error, "bad-date");
+  assert.equal(checkCourse({ title: "a", kind: "lecture", starts_on: "2027-05-19", ends_on: "2027-03-03" }).error, "bad-period");
+  const o = courseOut({ id: "c1", title: "t", kind: "lecture", status: "open", starts_on: "2027-03-03", ends_on: null }, { confirmed: 0, waitlisted: 0, applied: 0 });
+  assert.equal(o.startsOn, "2027-03-03");
+  assert.equal(o.endsOn, null);
+});
+
 test("checkCourse — 정원 빈칸은 제한 없음(null)", () => {
   assert.equal(checkCourse({ title: "a", kind: "lecture", capacity: "" }).row.capacity, null);
 });
