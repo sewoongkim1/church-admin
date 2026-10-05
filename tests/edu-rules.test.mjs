@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkCourse, makeSessions, checkSessions, courseOut, enrollOut, exportRows, ENROLL_STATUS_LABEL }
+import { checkCourse, makeSessions, checkSessions, courseOut, enrollOut, exportRows, ENROLL_STATUS_LABEL,
+  checkTypedIdent, rosterIdentity, rosterIdent }
   from "../supabase/functions/church-admin/edu-rules.ts";
 
 test("checkCourse — 기본값과 다듬기", () => {
@@ -62,4 +63,30 @@ test("exportRows — 머리와 줄", () => {
     [{ name: "홍길동", who: "믿음 3목장", status: "confirmed", fee_paid: true, applied_at: "2027-01-05T01:00:00Z", source: "app", staff_note: "" }]);
   assert.deepEqual(rows[0], ["강좌", "학기", "이름", "소속", "상태", "교재비", "신청한 곳", "신청 시각(한국)", "메모"]);
   assert.deepEqual(rows[1].slice(0, 7), ["제자훈련", "2027 상반기", "홍길동", "믿음 3목장", ENROLL_STATUS_LABEL.confirmed, "냄", "앱"]);
+});
+
+test("rosterIdent — 소속 없음은 person|교인ID · 앱 계정은 정확히 하나일 때만", () => {
+  const none = rosterIdent({ who_type: "", group: "", sub: "", name: "홍길동" }, 77, 1);
+  assert.deepEqual(none, { ident: { name: "홍길동", who_type: "", group_name: "", sub_name: "", ident_key: "person|77" }, use_app: false });
+  const kid = rosterIdent({ who_type: "교회학교", group: "청년부", sub: "", name: "김하나" }, 5, 1);   // 학년 없음 → 잇지 않는다
+  assert.equal(kid.use_app, false); assert.equal(kid.ident.ident_key, "person|5"); assert.equal(rosterIdentity({ who_type: "교회학교", group: "청년부", sub: "", name: "김하나" }), null);
+  const kid2 = rosterIdent({ who_type: "교회학교", group: "중등부", sub: "2", name: "김하나" }, 6, 1);
+  assert.deepEqual([kid2.use_app, kid2.ident.who_type, kid2.ident.group_name, kid2.ident.sub_name], [true, "교회학교", "중등부", "2"]);
+  const one = rosterIdent({ who_type: "교구", group: "기쁨", sub: "3", name: "이순신" }, 9, 1);
+  assert.deepEqual([one.use_app, one.ident.ident_key, one.ident.group_name, one.ident.sub_name], [true, "person|9", "기쁨", "3"]);
+  assert.equal(rosterIdent({ who_type: "교구", group: "기쁨", sub: "3", name: "이순신" }, 9, 0).use_app, false);
+  assert.equal(rosterIdent({ who_type: "교구", group: "기쁨", sub: "3", name: "이순신" }, 9, 2).use_app, false);
+  assert.deepEqual(rosterIdentity({ who_type: "교구", group: "기쁨", sub: "3", name: "이순신" }),
+    { type: "교구", gu: "기쁨", mok: "3", bu: "", grade: "", name: "이순신" });
+});
+
+test("checkTypedIdent — | 는 모든 칸에서 막고 길이는 40자", () => {
+  const ok = checkTypedIdent({ name: "새가족1", who_type: "", group_name: "기쁨", sub_name: "3" });
+  assert.equal(ok.ok, true); assert.equal(ok.ident.ident_key, "staff|새가족|기쁨|3|새가족1");
+  for (const bad of [{ name: "a|b" }, { name: "x", who_type: "a|b" }, { name: "x", group_name: "a|b" }, { name: "x", sub_name: "a|b" },
+    { name: "" }, { name: "가".repeat(41) }, { name: "x", group_name: "가".repeat(41) }, { name: "x", sub_name: "1".repeat(41) },
+    { name: "x", who_type: "가".repeat(41) }, { name: 'a"b' }]) {
+    assert.deepEqual(checkTypedIdent(bad), { ok: false, error: "bad-ident" }, JSON.stringify(bad));
+  }
+  assert.equal(checkTypedIdent({ name: "가".repeat(40), group: "가".repeat(40) }).ok, true);
 });

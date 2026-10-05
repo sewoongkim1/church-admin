@@ -169,6 +169,7 @@ test("education 액션 × 사람 — 교육 역할·총괄만 통과", () => {
   const cases = [
     [null, "not-registered"],
     [{ status: "pending", roles: ["education"] }, "pending"],
+    [{ status: "disabled", roles: ["education"] }, "disabled"],
     [{ status: "active", roles: ["ministry"] }, "forbidden"],
     [{ status: "active", roles: ["education"] }, "ok"],
     [{ status: "active", roles: ["super"] }, "ok"],

@@ -136,3 +136,39 @@ export function exportRows(course: { title: string; term?: string }, list: any[]
     e.fee_paid || e.feePaid ? "냄" : "", e.source === "staff" ? "담당자" : "앱", kstStamp(e.applied_at || e.appliedAt || ""),
     e.staff_note || e.note || ""])];
 }
+
+// ---------- 대신 등록: 신원 만들기 (검토 반영 · 2026-10-05) ----------
+const ID_FIELD_MAX = 40;
+const NAME_BAD = /["\,()|]/;
+
+// 담당자가 직접 적은 신원 — 새가족. ident_key 는 「staff|구분|소속|세부|이름」 이라 어느 칸에도 | 가 들어가면 키가 갈라진다.
+export function checkTypedIdent(o: any):
+  { ok: true; ident: { name: string; who_type: string; group_name: string; sub_name: string; ident_key: string } } | { ok: false; error: string } {
+  const name = norm(o?.name);
+  const who = norm(o?.who_type) || "새가족";
+  const group = norm(o?.group_name ?? o?.group), sub = norm(o?.sub_name ?? o?.sub);
+  if (!name || name.length > ID_FIELD_MAX || NAME_BAD.test(name)) return { ok: false, error: "bad-ident" };
+  for (const f of [who, group, sub]) if (f.length > ID_FIELD_MAX || f.includes("|")) return { ok: false, error: "bad-ident" };
+  return { ok: true, ident: { name, who_type: who, group_name: group, sub_name: sub, ident_key: ["staff", who, group, sub, name].join("|") } };
+}
+
+// 교인명부 한 분 → 앱 계정을 찾을 때 쓸 신원(교구/교회학교 · 소속과 세부가 다 있을 때만, 없으면 null = 계정을 잇지 않는다)
+export function rosterIdentity(c: { who_type?: string; group?: string; sub?: string; name?: string }):
+  { type: string; gu: string; mok: string; bu: string; grade: string; name: string } | null {
+  const g = norm(c?.group), s = norm(c?.sub), name = norm(c?.name);
+  if (!g || !s || !name) return null;
+  if (c.who_type === "교구") return { type: "교구", gu: g, mok: s, bu: "", grade: "", name };
+  if (c.who_type === "교회학교") return { type: "교회학교", gu: "", mok: "", bu: g, grade: s, name };
+  return null;
+}
+
+// 명부 줄 + 같은 신원의 앱 계정 수 → 등록할 신원. 계정이 **정확히 하나**일 때만 use_app, 그 밖(소속 없음·세부 없음·0개·둘 이상)은
+// 앱 계정을 잇지 않는다. ident_key 는 늘 「person|교인ID」 — 같은 목장 동명이인이 키를 나눠 갖지 않고, 명부를 다시 올려도 안 바뀐다.
+export function rosterIdent(c: { who_type?: string; group?: string; sub?: string; name?: string }, personId: number, appMatches: number) {
+  const known = rosterIdentity(c) !== null;
+  return {
+    ident: { name: norm(c?.name), who_type: known ? String(c.who_type) : "", group_name: known ? norm(c.group) : "",
+      sub_name: known ? norm(c.sub) : "", ident_key: "person|" + personId },
+    use_app: known && appMatches === 1,
+  };
+}

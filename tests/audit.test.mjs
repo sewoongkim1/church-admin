@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, LOOKUP_HISTORY_CHECK, LOOKUP_HISTORY_EDIT, detailText, labelOf } from "../js/menus/system/audit.js";
+import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, LOOKUP_HISTORY_CHECK, LOOKUP_HISTORY_EDIT, LOOKUP_EDUCATION, detailText, labelOf } from "../js/menus/system/audit.js";
 import { ministryApplicant, ministryLookupLog, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
 
 // 기록 한 줄 — 서버 auditList 가 주는 모양({action, target, detail})
@@ -279,4 +279,11 @@ test("history.add·edit·delete(from:request) — 되살림 · 정정 신청으�
   // 다른 기록은 그대로
   assert.equal(detailText(R("history.edit", { year: 2024, fields: ["name", "mok"] })), "2024년 · 이름·목장");
   assert.equal(detailText(R("history.delete", { year: 2023, from: "request", request: 12 }, "55")), "2023년 · 정정 신청 #12");
+});
+
+test("교육신청 기록 — 이름이 정해져 있고 people.lookup(from 교육신청)은 따로 불린다", () => {
+  for (const a of ["edu.course.save", "edu.course.copy", "edu.sessions", "edu.enroll.set", "edu.enroll.add", "edu.enroll.fee", "edu.export"]) {
+    assert.ok(LABEL[a] && LABEL[a] !== a && /\(교육\)$/.test(LABEL[a]), a);
+  }
+  assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 1, from: "education" })), LOOKUP_EDUCATION);
 });

@@ -30,6 +30,10 @@ export const LABEL = {
   "history.upload": "사역 이력 올림", "history.add": "사역 이력 줄 더함", "history.edit": "사역 이력 줄 고침",
   "history.delete": "사역 이력 줄 뺌", "history.link": "사역 이력 교적 잇기", "history.rematch": "사역 이력 다시 맞춤",
   "history.export": "사역 이력 내려받음",
+  // 교육신청(2026-10-05) — detail 은 서버 edu-db.ts 의 audit() 호출과 한 벌(이름 없이 id·수만)
+  "edu.course.save": "강좌 저장(교육)", "edu.course.copy": "강좌 복사(교육)", "edu.sessions": "회차 저장(교육)",
+  "edu.enroll.set": "신청 상태 바꿈(교육)", "edu.enroll.add": "대신 등록(교육)", "edu.enroll.fee": "교재비·메모 고침(교육)",
+  "edu.export": "신청 명단 내려받음(교육)",
 };
 // detail 로 가르는 이름 — 같은 action 을 여러 화면이 남길 때(칸 이름·값은 서버 events-person.ts ministryLookupLog 와 한 벌)
 export const LOOKUP_MINISTRY = "명부 찾기(사역신청·담당자)";
@@ -38,12 +42,15 @@ export const LOOKUP_HISTORY = "명부 찾기(사역 이력)";
 export const LOOKUP_HISTORY_CHECK = "명부 찾기(사역 이력 살펴보기)";
 // 사역 이력 고치기 — 줄 창에서 후보에 영향 줄 칸(이름·직분·목장·팀·해·신규유지)을 고쳐 다시 맞춘 것(이름 떠보기 흔적)
 export const LOOKUP_HISTORY_EDIT = "명부 찾기(사역 이력 고치기)";
+// 교육신청 대신 등록 — 교인명부에서 이름으로 찾은 것(from:"education")
+export const LOOKUP_EDUCATION = "명부 찾기(교육신청)";
 export function labelOf(r) {
   const a = (r && r.action) || "";
   if (a === "people.lookup" && r.detail && r.detail.from === "ministry") return LOOKUP_MINISTRY;
   if (a === "people.lookup" && r.detail && r.detail.from === "history") return LOOKUP_HISTORY;
   if (a === "people.lookup" && r.detail && r.detail.from === "history-check") return LOOKUP_HISTORY_CHECK;
   if (a === "people.lookup" && r.detail && r.detail.from === "history-edit") return LOOKUP_HISTORY_EDIT;
+  if (a === "people.lookup" && r.detail && r.detail.from === "education") return LOOKUP_EDUCATION;
   return LABEL[a] || a;
 }
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };

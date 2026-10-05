@@ -71,6 +71,7 @@ import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, req
 // 사역 이력(2026-10-01 · 설계 v2 docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md) — 표 읽기·쓰기는 history-db.ts 한 곳
 import { makeHistory } from "./history-db.ts";
 import { makeEdu } from "./edu-db.ts";
+import { rosterIdent, rosterIdentity } from "./edu-rules.ts";
 // 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
 // 빠진 사역을 고쳐서 반영 · 목록의 줄 미리 채우기(2026-10-02) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
@@ -2002,41 +2003,53 @@ async function evUpload(ctx: Ctx, b: any, save: boolean) {
 // 화면은 「찾기」 단추·Enter 로만 부른다(글자마다 부르지 않는다). 부를 때마다 검색어·결과 수를 기록한다(people.search 와 같게).
 // ⚠️ church_mok 은 **이 액션에만**(lookupCandOut · 2026-09-30 친구 요청 — 소망 남성1·남성2 의 같은 이름 두 분을 가려내려고).
 //    evPerson basic·빈칸 채우기는 다섯 칸 그대로다. 읽는 칸은 EV_LOOKUP_COLS 그대로(새로 읽는 칸 없음).
-async function evPeopleLookup(ctx: Ctx, b: any) {
+// 찾는 질의 한 곳 — 성경필사 찾기(evPeopleLookup)와 교육신청 대신 등록(eduPersonPick)이 **같은 거르기·차례·한도**로 읽는다
+//   (교육 쪽은 몇 번째 분인지 pick 으로 다시 짚으므로 두 번 부른 결과의 차례가 같아야 한다). cols 만 다르다.
+async function lookupFetch(key: string, cols: string): Promise<any[]> {
+  const { data, error } = await db.from("church_people").select(cols)
+    .eq("name_key", key).order("person_id", { ascending: true }).limit(LOOKUP_MAX);
+  if (error) throw error;
+  return (data ?? []) as any[];
+}
+// from — 어느 화면에서 불렀나(교육신청이면 "education" · 기록 people.lookup 의 detail.from · audit.js 가 이름을 가른다). 성경필사는 from 없음.
+async function evPeopleLookup(ctx: Ctx, b: any, from?: string) {
   const q = lookupName(b.name);                          // no-name · bad-char · too-long
   if (q.error) return { ok: false, error: q.error };
   const src = await peopleSource();
   if (!src) return { ok: true, source: null, people: [] };   // 명부가 없으면 묻지 않는다(기록할 열람도 없다)
-  const { data, error } = await db.from("church_people").select(EV_LOOKUP_COLS)
-    .eq("name_key", q.key).order("person_id", { ascending: true }).limit(LOOKUP_MAX);
-  if (error) throw error;
-  const people = ((data ?? []) as any[]).map((p) => lookupCandOut(p));
-  await audit(ctx, "people.lookup", "", { q: q.name, count: people.length });
+  const people = (await lookupFetch(q.key, EV_LOOKUP_COLS)).map((p) => lookupCandOut(p));
+  await audit(ctx, "people.lookup", "", from ? { q: q.name, count: people.length, from } : { q: q.name, count: people.length });
   return { ok: true, source: { date: src.source_date, total: src.total }, people };
 }
 
 // ---------- 교육신청(2026-10-05) — 교인명부에서 찾기는 성경필사와 같은 함수 · 교인 → 소속·이름 · 같은 신원의 앱 계정(조회만) ----------
-async function eduPersonIdent(personId: number) {
-  if (!Number.isInteger(personId) || personId < 1) return null;
-  const { data, error } = await db.from("church_people").select("person_id," + EV_LOOKUP_COLS).eq("person_id", personId).maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  const c = lookupCandOut(data as any);          // 이름·구분(who_type)·소속(group)·세부(sub) — 성경필사 찾기와 같은 옮겨 적기
-  if (c.who_type !== "교회학교" && c.who_type !== "교구") {
-    // 소속을 못 정한 분 — 앱 계정을 잇지 않고 교인ID 로 신원 키를 만든다(같은 분 두 번 등록 막기)
-    return { ident: { name: c.name, who_type: "", group_name: "", sub_name: "", ident_key: "person|" + personId }, appUserId: null };
+// 대신 등록 — 화면은 교인ID 를 모른다(찾기 후보에 없다). 이름으로 같은 찾기를 다시 돌려 pick 번째 분을 짚고,
+// 화면이 본 소속(check)과 같을 때만 쓴다 — 그 사이 명부가 바뀌어 다른 분이 되면 "changed".
+async function eduPersonPick(name: unknown, pick: unknown, check: any) {
+  const q = lookupName(name);
+  if (q.error) return { ok: false as const, error: q.error };
+  if (!(await peopleSource())) return { ok: false as const, error: "changed" };
+  const rows = await lookupFetch(q.key, "person_id," + EV_LOOKUP_COLS);
+  if (typeof pick !== "number" || !Number.isInteger(pick) || pick < 0 || pick >= rows.length) return { ok: false as const, error: "changed" };
+  const c = lookupCandOut(rows[pick]);
+  const want = (x: unknown) => String(x ?? "").normalize("NFC").trim();
+  if (!check || want(check.who_type) !== c.who_type || want(check.group) !== c.group || want(check.sub) !== c.sub) {
+    return { ok: false as const, error: "changed" };
   }
-  const id = c.who_type === "교회학교"
-    ? { type: "교회학교", gu: "", mok: "", bu: c.group, grade: c.sub, name: c.name }
-    : { type: "교구", gu: c.group, mok: c.sub, bu: "", grade: "", name: c.name };
-  const keys = identityCandidates(id);
-  const { data: us, error: e2 } = await db.from("users").select("id").in("identity_key", keys).limit(2);
-  if (e2) throw e2;
-  const appUserId = (us ?? []).length === 1 ? us![0].id : null;     // 하나뿐일 때만 잇는다(둘이면 담당자가 앱 신청으로)
-  return { ident: { name: id.name, who_type: id.type, group_name: id.type === "교구" ? id.gu : id.bu,
-    sub_name: id.type === "교구" ? id.mok : id.grade, ident_key: keys[0] }, appUserId };
+  const personId = Number(rows[pick].person_id);
+  // 같은 신원의 앱 계정 — 조회만 · 소속·세부가 다 있을 때만 찾는다 · 정확히 하나일 때만 잇는다(rosterIdent)
+  const id = rosterIdentity(c);
+  let matches = 0, appId: string | null = null;
+  if (id) {
+    const { data: us, error } = await db.from("users").select("id").in("identity_key", identityCandidates(id)).limit(2);
+    if (error) throw error;
+    matches = (us ?? []).length;
+    if (matches === 1) appId = us![0].id;
+  }
+  const r = rosterIdent(c, personId, matches);
+  return { ok: true as const, ident: r.ident, appUserId: r.use_app ? appId : null };
 }
-const edu = makeEdu(db, audit, { peopleLookup: evPeopleLookup, personIdent: eduPersonIdent });
+const edu = makeEdu(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "education"), personPick: eduPersonPick, allRows });
 
 // ---------- 성경필사(암송) — 이름을 누르면 교적 창 (Task 16 · 2026-09-30) ----------
 // 설계 §0 「이름을 누르면 교적 창」·§2 evPerson·§3 · 친구 결정 §8-8. 고르는 규칙·응답 모양은 events-person.ts(순수 함수)에 있다.
