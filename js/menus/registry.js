@@ -36,6 +36,10 @@ export const MENUS = [
   //   강사(teacher)는 이 메뉴만 — 신청 현황(이름·상태·교재비·메모)은 못 본다.
   { id: "edu-attend", group: "교육", icon: "✅", label: "출석부", desc: "회차마다 출석·지각·결석·공결 · 출석 현황 · 엑셀",
     roles: ["education", "educourse", "teacher"], load: () => import("./education/attendance.js") },
+  // 🎓 수료(2026-10-05 · 3단계) — 교육 총괄(모든 강좌) · 교육 담당(manager 로 맡은 강좌만 — 서버 edu-db.ts mayTouch 가 not-assigned).
+  //   ⚠️ 강사(teacher)는 넣지 않는다 — 강사는 출석만(서버 authz.ts EDU_BOTH 도 강사를 문에서 forbidden). 「수료증 설정」 단추는 총괄만.
+  { id: "edu-cert", group: "교육", icon: "🎓", label: "수료", desc: "수료 기준·후보 · 수료 확정·취소 · 수료증 인쇄",
+    roles: ["education", "educourse"], load: () => import("./education/certs.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
   // 🧪 시험 참여자 — 시스템 묶음 · 총괄만(2026-10-02 친구 요청 · 그전에는 사역신청 묶음 · 역할 ministry).
