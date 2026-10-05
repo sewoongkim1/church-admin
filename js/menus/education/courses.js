@@ -313,7 +313,7 @@ export async function render(el, { call }) {
     return true;
   };
   const draw = () => {
-    el.innerHTML = TITLE + `<div class="acts"><button type="button" class="btn" data-act="term">학기: ${esc(term || "전체")}</button>
+    el.innerHTML = TITLE + `<div class="acts ec-top"><button type="button" class="btn" data-act="term">학기: ${esc(term || "전체")}</button>
       <button type="button" class="btn primary" data-act="new">＋ 새 강좌</button></div>
       <div class="ec-list">${data.courses.length ? data.courses.map((c) => courseCard(c, sess[c.id])).join("")
         : `<p class="empty">아직 강좌가 없어요 — 「＋ 새 강좌」로 만들어 주세요</p>`}</div>`;

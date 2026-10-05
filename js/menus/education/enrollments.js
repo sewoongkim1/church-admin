@@ -150,6 +150,7 @@ async function openAddForm({ call, course }) {
 
 // ---------- 화면 ----------
 export async function render(el, { call }) {
+  el.classList.add("ee-page");   // PC 에서 읽기 좋은 폭(css .ee-page)
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
   let courses = [], cur = null, list = [], foldOpen = false, scope = "all";
   const pending = new Set();   // 같은 줄·같은 단추를 두 번 누르는 것 막기

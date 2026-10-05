@@ -32,12 +32,14 @@ body.nav-open .nav{transform:none}
 .nav-g a.on{padding-left:10px}
 .home-g{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800;color:var(--navy);margin:18px 0 8px}
 .home-g:first-of-type{margin-top:6px}
+.home-who{margin-bottom:12px}
 .view{max-width:900px;margin:0 auto;padding:16px 16px 96px}
 @media (min-width:1024px){
   .top .icon-btn.menu{display:none}
   .nav{transform:none;transition:none}
   .nav-dim{display:none!important}
-  .view{margin-left:var(--nav-w);max-width:none;padding:24px 32px 96px}
+  /* 아주 넓은 화면(2K 이상)에서 한 줄이 끝없이 늘지 않게 넉넉한 상한 — 표가 많은 메뉴도 1,376px 안쪽 폭이면 충분하다(2026-10-05) */
+  .view{margin-left:var(--nav-w);max-width:1440px;padding:24px 32px 96px}
 }
 
 /* 단추 — 주 동작 48 · 보조 44 · 위험 44 */
@@ -1321,3 +1323,30 @@ section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:
 .ec-hint{margin:6px 0 0;font-size:13px;line-height:1.45;word-break:keep-all;overflow-wrap:anywhere}
 /* 카드 담당 줄의 역할 잃은·정지된 분(stale) — 흐리게 */
 .ec-stale{opacity:.6}
+
+/* PC 처음 화면·교육 메뉴 격자(2026-10-05) — 폰(<1024px)은 위 옛 규칙 그대로 한 줄 카드 */
+@media (min-width:1024px){
+  .home{max-width:1280px}
+  .home-g{font-size:16px;margin:28px 0 12px}
+  .home-g:first-of-type{margin-top:10px}
+  .home-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  a.home-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0;padding:18px;height:100%;
+    transition:border-color .15s,box-shadow .15s,transform .15s}
+  .home-card br{display:none}
+  .home-card .hc-ic{font-size:26px;line-height:1;margin-bottom:6px}
+  .home-card .hc-t{font-size:1.02rem;color:var(--navy-dark)}
+  .home-card .hc-d{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45;word-break:keep-all}
+  .home-card:hover{border-color:var(--ghost-bd);box-shadow:0 6px 18px rgba(13,27,62,.10);transform:translateY(-2px)}
+  .home-card:focus-visible{outline:3px solid var(--navy);outline-offset:2px}
+  /* 교육 — 강좌 카드는 2~3열 · 신청 줄은 읽기 좋은 폭 */
+  .ec-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:12px;align-items:start;margin-top:12px}
+  .ec-list > .card{margin-bottom:0}
+  .ec-list > .empty{grid-column:1/-1}
+  .ee-page{max-width:1000px}
+  /* 강좌 관리 맨 위 단추(학기·새 강좌) — PC 에서 폭 전체로 늘지 않게 */
+  .ec-top .btn{flex:0 0 auto;min-width:200px}
+}
+@media (min-width:1024px) and (prefers-reduced-motion:reduce){
+  .home-card{transition:none}
+  .home-card:hover{transform:none}
+}

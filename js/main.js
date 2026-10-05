@@ -7,6 +7,7 @@ import { esc, toast, errorText, affiliation } from "./core/ui.js";
 import { renderLogin, renderRegister, renderPending, renderDisabled, renderError, renderOpenExternal } from "./screens/gate.js";
 import { shouldLeaveKakao, externalUrl, closeUrl } from "./core/inapp.js";
 import { closeAllForms } from "./core/modal.js";
+import { homeHtml } from "./home-view.js";
 
 const app = document.getElementById("app");
 let me = null;
@@ -125,14 +126,7 @@ async function route() {
 }
 
 function renderHome(host, menus) {
-  host.innerHTML = `<h2 class="page-title">${esc(me.member.name)} 님, 평안하세요</h2>
-    <p class="muted" style="margin-bottom:12px">${esc(affiliation(me.member))} · ${esc(me.roles_info.map((r) => r.label).join(" · ") || "역할 없음")}</p>
-    ${menus.length
-      ? menuGroups(menus).map((g) => `<h3 class="home-g"><span aria-hidden="true">${g.icon}</span>${esc(g.group)}</h3>` +
-          g.menus.map((m) => `<a class="card home-card" href="#/${m.id}">${m.icon} <b>${esc(m.label)}</b><br><span class="muted">${esc(m.desc)}</span></a>`).join("")).join("")
-      : me.roles.length
-        ? `<p class="empty">이 역할의 메뉴는 곧 열려요</p>`
-        : `<p class="empty">아직 쓸 수 있는 메뉴가 없어요 — 총괄 관리자에게 역할을 받아 주세요</p>`}`;
+  host.innerHTML = homeHtml({ member: me.member, rolesInfo: me.roles_info, roles: me.roles, menus });
 }
 
 let lostAt = 0;

@@ -36,6 +36,7 @@
 - 역할 목록은 `admin_roles` 표 한 곳. CHECK·코드 목록에 박지 않는다.
 - 확인·알림은 `ui.js` 의 `dialog`/`toast` 만(브라우저 confirm/alert 금지). 저장 중엔 `busy()` 로 단추를 잠근다.
 - **고르기·날짜·시각은 `js/core/picker.js`**(`pickOne`·`pickMany`·`pickDate`·`pickTime` — 폰은 바텀 시트, PC 는 작은 판)만. `<select>`·`type="date"`·`type="time"` 을 쓰지 않는다 — 폰에서 시스템 창이 뜬다(2026-09-29 친구 요청 · preflight 는 아직 안 막으니 `grep -rn '<select\|type="date"\|type="time"' js/` 로 볼 것).
+- **PC(≥1024px) 배치(2026-10-05):** `.view` 는 `max-width:1440px` 상한 · 처음 화면은 `js/home-view.js` `homeHtml` 이 만든 `.home-grid` 카드 격자(최대 1280px) · 교육 강좌 카드 `.ec-list` 격자 · 신청 현황 `.ee-page` 1000px. 폰은 옛 한 줄 카드 그대로 — 새 규칙은 모두 `@media (min-width:1024px)` 안(css 맨 끝).
 - 메뉴 화면은 `route()` 가 새로 만든 `<section>` 에 그린다 — 공용 `#view` 에 이벤트를 달면 다음 메뉴로 새어 간다.
 - 응답에 `auth_user_id` 를 싣지 않는다. 담당자 이름을 코드·SQL 파일에 적지 않는다(공개 저장소).
 - `supabase db query --linked -f` 의 파일 경로는 link 한 작업 폴더 기준으로 풀린다 — **절대 경로**로 줄 것.
