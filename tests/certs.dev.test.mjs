@@ -284,7 +284,7 @@ test("수료증 설정 — 총괄만 · 보낸 칸 가운데 바뀐 것만 · �
   let r = await call(chief.token, "eduCertSettings");
   assert.equal(r.body.ok, true);
   assert.deepEqual(Object.keys(r.body).sort(), ["body", "issuer", "ok", "seal", "updatedAt"]);
-  const issuer = `${TAG}명의-${STAMP}`.slice(0, 60), text = `시험 문안 — 「{과정}」 을 마침 ${STAMP}`;
+  const issuer = `${TAG}명의-${STAMP}`.slice(0, 26), text = `시험 문안 — 「{과정}」 을 마침 ${STAMP}`;
   r = await call(chief.token, "eduCertSettingsSave", { issuer, body: text, seal: PNG1 });
   assert.deepEqual(r.body, { ok: true, changed: true, fields: ["issuer", "body", "seal"] });
   r = await call(chief.token, "eduCertSettingsSave", { issuer, body: text });
