@@ -115,12 +115,56 @@ export function courseOut(r: any, counts: { confirmed: number; waitlisted: numbe
   };
 }
 
-export function enrollOut(r: any, waitNo: number | null) {
+// maybeDup — maybeDupIds 가 고른 줄이면 true(화면이 「같은 분일 수 있어요」를 붙인다)
+export function enrollOut(r: any, waitNo: number | null, maybeDup = false) {
   return {
     id: r.id, name: r.name, who: whoOf(r), status: r.status, statusLabel: ENROLL_STATUS_LABEL[r.status] || r.status,
     source: r.source, hasApp: !!r.user_id, appliedAt: r.applied_at, decidedAt: r.decided_at || null,
-    feePaid: !!r.fee_paid, note: r.staff_note || "", waitNo,
+    feePaid: !!r.fee_paid, note: r.staff_note || "", waitNo, maybeDup: maybeDup === true,
   };
+}
+
+// 대기 차례 — SQL edu_promote 와 같다: waitlist_at 이른 순 · 시각 없는 줄(null)은 맨 뒤 · 같으면 id 순(성경암송 api eduWaitNo 도 같다).
+//   시각은 PostgREST 가 같은 꼴(+00:00 · 마이크로초)로 주므로 글자로 견준다(Date.parse 는 밀리초에서 잘린다).
+export function waitOrder(a: { id: number; waitlist_at?: string | null }, z: { id: number; waitlist_at?: string | null }): number {
+  const x = a.waitlist_at || null, y = z.waitlist_at || null;
+  if (x !== y) {
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return x < y ? -1 : 1;
+  }
+  return a.id - z.id;
+}
+
+// 같은 분이 두 줄일 수 있다(최종 검토 2026-10-05) — 앱으로 신청한 줄과 담당자가 대신 등록한 줄(앱 계정 없음)이
+//   같은 이름으로 함께 살아 있으면(신청·확정·대기) 한 분이 정원 두 자리를 차지했을 수 있다. edu_apply 는 두 길을 잇지 않는다.
+//   이름만 본다(NFC · 앞뒤 빈칸 · 가운데 빈칸 하나로) — 동명이인일 수 있어 막지 않고 표시만 한다. 돌려주는 것은 그 줄들의 id.
+//   앱 줄끼리·대신 등록 줄끼리 같은 이름은 고르지 않는다(앱 줄은 계정마다, 대신 등록 줄은 신원 키마다 이미 한 줄이다).
+const LIVE_ENROLL = new Set(["applied", "confirmed", "waitlisted"]);
+export function maybeDupIds(rows: { id: number; name?: string; status?: string; user_id?: string | null }[]): Set<number> {
+  const by = new Map<string, { app: boolean; staff: boolean; ids: number[] }>();
+  for (const r of rows || []) {
+    if (!LIVE_ENROLL.has(String(r?.status))) continue;
+    const key = norm(r.name);
+    if (!key) continue;
+    const g = by.get(key) || { app: false, staff: false, ids: [] };
+    if (r.user_id) g.app = true; else g.staff = true;
+    g.ids.push(r.id);
+    by.set(key, g);
+  }
+  const out = new Set<number>();
+  for (const g of by.values()) if (g.app && g.staff) for (const id of g.ids) out.add(id);
+  return out;
+}
+
+// 강좌를 고친 뒤 대기하신 분을 올릴 때인가(edu_course_refill) — 자리가 늘었거나(정원 ↑ · 제한 없음으로) 선착순으로 바뀌었을 때만.
+//   다른 칸만 고쳤을 때는 부르지 않는다 — 담당자가 일부러 빈자리 옆 대기로 둔 분이 제목 하나 고쳤다고 확정되지 않게.
+export function seatsOpened(before: { capacity?: number | null; mode?: string }, after: { capacity?: unknown; mode?: unknown }): boolean {
+  if (after?.mode !== "auto") return false;
+  if (before?.mode !== "auto") return true;
+  const was = before.capacity ?? null, now = after.capacity ?? null;
+  if (was === null) return false;                 // 이미 제한 없음 — 늘 자리가 있다
+  return now === null || Number(now) > Number(was);
 }
 
 const kstStamp = (iso: string) => {

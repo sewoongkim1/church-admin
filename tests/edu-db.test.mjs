@@ -6,7 +6,7 @@ const COURSE = "11111111-1111-4111-8111-111111111111";
 const USER = "22222222-2222-4222-8222-222222222222";
 
 // 가짜 db — 이어 붙인 질의를 기록하고, 신청 줄 조회에는 prev 를 돌려주고, edu_apply 를 부른 횟수를 센다
-function setup({ prev = [], pick, applyRes } = {}) {
+function setup({ prev = [], pick, applyRes, rows } = {}) {
   const log = { q: [], rpc: [], audit: [], writes: 0 };
   const chain = (table) => {
     const c = { calls: [] };
@@ -20,7 +20,7 @@ function setup({ prev = [], pick, applyRes } = {}) {
   };
   const db = { from: chain, rpc: async (fn, args) => { log.rpc.push([fn, args]); return { data: applyRes ?? { ok: true, id: 5, status: "confirmed" }, error: null }; } };
   const audit = async (_c, action, target, detail) => { log.audit.push([action, target, detail]); };
-  const deps = { peopleLookup: async () => ({}), allRows: async () => [],
+  const deps = { peopleLookup: async () => ({}), allRows: async () => rows ?? [],
     personPick: async () => pick ?? { ok: true, ident: { name: "홍", who_type: "교구", group_name: "기쁨", sub_name: "3", ident_key: "person|9" }, appUserId: null } };
   return { edu: makeEdu(db, audit, deps), log };
 }
@@ -72,4 +72,41 @@ test("eduFeeSet — paid 도 note 도 없으면 nothing · 쓰지도 기록하�
   assert.deepEqual(await b.edu.eduFeeSet({}, { id: 3, note: "메모" }), { ok: true });   // 메모만 저장 — fee_paid 는 patch 에 없다
   const upd = b.log.q[0].c.calls.find((x) => x[0] === "update");
   assert.equal("fee_paid" in upd[1], false); assert.equal("staff_note" in upd[1], true);
+});
+
+// 최종 검토(2026-10-05) — 정원을 늘리면 대기하신 분부터(edu_course_refill)
+test("eduCourseSave — 자리가 늘면 edu_course_refill 을 부르고 promoted 를 돌려준다 · 다른 칸만 고치면 안 부른다", async () => {
+  const body = (cap, mode = "auto") => ({ course: { id: COURSE, title: "제자훈련", kind: "regular", capacity: cap, mode } });
+  const a = setup({ prev: { capacity: 1, mode: "auto" }, applyRes: { ok: true, promoted: 2 } });
+  assert.deepEqual(await a.edu.eduCourseSave({}, body(3)), { ok: true, id: COURSE, promoted: 2 });
+  assert.deepEqual(a.log.rpc, [["edu_course_refill", { p_course: COURSE }]]);
+  assert.equal(a.log.audit[0][2].promoted, 2);
+  const b = setup({ prev: { capacity: 3, mode: "auto" } });
+  assert.deepEqual(await b.edu.eduCourseSave({}, body(3)), { ok: true, id: COURSE, promoted: 0 });
+  assert.equal(b.log.rpc.length, 0, "정원 그대로인데 대기자를 올렸다");
+  const c = setup({ prev: { capacity: 1, mode: "approve" } });
+  assert.equal((await c.edu.eduCourseSave({}, body(5, "approve"))).promoted, 0);
+  assert.equal(c.log.rpc.length, 0, "승인 강좌인데 불렀다");
+  const d = setup({ prev: null });
+  assert.deepEqual(await d.edu.eduCourseSave({}, body(3)), { ok: false, error: "not-found" });
+  assert.equal(d.log.writes, 0); assert.equal(d.log.rpc.length, 0);
+  const n = setup({ prev: { id: "new" } });   // 새 강좌는 신청이 없다 — 부르지 않는다
+  const { id: _i, ...fresh } = body(3).course;
+  await n.edu.eduCourseSave({}, { course: fresh });
+  assert.equal(n.log.rpc.length, 0);
+});
+
+test("eduEnrollList — 대기 번호는 시각 없는 줄이 맨 뒤 · 앱 줄 ↔ 대신 등록 줄 같은 이름에 maybeDup · user_id 안 나감", async () => {
+  const rows = [
+    { id: 1, name: "홍길동", user_id: USER, status: "confirmed", waitlist_at: null },
+    { id: 2, name: "홍길동 ", user_id: null, status: "waitlisted", waitlist_at: null },
+    { id: 3, name: "김하나", user_id: null, status: "waitlisted", waitlist_at: "2027-01-05T01:00:00+00:00" },
+    { id: 4, name: "이순신", user_id: USER, status: "waitlisted", waitlist_at: "2027-01-05T02:00:00+00:00" },
+  ];
+  const a = setup({ prev: { id: COURSE, title: "t", kind: "lecture", status: "open" }, applyRes: [], rows });
+  const r = await a.edu.eduEnrollList({ course_id: COURSE });
+  const by = Object.fromEntries(r.enrollments.map((e) => [e.id, e]));
+  assert.deepEqual([by[3].waitNo, by[4].waitNo, by[2].waitNo], [1, 2, 3]);
+  assert.deepEqual(r.enrollments.map((e) => e.maybeDup), [true, true, false, false]);
+  assert.equal(JSON.stringify(r).includes(USER), false);
 });

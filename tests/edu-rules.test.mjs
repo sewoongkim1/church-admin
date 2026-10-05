@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkCourse, makeSessions, checkSessions, courseOut, enrollOut, exportRows, ENROLL_STATUS_LABEL,
-  checkTypedIdent, rosterIdentity, rosterIdent }
+  checkTypedIdent, rosterIdentity, rosterIdent, maybeDupIds, seatsOpened, waitOrder }
   from "../supabase/functions/church-admin/edu-rules.ts";
 
 test("checkCourse — 기본값과 다듬기", () => {
@@ -56,6 +56,8 @@ test("courseOut·enrollOut — user_id·ident_key 를 싣지 않는다", () => {
   assert.equal("user_id" in e, false);
   assert.equal("ident_key" in e, false);
   assert.equal(e.hasApp, true);
+  assert.equal(e.maybeDup, false);
+  assert.equal(enrollOut({ id: 8, user_id: null, name: "홍길동", status: "confirmed" }, null, true).maybeDup, true);
 });
 
 test("exportRows — 머리와 줄", () => {
@@ -89,4 +91,50 @@ test("checkTypedIdent — | 는 모든 칸에서 막고 길이는 40자", () => 
     assert.deepEqual(checkTypedIdent(bad), { ok: false, error: "bad-ident" }, JSON.stringify(bad));
   }
   assert.equal(checkTypedIdent({ name: "가".repeat(40), group: "가".repeat(40) }).ok, true);
+});
+
+// 최종 검토(2026-10-05) — 앱 줄 ↔ 대신 등록 줄이 같은 이름이면 「같은 분일 수 있어요」
+test("maybeDupIds — 살아 있는 앱 줄과 대신 등록 줄이 같은 이름일 때만(NFC·앞뒤 빈칸)", () => {
+  const nfd = "홍길동".normalize("NFD");
+  const rows = [
+    { id: 1, name: "홍길동", user_id: "u1", status: "confirmed" },
+    { id: 2, name: ` ${nfd} `, user_id: null, status: "waitlisted" },     // 자모 분리·빈칸 — 같은 이름으로 본다
+    { id: 3, name: "김하나", user_id: "u2", status: "applied" },
+    { id: 4, name: "김하나", user_id: "u3", status: "confirmed" },        // 앱 줄끼리 — 서로 다른 계정
+    { id: 5, name: "이순신", user_id: null, status: "confirmed" },
+    { id: 6, name: "이순신", user_id: null, status: "confirmed" },        // 대신 등록 줄끼리 — 신원 키가 다르다
+    { id: 7, name: "박하나", user_id: "u4", status: "confirmed" },
+    { id: 8, name: "박하나", user_id: null, status: "cancelled" },        // 취소된 줄은 자리가 없다
+    { id: 9, name: "최믿음", user_id: "u5", status: "declined" },
+    { id: 10, name: "최믿음", user_id: null, status: "applied" },         // 반려된 줄도
+  ];
+  assert.deepEqual([...maybeDupIds(rows)].sort((a, b) => a - b), [1, 2]);
+  assert.equal(maybeDupIds([]).size, 0);
+  assert.equal(maybeDupIds([{ id: 1, name: "", user_id: "u", status: "confirmed" }, { id: 2, name: " ", user_id: null, status: "confirmed" }]).size, 0);
+  const three = maybeDupIds([{ id: 1, name: "a", user_id: "u", status: "confirmed" }, { id: 2, name: "a", user_id: null, status: "applied" },
+    { id: 3, name: "a", user_id: "v", status: "waitlisted" }]);
+  assert.deepEqual([...three].sort(), [1, 2, 3]);
+});
+
+test("waitOrder — 시각 이른 순 · 시각 없는 줄은 맨 뒤 · 같으면 id 순(edu_promote 와 같다)", () => {
+  const rows = [
+    { id: 1, waitlist_at: null },
+    { id: 2, waitlist_at: "2027-01-05T01:00:00.000002+00:00" },
+    { id: 3, waitlist_at: "2027-01-05T01:00:00.000001+00:00" },   // 마이크로초까지 본다
+    { id: 4, waitlist_at: null },
+    { id: 5, waitlist_at: "2027-01-05T01:00:00.000001+00:00" },
+    { id: 6 },
+  ];
+  assert.deepEqual(rows.slice().sort(waitOrder).map((r) => r.id), [3, 5, 2, 1, 4, 6]);
+});
+
+test("seatsOpened — 선착순에서 자리가 늘 때만(정원 ↑ · 제한 없음으로 · 승인→선착순)", () => {
+  assert.equal(seatsOpened({ capacity: 1, mode: "auto" }, { capacity: 3, mode: "auto" }), true);
+  assert.equal(seatsOpened({ capacity: 3, mode: "auto" }, { capacity: null, mode: "auto" }), true);
+  assert.equal(seatsOpened({ capacity: 3, mode: "approve" }, { capacity: 3, mode: "auto" }), true);
+  assert.equal(seatsOpened({ capacity: 3, mode: "auto" }, { capacity: 3, mode: "auto" }), false, "제목만 고쳤다 — 일부러 대기로 둔 분을 올리지 않는다");
+  assert.equal(seatsOpened({ capacity: 3, mode: "auto" }, { capacity: 2, mode: "auto" }), false);
+  assert.equal(seatsOpened({ capacity: null, mode: "auto" }, { capacity: null, mode: "auto" }), false);
+  assert.equal(seatsOpened({ capacity: null, mode: "auto" }, { capacity: 5, mode: "auto" }), false);
+  assert.equal(seatsOpened({ capacity: 1, mode: "auto" }, { capacity: 9, mode: "approve" }), false, "승인 강좌는 올리지 않는다");
 });

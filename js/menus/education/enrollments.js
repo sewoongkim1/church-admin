@@ -7,7 +7,8 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
-import { groupByStatus, actionsFor, capacityLine, errorWord, exportFileName, addDoneText, confirmTextFor, hasErrorWord, pickArgs, shortApplied } from "./enrollments-logic.js";
+import { groupByStatus, actionsFor, capacityLine, errorWord, exportFileName, addDoneText, confirmTextFor, hasErrorWord, pickArgs, shortApplied,
+  dupBadge, TYPED_SUB_HINT } from "./enrollments-logic.js";
 
 const TITLE = `<h2 class="page-title">📝 신청 현황</h2>`;
 const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -22,7 +23,7 @@ let lastCourseId = "";   // 메뉴를 나갔다 와도 보던 강좌를 기억(�
 function rowHtml(e) {
   const acts = actionsFor(e).map((a) => `<button type="button" class="btn${a.danger ? " danger" : ""}" data-op="${a.op}">${esc(a.label)}</button>`).join("");
   return `<div class="card ee-row" data-eid="${esc(e.id)}">
-    <div class="ee-l1"><div class="ee-who"><b>${esc(e.name)}</b>${e.status === "waitlisted" ? ` <span class="badge">대기 ${esc(e.waitNo || "")}번</span>` : ""} <span class="badge">${e.source === "staff" ? "담당자" : "앱"}</span></div>
+    <div class="ee-l1"><div class="ee-who"><b>${esc(e.name)}</b>${e.status === "waitlisted" ? ` <span class="badge">대기 ${esc(e.waitNo || "")}번</span>` : ""} <span class="badge">${e.source === "staff" ? "담당자" : "앱"}</span>${e.maybeDup ? " " + dupBadge(e) : ""}</div>
       <label class="ee-fee"><input type="checkbox" data-fee ${e.feePaid ? "checked" : ""}> 교재비</label></div>
     <div class="ee-l2">${esc(e.who || "")}${e.who ? " · " : ""}${esc(shortApplied(e.appliedAt))}</div>
     ${e.note ? `<div class="ee-memo">메모: ${esc(e.note)}</div>` : ""}
@@ -86,7 +87,8 @@ async function openAddForm({ call, course }) {
         <label class="field"><span>이름</span><input data-t="name" maxlength="40" autocomplete="off"></label>
         <label class="field"><span>구분</span><input data-t="who" maxlength="40" value="새가족" autocomplete="off"></label>
         <label class="field"><span>소속 <small>(안 써도 돼요)</small></span><input data-t="group" maxlength="40" autocomplete="off"></label>
-        <label class="field"><span>세부 <small>(안 써도 돼요)</small></span><input data-t="sub" maxlength="40" autocomplete="off"></label></div>`,
+        <label class="field"><span>세부 <small>(안 써도 돼요)</small></span><input data-t="sub" maxlength="40" autocomplete="off"></label>
+        <p class="muted ee-hint">${esc(TYPED_SUB_HINT)}</p></div>`,
     onOpen: (root) => {
       const res = root.querySelector("[data-res]"), q = root.querySelector("[data-q]");
       first = JSON.stringify(typedVals(root));

@@ -9,6 +9,7 @@ import { pickOne, pickDate, pickTime, fmtDateLabel, fmtTimeLabel } from "../../c
 import {
   KIND_OPTIONS, MODE_OPTIONS, STATUS_OPTIONS, WAITLIST_OPTIONS,
   formToCourse, courseToForm, checkFormNumbers, sessionsSummary, makeSessionRows, sessionErrorText, courseErrorText, sessionHeadLine,
+  courseSavedText,
 } from "./courses-logic.js";
 
 const TITLE = `<h2 class="page-title">📚 강좌 관리</h2>`;
@@ -67,7 +68,7 @@ const readForm = (root) => {
   return o;
 };
 
-// → 저장한 강좌 id · 닫았으면 null
+// → { id, promoted }(저장 · promoted = 정원을 늘려 확정된 대기자 수) · 닫았으면 null · 없어진 강좌면 "gone"
 function openCourseForm({ call, course = null, term = "" }) {
   const v = course ? courseToForm(course)
     : { id: "", title: "", kind: "regular", term, description: "", teacher: "", place: "", fee: "", target: "", track: "", capacity: "",
@@ -110,7 +111,7 @@ function openCourseForm({ call, course = null, term = "" }) {
         if (!yes) return { ok: false, message: "저장하지 않았어요 — 아무것도 바뀌지 않았어요" };
       }
       const r = await call("eduCourseSave", { course: body });
-      if (r.ok) return { ok: true, value: r.id };
+      if (r.ok) return { ok: true, value: { id: r.id, promoted: Number(r.promoted) || 0 } };
       if (r.error === "not-found") { gone = true; return { ok: true, value: null }; }   // 창을 닫고 목록을 새로 불러온다
       const m = courseErrorText(r);
       return m ? { ok: false, message: m } : r;
@@ -290,13 +291,14 @@ export async function render(el, { call }) {
     open.add(key);
     let done = false;
     try {
-    if (act === "new") { done = !!(await openCourseForm({ call, term })); if (done) toast("저장했어요"); }
+    if (act === "new") { done = !!(await openCourseForm({ call, term })); if (done) toast(courseSavedText(0)); }
     else if (act === "edit" && course) {
       const got = await openCourseForm({ call, course });
       done = !!got;
-      if (got === "gone") toast("그 강좌를 찾지 못해 목록을 새로 불러왔어요"); else if (done) toast("저장했어요");
+      if (got === "gone") toast("그 강좌를 찾지 못해 목록을 새로 불러왔어요"); else if (done) toast(courseSavedText(got.promoted));
     }
-    else if (act === "sessions" && course) { done = !!(await openSessionsForm({ call, course })); if (done) toast("회차를 저장했어요"); }
+    // 회차를 모두 빼고 저장하면 값이 0 — 0 도 저장한 것이다(닫으면 null · 불러오기 실패도 null)
+    else if (act === "sessions" && course) { done = (await openSessionsForm({ call, course })) != null; if (done) toast("회차를 저장했어요"); }
     else if (act === "copy" && course) {
       done = !!(await openCopyForm({ call, course }));
       if (done) toast("복사했어요 — 준비 중으로 만들었어요. 신청 기간과 회차 날짜를 고쳐 주세요");

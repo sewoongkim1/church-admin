@@ -25,7 +25,8 @@ export function capacityLine(c) {
 
 const WORDS = { full: "정원이 찼어요", "too-late": "이미 시작한 강좌예요", "not-active": "이미 처리된 신청이에요",
   "not-found": "찾을 수 없어요", "bad-ident": "이름을 확인해 주세요", "not-open": "모집 중이 아니에요",
-  changed: "명부가 바뀌었어요. 다시 찾아 주세요", "was-declined": "반려했던 분이에요" };   // 과제 4 검토 반영(2026-10-05)
+  changed: "명부가 바뀌었어요. 다시 찾아 주세요", "was-declined": "반려했던 분이에요",   // 과제 4 검토 반영(2026-10-05)
+  "course-closed": "끝난·보관된 강좌라 바꿀 수 없어요" };   // edu_staff_set(최종 검토 2026-10-05)
 export function errorWord(code) { return WORDS[code] || `저장하지 못했어요 (${code})`; }
 
 // 엑셀 파일 이름 — 교육신청_{제목}_{오늘}.xlsx · 파일 이름에 못 쓰는 글자(\ / : * ? " < > |)·제어 글자는 빼고,
@@ -67,3 +68,10 @@ export function confirmTextFor(op, name) {
   if (op === "waitlist") return `${name} 님을 대기로 돌릴까요? 대기 줄 맨 뒤로 가요.`;
   return "";
 }
+
+// 같은 분일 수 있는 줄(서버 maybeDup — 앱 신청 줄과 대신 등록 줄이 같은 이름) 표시. 동명이인일 수 있어 막지 않고 알리기만 한다.
+export const DUP_TEXT = "같은 분일 수 있어요";
+export const dupBadge = (e) => (e && e.maybeDup ? `<span class="badge dup" title="앱 신청과 대신 등록이 같은 이름이에요 — 같은 분이면 한 줄을 취소해 주세요">${DUP_TEXT}</span>` : "");
+
+// 직접 입력(새가족) 세부 칸 아래 안내 — 같은 이름·소속·세부면 같은 분으로 본다(신원 키 staff|구분|소속|세부|이름)
+export const TYPED_SUB_HINT = "같은 이름의 새가족이 있으면 세부(예: 연락할 분·반)를 적어 주세요";

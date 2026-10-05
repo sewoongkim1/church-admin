@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupByStatus, actionsFor, capacityLine, errorWord, exportFileName, addDoneText, confirmTextFor, hasErrorWord, pickArgs, shortApplied } from "../js/menus/education/enrollments-logic.js";
+import { groupByStatus, actionsFor, capacityLine, errorWord, exportFileName, addDoneText, confirmTextFor, hasErrorWord, pickArgs, shortApplied,
+  dupBadge, DUP_TEXT, TYPED_SUB_HINT } from "../js/menus/education/enrollments-logic.js";
 
 const course = { capacity: 2, mode: "auto", counts: { confirmed: 2, waitlisted: 1, applied: 0 } };
 
@@ -76,4 +77,22 @@ test("shortApplied — 한국 시각 짧게", () => {
   assert.equal(shortApplied("2027-01-22T10:00:00Z"), "1/22 19:00 신청");
   assert.equal(shortApplied(""), "");
   assert.equal(shortApplied("x"), "");
+});
+
+// 최종 검토(2026-10-05)
+test("errorWord — 끝난 강좌의 상태 바꾸기(course-closed)", () => {
+  assert.equal(errorWord("course-closed"), "끝난·보관된 강좌라 바꿀 수 없어요");
+  assert.equal(hasErrorWord("course-closed"), true);
+});
+
+test("dupBadge — 서버가 maybeDup 을 준 줄에만 「같은 분일 수 있어요」", () => {
+  assert.equal(DUP_TEXT, "같은 분일 수 있어요");
+  assert.ok(dupBadge({ maybeDup: true }).includes("같은 분일 수 있어요"));
+  assert.equal(dupBadge({ maybeDup: false }), "");
+  assert.equal(dupBadge({}), "");
+  assert.equal(dupBadge(null), "");
+});
+
+test("TYPED_SUB_HINT — 직접 입력 세부 칸 안내", () => {
+  assert.equal(TYPED_SUB_HINT, "같은 이름의 새가족이 있으면 세부(예: 연락할 분·반)를 적어 주세요");
 });

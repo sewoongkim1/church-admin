@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers, sessionHeadLine } from "../js/menus/education/courses-logic.js";
+import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers, sessionHeadLine, courseSavedText } from "../js/menus/education/courses-logic.js";
 
 test("formToCourse — 빈 정원은 null · 숫자는 숫자", () => {
   assert.equal(formToCourse({ title: "a", kind: "lecture", capacity: "" }).capacity, null);
@@ -86,4 +86,10 @@ test("sessionHeadLine — 「2회 · 3/10(수) 19:30~21:00」", () => {
   assert.equal(sessionHeadLine({ no: 2, on_date: "2027-03-10", start_time: "19:30", end_time: "21:00" }), "2회 · 3/10(수) 19:30~21:00");
   assert.equal(sessionHeadLine({ no: 1, on_date: "2027-03-10", start_time: "19:30", end_time: "" }), "1회 · 3/10(수) 19:30");
   assert.equal(sessionHeadLine({ no: 3, on_date: "", start_time: "", end_time: "" }), "3회 · 날짜를 골라 주세요");
+});
+
+test("courseSavedText — 정원을 늘려 대기하신 분이 확정되면 그 수를 함께(최종 검토 2026-10-05)", () => {
+  assert.equal(courseSavedText(0), "저장했어요");
+  assert.equal(courseSavedText(undefined), "저장했어요");
+  assert.equal(courseSavedText(2), "저장했어요 — 대기하신 2분이 확정됐어요");
 });

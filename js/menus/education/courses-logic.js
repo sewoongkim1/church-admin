@@ -81,6 +81,12 @@ const COURSE_ERR = {
 };
 export const courseErrorText = (r) => COURSE_ERR[r?.error] || "";
 
+// 강좌 저장 뒤 알림 — 정원을 늘려 대기하신 분이 확정됐으면 그 수를 함께(서버 eduCourseSave 의 promoted · 최종 검토 2026-10-05)
+export function courseSavedText(promoted) {
+  const n = Number(promoted) || 0;
+  return n > 0 ? `저장했어요 — 대기하신 ${n}분이 확정됐어요` : "저장했어요";
+}
+
 // 회차 줄 머리 한 줄 — 「2회 · 3/10(수) 19:30~21:00」 (날짜가 없으면 안내)
 export function sessionHeadLine(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s?.on_date || "");

@@ -2,7 +2,7 @@
 //   규칙·칸 지도는 edu-rules.ts(순수), 정원·대기·취소는 SQL 함수(성경암송 supabase/edu.sql). index.ts 의 switch 가 makeEdu(...) 의 함수를 부른다.
 // ⚠️ npm import 를 두지 않는다 — db(supabase 클라이언트)를 받아 쓴다(Node 시험이 이 파일을 import 할 수 있게).
 // ⚠️ 응답에 user_id·ident_key 를 싣지 않는다(courseOut·enrollOut). 기록(audit) detail 에 이름을 싣지 않는다(id·수만).
-import { checkCourse, checkSessions, checkTypedIdent, courseOut, enrollOut, exportRows, whoOf } from "./edu-rules.ts";
+import { checkCourse, checkSessions, checkTypedIdent, courseOut, enrollOut, exportRows, maybeDupIds, seatsOpened, waitOrder, whoOf } from "./edu-rules.ts";
 import { norm } from "./authz.ts";
 
 type Db = any;
@@ -46,12 +46,23 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     const id = norm(b?.course?.id);
     if (id) {
       if (!UUID.test(id)) return { ok: false, error: "bad-id" };
+      const { data: before, error: e0 } = await db.from("edu_courses").select("capacity,mode").eq("id", id).maybeSingle();
+      if (e0) throw e0;
+      if (!before) return { ok: false, error: "not-found" };
       const { data, error } = await db.from("edu_courses").update({ ...c.row, updated_at: new Date().toISOString() })
         .eq("id", id).select("id").maybeSingle();
       if (error) throw error;
       if (!data) return { ok: false, error: "not-found" };
-      await audit(ctx, "edu.course.save", id, { status: c.row.status });
-      return { ok: true, id };
+      // 자리가 늘었으면(정원 ↑ · 제한 없음 · 선착순으로) 대기하신 분부터 채운다 — 안 그러면 다음 앱 신청이 먼저 확정된다(새치기).
+      //   선착순·끝나지 않은 강좌만 SQL 함수가 올린다(승인 강좌는 0). 화면이 「대기하신 N분이 확정됐어요」를 띄운다.
+      let promoted = 0;
+      if (seatsOpened(before, c.row)) {
+        const { data: rf, error: er } = await db.rpc("edu_course_refill", { p_course: id });
+        if (er) throw er;
+        promoted = rf?.ok ? Number(rf.promoted) || 0 : 0;
+      }
+      await audit(ctx, "edu.course.save", id, { status: c.row.status, promoted });
+      return { ok: true, id, promoted };
     }
     const { data, error } = await db.from("edu_courses").insert(c.row).select("id").single();
     if (error) throw error;
@@ -115,11 +126,11 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     if (!c) return { ok: false, error: "not-found" };
     const rows = await deps.allRows(() => db.from("edu_enrollments").select(ENROLL_COLS).eq("course_id", id)
       .order("applied_at").order("id"));
-    const waiting = rows.filter((r) => r.status === "waitlisted")
-      .sort((a, z) => (a.waitlist_at || "").localeCompare(z.waitlist_at || "") || a.id - z.id).map((r) => r.id);
+    const waiting = rows.filter((r) => r.status === "waitlisted").sort(waitOrder).map((r) => r.id);
     const counts = await countsOf([id]);
+    const dup = maybeDupIds(rows);   // 앱 줄 ↔ 대신 등록 줄 같은 이름(같은 분이 두 자리일 수 있다)
     return { ok: true, course: courseOut(c, counts[id]),
-      enrollments: rows.map((r) => enrollOut(r, r.status === "waitlisted" ? waiting.indexOf(r.id) + 1 : null)) };
+      enrollments: rows.map((r) => enrollOut(r, r.status === "waitlisted" ? waiting.indexOf(r.id) + 1 : null, dup.has(r.id))) };
   }
 
   async function eduEnrollSet(ctx: any, b: any) {
