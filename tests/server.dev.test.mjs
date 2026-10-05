@@ -2885,7 +2885,11 @@ test("사역 이력 — 올리기(살펴보기·넣기) · 맞춤 · 교인ID �
     const renamed = `${HI.name}-x`;   // 「ca-test-hi-」로 시작해야 hiClean() 이 지운다
     const sv2 = (await call(m, "historyRowSave", { id: id2, expect: row2.updated_at, patch: { name: renamed } })).body;
     assert.equal(sv2.ok, true, JSON.stringify(sv2));
-    assert.ok(!("rematched" in sv2), "manual 줄의 이름만 바꿨는데 다시 맞췄다: " + JSON.stringify(sv2));
+    // 2026-10-05 — 사람이 이은 줄의 목장·이름이 바뀌면 그 결정을 따르던 같은 목장·이름 자동 줄을 다시 맞춘다(rematched 가 실린다).
+    //   이은 줄 자체는 그대로(사람이 이음 · 같은 분)여야 한다.
+    assert.equal(sv2.rematched, true, "manual 줄의 이름을 바꾸면 같은 묶음을 다시 맞춘다: " + JSON.stringify(sv2));
+    assert.deepEqual([sv2.row.link_how, sv2.row.match_basis], ["manual", "사람이 이음"], JSON.stringify(sv2));
+    assert.equal((await hiDb(`id=eq.${id2}`))[0].person_id, HI.ids[1], "manual 줄의 교인ID 가 바뀌었다");
     const cc2 = (await call(m, "historyCandidates", { id: id2 })).body;
     assert.equal(cc2.candidates.length, 1, "다른 이름이 됐으니 이름으로는 후보가 없어야 한다: " + JSON.stringify(cc2));
     assert.equal(cc2.candidates[0].current, true, "지금 이어진 분이 current 로 안 남았다: " + JSON.stringify(cc2));
