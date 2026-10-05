@@ -8,7 +8,7 @@ import { openForm } from "../../core/modal.js";
 import { pickOne, pickDate, pickTime, fmtDateLabel, fmtTimeLabel } from "../../core/picker.js";
 import {
   KIND_OPTIONS, MODE_OPTIONS, STATUS_OPTIONS, WAITLIST_OPTIONS,
-  formToCourse, courseToForm, sessionsSummary, makeSessionRows, sessionErrorText, courseErrorText,
+  formToCourse, courseToForm, checkFormNumbers, sessionsSummary, makeSessionRows, sessionErrorText, courseErrorText,
 } from "./courses-logic.js";
 
 const TITLE = `<h2 class="page-title">📚 강좌 관리</h2>`;
@@ -39,7 +39,7 @@ const FORM_PICKS = {
 const DATE_LABEL = { applyFrom: "신청 시작일", applyTo: "신청 마감일" };
 const dateText = (v) => (v ? `${v.slice(0, 4)}년 ${fmtDateLabel(v)}` : "고르기");
 
-function courseFormHtml(v, isNew) {
+export function courseFormHtml(v, isNew) {
   const pick = (k) => hid(k, v[k]) + pickBtn(k, FORM_PICKS[k].label, labelOf(FORM_PICKS[k].opts, v[k]) || "고르기", !v[k]);
   const date = (k) => hid(k, v[k]) + `<div class="field"><span>${DATE_LABEL[k]}</span>
     <button type="button" class="pk-field${v[k] ? "" : " empty"}" data-date="${k}" aria-haspopup="dialog" aria-expanded="false"
@@ -59,7 +59,7 @@ function courseFormHtml(v, isNew) {
     txt("checkLabel", "담당자 확인 항목", v.checkLabel, `maxlength="40" placeholder="예: 과제"`, "비우면 출석률만") +
     `<label class="field"><span>설명</span><textarea data-f="description" maxlength="2000" rows="4">${esc(v.description)}</textarea></label>` +
     pick("status") +
-    hid("track", v.track) + hid("prereq", JSON.stringify(v.prereq || []));
+    hid("id", v.id || "") + hid("track", v.track) + hid("prereq", JSON.stringify(v.prereq || []));
 }
 const readForm = (root) => {
   const o = Object.fromEntries([...root.querySelectorAll("[data-f]")].map((i) => [i.dataset.f, i.value.trim()]));
@@ -72,7 +72,7 @@ function openCourseForm({ call, course = null, term = "" }) {
   const v = course ? courseToForm(course)
     : { id: "", title: "", kind: "regular", term, description: "", teacher: "", place: "", fee: "", target: "", track: "", capacity: "",
         mode: "auto", waitlist: "on", applyFrom: "", applyTo: "", attendPct: 80, checkLabel: "", status: "draft", prereq: [] };
-  let first = "";
+  let first = "", gone = false;
   return openForm({
     title: course ? "✏️ 강좌 고치기" : "＋ 새 강좌", okLabel: course ? "저장" : "만들기", html: courseFormHtml(v, !course),
     onOpen: (root) => {
@@ -97,7 +97,11 @@ function openCourseForm({ call, course = null, term = "" }) {
     },
     isDirty: (root) => JSON.stringify(readForm(root)) !== first,
     onSubmit: async (root) => {
-      const body = formToCourse(readForm(root));
+      const vals = readForm(root);
+      const numErr = checkFormNumbers(vals);
+      if (numErr) return { ok: false, message: numErr };
+      const body = formToCourse(vals);
+      if (course && !body.id) return { ok: false, message: "강좌 번호를 읽지 못했어요 — 닫고 다시 열어 주세요" };   // 고치기가 새 강좌를 만들지 않게
       if (!body.title) return { ok: false, message: courseErrorText({ error: "no-title" }) };
       // 모집 중으로 **바꿀 때만** 확인(이미 모집 중인 강좌의 다른 칸을 고칠 때는 묻지 않는다)
       if (body.status === "open" && (!course || course.status !== "open")) {
@@ -107,10 +111,11 @@ function openCourseForm({ call, course = null, term = "" }) {
       }
       const r = await call("eduCourseSave", { course: body });
       if (r.ok) return { ok: true, value: r.id };
+      if (r.error === "not-found") { gone = true; return { ok: true, value: null }; }   // 창을 닫고 목록을 새로 불러온다
       const m = courseErrorText(r);
       return m ? { ok: false, message: m } : r;
     },
-  });
+  }).then((v) => (gone ? "gone" : v));
 }
 
 // ---------- 회차 창 ----------
@@ -262,6 +267,7 @@ export async function render(el, { call }) {
       <div class="ec-list">${data.courses.length ? data.courses.map((c) => courseCard(c, sess[c.id])).join("")
         : `<p class="empty">아직 강좌가 없어요 — 「＋ 새 강좌」로 만들어 주세요</p>`}</div>`;
   };
+  const open = new Set();   // 열려 있는 창(단추 종류+강좌)
   const reload = async () => { if (await load()) draw(); };
 
   if (!(await load())) return;
@@ -280,14 +286,23 @@ export async function render(el, { call }) {
       if (got !== null && got !== term) { term = got; await busy(el, reload); }
       return;
     }
+    if (open.has(act + (card?.dataset.id || ""))) return;   // 같은 창이 이미 열려 있다(두 번 누름)
+    const key = act + (card?.dataset.id || "");
+    open.add(key);
     let done = false;
+    try {
     if (act === "new") { done = !!(await openCourseForm({ call, term })); if (done) toast("저장했어요"); }
-    else if (act === "edit" && course) { done = !!(await openCourseForm({ call, course })); if (done) toast("저장했어요"); }
+    else if (act === "edit" && course) {
+      const got = await openCourseForm({ call, course });
+      done = !!got;
+      if (got === "gone") toast("그 강좌를 찾지 못해 목록을 새로 불러왔어요"); else if (done) toast("저장했어요");
+    }
     else if (act === "sessions" && course) { done = !!(await openSessionsForm({ call, course })); if (done) toast("회차를 저장했어요"); }
     else if (act === "copy" && course) {
       done = !!(await openCopyForm({ call, course }));
       if (done) toast("복사했어요 — 준비 중으로 만들었어요. 신청 기간과 회차 날짜를 고쳐 주세요");
     }
+    } finally { open.delete(key); }
     if (done) await busy(el, reload);
   });
 }

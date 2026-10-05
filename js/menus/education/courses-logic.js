@@ -17,12 +17,23 @@ const md = (d) => { const t = new Date(d + "T00:00:00Z"); return `${t.getUTCMont
 export function formToCourse(v) {
   const cap = String(v.capacity ?? "").trim();
   return {
-    id: v.id || undefined, title: v.title || "", kind: v.kind || "", term: v.term || "", description: v.description || "",
+    ...(v.id ? { id: v.id } : {}), title: v.title || "", kind: v.kind || "", term: v.term || "", description: v.description || "",
     teacher_label: v.teacher || "", place: v.place || "", fee_note: v.fee || "", target: v.target || "", track: v.track || "",
     capacity: cap === "" ? null : Number(cap), mode: v.mode || "auto", waitlist: v.waitlist !== "off",
     apply_from: v.applyFrom || "", apply_to: v.applyTo || "", attend_pct: v.attendPct === "" || v.attendPct == null ? 80 : Number(v.attendPct),
     check_label: v.checkLabel || "", status: v.status || "draft", prereq_tracks: v.prereq || [],
   };
+}
+
+// 정원·출석률 검사 — 빈 칸은 통과(정원 null = 제한 없음 · 출석률 80). 숫자가 아닌 글은 한국말 오류를 돌려준다(보내지 않는다).
+//   ⚠️ Number("20명") 은 NaN → JSON 에서 null: 정원은 「제한 없음」, 출석률은 서버에서 0 이 된다.
+const INT = /^\d+$/;
+export function checkFormNumbers(v) {
+  const cap = String(v.capacity ?? "").trim();
+  if (cap !== "" && !INT.test(cap)) return "정원은 숫자로 적어 주세요";
+  const pct = String(v.attendPct ?? "").trim();
+  if (pct !== "" && (!INT.test(pct) || Number(pct) > 100)) return "출석률은 0~100 숫자로 적어 주세요";
+  return "";
 }
 
 // 서버 courseOut → 화면 폼 값

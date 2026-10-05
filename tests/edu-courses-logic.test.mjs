@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText } from "../js/menus/education/courses-logic.js";
+import { formToCourse, courseToForm, sessionsSummary, KIND_OPTIONS, makeSessionRows, sessionErrorText, courseErrorText, checkFormNumbers } from "../js/menus/education/courses-logic.js";
 
 test("formToCourse — 빈 정원은 null · 숫자는 숫자", () => {
   assert.equal(formToCourse({ title: "a", kind: "lecture", capacity: "" }).capacity, null);
@@ -48,4 +48,36 @@ test("오류 글 — 회차·강좌", () => {
   for (const e of ["bad-no", "bad-date", "dup-no", "too-many"]) assert.ok(sessionErrorText({ error: e }), e);
   assert.equal(sessionErrorText({ error: "zzz" }), "");
   assert.ok(courseErrorText({ error: "bad-range" }));
+});
+
+import { courseFormHtml } from "../js/menus/education/courses.js";
+
+// 폼 HTML 의 data-f 칸을 읽어 값으로(브라우저 readForm 과 같은 일 — DOM 없이)
+const fieldsOf = (html) => Object.fromEntries([...html.matchAll(/data-f="(\w+)"[^>]*?value="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+
+test("고치기 폼 — id 가 폼 값에 실리고 payload 까지 살아남는다(없으면 새 강좌가 생긴다)", () => {
+  const c = { id: "11111111-1111-1111-1111-111111111111", title: "제자훈련", kind: "regular", term: "t", capacity: 20, mode: "auto",
+    waitlist: true, applyFrom: null, applyTo: null, attendPct: 80, checkLabel: null, status: "draft", description: "", teacher: "", place: "",
+    fee: "", target: "", track: "", prereq: [] };
+  const vals = fieldsOf(courseFormHtml(courseToForm(c), false));
+  assert.equal(vals.id, c.id);
+  assert.equal(formToCourse(vals).id, c.id);
+  assert.equal(vals.title, "제자훈련");
+});
+
+test("새 강좌 폼 — id 칸은 비고 payload 에 id 가 없다", () => {
+  const vals = fieldsOf(courseFormHtml({ id: "", title: "", kind: "regular", term: "", capacity: "", mode: "auto", waitlist: "on", status: "draft",
+    attendPct: 80, applyFrom: "", applyTo: "", prereq: [] }, true));
+  assert.equal(vals.id, "");
+  assert.equal("id" in formToCourse(vals), false);
+});
+
+test("checkFormNumbers — 정원·출석률", () => {
+  assert.equal(checkFormNumbers({ capacity: "", attendPct: "" }), "");
+  assert.equal(checkFormNumbers({ capacity: "12", attendPct: "80" }), "");
+  assert.equal(checkFormNumbers({ capacity: "20명", attendPct: "" }), "정원은 숫자로 적어 주세요");
+  assert.equal(checkFormNumbers({ capacity: "", attendPct: "abc" }), "출석률은 0~100 숫자로 적어 주세요");
+  assert.equal(checkFormNumbers({ capacity: "", attendPct: "101" }), "출석률은 0~100 숫자로 적어 주세요");
+  assert.equal(formToCourse({ title: "a", capacity: "", attendPct: "" }).attend_pct, 80);
+  assert.equal(formToCourse({ title: "a", capacity: "" }).capacity, null);
 });
