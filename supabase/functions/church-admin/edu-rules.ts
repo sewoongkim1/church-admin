@@ -394,10 +394,12 @@ export function eduCertCandidate(x: { attend?: any; attendPct?: unknown; checkLa
 //   (진위 확인 eduVerify 의 가린 이름 · 번호 꼴 · 내 수료증 eduCert 의 문안). 이쪽 tests/edu-rules.test.mjs 와 그쪽 tests/edu-front.test.cjs 에
 //   같은 지문(sha256)이 박혀 있다 — 어느 쪽 글자가 바뀌어도 그쪽 시험이 떨어진다. 그래서 eduAttendRate 처럼 export 를 함수 앞에 붙이지 않는다.
 //   번호 꼴은 SQL edu_cert_take(「고척-YYYY-NNNN」 · 9999 다음은 자리가 는다)·칸 제약 edu_enrollments_cert_check 와 같다.
-//   이름 가리기: 한 글자는 그대로 · 두 글자는 뒤를 * · 세 글자 넘으면 처음과 끝만 남긴다(홍길동 → 홍*동 · 남궁가나 → 남**나).
+//   이름 가리기: 빈 이름은 빈 글 · **한 글자는 「*」**(검토 반영 2026-10-05 — 그대로 내보내면 진위 확인이 이름을 다 보여 준다) ·
+//   두 글자는 뒤를 * · 세 글자 넘으면 처음과 끝만 남긴다(홍길동 → 홍*동 · 남궁가나 → 남**나).
 function maskName(name) {
   var s = Array.from(String(name == null ? "" : name).normalize("NFC").trim());
-  if (s.length < 2) return s.join("");
+  if (s.length === 0) return "";
+  if (s.length === 1) return "*";
   if (s.length === 2) return s[0] + "*";
   return s[0] + "*".repeat(s.length - 2) + s[s.length - 1];
 }

@@ -4,6 +4,7 @@
 // 하는 일: 교육 총괄 한 분 · 교육 담당 M(강좌 A 의 manager) · 교육 담당 D(강좌 B 의 manager) · 강사 T(강좌 A 의 teacher)
 //   (이메일 로그인 ca-test-cert-…@example.test)와 시험 강좌 A·B 를 만들고 —
 //   확인 체크·후보 → 수료 확정(이름 가나다 차례로 번호) → 다시 확정(같은 번호) → 취소(번호 남음) → 되살림(같은 번호) → 인쇄 자료 ·
+//   (검토 반영) 수료 취소 뒤 신청 취소는 된다 — 번호는 그 줄에 남고 새 확정은 그 번호를 받지 않는다 · 살아 있는 수료는 has-cert ·
 //   강사는 문에서 forbidden · 다른 강좌 교육 담당은 not-assigned(아무것도 안 바뀜) · 수료증 설정은 총괄만 · 바뀐 기록(이름·번호·이미지 없음)을 본다.
 //   끝나면(실패해도) 출석 → 신청 → 회차 → 담당 줄 → 강좌 → 그 네 분의 기록·역할·담당자 → auth 사용자를 지우고 0 줄인지 보며,
 //   수료증 설정 한 줄과 그 해 번호 차례(edu_cert_seq)를 시작 전 값으로 되돌린다(개발에서만 — 운영 차례는 늘기만 한다).
@@ -213,7 +214,7 @@ test("수료 확정 — 이름 가나다 차례로 번호(보낸 차례와 상�
   assert.deepEqual(p.body.course, { id: A, title: `${TAG}A-${STAMP}`, term: "시험", from: kst(-7), to: kst(0) });
   assert.ok(!p.body.body.includes("{과정}") && p.body.body.includes(`${TAG}A-${STAMP}`), "문안의 {과정}");
   assert.ok(!/user_id|ident_key/.test(JSON.stringify(p.body)));
-  // 확정 아님 — 통째로 거절(ids) · 번호 줄은 상태를 못 바꾼다(has-cert)
+  // 확정 아님 — 통째로 거절(ids) · 살아 있는 수료 줄은 상태를 못 바꾼다(has-cert)
   assert.equal((await call(chief.token, "eduEnrollSet", { id: e[3], op: "cancel" })).body.ok, true);
   r = await call(chief.token, "eduCertIssue", { course_id: A, enrollment_ids: [e[2], e[3]] });
   assert.deepEqual(r.body, { ok: false, error: "not-confirmed", ids: [e[3]] });
@@ -222,6 +223,31 @@ test("수료 확정 — 이름 가나다 차례로 번호(보낸 차례와 상�
   assert.deepEqual((await call(chief.token, "eduEnrollSet", { id: e[1], op: "waitlist" })).body, { ok: false, error: "has-cert" });
   r = await call(chief.token, "eduCertIssue", { course_id: A, enrollment_ids: [W.eB] });
   assert.deepEqual(r.body, { ok: false, error: "wrong-course", ids: [W.eB] });
+});
+
+test("수료를 취소한 분(검토 반영) — 담당자가 신청을 취소할 수 있다 · 번호는 그 줄에 남고 새 확정은 그 번호를 받지 않는다 · 살아 있는 수료는 여전히 has-cert", async () => {
+  const { A, B, e } = W;
+  let r = await call(M.token, "eduCertIssue", { course_id: A, enrollment_ids: [e[2]] });   // 나(50% — 기준 밖이어도 사람이 정한다)
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.equal(r.body.issued[0].how, "new");
+  const noNa = r.body.issued[0].certNo;
+  assert.deepEqual((await call(chief.token, "eduEnrollSet", { id: e[2], op: "cancel" })).body, { ok: false, error: "has-cert" }, "살아 있는 수료는 막힌다");
+  assert.deepEqual((await call(M.token, "eduCertRevoke", { enrollment_id: e[2] })).body, { ok: true, certNo: noNa });
+  const c = await call(chief.token, "eduEnrollSet", { id: e[2], op: "cancel" });
+  assert.equal(c.body.ok, true, "수료를 취소한 뒤에는 신청 취소가 된다 " + JSON.stringify(c.body));
+  const [row] = await rest(`edu_enrollments?select=status,cert_no,cert_revoked,completed&id=eq.${e[2]}`);
+  assert.deepEqual(row, { status: "cancelled", cert_no: noNa, cert_revoked: true, completed: false }, "번호는 그 줄에 남는다(진위 확인 「취소됨」)");
+  // 취소된 줄은 다시 확정 안 됨 · 새 확정(B 의 마)은 차례 다음 번호 — 남겨 둔 번호를 다시 쓰지 않는다
+  assert.deepEqual((await call(M.token, "eduCertIssue", { course_id: A, enrollment_ids: [e[2]] })).body, { ok: false, error: "not-confirmed", ids: [e[2]] });
+  r = await call(chief.token, "eduCertIssue", { course_id: B, enrollment_ids: [W.eB] });
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  const noMa = r.body.issued[0].certNo;
+  assert.notEqual(noMa, noNa);
+  assert.equal(tail(noMa), tail(noNa) + 1, "차례 다음 번호");
+  assert.equal((await rest(`edu_enrollments?select=id&cert_no=eq.${encodeURIComponent(noNa)}`)).length, 1, "남겨 둔 번호의 줄은 하나");
+  // 수료 화면(확정자만)·인쇄에서는 빠진다
+  assert.ok(!(await call(M.token, "eduCertList", { course_id: A })).body.people.some((p) => p.id === e[2]));
+  assert.ok(!(await call(M.token, "eduCertPrint", { course_id: A })).body.people.some((p) => p.id === e[2]));
 });
 
 test("강사 T — 수료 액션은 모두 문에서 403 forbidden(맡은 강좌 A 여도)", async () => {
@@ -282,12 +308,13 @@ test("바뀐 기록 — edu.cert.check·issue·revoke·print·settings · detail
   const ms = [chief.memberId, M.memberId].join(",");
   const logs = await rest(`admin_audit?select=action,target,detail,member_id&member_id=in.(${ms})&action=like.edu.cert.*&order=id`);
   const n = (a) => logs.filter((l) => l.action === a).length;
-  // check 셋(M) · issue 둘(새 둘 · 되살림 하나 — already 만인 것은 기록 안 함) · revoke 하나(already 는 기록 안 함) · print 셋 · settings 둘(바뀐 것 없는 저장은 기록 안 함)
-  assert.deepEqual([n("edu.cert.check"), n("edu.cert.issue"), n("edu.cert.revoke"), n("edu.cert.print"), n("edu.cert.settings")], [3, 2, 1, 3, 2]);
+  // check 셋(M) · issue 넷(새 둘 · 되살림 하나 · 나 · 마 — already 만인 것·거절은 기록 안 함) · revoke 둘(already 는 기록 안 함) ·
+  //   print 넷 · settings 둘(바뀐 것 없는 저장은 기록 안 함)
+  assert.deepEqual([n("edu.cert.check"), n("edu.cert.issue"), n("edu.cert.revoke"), n("edu.cert.print"), n("edu.cert.settings")], [3, 4, 2, 4, 2]);
   const issue = logs.filter((l) => l.action === "edu.cert.issue");
-  assert.deepEqual(issue.map((l) => [l.detail.count, l.detail.fresh, l.detail.restored]), [[2, 2, 0], [1, 0, 1]]);
+  assert.deepEqual(issue.map((l) => [l.detail.count, l.detail.fresh, l.detail.restored]), [[2, 2, 0], [1, 0, 1], [1, 1, 0], [1, 1, 0]]);
   assert.deepEqual(logs.filter((l) => l.action === "edu.cert.settings").map((l) => l.detail), [{ fields: ["issuer", "body", "seal"] }, { fields: ["seal"] }]);
   const txt = JSON.stringify(logs.map((l) => l.detail));
   assert.ok(!txt.includes(TAG + STAMP) && !txt.includes("base64") && !txt.includes("고척-") && !txt.includes("명의"), "기록에 이름·이미지·번호·글");
-  assert.ok(logs.every((l) => !UUID_RE.test(JSON.stringify(l.detail).replace(W.A, ""))), "강좌 id 밖의 UUID 꼴 값");
+  assert.ok(logs.every((l) => !UUID_RE.test(JSON.stringify(l.detail).replace(W.A, "").replace(W.B, ""))), "강좌 id 밖의 UUID 꼴 값");
 });

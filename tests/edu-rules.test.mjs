@@ -397,11 +397,13 @@ test("eduCertCandidate — 출석률(eduAttendRate) ≥ 기준 그리고 확인 
   for (const [input, want] of ATTEND_RATE_CASES) assert.equal(C(input, 80), want.pct !== null && want.pct >= 80, JSON.stringify(input));
 });
 
-test("maskName — 한 글자 그대로 · 두 글자 뒤를 * · 세 글자 넘으면 처음과 끝만 · NFC·앞뒤 빈칸 · 서로게이트도 한 글자", () => {
+test("maskName — 한 글자는 * · 두 글자 뒤를 * · 세 글자 넘으면 처음과 끝만 · NFC·앞뒤 빈칸 · 서로게이트도 한 글자", () => {
   assert.equal(maskName("홍길동"), "홍*동");
   assert.equal(maskName("이수"), "이*");
   assert.equal(maskName("남궁가나"), "남**나");
-  assert.equal(maskName("김"), "김");
+  assert.equal(maskName("김"), "*", "한 글자 이름을 그대로 내보내지 않는다(검토 반영)");
+  assert.equal(maskName(" 김 "), "*");
+  assert.equal(maskName("\u{1F600}"), "*", "서로게이트 한 글자도 *");
   assert.equal(maskName("제갈공명선"), "제***선");
   for (const x of ["", null, undefined, "   "]) assert.equal(maskName(x), "", String(x));
   assert.equal(maskName("  홍길동 "), "홍*동");
@@ -433,7 +435,7 @@ test("eduCertBody — {과정} 을 모두 제목으로 · 없으면 그대로 ·
 //   규칙을 일부러 바꿀 때는 두 곳(이 파일 edu-rules.ts · 성경암송 supabase/functions/api/index.ts)을 같은 글자로 고치고 두 시험의 값을 함께 바꾼다.
 //   지문 = sha256(「function 이름(…) {」부터 첫 줄머리 「}」까지 · 줄끝 LF) — eduAttendRate 와 같은 셈.
 const CERT_FN_SHA256 = {
-  "function maskName(name) {": "f75ac72b195255346b43f1e82b89a6ceaf7e35f6a0f73f9116be1cd8588dea78",
+  "function maskName(name) {": "76968ab11c23a08576a2c0007892be7f38c766102ef04d92256ebce27361c8fd",
   "function eduCertNoValid(s) {": "add57082b525160f77794f21653de377ecaf2f775be270a0785b63b5d0be47e3",
   "function eduCertBody(body, title) {": "9061e91bd5d14439e5fd96b52b4f88592623a47be29c248ad5f7146589e104d4",
 };
