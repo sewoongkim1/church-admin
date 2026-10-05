@@ -171,6 +171,7 @@ export function makeEdu(db: Db, audit: Audit, deps: {
   async function eduFeeSet(ctx: any, b: any) {
     const id = Number(b?.id);
     if (!Number.isInteger(id) || id < 1) return { ok: false, error: "bad-id" };
+    if (typeof b?.paid !== "boolean" && typeof b?.note !== "string") return { ok: false, error: "nothing" };   // 바꿀 것이 없으면 쓰지도 기록하지도 않는다
     const patch: any = { updated_at: new Date().toISOString() };
     if (typeof b?.paid === "boolean") patch.fee_paid = b.paid;       // 메모만 저장할 때 납부 표시를 지우지 않는다
     if (typeof b?.note === "string") {

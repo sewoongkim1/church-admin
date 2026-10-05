@@ -1,0 +1,75 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { makeEdu } from "../supabase/functions/church-admin/edu-db.ts";
+
+const COURSE = "11111111-1111-4111-8111-111111111111";
+const USER = "22222222-2222-4222-8222-222222222222";
+
+// 가짜 db — 이어 붙인 질의를 기록하고, 신청 줄 조회에는 prev 를 돌려주고, edu_apply 를 부른 횟수를 센다
+function setup({ prev = [], pick, applyRes } = {}) {
+  const log = { q: [], rpc: [], audit: [], writes: 0 };
+  const chain = (table) => {
+    const c = { calls: [] };
+    const m = new Proxy(c, { get(_, k) {
+      if (k === "then") return (res) => res({ data: prev, error: null });
+      if (k === "update" || k === "insert" || k === "delete") log.writes++;
+      return (...a) => { c.calls.push([k, ...a]); return m; };
+    } });
+    log.q.push({ table, c });
+    return m;
+  };
+  const db = { from: chain, rpc: async (fn, args) => { log.rpc.push([fn, args]); return { data: applyRes ?? { ok: true, id: 5, status: "confirmed" }, error: null }; } };
+  const audit = async (_c, action, target, detail) => { log.audit.push([action, target, detail]); };
+  const deps = { peopleLookup: async () => ({}), allRows: async () => [],
+    personPick: async () => pick ?? { ok: true, ident: { name: "홍", who_type: "교구", group_name: "기쁨", sub_name: "3", ident_key: "person|9" }, appUserId: null } };
+  return { edu: makeEdu(db, audit, deps), log };
+}
+const has = (log, ...call) => log.q[0].c.calls.some((x) => x.length === call.length && x.every((v, i) => v === call[i]));
+
+test("반려 확인 조회 — 앱 계정이면 user_id 로, 아니면 user_id is null + ident_key 로", async () => {
+  const a = setup({ pick: { ok: true, ident: { name: "홍", ident_key: "person|9" }, appUserId: USER } });
+  await a.edu.eduEnrollAdd({}, { course_id: COURSE, name: "홍", pick: 0, check: {} });
+  assert.ok(has(a.log, "eq", "user_id", USER)); assert.ok(!has(a.log, "is", "user_id", null));
+  const b = setup();
+  await b.edu.eduEnrollAdd({}, { course_id: COURSE, name: "홍", pick: 0, check: {} });
+  assert.ok(has(b.log, "is", "user_id", null)); assert.ok(has(b.log, "eq", "ident_key", "person|9"));
+});
+
+test("반려했던 분 — force 없으면 was-declined(edu_apply 안 부름) · force:true 면 부르고 revived", async () => {
+  const a = setup({ prev: [{ id: 5, status: "declined" }] });
+  assert.deepEqual(await a.edu.eduEnrollAdd({}, { course_id: COURSE, name: "홍", pick: 0, check: {} }), { ok: false, error: "was-declined" });
+  assert.equal(a.log.rpc.length, 0); assert.equal(a.log.audit.length, 0);
+  const b = setup({ prev: [{ id: 5, status: "declined" }], applyRes: { ok: true, id: 5, status: "confirmed" } });
+  const r = await b.edu.eduEnrollAdd({}, { course_id: COURSE, name: "홍", pick: 0, check: {}, force: true });
+  assert.equal(b.log.rpc[0][0], "edu_apply"); assert.equal(b.log.rpc[0][1].p_staff, true);
+  assert.equal(r.revived, true); assert.equal(b.log.audit[0][2].revived, true);
+});
+
+test("취소했던 분 — 묻지 않고 되살리고 revived · 새 분은 revived 없음 · 이미 있는 분은 revived 아님", async () => {
+  const a = setup({ prev: [{ id: 5, status: "cancelled" }] });
+  const r = await a.edu.eduEnrollAdd({}, { course_id: COURSE, name: "홍", pick: 0, check: {} });
+  assert.equal(r.ok, true); assert.equal(r.revived, true); assert.equal(a.log.rpc.length, 1);
+  const n = setup();
+  assert.equal("revived" in (await n.edu.eduEnrollAdd({}, { course_id: COURSE, name: "홍", pick: 0, check: {} })), false);
+  const d = setup({ prev: [{ id: 5, status: "confirmed" }], applyRes: { ok: true, id: 5, status: "confirmed", already: true } });
+  assert.equal("revived" in (await d.edu.eduEnrollAdd({}, { course_id: COURSE, name: "홍", pick: 0, check: {} })), false);
+});
+
+test("고르기 단계의 changed 는 그대로 나오고 아무것도 부르지 않는다 · 직접 적은 신원은 규칙 검사", async () => {
+  const a = setup({ pick: { ok: false, error: "changed" } });
+  assert.deepEqual(await a.edu.eduEnrollAdd({}, { course_id: COURSE, name: "홍", pick: 3, check: {} }), { ok: false, error: "changed" });
+  assert.equal(a.log.rpc.length, 0); assert.equal(a.log.q.length, 0);
+  const b = setup();
+  assert.deepEqual(await b.edu.eduEnrollAdd({}, { course_id: COURSE, ident: { name: "a|b" } }), { ok: false, error: "bad-ident" });
+  assert.equal(b.log.rpc.length, 0);
+});
+
+test("eduFeeSet — paid 도 note 도 없으면 nothing · 쓰지도 기록하지도 않는다", async () => {
+  const a = setup();
+  assert.deepEqual(await a.edu.eduFeeSet({}, { id: 3 }), { ok: false, error: "nothing" });
+  assert.equal(a.log.writes, 0); assert.equal(a.log.audit.length, 0); assert.equal(a.log.q.length, 0);
+  const b = setup({ prev: { id: 3 } });
+  assert.deepEqual(await b.edu.eduFeeSet({}, { id: 3, note: "메모" }), { ok: true });   // 메모만 저장 — fee_paid 는 patch 에 없다
+  const upd = b.log.q[0].c.calls.find((x) => x[0] === "update");
+  assert.equal("fee_paid" in upd[1], false); assert.equal("staff_note" in upd[1], true);
+});

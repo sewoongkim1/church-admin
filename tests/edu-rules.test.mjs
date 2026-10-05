@@ -83,7 +83,7 @@ test("rosterIdent — 소속 없음은 person|교인ID · 앱 계정은 정확�
 test("checkTypedIdent — | 는 모든 칸에서 막고 길이는 40자", () => {
   const ok = checkTypedIdent({ name: "새가족1", who_type: "", group_name: "기쁨", sub_name: "3" });
   assert.equal(ok.ok, true); assert.equal(ok.ident.ident_key, "staff|새가족|기쁨|3|새가족1");
-  for (const bad of [{ name: "a|b" }, { name: "x", who_type: "a|b" }, { name: "x", group_name: "a|b" }, { name: "x", sub_name: "a|b" },
+  for (const bad of [{ name: "a|b" }, { name: "a\\b" }, { name: "x", who_type: "a|b" }, { name: "x", group_name: "a|b" }, { name: "x", sub_name: "a|b" },
     { name: "" }, { name: "가".repeat(41) }, { name: "x", group_name: "가".repeat(41) }, { name: "x", sub_name: "1".repeat(41) },
     { name: "x", who_type: "가".repeat(41) }, { name: 'a"b' }]) {
     assert.deepEqual(checkTypedIdent(bad), { ok: false, error: "bad-ident" }, JSON.stringify(bad));

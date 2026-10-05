@@ -139,7 +139,7 @@ export function exportRows(course: { title: string; term?: string }, list: any[]
 
 // ---------- 대신 등록: 신원 만들기 (검토 반영 · 2026-10-05) ----------
 const ID_FIELD_MAX = 40;
-const NAME_BAD = /["\,()|]/;
+const NAME_BAD = /["\\,()|]/;
 
 // 담당자가 직접 적은 신원 — 새가족. ident_key 는 「staff|구분|소속|세부|이름」 이라 어느 칸에도 | 가 들어가면 키가 갈라진다.
 export function checkTypedIdent(o: any):

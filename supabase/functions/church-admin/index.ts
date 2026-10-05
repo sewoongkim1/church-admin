@@ -2033,7 +2033,9 @@ async function eduPersonPick(name: unknown, pick: unknown, check: any) {
   if (typeof pick !== "number" || !Number.isInteger(pick) || pick < 0 || pick >= rows.length) return { ok: false as const, error: "changed" };
   const c = lookupCandOut(rows[pick]);
   const want = (x: unknown) => String(x ?? "").normalize("NFC").trim();
-  if (!check || want(check.who_type) !== c.who_type || want(check.group) !== c.group || want(check.sub) !== c.sub) {
+  // 같은 이름·같은 소속의 두 분(소망 남성1·남성2 등)은 교적 목장(church_mok)·직분(position)으로 가려진다 — 카드의 값을 그대로 돌려받아 맞댄다
+  if (!check || want(check.who_type) !== c.who_type || want(check.group) !== c.group || want(check.sub) !== c.sub
+    || want(check.church_mok) !== want(c.church_mok) || want(check.position) !== want(c.position)) {
     return { ok: false as const, error: "changed" };
   }
   const personId = Number(rows[pick].person_id);
