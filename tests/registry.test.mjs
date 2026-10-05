@@ -61,15 +61,21 @@ test("menusFor — super 는 전부, 역할 없으면 없음", () => {
   assert.equal(menusFor(["ministry"]).length, MENUS.filter((m) => menuRoles(m).includes("ministry")).length);
 });
 
-test("교육 묶음 — 강좌 관리(교육 총괄만) 다음에 신청 현황(교육 총괄·교육 담당)", () => {
+test("교육 묶음 — 강좌 관리(교육 총괄만) 다음에 신청 현황(교육 총괄·교육 담당) 다음에 출석부(교육 총괄·교육 담당·강사)", () => {
   const edu = MENUS.filter((m) => m.group === "교육");
-  assert.deepEqual(edu.map((m) => m.id), ["edu-courses", "edu-enroll"]);
-  assert.deepEqual(edu.map((m) => m.label), ["강좌 관리", "신청 현황"]);
+  assert.deepEqual(edu.map((m) => m.id), ["edu-courses", "edu-enroll", "edu-attend"]);
+  assert.deepEqual(edu.map((m) => m.label), ["강좌 관리", "신청 현황", "출석부"]);
+  assert.deepEqual(edu.map((m) => m.icon), ["📚", "📝", "✅"]);
   assert.deepEqual(menuRoles(edu[0]), ["education"]);
   assert.deepEqual([...menuRoles(edu[1])].sort(), ["education", "educourse"]);
-  assert.deepEqual(menusFor(["education"]).map((m) => m.id), ["edu-courses", "edu-enroll"]);
-  // 교육 담당(맡은 강좌)은 신청 현황만 — 강좌 관리는 안 보인다(서버도 eduCourseSave 를 forbidden 으로 막는다)
-  assert.deepEqual(menusFor(["educourse"]).map((m) => m.id), ["edu-enroll"]);
+  assert.deepEqual([...menuRoles(edu[2])].sort(), ["education", "educourse", "teacher"]);
+  assert.deepEqual(menusFor(["education"]).map((m) => m.id), ["edu-courses", "edu-enroll", "edu-attend"]);
+  // 교육 담당(맡은 강좌)은 신청 현황·출석부 — 강좌 관리는 안 보인다(서버도 eduCourseSave 를 forbidden 으로 막는다)
+  assert.deepEqual(menusFor(["educourse"]).map((m) => m.id), ["edu-enroll", "edu-attend"]);
   assert.deepEqual(menuGroups(menusFor(["educourse"])).map((g) => g.group), ["교육"]);
-  assert.deepEqual(menusFor(["ministry", "educourse"]).filter((m) => m.group === "교육").map((m) => m.id), ["edu-enroll"]);
+  assert.deepEqual(menusFor(["ministry", "educourse"]).filter((m) => m.group === "교육").map((m) => m.id), ["edu-enroll", "edu-attend"]);
+  // 강사는 출석부만 — 신청 현황(이름·상태·교재비·메모)은 안 보인다(서버도 eduEnrollList 를 forbidden 으로 막는다)
+  assert.deepEqual(menusFor(["teacher"]).map((m) => m.id), ["edu-attend"]);
+  assert.deepEqual(menuGroups(menusFor(["teacher"])).map((g) => g.group), ["교육"]);
+  assert.equal(GROUP_ICON["교육"], "🎓");
 });

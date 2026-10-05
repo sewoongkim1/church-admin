@@ -193,3 +193,57 @@ test("stale 담당 — 카드 글 「이름(역할 없음)」 · staffBits · �
   const opts = staffOptions([{ id: "a", name: "김담당", who: "", roles: ["educourse"] }], c.staff);
   assert.equal(staffFieldText(["a", "z"], opts), "김담당, 옛담당(역할 없음)");
 });
+
+// ---------- 강사(출석부 · 2단계 2026-10-05) ----------
+import { teacherBits, teacherLine, TEACHER_NO_CAND, TEACHER_ROLE_HINTS, TEACHER_BAD_MEMBER, STAFF_ROLE_HINTS } from "../js/menus/education/courses-logic.js";
+
+test("회차 창 has-attendance — 「출석이 있는 회차(3회, 5회)는 지울 수 없어요」(창은 그대로)", () => {
+  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: [3, 5] }), "출석이 있는 회차(3회, 5회)는 지울 수 없어요");
+  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: [8] }), "출석이 있는 회차(8회)는 지울 수 없어요");
+  assert.equal(sessionErrorText({ ok: false, error: "has-attendance", nos: ["2", "x", -1] }), "출석이 있는 회차(2회)는 지울 수 없어요");
+  assert.equal(sessionErrorText({ ok: false, error: "has-attendance" }), "출석이 있는 회차는 지울 수 없어요");
+});
+
+test("teacherBits · teacherLine — 「강사 김OO, 박OO(역할 없음)」 · 없으면 빈 글(카드에 줄 없음) · 글 칸 teacher 와 별개", () => {
+  const c = { teacher: "가나다 목사", teachers: [{ id: "t1", name: "김강사" }, { id: "t2", name: "옛강사", stale: true }, { id: "t3", name: "" }] };
+  assert.deepEqual(teacherBits(c), [{ name: "김강사", stale: false }, { name: "옛강사", stale: true }]);
+  assert.equal(teacherLine(c), "강사 김강사, 옛강사(역할 없음)");
+  assert.equal(teacherLine({ teacher: "가나다 목사", teachers: [] }), "");   // 화면용 글(teacher_label)은 카드 강사 줄이 아니다
+  assert.equal(teacherLine({}), "");
+  assert.equal(teacherLine(null), "");
+});
+
+test("강사 후보 고르개 — 역할 표시는 교육 총괄 → 교육 담당 차례로 하나 · 강사만이면 소속만 · stale 은 「역할 없음 — 빼 주세요」", () => {
+  const cands = [{ id: "a", name: "김강사", who: "기쁨 3목장", roles: ["teacher"] }, { id: "b", name: "박담당", who: "", roles: ["educourse", "teacher"] },
+    { id: "c", name: "이총괄", who: "소망 1목장", roles: ["education", "educourse"] }];
+  assert.deepEqual(staffOptions(cands, [{ id: "z", name: "옛강사", stale: true }], TEACHER_ROLE_HINTS), [
+    { value: "a", label: "김강사", hint: "기쁨 3목장" },
+    { value: "b", label: "박담당", hint: "교육 담당" },
+    { value: "c", label: "이총괄", hint: "소망 1목장 · 교육 총괄" },
+    { value: "z", label: "옛강사", hint: STALE_HINT, stale: true },
+  ]);
+  // 담당 후보(기본)는 예전 그대로 — 교육 총괄만 덧붙인다
+  assert.deepEqual(STAFF_ROLE_HINTS, [["education", "교육 총괄"]]);
+  assert.equal(staffOptions(cands, [])[1].hint, "");
+  assert.equal(staffFieldText([], [], "강사 없음"), "강사 없음");
+  assert.equal(staffFieldText(["a"], staffOptions(cands, [], TEACHER_ROLE_HINTS), "강사 없음"), "김강사");
+  assert.match(staffSaveFailText(TEACHER_BAD_MEMBER, "강사"), /^강좌는 저장했어요 — 강사는 저장하지 못했어요 \(강사 역할이 없거나/);
+  assert.equal(TEACHER_NO_CAND, "⚙️ 담당자·역할에서 「강사」 역할을 먼저 주세요");
+});
+
+test("고치기 폼 — 「강사(출석부)」 칸은 담당자 칸 아래(숨은 칸 tstaff) · 후보가 없으면 역할 안내 · 못 불러오면 잠금 · 강좌 저장에 안 섞인다", () => {
+  const v = { id: "x", title: "t", kind: "regular", term: "", capacity: "", mode: "auto", waitlist: "on", status: "draft", attendPct: 80, applyFrom: "", applyTo: "", prereq: [] };
+  const sopts = [{ value: "a", label: "김담당" }], topts = [{ value: "t1", label: "김강사" }, { value: "t2", label: "박강사" }];
+  const html = courseFormHtml(v, false, { ids: ["a"], opts: sopts, cands: [{ id: "a" }] }, { ids: ["t2"], opts: topts, cands: [{ id: "t1" }, { id: "t2" }] });
+  assert.ok(html.indexOf("data-staff") < html.indexOf("data-tstaff"), "담당자 칸 다음에 강사(출석부) 칸");
+  assert.ok(html.includes("강사(출석부)") && html.includes("박강사"));
+  assert.ok(html.includes('data-f="tstaff" value="[&quot;t2&quot;]"'), "고른 강사 id 가 숨은 칸에");
+  assert.ok(!html.includes(TEACHER_NO_CAND));
+  assert.ok(html.includes("앱에 보이는 글"), "글 칸 「강사」는 앱에 보이는 글이라고 적는다");
+  const none = courseFormHtml(v, false, { ids: [], opts: [], cands: [{ id: "a" }] }, { ids: [], opts: [], cands: [] });
+  assert.ok(none.includes("강사 없음") && none.includes(TEACHER_NO_CAND));
+  const failed = courseFormHtml(v, false, { ids: [], opts: [], cands: [] }, { ids: [], opts: [], cands: null });
+  assert.ok(failed.includes("강사 후보를 불러오지 못했어요") && /data-tstaff[^>]*disabled/.test(failed));
+  assert.ok(!/data-staff [^>]*disabled/.test(failed), "담당자 칸은 잠그지 않는다");
+  assert.equal("tstaff" in formToCourse({ ...v, tstaff: ["t1"] }), false);
+});

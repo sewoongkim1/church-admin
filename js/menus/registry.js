@@ -32,6 +32,10 @@ export const MENUS = [
     role: "education", load: () => import("./education/courses.js") },
   { id: "edu-enroll", group: "교육", icon: "📝", label: "신청 현황", desc: "확정·대기·반려 · 대신 등록 · 교재비 · 엑셀",
     roles: ["education", "educourse"], load: () => import("./education/enrollments.js") },
+  // ✅ 출석부(2026-10-05 · 2단계) — 교육 총괄(모든 강좌) · 교육 담당·강사(맡은 강좌만 — 서버 edu-db.ts attendKinds 가 막는다 not-assigned).
+  //   강사(teacher)는 이 메뉴만 — 신청 현황(이름·상태·교재비·메모)은 못 본다.
+  { id: "edu-attend", group: "교육", icon: "✅", label: "출석부", desc: "회차마다 출석·지각·결석·공결 · 출석 현황 · 엑셀",
+    roles: ["education", "educourse", "teacher"], load: () => import("./education/attendance.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
   // 🧪 시험 참여자 — 시스템 묶음 · 총괄만(2026-10-02 친구 요청 · 그전에는 사역신청 묶음 · 역할 ministry).

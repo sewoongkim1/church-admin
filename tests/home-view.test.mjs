@@ -8,7 +8,7 @@ test("묶음마다 제목 하나 + 격자 하나 · 이름은 이스케이프", 
   const h = homeHtml({ member, rolesInfo: [{ label: "교육 총괄" }], roles: ["education"], menus: menusFor(["education"]) });
   assert.equal((h.match(/class="home-g"/g) || []).length, 1);
   assert.equal((h.match(/class="home-grid"/g) || []).length, 1);
-  assert.equal((h.match(/home-card/g) || []).length, 2);
+  assert.equal((h.match(/home-card/g) || []).length, 3);   // 강좌 관리 · 신청 현황 · 출석부
   assert.ok(!h.includes("<b>김</b>") && h.includes("&lt;b&gt;김"));
   assert.ok(h.includes("화평 20목장 · 교육 총괄"));
 });

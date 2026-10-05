@@ -30,11 +30,13 @@ const WORDS = { full: "정원이 찼어요", "too-late": "이미 시작한 강�
 export function errorWord(code) { return WORDS[code] || `저장하지 못했어요 (${code})`; }
 
 // 엑셀 파일 이름 — 교육신청_{제목}_{오늘}.xlsx · 파일 이름에 못 쓰는 글자(\ / : * ? " < > |)·제어 글자는 빼고,
-//   끝의 점·빈칸(윈도가 떼어 버린다)도 빼고, 제목은 60자까지만.
+//   끝의 점·빈칸(윈도가 떼어 버린다)도 빼고, 제목은 60자까지만. 다듬는 규칙은 fileTitle 한 곳(✅ 출석부 엑셀도 쓴다).
+export function fileTitle(title) {
+  const t = String(title || "").replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim();
+  return Array.from(t).slice(0, 60).join("").replace(/[. ]+$/, "").trim() || "강좌";
+}
 export function exportFileName(title, today) {
-  let t = String(title || "").replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim();
-  t = Array.from(t).slice(0, 60).join("").replace(/[. ]+$/, "").trim() || "강좌";
-  return `교육신청_${t}_${today}.xlsx`;
+  return `교육신청_${fileTitle(title)}_${today}.xlsx`;
 }
 
 // 아는 오류 코드인가(모르면 공용 errorText 로)

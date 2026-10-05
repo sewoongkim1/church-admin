@@ -80,7 +80,14 @@ const SESSION_ERR = {
   "bad-no": "회차 번호를 확인해 주세요 (1~200)", "bad-date": "날짜와 시각을 확인해 주세요",
   "dup-no": "회차 번호가 겹쳐요", "too-many": "회차는 200개까지예요",
 };
-export const sessionErrorText = (r) => SESSION_ERR[r?.error] || "";
+// has-attendance(2단계 · 출석이 있는 회차를 빼려 할 때 · 아무것도 안 바뀜) — 서버가 준 회차 번호들을 붙인다(창은 그대로 둔다)
+export const sessionErrorText = (r) => {
+  if (r?.error === "has-attendance") {
+    const nos = Array.isArray(r.nos) ? r.nos.filter((n) => Number.isInteger(Number(n)) && Number(n) > 0).map((n) => `${Number(n)}회`) : [];
+    return nos.length ? `출석이 있는 회차(${nos.join(", ")})는 지울 수 없어요` : "출석이 있는 회차는 지울 수 없어요";
+  }
+  return SESSION_ERR[r?.error] || "";
+};
 
 // 강좌 저장 오류 → 한국말(없으면 빈 글 — 부르는 쪽이 errorText 로)
 const COURSE_ERR = {
@@ -128,9 +135,12 @@ export function staffLine(c) {
 
 // 고르개 선택지 — 후보(사용 중 · 교육 역할) + 지금 맡고 있지만 후보가 아닌 분(stale — 역할을 뺐거나 정지 · 「역할 없음 — 빼 주세요」)
 //   hint 는 소속(동명이인을 가리려고) · 교육 총괄이면 「교육 총괄」을 덧붙인다. stale 분도 지금 맡고 있으니 체크된 채 나온다(values = 지금 담당).
-export function staffOptions(cands, current) {
+//   roleHints — [역할, 글] 차례로 처음 맞는 하나만 덧붙인다(담당 후보 기본 · 강사 후보는 TEACHER_ROLE_HINTS).
+export const STAFF_ROLE_HINTS = [["education", "교육 총괄"]];
+export function staffOptions(cands, current, roleHints = STAFF_ROLE_HINTS) {
+  const roleHint = (roles) => ((roleHints || []).find(([r]) => (roles || []).includes(r)) || [])[1] || "";
   const out = (cands || []).map((m) => ({ value: m.id, label: m.name,
-    hint: [m.who, (m.roles || []).includes("education") ? "교육 총괄" : ""].filter(Boolean).join(" · ") }));
+    hint: [m.who, roleHint(m.roles)].filter(Boolean).join(" · ") }));
   for (const x of current || []) {
     if (!x) continue;
     const o = out.find((y) => y.value === x.id);
@@ -140,11 +150,11 @@ export function staffOptions(cands, current) {
   return out;
 }
 
-// 폼 단추 글 — 고른 분의 이름(선택지 차례 · stale 은 「(역할 없음)」) · 없으면 「담당자 없음」
-export function staffFieldText(ids, options) {
+// 폼 단추 글 — 고른 분의 이름(선택지 차례 · stale 은 「(역할 없음)」) · 없으면 「담당자 없음」(강사 칸은 「강사 없음」)
+export function staffFieldText(ids, options, none = "담당자 없음") {
   const by = new Map((options || []).map((o) => [o.value, o]));
   const names = (ids || []).map((id) => by.get(id)).filter(Boolean).map((o) => o.label + (o.stale ? STALE_MARK : ""));
-  return names.length ? names.join(", ") : "담당자 없음";
+  return names.length ? names.join(", ") : none;
 }
 
 // 두 id 목록이 같은가(차례 무관) — 같으면 eduStaffSet 을 부르지 않는다
@@ -153,7 +163,25 @@ export function sameIds(a, b) {
   return x.length === y.length && x.every((v, i) => v === y[i]);
 }
 
-// 강좌는 저장됐는데 담당자 저장이 실패했을 때 알릴 말(창은 닫는다 — 새 강좌를 두 번 만들지 않게)
-export function staffSaveFailText(message) {
-  return `강좌는 저장했어요 — 담당자는 저장하지 못했어요${message ? ` (${message})` : ""}. 다시 「고치기」로 골라 주세요`;
+// 강좌는 저장됐는데 담당자(또는 강사) 저장이 실패했을 때 알릴 말(창은 닫는다 — 새 강좌를 두 번 만들지 않게)
+export function staffSaveFailText(message, who = "담당자") {
+  return `강좌는 저장했어요 — ${who}는 저장하지 못했어요${message ? ` (${message})` : ""}. 다시 「고치기」로 골라 주세요`;
+}
+
+// ---------- 강사(출석부 · 2단계 2026-10-05 · 서버 eduStaffCandidates·eduStaffSet 의 kind:'teacher' · courseOut.teachers) ----------
+//   ⚠️ 강좌 폼의 「강사」 글 칸(teacher_label — 성도님 앱에 보이는 글)과 다르다. 이쪽은 계정 — ✅ 출석부에서 맡은 강좌를 체크할 분.
+export const TEACHER_NO_CAND = "⚙️ 담당자·역할에서 「강사」 역할을 먼저 주세요";
+// 강사 후보의 역할 표시 — 강사 역할만 있으면 소속만, 교육 총괄·교육 담당도 강사로 고를 수 있다(직접 가르치는 분)
+export const TEACHER_ROLE_HINTS = [["education", "교육 총괄"], ["educourse", "교육 담당"]];
+// 강사 저장에서 bad-member — 공용 문구(교육 담당 역할…)가 아니라 강사 역할로 알린다
+export const TEACHER_BAD_MEMBER = "강사 역할이 없거나 사용이 멈춘 분이 있어요 — 빼고 저장해 주세요";
+
+// 카드 강사 이름들 — [{name, stale}] (이름 없는 줄은 뺀다)
+export function teacherBits(c) {
+  return ((c && c.teachers) || []).filter((x) => x && x.name).map((x) => ({ name: x.name, stale: x.stale === true }));
+}
+// 카드 한 줄(글) — 「강사 김OO, 박OO(역할 없음)」 · 없으면 빈 글(카드에 줄을 그리지 않는다)
+export function teacherLine(c) {
+  const bits = teacherBits(c);
+  return bits.length ? `강사 ${bits.map((b) => b.name + (b.stale ? STALE_MARK : "")).join(", ")}` : "";
 }

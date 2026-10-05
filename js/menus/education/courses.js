@@ -3,6 +3,8 @@
 //   규칙은 courses-logic.js(시험).
 // 강좌별 담당자(2026-10-05): 고치기 폼의 「담당자」(pickMany) → 강좌 저장(eduCourseSave) 뒤 바뀐 때만 eduStaffSet(새 강좌는 받은 id 로).
 //   담당은 📝 신청 현황에서 맡은 강좌만 다룬다 — 막는 것은 서버(not-assigned).
+// 강사(출석부 · 2단계 2026-10-05): 담당자 칸 아래 「강사(출석부)」(pickMany · 후보 eduStaffCandidates {kind:'teacher'}) →
+//   바뀐 때만 eduStaffSet {…, kind:'teacher'}. 카드의 「강사 OOO」는 계정(courseOut.teachers) — 글 칸 「강사」(teacher_label)와 별개.
 // ⚠️ 고르기·날짜·시각은 시스템 칸(select·type=date·type=time)이 아니라 picker.js 고르개(pickOne·pickDate·pickTime)로.
 // ⚠️ 새 강좌·복사본은 「준비 중」 — 「모집 중」으로 저장하는 순간 성경암송 앱에 보이므로 그때만 확인 창을 한 번 더 띄운다.
 // ⚠️ 회차 저장은 서버가 통째로 바꾼다(eduSessionsSave — 한 번에 · 같은 번호는 id 유지). 끝난 강좌는 course-closed.
@@ -13,6 +15,7 @@ import {
   KIND_OPTIONS, MODE_OPTIONS, STATUS_OPTIONS, WAITLIST_OPTIONS,
   formToCourse, courseToForm, checkFormNumbers, sessionsSummary, periodSummary, makeSessionRows, sessionErrorText, courseErrorText, sessionHeadLine,
   courseSavedText, staffBits, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND, STALE_MARK,
+  teacherBits, TEACHER_NO_CAND, TEACHER_ROLE_HINTS, TEACHER_BAD_MEMBER,
 } from "./courses-logic.js";
 
 const TITLE = `<h2 class="page-title">📚 강좌 관리</h2>`;
@@ -44,15 +47,23 @@ const DATE_LABEL = { applyFrom: "신청 시작일", applyTo: "신청 마감일",
 const dateText = (v) => (v ? `${v.slice(0, 4)}년 ${fmtDateLabel(v)}` : "고르기");
 
 // 담당자 칸 — 고른 id 들은 숨은 칸(JSON)에 두어 readForm·isDirty 가 함께 본다. cands=null 이면 후보를 못 불러온 것(고를 수 없다)
-function staffFieldHtml(ids, opts, cands) {
-  const text = cands === null ? "담당자 후보를 불러오지 못했어요" : staffFieldText(ids, opts);
-  return hid("staff", JSON.stringify(ids)) + `<div class="field"><span>담당자 <small>(📝 신청 현황에서 이 강좌만 다뤄요)</small></span>
-    <button type="button" class="pk-field${ids.length ? "" : " empty"}" data-staff aria-haspopup="dialog" aria-expanded="false"
-      aria-label="담당자, ${esc(text)}"${cands === null ? " disabled" : ""}><span class="pk-field-v">${esc(text)}</span><span class="pk-field-x" aria-hidden="true"></span></button>
-    ${cands && !cands.length ? `<p class="muted ec-hint">${esc(STAFF_NO_CAND)}</p>` : ""}</div>`;
+//   강사(출석부) 칸도 같은 꼴(STAFF_KINDS.teacher) — 숨은 칸 tstaff · 단추 data-tstaff
+const STAFF_KINDS = {
+  manager: { f: "staff", attr: "data-staff", label: "담당자", small: "📝 신청 현황에서 이 강좌만 다뤄요", none: "담당자 없음",
+    failed: "담당자 후보를 불러오지 못했어요", noCand: STAFF_NO_CAND },
+  teacher: { f: "tstaff", attr: "data-tstaff", label: "강사(출석부)", small: "✅ 출석부에서 이 강좌만 체크해요", none: "강사 없음",
+    failed: "강사 후보를 불러오지 못했어요", noCand: TEACHER_NO_CAND },
+};
+function staffFieldHtml(ids, opts, cands, kind = "manager") {
+  const k = STAFF_KINDS[kind];
+  const text = cands === null ? k.failed : staffFieldText(ids, opts, k.none);
+  return hid(k.f, JSON.stringify(ids)) + `<div class="field"><span>${esc(k.label)} <small>(${esc(k.small)})</small></span>
+    <button type="button" class="pk-field${ids.length ? "" : " empty"}" ${k.attr} aria-haspopup="dialog" aria-expanded="false"
+      aria-label="${esc(k.label)}, ${esc(text)}"${cands === null ? " disabled" : ""}><span class="pk-field-v">${esc(text)}</span><span class="pk-field-x" aria-hidden="true"></span></button>
+    ${cands && !cands.length ? `<p class="muted ec-hint">${esc(k.noCand)}</p>` : ""}</div>`;
 }
 
-export function courseFormHtml(v, isNew, staff = { ids: [], opts: [], cands: [] }) {
+export function courseFormHtml(v, isNew, staff = { ids: [], opts: [], cands: [] }, teachers = { ids: [], opts: [], cands: [] }) {
   const pick = (k) => hid(k, v[k]) + pickBtn(k, FORM_PICKS[k].label, labelOf(FORM_PICKS[k].opts, v[k]) || "고르기", !v[k]);
   const date = (k) => hid(k, v[k]) + `<div class="field"><span>${DATE_LABEL[k]}</span>
     <button type="button" class="pk-field${v[k] ? "" : " empty"}" data-date="${k}" aria-haspopup="dialog" aria-expanded="false"
@@ -61,8 +72,9 @@ export function courseFormHtml(v, isNew, staff = { ids: [], opts: [], cands: [] 
     txt("title", "강좌 이름", v.title, `maxlength="80" placeholder="예: 제자훈련 1단계"`) +
     pick("kind") +
     txt("term", "학기", v.term, `maxlength="30" placeholder="예: 2027 상반기"`) +
-    txt("teacher", "강사", v.teacher, `maxlength="60"`) +
+    txt("teacher", "강사", v.teacher, `maxlength="60"`, "앱에 보이는 글") +
     staffFieldHtml(staff.ids, staff.opts, staff.cands) +
+    staffFieldHtml(teachers.ids, teachers.opts, teachers.cands, "teacher") +
     txt("place", "장소", v.place, `maxlength="80"`) +
     txt("target", "대상", v.target, `maxlength="120" placeholder="예: 새가족반 수료한 분"`) +
     txt("fee", "교재비 안내", v.fee, `maxlength="120" placeholder="예: 교재비 1만 원"`) +
@@ -80,32 +92,37 @@ const readForm = (root) => {
   const o = Object.fromEntries([...root.querySelectorAll("[data-f]")].map((i) => [i.dataset.f, i.value.trim()]));
   try { o.prereq = JSON.parse(o.prereq || "[]"); } catch { o.prereq = []; }
   try { o.staff = JSON.parse(o.staff || "[]"); } catch { o.staff = []; }
+  try { o.tstaff = JSON.parse(o.tstaff || "[]"); } catch { o.tstaff = []; }
   return o;
 };
 
-// → { id, promoted, staffErr }(저장 · promoted = 정원을 늘려 확정된 대기자 수 · staffErr = 강좌는 저장됐는데 담당자 저장이 실패한 말)
-//   · 닫았으면 null · 없어진 강좌면 "gone". cands = 담당자 후보(eduStaffCandidates · 못 불러왔으면 null)
-function openCourseForm({ call, course = null, term = "", cands = [] }) {
+// → { id, promoted, staffErr }(저장 · promoted = 정원을 늘려 확정된 대기자 수 · staffErr = 강좌는 저장됐는데 담당자·강사 저장이 실패한 말)
+//   · 닫았으면 null · 없어진 강좌면 "gone". cands = 담당자 후보(eduStaffCandidates · 못 불러왔으면 null) · tcands = 강사 후보({kind:'teacher'})
+function openCourseForm({ call, course = null, term = "", cands = [], tcands = [] }) {
   const v = course ? courseToForm(course)
     : { id: "", title: "", kind: "regular", term, description: "", teacher: "", place: "", fee: "", target: "", track: "", capacity: "",
         mode: "auto", waitlist: "on", applyFrom: "", applyTo: "", startsOn: "", endsOn: "", attendPct: 80, checkLabel: "", status: "draft", prereq: [] };
   const staff0 = ((course && course.staff) || []).map((x) => x.id);
   const staffOpts = staffOptions(cands || [], (course && course.staff) || []);
+  const teacher0 = ((course && course.teachers) || []).map((x) => x.id);
+  const teacherOpts = staffOptions(tcands || [], (course && course.teachers) || [], TEACHER_ROLE_HINTS);
+  const OPTS = { manager: staffOpts, teacher: teacherOpts };
   let first = "", gone = false;
   return openForm({
     title: course ? "✏️ 강좌 고치기" : "＋ 새 강좌", okLabel: course ? "저장" : "만들기",
-    html: courseFormHtml(v, !course, { ids: staff0, opts: staffOpts, cands }),
+    html: courseFormHtml(v, !course, { ids: staff0, opts: staffOpts, cands }, { ids: teacher0, opts: teacherOpts, cands: tcands }),
     onOpen: (root) => {
       root.addEventListener("click", async (e) => {
-        const sb = e.target.closest("[data-staff]");
+        const sb = e.target.closest("[data-staff], [data-tstaff]");
         if (sb) {
-          const cur = readForm(root).staff;
-          const got = await pickMany({ anchor: sb, title: "담당자", options: staffOpts, values: cur });
+          const kind = sb.hasAttribute("data-tstaff") ? "teacher" : "manager", k = STAFF_KINDS[kind], opts = OPTS[kind];
+          const cur = readForm(root)[k.f];
+          const got = await pickMany({ anchor: sb, title: k.label, options: opts, values: cur });
           if (got !== null && sb.isConnected) {
-            root.querySelector('[data-f="staff"]').value = JSON.stringify(got);
-            const text = staffFieldText(got, staffOpts);
+            root.querySelector(`[data-f="${k.f}"]`).value = JSON.stringify(got);
+            const text = staffFieldText(got, opts, k.none);
             sb.querySelector(".pk-field-v").textContent = text;
-            sb.setAttribute("aria-label", `담당자, ${text}`);
+            sb.setAttribute("aria-label", `${k.label}, ${text}`);
             sb.classList.toggle("empty", !got.length);
           }
           return;
@@ -145,13 +162,17 @@ function openCourseForm({ call, course = null, term = "", cands = [] }) {
       }
       const r = await call("eduCourseSave", { course: body });
       if (r.ok) {
-        // 담당자 — 바뀐 때만(새 강좌는 방금 받은 id 로). 실패해도 강좌는 이미 저장됐으니 창을 닫고 알린다(다시 누르면 새 강좌가 또 생긴다)
-        let staffErr = "";
+        // 담당자·강사 — 바뀐 때만(새 강좌는 방금 받은 id 로). 실패해도 강좌는 이미 저장됐으니 창을 닫고 알린다(다시 누르면 새 강좌가 또 생긴다)
+        const errs = [];
         if (cands !== null && !sameIds(vals.staff, staff0)) {
           const s = await call("eduStaffSet", { course_id: r.id, member_ids: vals.staff });
-          if (!s.ok) staffErr = staffSaveFailText(errorText(s));
+          if (!s.ok) errs.push(staffSaveFailText(errorText(s)));
         }
-        return { ok: true, value: { id: r.id, promoted: Number(r.promoted) || 0, staffErr } };
+        if (tcands !== null && !sameIds(vals.tstaff, teacher0)) {
+          const s = await call("eduStaffSet", { course_id: r.id, member_ids: vals.tstaff, kind: "teacher" });
+          if (!s.ok) errs.push(staffSaveFailText(s.error === "bad-member" ? TEACHER_BAD_MEMBER : errorText(s), "강사"));
+        }
+        return { ok: true, value: { id: r.id, promoted: Number(r.promoted) || 0, staffErr: errs.join(" · ") } };
       }
       if (r.error === "not-found") { gone = true; return { ok: true, value: null }; }   // 창을 닫고 목록을 새로 불러온다
       const m = courseErrorText(r);
@@ -274,10 +295,15 @@ function openCopyForm({ call, course }) {
 
 // ---------- 목록 ----------
 // 카드 담당 줄 — 역할을 잃었거나 정지된 분(stale)은 흐리게 「(역할 없음)」(줄은 남아 있다 · 고치기에서 뺄 수 있다)
+const namesHtml = (bits) => bits.map((b) => (b.stale ? `<span class="ec-stale">${esc(b.name)}${esc(STALE_MARK)}</span>` : esc(b.name))).join(", ");
 function staffHtml(c) {
   const bits = staffBits(c);
-  if (!bits.length) return "담당 없음";
-  return "담당 " + bits.map((b) => (b.stale ? `<span class="ec-stale">${esc(b.name)}${esc(STALE_MARK)}</span>` : esc(b.name))).join(", ");
+  return bits.length ? "담당 " + namesHtml(bits) : "담당 없음";
+}
+// 카드 강사 줄(출석부 계정 · courseOut.teachers) — 없으면 줄을 그리지 않는다(글 칸 「강사」 teacher_label 은 카드에 안 쓴다)
+function teacherHtml(c) {
+  const bits = teacherBits(c);
+  return bits.length ? `<div class="muted ec-staff">강사 ${namesHtml(bits)}</div>` : "";
 }
 
 function courseCard(c, sessions) {
@@ -286,7 +312,7 @@ function courseCard(c, sessions) {
     <div><b>${esc(c.title)}</b> <span class="badge">${esc(c.statusLabel)}</span></div>
     <div class="muted">${esc(c.kindLabel)}${c.term ? " · " + esc(c.term) : ""}</div>
     <div class="muted">${esc(sessions)}</div>
-    <div class="muted ec-staff">${staffHtml(c)}</div>
+    <div class="muted ec-staff">${staffHtml(c)}</div>${teacherHtml(c)}
     <div class="muted">정원 ${c.capacity == null ? "제한 없음" : esc(c.capacity)} · 확정 ${esc(n.confirmed || 0)} · 대기 ${esc(n.waitlisted || 0)} · 승인 기다림 ${esc(n.applied || 0)}</div>
     <div class="acts"><button type="button" class="btn" data-act="edit">고치기</button>
       <button type="button" class="btn" data-act="sessions">회차</button>
@@ -300,12 +326,15 @@ export async function render(el, { call }) {
   let data = { terms: [], courses: [] };
   let sess = {};            // 강좌 id → 회차 요약
   let cands = [];           // 담당자 후보(eduStaffCandidates) — 못 불러왔으면 null(폼의 담당자 칸을 잠근다 · 목록은 그대로)
+  let tcands = [];          // 강사 후보(eduStaffCandidates {kind:'teacher'}) — 못 불러왔으면 null(강사 칸만 잠근다)
 
   const load = async () => {
-    const [r, c] = await Promise.all([call("eduCourses", term ? { term } : {}), call("eduStaffCandidates", {})]);
+    const [r, c, t] = await Promise.all([call("eduCourses", term ? { term } : {}), call("eduStaffCandidates", {}),
+      call("eduStaffCandidates", { kind: "teacher" })]);
     if (!r.ok) { el.innerHTML = TITLE + `<p class="empty">${esc(errorText(r))}</p>`; return false; }
     data = { terms: r.terms || [], courses: r.courses || [] };
     cands = c && c.ok ? c.members || [] : null;
+    tcands = t && t.ok ? t.members || [] : null;
     // 카드마다 회차 요약 — 강좌 수만큼 나란히 부른다(한 학기 열 개 안팎)
     const all = await Promise.all(data.courses.map((c) => call("eduSessions", { course_id: c.id })));
     sess = {};
@@ -343,12 +372,12 @@ export async function render(el, { call }) {
     let done = false;
     try {
     if (act === "new") {
-      const got = await openCourseForm({ call, term, cands });
+      const got = await openCourseForm({ call, term, cands, tcands });
       done = !!got;
       if (done) toast(got.staffErr || courseSavedText(0));
     }
     else if (act === "edit" && course) {
-      const got = await openCourseForm({ call, course, cands });
+      const got = await openCourseForm({ call, course, cands, tcands });
       done = !!got;
       if (got === "gone") toast("그 강좌를 찾지 못해 목록을 새로 불러왔어요"); else if (done) toast(got.staffErr || courseSavedText(got.promoted));
     }
