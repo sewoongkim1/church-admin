@@ -313,7 +313,8 @@ function courseCard(c, sessions) {
     <div><b>${esc(c.title)}</b> <span class="badge">${esc(c.statusLabel)}</span></div>
     <div class="muted">${esc(c.kindLabel)}${c.term ? " · " + esc(c.term) : ""}</div>
     <div class="muted">${esc(sessions)}</div>
-    <div class="muted ec-staff">${staffHtml(c)}</div>${teacherHtml(c)}
+    <div class="muted ec-staff">${staffHtml(c)}</div>${teacherHtml(c)}${c.contact ? `
+    <div class="muted">문의 ${esc(c.contact)}</div>` : ""}
     <div class="muted">정원 ${c.capacity == null ? "제한 없음" : esc(c.capacity)} · 확정 ${esc(n.confirmed || 0)} · 대기 ${esc(n.waitlisted || 0)} · 승인 기다림 ${esc(n.applied || 0)}</div>
     <div class="acts"><button type="button" class="btn" data-act="edit">고치기</button>
       <button type="button" class="btn" data-act="sessions">회차</button>
