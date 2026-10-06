@@ -181,7 +181,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - **확정 알림(4단계 · 2026-10-05 · 개발만):** `eduEnrollSet`(확정 → 그 줄 · 다른 op 의 `promoted` → 「자리가 나서」 · `edu_staff_set` 이 `already`(이미 그 상태 — 낡은 화면에서 다시 누름)면 부탁하지 않는다 · 2026-10-06)·`eduEnrollAdd`(앱 계정 + 확정 + `already` 아님)·`eduCourseSave`(`edu_course_refill` 의 `ids`)가 **저장·기록이 끝난 뒤** `edu-db.ts` `withNotify` → `index.ts` `notifyEduConfirmed` → 성경암송 api 내부 액션 `internalEduNotify`(서비스 키 `x-internal-key` · 임명 알림과 같은 `appApiInternal` · 8초). ⚠️ 알림이 실패해도 저장은 성공 — 응답에 `notified`·`notifyError` 만 더한다(던지지 않는다). 같은 신청에 한 번·확정·앱 계정 확인과 「교육이 열리기 전(`eduOpen` 이 true 아님)에는 🧪 시험 참여자에게만」은 api(`eduNotifySend` · SQL `edu_notify_claim`) 몫 — 여기서 걸러 내거나 알림 기록을 쓰지 말 것. 배포 차례 v2 SQL(`edu.sql`) → v2 `api` → 이 함수(이 함수가 먼저 나가면 알림만 `notify-failed`). 노트 v2 `docs/notes/education.md` 「앱 알림」.
 - **출석부(2단계 · 2026-10-05)** — 메뉴 ✅ 출석부(역할 `education`·`educourse`·`teacher`) · 강사(`teacher`)는 `edu_course_staff.kind='teacher'` 로 맡은 강좌만 · 신청 현황 액션은 못 부른다 · 출석은 SQL `edu_attendance_set`·`_bulk` 만(확정자만 · 같은 강좌 · 마친 강좌 `course-closed`) · 출석률 `eduAttendRate`(지각=출석 · 공결 뺌) 세 곳 지문 시험 · ⚠️ 회차는 **id 로** 맞춘다(`eduSessionsSave` 가 id 를 품고 보낸다 · 번호는 차례 · 「이대로 채우기」는 일부러 id 없이 — 차례로 id 를 잇지 말 것 · 출석 있는 회차 지우기는 `has-attendance`).
 
-## 봉사 당번 (2026-10-06 운영 반영 · 1단계 — 담당자 화면 · 성도님 앱은 2단계)
+## 봉사 당번 (2026-10-06 운영 반영 · 1단계 담당자 화면 · 2단계 성도님 앱 — 문은 닫힘)
 
 - 묶음 「봉사 당번」: 🧰 **당번 관리**(역할 `duty` = 당번 총괄) · 📅 **당번 명단**(`duty` · `dutylead` = 당번 담당 — 맡은 당번만) — SQL 015.
   액션 `duty-db.ts`(20개) · 순수 규칙 `duty-rules.ts` · 화면 `js/menus/duty/`(`duty-logic.js` 시험 · `board-form.js` · `boards.js` · `roster.js` · `roster-forms.js`) · CSS 접두사 `dty-`.
@@ -210,7 +210,8 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
   계정 없는 줄로 서 있던 분을 이번에 앱 계정까지 찾아 다시 넣으면 SQL 이 그 줄에 계정을 잇는다(`already` + `linked`) — 「이미 서 계세요」지만 쓴 것이 있으므로 기록(`duty.sign.add` `linked:true`)을 남기고 잠긴 날이면 알린다.
 - 응답 칸은 `boardOut`·`rosterOut` 이 **하나씩 골라** 옮긴다(`user_id`·`ident_key`·`confirmed_by` 없음). `pk` = 같은 분 표식(SQL 이 응답마다 새 소금으로) → 같은 날 「이름은 같은데 pk 가 다른 줄」에 `maybeDup` 을 달고 **pk 는 버린다**.
   SQL 함수의 거절도 그대로 돌려주지 않고 `error`(+정한 칸)만 옮긴다(`applyFail`). 기록 `duty.*`(16가지)는 id·수·날짜만(이름·메모 글 없음 · target = 당번 id).
-- ⚠️ **화면이 사실대로 말하게 하는 두 스위치**(`duty-logic.js` — 바꿀 때 시험 한 줄도 함께): `APP_LIVE`(성경암송 앱에 당번 화면이 있는가 — **2단계를 운영에 올린 날 `true`**) · `NOTIFY_LIVE`(앱 알림이 나가는가 — **3단계를 운영에 올린 날 `true`**).
+- ⚠️ **화면이 사실대로 말하게 하는 두 스위치**(`duty-logic.js` — 바꿀 때 시험 한 줄도 함께): `APP_LIVE`(성경암송 앱에 당번 화면이 있는가 — **2026-10-06 2단계를 운영에 올려 `true`** · 그래서 문이 닫힌 동안 화면이 「🧪 시험 참여자만 볼 수 있어요 · 선 분의 이름이 시험 참여자 앱에 보여요 — 진짜 명단은 준비 중에」(`TESTERS_SEE_NAMES`)라고 말한다 · 플레이스토어 앱에서는 시험 참여자에게도 심사 동안 안 보인다) · `NOTIFY_LIVE`(앱 알림이 나가는가 — **3단계를 운영에 올린 날 `true`**).
+  넣기 창의 한 줄(`ADD_NOTE`)은 「넣은 분의 이름이 앱 당번표에 보인다 · 「못 가게 됐어요」는 명단의 표시일 뿐 담당자께 알림이 오지 않는다」를 말한다 — 성도님 앱도 「알렸어요」가 아니라 「당번표에 표시했어요 · 급하시면 직접 연락」이라 말한다.
   `appNote(appOpen)` 이 두 화면 머리의 한 줄을 고른다: 화면이 없다 → 「지금 넣는 것은 준비예요」 / 화면은 있고 문(`app_config.dutyOpen` → 응답 `appOpen`)이 닫혔다 → 「시험 참여자만」 / 알림이 아직이면 「따로 알려 주세요」. 「받는 중」 확인 글(`openWarn`)도 같은 값을 본다.
 - ⚠️ **알림은 3단계** — `withNotify` 는 `deps.dutyNotify` 가 없으면 아무것도 안 한다(`index.ts` 가 아직 안 준다). 저장·기록 **뒤에** 부탁만 하고 실패해도 저장은 성공(`notified`·`notifyError`).
 - 엑셀 두 시트: 「당번표」(날짜 × 자리 틀 · **이름만** — 벽에 붙는다) · 「명단」(한 분 한 줄 · 소속·넣은 곳 · **메모 없음**).

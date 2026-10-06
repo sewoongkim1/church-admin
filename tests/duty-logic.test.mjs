@@ -7,7 +7,7 @@ import {
   formToBoard, boardToForm, countsLine, boardRest, contactHtml, maxBack, boardSavedText, initialDay, dayActive, dayChip, dayStateText, dayActions, slotCount, signupBadges,
   askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, offAsk, removeAsk, slotOffAsk, hideAsk, notifyTail, addDoneText,
   movedText, dateAddedText, offDoneText, hasWord, dutyWord, needsReload, lostBoard, fileTitle, exportFileName, exportRanges,
-  dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, appNote, APP_LIVE, NOTIFY_LIVE, STALE_BOARD,
+  dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, appNote, APP_LIVE, NOTIFY_LIVE, STALE_BOARD, TESTERS_SEE_NAMES, ADD_NOTE,
 } from "../js/menus/duty/duty-logic.js";
 import { DUTY_STATUS, DUTY_STATUS_LABEL } from "../supabase/functions/church-admin/duty-rules.ts";
 
@@ -262,7 +262,16 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(openWarn(true, LIVE).includes("바로 보이고 지원을 받아요") && !openWarn(true, LIVE).includes("시험 참여자"));
   assert.ok(openWarn(false, LIVE).includes("아직 성도님 앱에 열지 않아서") && openWarn(false, LIVE).includes("시험 참여자에게만"));
   // 앱에 화면이 아직 없으면(2단계 전) 「시험 참여자에게 보여요」라고 말하지 않는다 — 누구에게도 안 보인다
-  assert.equal(APP_LIVE, false, "2단계(앱 화면 + api)를 운영에 올린 날 true 로 — 이 줄도 함께 고친다");
+  assert.equal(APP_LIVE, true, "2026-10-06 2단계(앱 화면 + api)를 운영에 올렸다 — 앱 쪽을 되돌리면 false 로(이 줄도 함께)");
+  // 문이 닫힌 동안 — 선 분의 이름이 시험 참여자에게 보인다는 것과 「진짜 명단은 준비 중에」를 저장 확인·화면 머리 두 곳에서 말한다
+  for (const t of [openWarn(false, LIVE), appNote(false, { live: true, notify: false }), appNote(false, { live: true, notify: true })]) {
+    assert.ok(t.includes(TESTERS_SEE_NAMES) && t.includes("시험 참여자 앱에 보여요") && t.includes("「준비 중」"), t);
+  }
+  for (const t of [openWarn(true, LIVE), appNote(true, { live: true, notify: false }), openWarn(false, { live: false }), appNote(false, { live: false, notify: false })]) {
+    assert.equal(t.includes(TESTERS_SEE_NAMES), false, "앱에 열린 뒤·앱 화면이 없을 때는 그 말을 하지 않는다");
+  }
+  // 넣기 창 — 넣은 분의 이름이 앱 당번표에 보인다 · 「못 가게 됐어요」는 명단의 표시(따로 알림이 오지 않는다)
+  assert.ok(ADD_NOTE.includes("이름은 받는 중·지원 멈춤 당번이면 성경암송 앱 당번표에 보여요") && ADD_NOTE.includes("따로 알림은 오지 않아요") && ADD_NOTE.includes("스스로 뺄 수 없어요"));
   for (const open of [true, false]) {
     assert.ok(openWarn(open, { live: false }).includes("아직 봉사 당번 화면이 없어서") && !openWarn(open, { live: false }).includes("시험 참여자"));
     assert.ok(appNote(open, { live: false, notify: false }).includes("아직 봉사 당번 화면이 없어요") && !appNote(open, { live: false, notify: false }).includes("시험 참여자"));

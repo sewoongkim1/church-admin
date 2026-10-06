@@ -9,7 +9,7 @@ import { openForm } from "../../core/modal.js";
 import { pickOne, pickMany, pickDate, pickTime, fmtTimeLabel } from "../../core/picker.js";
 import { pickArgs, TYPED_SUB_HINT } from "../education/enrollments-logic.js";
 import { WEEKDAY_OPTIONS, weekdayText, formToLine, lineToForm, lineText, dayLabel, addDays, slotName, timeRange, forceAsk, needsForce, offAsk, addDoneText,
-  dutyWord } from "./duty-logic.js";
+  dutyWord, ADD_NOTE } from "./duty-logic.js";
 
 export const failText = (r) => dutyWord(r?.error) || errorText(r);
 const hid = (k, v) => `<input type="hidden" data-f="${k}" value="${esc(v)}">`;
@@ -224,7 +224,7 @@ export async function openAddForm({ call, boardId, day, slot }) {
 
   return openForm({
     title: `＋ 넣기 — ${dayLabel(day.date)} ${slotName(slot)}`, okLabel: "넣기", cancelLabel: "닫기", hideOk: true,   // 찾기 쪽은 카드마다 「넣기」가 있다
-    html: `<p class="muted dty-addsub">${esc(timeRange(slot))}${day.locked && !day.past ? " · 확정된 날" : ""} · 담당자가 넣은 분은 앱에서 스스로 뺄 수 없어요(못 오시면 「못 가게 됐어요」로 알려 와요)</p>
+    html: `<p class="muted dty-addsub">${esc(timeRange(slot))}${day.locked && !day.past ? " · 확정된 날" : ""} · ${esc(ADD_NOTE)}</p>
       <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="pick" class="on">교인명부에서 찾기</button>
         <button type="button" role="tab" data-tab="typed">직접 입력(새가족 등)</button></div>
       <div data-panel="pick">
