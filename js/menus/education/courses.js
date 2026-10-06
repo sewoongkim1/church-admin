@@ -307,15 +307,29 @@ function teacherHtml(c) {
   return bits.length ? `<div class="muted ec-staff">강사 ${namesHtml(bits)}</div>` : "";
 }
 
+// 문의 — 전화번호가 들어 있으면 눌러서 바로 걸리게(숫자·하이픈 9~13자 · 나머지 글은 그대로)
+function contactHtml(text) {
+  const m = String(text).match(/0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}/);
+  const t = esc(text);
+  if (!m) return t;
+  const tel = m[0].replace(/\D/g, "");
+  return esc(text.slice(0, m.index)) + `<a href="tel:${tel}">${esc(m[0])}</a>` + esc(text.slice(m.index + m[0].length));
+}
+const ecRow = (k, v) => `<div class="ec-row"><span class="ec-k">${k}</span><span class="ec-v">${v}</span></div>`;
+
 function courseCard(c, sessions) {
   const n = c.counts || {};
-  return `<div class="card" data-id="${esc(c.id)}">
-    <div><b>${esc(c.title)}</b> <span class="badge">${esc(c.statusLabel)}</span></div>
-    <div class="muted">${esc(c.kindLabel)}${c.term ? " · " + esc(c.term) : ""}</div>
-    <div class="muted">${esc(sessions)}</div>
-    <div class="muted ec-staff">${staffHtml(c)}</div>${teacherHtml(c)}${c.contact ? `
-    <div class="muted">문의 ${esc(c.contact)}</div>` : ""}
-    <div class="muted">정원 ${c.capacity == null ? "제한 없음" : esc(c.capacity)} · 확정 ${esc(n.confirmed || 0)} · 대기 ${esc(n.waitlisted || 0)} · 승인 기다림 ${esc(n.applied || 0)}</div>
+  const staff = staffBits(c), teach = teacherBits(c);
+  return `<div class="card ec-card" data-id="${esc(c.id)}">
+    <div class="ec-head"><b>${esc(c.title)}</b> <span class="badge">${esc(c.statusLabel)}</span></div>
+    <div class="muted ec-sub">${esc(c.kindLabel)}${c.term ? " · " + esc(c.term) : ""}</div>
+    <div class="ec-rows">
+      ${ecRow("교육", esc(sessions))}
+      ${ecRow("담당", staff.length ? namesHtml(staff) : "없음")}${teach.length ? ecRow("강사", namesHtml(teach)) : ""}${c.contact ? ecRow("문의", contactHtml(c.contact)) : ""}
+    </div>
+    <div class="ec-chips"><span class="ec-chip">정원 ${c.capacity == null ? "제한 없음" : esc(c.capacity)}</span>
+      <span class="ec-chip">확정 ${esc(n.confirmed || 0)}</span><span class="ec-chip">대기 ${esc(n.waitlisted || 0)}</span>
+      <span class="ec-chip${n.applied ? " warn" : ""}">승인 기다림 ${esc(n.applied || 0)}</span></div>
     <div class="acts"><button type="button" class="btn" data-act="edit">고치기</button>
       <button type="button" class="btn" data-act="sessions">회차</button>
       <button type="button" class="btn" data-act="copy">복사</button></div>

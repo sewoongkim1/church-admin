@@ -1340,6 +1340,18 @@ section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:
 /* 카드 담당 줄의 역할 잃은·정지된 분(stale) — 흐리게 */
 .ec-stale{opacity:.6}
 
+/* 강좌 관리 카드(2026-10-06) — 제목 · 라벨/값 줄 · 숫자 칩 · 단추. 새 규칙만 */
+.ec-card .ec-head{font-size:1.05rem;line-height:1.4}
+.ec-card .ec-sub{margin:2px 0 10px}
+.ec-rows{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--border)}
+.ec-row{display:flex;gap:10px;font-size:14px;line-height:1.45}
+.ec-k{flex:0 0 40px;color:var(--gray);font-size:13px}
+.ec-v{min-width:0;word-break:keep-all;overflow-wrap:anywhere}
+.ec-v a{color:var(--navy);font-weight:700;text-decoration:underline}
+.ec-chips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 12px}
+.ec-chip{display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border-radius:999px;background:var(--light);color:#333;font-size:13px}
+.ec-chip.warn{background:#fff3d6;color:#7a5200;font-weight:700}
+
 /* PC 처음 화면·교육 메뉴 격자(2026-10-05) — 폰(<1024px)은 위 옛 규칙 그대로 한 줄 카드 */
 @media (min-width:1024px){
   .home{max-width:1280px}
