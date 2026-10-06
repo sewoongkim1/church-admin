@@ -160,7 +160,7 @@ export async function render(el, { call, query }) {
   const dayHtml = (d, ro) => {
     const acts = ro ? [] : dayActions(d, { archived: false });
     return `<div class="dty-bar"><b>${esc(dayLabel(d.date))}${d.date === today ? " · 오늘" : ""}</b><span>${esc(dayStateText(d))}</span>
-        ${dayHiddenText(d) ? `<span class="dty-warn">${esc(dayHiddenText(d))}</span>` : ""}</div>
+        ${dayHiddenText(d) ? `<span${d.afterUntil ? ' class="dty-warn"' : ""}>${esc(dayHiddenText(d))}</span>` : ""}</div>
       ${acts.length ? `<div class="acts dty-dayacts">${acts.map((a) => `<button type="button" class="btn${a.danger ? " danger" : ""}" data-dact="${a.act}">${esc(a.label)}</button>`).join("")}</div>` : ""}
       ${(d.slots || []).length ? d.slots.map((s) => slotHtml(s, d, ro, folds.has(String(s.id)))).join("")
         : `<p class="empty">이 날은 자리가 없어요${ro ? "" : " — 「날짜 더하기」로 자리를 만들 수 있어요"}</p>`}`;
@@ -188,7 +188,7 @@ export async function render(el, { call, query }) {
     const b = ros.board, ro = b.status === "archived";
     el.innerHTML = TITLE + boardBtn() +
       `<p class="muted dty-info">${b.place ? `📍 ${esc(b.place)} · ` : ""}${b.contact ? `📞 ${contactHtml(b.contact)} · ` : ""}${esc(boardRest(b))}</p>` +
-      (ros.appOpen === true || ro ? "" : `<p class="be-note">${esc(APP_CLOSED_NOTE)}</p>`) +
+      (ros.appOpen === true || ro || b.status === "draft" ? "" : `<p class="be-note">${esc(APP_CLOSED_NOTE)}</p>`) +
       (b.status === "draft" ? `<p class="be-note">${esc(draftNote(ros.chief === true))}</p>` : STATE_NOTE[b.status] ? `<p class="be-note">${esc(STATE_NOTE[b.status])}</p>` : "") +
       tabsHtml() + (tab === "lines" ? linesHtml(ro) : rosterHtml(ro));
     // 고른 날짜 칩이 칩 줄 가운데 오게 — 칩 줄만 옆으로 굴린다(scrollIntoView 는 화면까지 위로 끌어올린다 — 줄을 뺀 뒤 화면이 튀던 것)

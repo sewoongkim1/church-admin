@@ -251,6 +251,7 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   // 끝 날짜 당기기 — 그 뒤에 선 분 수와 새 끝 날짜를 함께
   assert.ok(afterAsk(4, "2026-10-31").startsWith("새 끝 날짜(10월 31일(토)) 뒤에 4분이 서 있어요."));
   assert.ok(afterAsk(4, "2026-10-31").includes("지원 줄은 지우지 않아요"));
+  assert.ok(afterAsk(2, "").startsWith("새 끝 날짜 뒤에 2분이"), "날짜를 못 읽어도 빈 괄호를 남기지 않는다");
   // 「받는 중」 확인 — 앱에 아직 안 열렸으면 「바로 보여요」라고 말하지 않는다
   assert.ok(openWarn(true).includes("바로 보이고 지원을 받아요") && !openWarn(true).includes("시험 참여자"));
   assert.ok(openWarn(false).includes("아직 성도님 앱에 열지 않아서") && openWarn(false).includes("시험 참여자에게만"));

@@ -134,9 +134,10 @@ test("당번 만들기 — 총괄만 · 담당은 chief-only · 담당자 지정
   assert.deepEqual(r.body, { ok: true, count: 1, changed: true });
   r = got(await call(L.token, "dutyBoardList"));
   assert.deepEqual(r.body.boards.map((b) => b.id), [W.A]);
-  assert.deepEqual(r.body.boards[0].staff, [{ id: L.memberId, name: "시험-당번담당" }]);
+  assert.deepEqual(r.body.boards[0].staff, [{ name: "시험-당번담당" }], "담당에게는 담당자 번호를 싣지 않는다(이름만)");
   r = got(await call(chief.token, "dutyBoardList"));
   assert.ok(r.body.boards.some((b) => b.id === W.B) && r.body.scope === "all" && r.body.chief === true);
+  assert.deepEqual(r.body.boards.find((b) => b.id === W.A).staff, [{ id: L.memberId, name: "시험-당번담당" }], "총괄은 담당자를 고를 때 번호가 필요하다");
   assert.equal(typeof r.body.appOpen, "boolean", "성도님 앱에 열렸는가를 함께 준다");
 });
 

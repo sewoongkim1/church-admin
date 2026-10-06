@@ -306,7 +306,7 @@ export const openWarn = (appOpen) => (appOpen
 // 봉사 당번이 아직 성도님 앱에 안 열렸을 때 화면 머리에 두는 한 줄(사실대로 — 지금 넣는 것은 준비다)
 export const APP_CLOSED_NOTE = "🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. 앱 알림도 열린 뒤에 가니, 그 전에 넣거나 바꾼 것은 따로 알려 주세요.";
 // 끝 날짜를 당기는 저장 — 그 뒤에 선 분이 있을 때
-export const afterAsk = (active, until) => `새 끝 날짜(${dayLabel(until)}) 뒤에 ${active}분이 서 있어요. 그래도 끝 날짜를 당길까요? ` +
+export const afterAsk = (active, until) => `새 끝 날짜${dayLabel(until) ? `(${dayLabel(until)})` : ""} 뒤에 ${active}분이 서 있어요. 그래도 끝 날짜를 당길까요? ` +
   "그 뒤 날짜는 앱에서 안 보이게 돼요(지원 줄은 지우지 않아요 — 명단에서 옮기거나 빼 주세요).";
 // 준비 중인 당번의 안내 — 총괄은 스스로 열 수 있고, 담당은 총괄께 부탁한다
 export const draftNote = (chief) => (chief
