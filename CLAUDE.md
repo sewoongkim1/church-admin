@@ -181,6 +181,42 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - **확정 알림(4단계 · 2026-10-05 · 개발만):** `eduEnrollSet`(확정 → 그 줄 · 다른 op 의 `promoted` → 「자리가 나서」 · `edu_staff_set` 이 `already`(이미 그 상태 — 낡은 화면에서 다시 누름)면 부탁하지 않는다 · 2026-10-06)·`eduEnrollAdd`(앱 계정 + 확정 + `already` 아님)·`eduCourseSave`(`edu_course_refill` 의 `ids`)가 **저장·기록이 끝난 뒤** `edu-db.ts` `withNotify` → `index.ts` `notifyEduConfirmed` → 성경암송 api 내부 액션 `internalEduNotify`(서비스 키 `x-internal-key` · 임명 알림과 같은 `appApiInternal` · 8초). ⚠️ 알림이 실패해도 저장은 성공 — 응답에 `notified`·`notifyError` 만 더한다(던지지 않는다). 같은 신청에 한 번·확정·앱 계정 확인과 「교육이 열리기 전(`eduOpen` 이 true 아님)에는 🧪 시험 참여자에게만」은 api(`eduNotifySend` · SQL `edu_notify_claim`) 몫 — 여기서 걸러 내거나 알림 기록을 쓰지 말 것. 배포 차례 v2 SQL(`edu.sql`) → v2 `api` → 이 함수(이 함수가 먼저 나가면 알림만 `notify-failed`). 노트 v2 `docs/notes/education.md` 「앱 알림」.
 - **출석부(2단계 · 2026-10-05)** — 메뉴 ✅ 출석부(역할 `education`·`educourse`·`teacher`) · 강사(`teacher`)는 `edu_course_staff.kind='teacher'` 로 맡은 강좌만 · 신청 현황 액션은 못 부른다 · 출석은 SQL `edu_attendance_set`·`_bulk` 만(확정자만 · 같은 강좌 · 마친 강좌 `course-closed`) · 출석률 `eduAttendRate`(지각=출석 · 공결 뺌) 세 곳 지문 시험 · ⚠️ 회차는 **id 로** 맞춘다(`eduSessionsSave` 가 id 를 품고 보낸다 · 번호는 차례 · 「이대로 채우기」는 일부러 id 없이 — 차례로 id 를 잇지 말 것 · 출석 있는 회차 지우기는 `has-attendance`).
 
+## 봉사 당번 (2026-10-06 운영 반영 · 1단계 — 담당자 화면 · 성도님 앱은 2단계)
+
+- 묶음 「봉사 당번」: 🧰 **당번 관리**(역할 `duty` = 당번 총괄) · 📅 **당번 명단**(`duty` · `dutylead` = 당번 담당 — 맡은 당번만) — SQL 015.
+  액션 `duty-db.ts`(20개) · 순수 규칙 `duty-rules.ts` · 화면 `js/menus/duty/`(`duty-logic.js` 시험 · `board-form.js` · `boards.js` · `roster.js` · `roster-forms.js`) · CSS 접두사 `dty-`.
+- ⚠️ **표·SQL 함수는 성경암송 저장소 `supabase/duty.sql` 의 것**(여기 015 는 역할 둘과 `duty_board_staff` 뿐) — 칸·제약·RLS 를 여기서 바꾸지 않는다.
+  **상태는 SQL 함수로만 바꾼다**(`duty_apply(p_staff)`·`duty_cancel(p_staff)`·`duty_restore`·`duty_move`·`duty_note_set`·`duty_day_set`·`duty_days_off`·`duty_slot_set`·`duty_slot_delete`·`duty_line_save`·`duty_line_remove`·`duty_date_add`·`duty_ask_clear`).
+  이 함수가 표에 직접 쓰는 것은 둘뿐: 당번 설정(`duty_boards`) · 담당자 줄(`duty_board_staff`).
+  ⚠️ **`duty_signups` 에는 직접 쓰지 않는다**(담당자 메모 한 칸도 `duty_note_set`) — 직접 update 하면 성경암송의 쓰기 연결 트리거가 「줄 → 전역 잠금」 차례로 잠가 그 줄을 빼거나 옮기는 SQL 함수와 교착한다.
+  **함수가 새 SQL 함수를 부르면 그 SQL 이 운영에 먼저.**
+- 뼈대: **당번(board) → 자리 틀(line: 요일·예배·일·시각·정원) → 날짜(day: 쉼·확정·메모) → 자리(slot) → 지원(signup)**. 자리는 읽을 때 저절로 생긴다(`duty_ensure_slots` — 오늘 ~ 보이는 기간 · 끝 날짜까지). 요일 없는 틀은 「날짜 더하기」로(한 번짜리 모집).
+- ⚠️ **「맡은 당번만」은 서버가** 본다(`duty-db.ts` `mayTouch`) → 아니면 `not-assigned`(읽지도 쓰지도 않음).
+  **당번은 줄에서 읽는다** — 자리 번호 → 자리 줄의 당번 · 지원 번호 → 자리 → 당번 · 틀 번호 → 틀 줄의 당번(`slotBoard`·`signupBoard`·`lineBoard`). 몸통의 `board_id` 를 믿지 않는다. 새 액션을 둘 다에게 열면 이 길을 꼭 지나게.
+  옮기기의 도착 자리는 SQL 이 같은 당번인지 본다(`wrong-board`) · 날짜 더하기의 틀도 SQL 이 본다(`bad-lines`).
+- ⚠️ **총괄만 되는 일의 거절은 `chief-only`**(만들기 · 이름 · 준비 중·보관 · 담당자 지정) — `forbidden` 을 돌려주면 화면이 통째로 다시 부팅한다. 담당은 받는 중 ↔ 지원 멈춤과 설명·장소·문의·기간만.
+  담당에게 가는 응답에는 **담당자 번호를 싣지 않는다**(이름만 — `boardOut`·`staffNames`).
+- **당번 설정 저장의 세 멈춤**(`dutyBoardSave`): ① `changed` — 창을 연 뒤 다른 분이 고쳤다(화면이 창을 열 때 본 `updatedAt` 을 `base` 로 보낸다 → 창을 닫고 새로 불러온다 · 낡은 창이 보관·지원 멈춤·끝 날짜를 되돌리지 않게)
+  ② `has-upcoming` — 앱에서 안 보이게 되는 상태(준비·보관)인데 앞날에 선 분이 있다 → 확인 → `force` ③ `has-after` — 끝 날짜를 당기는데 그 뒤에 선 분이 있다 → 확인 → `force_after`. ②③ 은 **따로 묻고 따로 답한다**(둘 다면 두 번).
+  지우는 길 없음(시험 당번은 `archived` — 보관한 당번은 쓰기 거절 · 명단은 읽힌다).
+- **잠금은 표에 쓰는 값이 아니다** — SQL 이 그때그때 셈한다(담당자 확정 또는 전날 19:00 KST 지남). 「19시」는 SQL `duty_cutoff` 한 곳 — 화면은 서버가 준 `cutoff`·`locked` 만 쓴다(`cutoffText`). 확정 풀기는 마감 전에만(`too-late`) · 자리가 없는 날은 확정하지 않는다(`no-slots` — 화면도 그 단추를 두지 않는다).
+- **쉬는 날은 스위치** — 지원 줄을 건드리지 않는다. 화면은 먼저 세고(`expect` 없이 = `dry`) → 그 수를 확인 창에 → `expect` 로 쓴다(그사이 바뀌면 `changed`). 메모: 쉬는 날로 = 그 기간의 쉬는 날 모두 · 다시 열기 = 이번에 연 날에만. 기간은 오늘 + 400일 안(날짜 줄은 지울 길이 없다).
+- **끝 날짜(`until_date`)** — 그 뒤 자리는 앱에 안 보이고 지원도 안 받는다(`after-until`) · 자리·줄은 지우지 않는다(늦추면 살아난다) · 저장 뒤 응답 `after` · 카드 `counts.after`.
+- **넣기·옮기기·다시 넣기의 정원·겹침**은 SQL 이 알려 준 뒤(`full`·`overlap` — full 에 겹친 자리 `with` 도 함께 온다) 확인 한 번으로 `force`. 겹친 자리 이름은 **같은 당번일 때만** 화면에 싣는다(`overlapForStaff` — 맡지 않은 당번의 이름을 싣지 않는다). 이미 겹쳐 선 줄은 명단에 「시간 겹침」(`overlap`).
+- 담당자가 넣은 줄(`source staff`)은 본인이 앱에서 못 뺀다 · 담당자가 뺀 줄은 본인이 못 되살린다 → **잘못 뺐으면 「빠진 분 → 다시 넣기」**(`dutySignRestore` — 그 줄 그대로) · 「못 가게 됐어요」 표시는 빼기·옮기기가 지우고, 통화로 풀렸으면 「표시 거두기」(`dutyAskClear`).
+- **남은 자리**(`leftover` — 뺀 틀·요일을 바꾼 틀의 자리)는 앱에서 새 지원을 안 받는다. 담당자는 넣고 옮길 수 있다 — 화면이 그 자리에 안내를 달고, 남은 자리뿐인 날의 칩은 「남은 자리」. 요일을 바꾼 틀의 남은 자리는 「날짜 더하기」로 다시 살린다(응답 `reopened`).
+- **명단 기간** — 화면은 `from`(오늘 − 불러온 날 수)만 보낸다. 서버가 앞날(가장 먼 날짜 줄까지 · 오늘 + 400일)과 지난 날(오늘 − 400일)을 **따로** 자른다. 「지난 날 더 보기」는 52주까지(`maxBack`). 보이는 기간 밖에 더해 둔 날은 `notYet`.
+- **대신 넣기(명부):** 교육과 같은 길(`dutyPeopleLookup` → `{name, pick, check}` → 서버가 같은 찾기를 다시 · `personPick` 은 교육과 **같은 함수**) — **맡은 당번의 창에서만**(총괄도 `board_id` 필수 · 보관 당번은 찾기 전에 거절) · 기록 `people.lookup` `from:"duty"`(거절된 넣기도 `pick:true` 로 남는다).
+  계정 없는 줄로 서 있던 분을 이번에 앱 계정까지 찾아 다시 넣으면 SQL 이 그 줄에 계정을 잇는다(`already` + `linked`) — 「이미 서 계세요」지만 쓴 것이 있으므로 기록(`duty.sign.add` `linked:true`)을 남기고 잠긴 날이면 알린다.
+- 응답 칸은 `boardOut`·`rosterOut` 이 **하나씩 골라** 옮긴다(`user_id`·`ident_key`·`confirmed_by` 없음). `pk` = 같은 분 표식(SQL 이 응답마다 새 소금으로) → 같은 날 「이름은 같은데 pk 가 다른 줄」에 `maybeDup` 을 달고 **pk 는 버린다**.
+  SQL 함수의 거절도 그대로 돌려주지 않고 `error`(+정한 칸)만 옮긴다(`applyFail`). 기록 `duty.*`(16가지)는 id·수·날짜만(이름·메모 글 없음 · target = 당번 id).
+- ⚠️ **화면이 사실대로 말하게 하는 두 스위치**(`duty-logic.js` — 바꿀 때 시험 한 줄도 함께): `APP_LIVE`(성경암송 앱에 당번 화면이 있는가 — **2단계를 운영에 올린 날 `true`**) · `NOTIFY_LIVE`(앱 알림이 나가는가 — **3단계를 운영에 올린 날 `true`**).
+  `appNote(appOpen)` 이 두 화면 머리의 한 줄을 고른다: 화면이 없다 → 「지금 넣는 것은 준비예요」 / 화면은 있고 문(`app_config.dutyOpen` → 응답 `appOpen`)이 닫혔다 → 「시험 참여자만」 / 알림이 아직이면 「따로 알려 주세요」. 「받는 중」 확인 글(`openWarn`)도 같은 값을 본다.
+- ⚠️ **알림은 3단계** — `withNotify` 는 `deps.dutyNotify` 가 없으면 아무것도 안 한다(`index.ts` 가 아직 안 준다). 저장·기록 **뒤에** 부탁만 하고 실패해도 저장은 성공(`notified`·`notifyError`).
+- 엑셀 두 시트: 「당번표」(날짜 × 자리 틀 · **이름만** — 벽에 붙는다) · 「명단」(한 분 한 줄 · 소속·넣은 곳 · **메모 없음**).
+- 개발 시험 `tests/duty.dev.test.mjs`(16가지 — 맡은 당번만 · 줄 번호로도 · 다시 넣기 · 겹침 · 끝 날짜 · 낡은 창 · 기록에 이름 없음 · 공개 키·로그인 사용자로 안 열림). 규칙·동시성 시험은 성경암송 `supabase/tests/duty_rules.dev.sql` · `tests/duty-concurrency.dev.sh`.
+- 설계·노트(운영 반영 차례 · 되돌리기 포함): 성경암송 `docs/superpowers/specs/2026-10-06-duty-roster-design.md` · `docs/notes/duty-roster.md`.
+
 ## 비상 절차
 ① **유일한 총괄 관리자가 카카오 계정을 잃었을 때** — 새 카카오로 로그인·등록 → 작업 폴더에서
 `select id,name,gu,mok,kakao_nickname from admin_members where status='pending'` 로 id 확인 →
