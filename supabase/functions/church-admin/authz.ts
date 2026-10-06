@@ -4,13 +4,15 @@
 //   ⚠️ enum·namespace 처럼 「타입만 지워서는 안 되는」 TS 문법도 쓰지 않는다.
 
 // 액션마다 필요한 역할. null = 로그인만 되어 있으면(등록 전·대기·정지인 분도 자기 상태는 알아야 한다).
-//   배열이면 그 가운데 하나만 있어도 된다(교육 — 총괄 education 과 맡은 강좌 담당 educourse · 2026-10-05).
+//   배열이면 그 가운데 하나만 있어도 된다(교육 — 총괄 education 과 맡은 강좌 담당 educourse · 2026-10-05 · 봉사 당번 duty·dutylead · 2026-10-06).
 // ⚠️ 새 액션을 만들면 반드시 여기에 한 줄 — 없으면 unknown-action 으로 막힌다(열리는 쪽으로 틀리지 않게).
 //    tests/server.dev.test.mjs 의 PROBE 에도 한 줄(시험이 빠진 액션을 잡는다).
 // 교육 신청 현황 쪽 — 교육 총괄(education)과 교육 담당(educourse) 둘 다. 담당은 **맡은 강좌만**이고 그것은 edu-db.ts 가 강좌마다 본다(not-assigned).
 const EDU_BOTH = ["education", "educourse"];
 // 출석부(2단계) — 교육 총괄·교육 담당·강사(teacher · SQL 012)
 const EDU_ATTEND = ["education", "educourse", "teacher"];
+// 봉사 당번(2026-10-06 · SQL 015) — 당번 총괄(duty)과 당번 담당(dutylead) 둘 다. 담당은 **맡은 당번만**이고 그것은 duty-db.ts 가 당번마다 본다(not-assigned).
+const DUTY_BOTH = ["duty", "dutylead"];
 export const ACTION_ROLES: Record<string, string | string[] | null> = {
   me: null,
   register: null,
@@ -151,6 +153,31 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   //   수는 v2 SQL edu_stats(p_term) 한 번(jsonb — 신청 줄을 받아 세지 않는다). 응답에 이름·user_id 없음(edu-rules.ts statsOut).
   //   교인명부 「🎓 교육」 탭(4단계 B)은 액션을 따로 두지 않는다 — peoplePerson·peopleLink(directory)의 history.education 으로 간다.
   eduStats: "education",
+  // 봉사 당번 1단계(2026-10-06 · 설계 v2 docs/superpowers/specs/2026-10-06-duty-roster-design.md §3·§9) — 역할 duty(당번 총괄)·dutylead(당번 담당).
+  //   정원·겹침·잠금·쉼 규칙은 성경암송 supabase/duty.sql 의 SQL 함수가 정한다(여기서 상태를 직접 쓰지 않는다).
+  //   응답에 user_id·ident_key·confirmed_by 없음(duty-rules.ts 칸 지도) · 쓰기는 바꾼 기록 duty.*(이름 없이 id·수·날짜만).
+  //   담당자 지정은 총괄만. 그 밖은 총괄·담당 둘 다(담당은 맡은 당번만 — duty-db.ts mayTouch · 줄 번호로 와도 그 줄의 당번을 서버가 읽는다).
+  //   당번 만들기·이름·준비/보관은 dutyBoardSave 안에서 총괄만(chief-only — forbidden 이 아니다).
+  dutyStaffCandidates: "duty",
+  dutyStaffSet: "duty",
+  dutyBoardList: DUTY_BOTH,
+  dutyBoardSave: DUTY_BOTH,
+  dutyLineSave: DUTY_BOTH,
+  dutyLineRemove: DUTY_BOTH,
+  dutyDateAdd: DUTY_BOTH,
+  dutyRoster: DUTY_BOTH,
+  dutyExport: DUTY_BOTH,
+  dutyDaySet: DUTY_BOTH,
+  dutyDaysOff: DUTY_BOTH,
+  dutySlotSet: DUTY_BOTH,
+  dutySlotDelete: DUTY_BOTH,
+  dutySignAdd: DUTY_BOTH,
+  dutySignRemove: DUTY_BOTH,
+  dutySignMove: DUTY_BOTH,
+  dutySignNote: DUTY_BOTH,
+  dutyAskClear: DUTY_BOTH,
+  // 대신 넣기의 명부 찾기 — 맡은 당번의 창에서만(board_id 필수 · 총괄도) · 기록 people.lookup from:"duty"
+  dutyPeopleLookup: DUTY_BOTH,
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

@@ -56,7 +56,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
     "ministryPerson", "ministryPhoneClear", "ministrySetStatus", "ministryStats"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
-  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "education", "educourse", "ministry", "super", "teacher"]);
+  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "duty", "dutylead", "education", "educourse", "ministry", "super", "teacher"]);
 });
 
 test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄만 통과, 사역 담당은 막힘", () => {
@@ -202,7 +202,8 @@ test("교육 신청 현황 액션(역할 배열) × 사람 — 교육 총괄·�
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   // 신청 현황 쪽(EDU_BOTH) — 출석부 액션(강사 포함)은 아래 시험이 따로 본다 · 수료(3단계)도 총괄 + 교육 담당(강사 아님)
-  const acts = Object.keys(ACTION_ROLES).filter((k) => Array.isArray(ACTION_ROLES[k]) && !ACTION_ROLES[k].includes("teacher"));
+  //   (역할 배열은 봉사 당번도 쓴다 — 교육 것만 고른다 · 당번은 맨 아래 시험)
+  const acts = Object.keys(ACTION_ROLES).filter((k) => Array.isArray(ACTION_ROLES[k]) && ACTION_ROLES[k].includes("education") && !ACTION_ROLES[k].includes("teacher"));
   assert.deepEqual(acts.sort(), ["eduCertIssue", "eduCertList", "eduCertPrint", "eduCertRevoke", "eduCheckSet",
     "eduCourses", "eduEnrollAdd", "eduEnrollList", "eduEnrollSet", "eduExport", "eduFeeSet", "eduPeopleLookup", "eduSessions"]);
   for (const a of acts) {
@@ -259,4 +260,55 @@ test("수료 액션(3단계) — 강사는 문에서 막힌다 · 교육 담당�
   for (const a of cert) assert.equal(canCall(a, course), "ok", a);
   for (const a of settings) assert.equal(canCall(a, course), "forbidden", a);
   assert.equal(canCall("eduCertSettingsSave", { status: "active", roles: ["educourse", "teacher"] }), "forbidden");
+});
+
+// ---------- 봉사 당번(2026-10-06 · SQL 015 역할 duty·dutylead) ----------
+test("봉사 당번 — 담당자 지정은 당번 총괄·총괄만 · 당번 담당(맡은 당번)은 막힘", () => {
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["duty"] }, "pending"],
+    [{ status: "disabled", roles: ["duty"] }, "disabled"],
+    [{ status: "active", roles: [] }, "forbidden"],
+    [{ status: "active", roles: ["dutylead"] }, "forbidden"],
+    [{ status: "active", roles: ["education"] }, "forbidden"],
+    [{ status: "active", roles: ["ministry", "directory"] }, "forbidden"],
+    [{ status: "active", roles: ["duty"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "duty");
+  assert.deepEqual(acts.sort(), ["dutyStaffCandidates", "dutyStaffSet"]);
+  for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
+});
+
+test("봉사 당번 — 그 밖의 액션(역할 배열)은 당번 총괄·당번 담당·총괄 통과 · 대기·정지·다른 역할은 막힘", () => {
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["dutylead"] }, "pending"],
+    [{ status: "disabled", roles: ["duty", "dutylead"] }, "disabled"],
+    [{ status: "active", roles: [] }, "forbidden"],
+    [{ status: "active", roles: ["ministry"] }, "forbidden"],
+    [{ status: "active", roles: ["education", "educourse", "teacher"] }, "forbidden"],
+    [{ status: "active", roles: ["directory", "bibleevent"] }, "forbidden"],     // 교인명부 역할만으로는 당번 명단·명부 찾기를 못 부른다
+    [{ status: "active", roles: ["dutylead"] }, "ok"],
+    [{ status: "active", roles: ["duty"] }, "ok"],
+    [{ status: "active", roles: ["ministry", "dutylead"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  const acts = Object.keys(ACTION_ROLES).filter((k) => Array.isArray(ACTION_ROLES[k]) && ACTION_ROLES[k].includes("duty"));
+  // ⚠️ 당번 액션을 더하면 이 목록에도 — 빠진 액션이 다른 역할로 새지 않게
+  assert.deepEqual(acts.sort(), ["dutyAskClear", "dutyBoardList", "dutyBoardSave", "dutyDateAdd", "dutyDaySet", "dutyDaysOff", "dutyExport",
+    "dutyLineRemove", "dutyLineSave", "dutyPeopleLookup", "dutyRoster", "dutySignAdd", "dutySignMove", "dutySignNote", "dutySignRemove",
+    "dutySlotDelete", "dutySlotSet"]);
+  for (const a of acts) {
+    assert.deepEqual([...ACTION_ROLES[a]].sort(), ["duty", "dutylead"], a);
+    for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
+  }
+  // duty 로 시작하는 액션은 위 두 묶음이 전부(다른 역할 값이 섞이지 않았다)
+  const all = Object.keys(ACTION_ROLES).filter((k) => k.startsWith("duty")).sort();
+  assert.deepEqual(all, [...acts, "dutyStaffCandidates", "dutyStaffSet"].sort());
+  // 당번 역할만 있는 분은 교육·사역·교인명부 액션을 못 부른다
+  for (const a of ["eduEnrollList", "eduAttendSheet", "ministryList", "peopleSearch", "evRoster", "membersList"]) {
+    assert.equal(canCall(a, { status: "active", roles: ["duty", "dutylead"] }), "forbidden", a);
+  }
+  assert.ok(knownRoles().includes("duty") && knownRoles().includes("dutylead"));
 });

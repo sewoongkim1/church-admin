@@ -72,6 +72,7 @@ import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, req
 import { makeHistory } from "./history-db.ts";
 import { buildStats as buildMinistryStats } from "./ministry-stats.ts";
 import { makeEdu } from "./edu-db.ts";
+import { makeDuty } from "./duty-db.ts";
 import { rosterIdent, rosterIdentity } from "./edu-rules.ts";
 // 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
@@ -2082,6 +2083,9 @@ async function eduPersonPick(name: unknown, pick: unknown, check: any) {
 }
 const edu = makeEdu(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "education"), personPick: eduPersonPick, allRows,
   eduNotify: notifyEduConfirmed });   // 확정 알림(4단계) — 저장 뒤 성경암송 api internalEduNotify
+// 봉사 당번(2026-10-06 · duty-db.ts) — 대신 넣기의 명부 찾기·고르기는 교육과 **같은 함수**(같은 거르기·차례 · 교인ID 는 서버 안에만).
+//   찾기 기록은 people.lookup from:"duty". 알림(dutyNotify)은 3단계에서 잇는다 — 지금은 주지 않는다(저장만 한다).
+const duty = makeDuty(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "duty"), personPick: eduPersonPick, allRows });
 
 // ---------- 성경필사(암송) — 이름을 누르면 교적 창 (Task 16 · 2026-09-30) ----------
 // 설계 §0 「이름을 누르면 교적 창」·§2 evPerson·§3 · 친구 결정 §8-8. 고르는 규칙·응답 모양은 events-person.ts(순수 함수)에 있다.
@@ -2537,6 +2541,26 @@ Deno.serve(async (req) => {
       case "eduCertSettings":    return json(await edu.eduCertSettings(ctx));
       case "eduCertSettingsSave": return json(await edu.eduCertSettingsSave(ctx, b));
       case "eduStats":           return json(await edu.eduStats(ctx, b));   // 📊 교육 통계(4단계 C · 2026-10-06)
+      // 봉사 당번(1단계 · 2026-10-06 · duty-db.ts) — 맡은 당번 확인은 그쪽(mayTouch · 줄 번호 → 당번)
+      case "dutyBoardList":       return json(await duty.dutyBoardList(ctx));
+      case "dutyBoardSave":       return json(await duty.dutyBoardSave(ctx, b));
+      case "dutyStaffCandidates": return json(await duty.dutyStaffCandidates(ctx));
+      case "dutyStaffSet":        return json(await duty.dutyStaffSet(ctx, b));
+      case "dutyLineSave":        return json(await duty.dutyLineSave(ctx, b));
+      case "dutyLineRemove":      return json(await duty.dutyLineRemove(ctx, b));
+      case "dutyDateAdd":         return json(await duty.dutyDateAdd(ctx, b));
+      case "dutyRoster":          return json(await duty.dutyRoster(ctx, b));
+      case "dutyExport":          return json(await duty.dutyExport(ctx, b));
+      case "dutyDaySet":          return json(await duty.dutyDaySet(ctx, b));
+      case "dutyDaysOff":         return json(await duty.dutyDaysOff(ctx, b));
+      case "dutySlotSet":         return json(await duty.dutySlotSet(ctx, b));
+      case "dutySlotDelete":      return json(await duty.dutySlotDelete(ctx, b));
+      case "dutySignAdd":         return json(await duty.dutySignAdd(ctx, b));
+      case "dutySignRemove":      return json(await duty.dutySignRemove(ctx, b));
+      case "dutySignMove":        return json(await duty.dutySignMove(ctx, b));
+      case "dutySignNote":        return json(await duty.dutySignNote(ctx, b));
+      case "dutyAskClear":        return json(await duty.dutyAskClear(ctx, b));
+      case "dutyPeopleLookup":    return json(await duty.dutyPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));

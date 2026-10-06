@@ -4,6 +4,7 @@
 // people.lookup 은 다섯 곳이 남긴다 — 성경필사 evPeopleLookup·evPerson(detail 에 from 없음) · 사역신청·담당자 ministryPerson
 // (from:"ministry" · 2026-09-30 검토 5) · 사역 이력 줄 창(from:"history") · 사역 이력 올리기 살펴보기(from:"history-check" · 2026-10-01)
 // · 사역 이력 고치기(from:"history-edit" · 후보에 영향 줄 칸을 고쳐 다시 맞췄을 때 · 2026-10-01 최종 검토).
+// · 교육신청 대신 등록(from:"education") · 봉사 당번 대신 넣기(from:"duty" · 2026-10-06).
 // 이름은 labelOf 가 detail 을 보고 가른다(LABEL 만 보면 사역신청 열람이 「성경필사」로 찍힌다).
 import { esc, kstTime, errorText } from "../../core/ui.js";
 
@@ -43,7 +44,22 @@ export const LABEL = {
   //   check {enrollment, done} · issue {course, count, fresh, restored, ids} · revoke {enrollment} · print {course, count} · settings {fields}
   "edu.cert.check": "수료 확인 체크(교육)", "edu.cert.issue": "수료 확정(교육)", "edu.cert.revoke": "수료 취소(교육)",
   "edu.cert.print": "수료증 인쇄(교육)", "edu.cert.settings": "수료증 설정 바꿈(교육)",
+  // 봉사 당번(2026-10-06) — detail 은 서버 duty-db.ts 의 audit() 호출과 한 벌(이름 없이 id·수·날짜만 · target 은 당번 id)
+  //   board.save {status, created?, was?} · staff.set {count} · line.save {line, created, kept, updated, made} · line.remove {line, deleted, kept} ·
+  //   date.add {date, made, existed} · day.set {date, op, active?} · days.off {from, to, off, days, active} · slot.set {slot, capacity?, off?, active} ·
+  //   slot.delete {slot} · sign.add {slot, signup, app, revived, force, locked} · sign.remove {signup, date, locked} ·
+  //   sign.move {signup, from, to, slot, force} · sign.note {signup, has} · sign.askclear {signup} · export {from, to, count}
+  "duty.board.save": "당번 저장(봉사 당번)", "duty.staff.set": "당번 담당자 지정(봉사 당번)",
+  "duty.line.save": "자리 틀 저장(봉사 당번)", "duty.line.remove": "자리 틀 뺌(봉사 당번)", "duty.date.add": "날짜 더함(봉사 당번)",
+  "duty.day.set": "날짜 확정·메모(봉사 당번)", "duty.days.off": "쉬는 날 바꿈(봉사 당번)",
+  "duty.slot.set": "자리 고침(봉사 당번)", "duty.slot.delete": "자리 지움(봉사 당번)",
+  "duty.sign.add": "대신 넣음(봉사 당번)", "duty.sign.remove": "당번에서 뺌(봉사 당번)", "duty.sign.move": "자리 옮김(봉사 당번)",
+  "duty.sign.note": "담당자 메모 고침(봉사 당번)", "duty.sign.askclear": "못 온다는 표시 거둠(봉사 당번)",
+  "duty.export": "당번 명단 내려받음(봉사 당번)",
 };
+// 봉사 당번 기록 줄의 말(상태·날짜 op)
+const DUTY_STATUS = { draft: "준비 중", open: "받는 중", closed: "지원 멈춤", archived: "보관" };   // 서버 duty-rules.ts DUTY_STATUS_LABEL 과 같다
+const DUTY_DAY_OP = { confirm: "확정", unconfirm: "확정 풂", note: "메모 고침" };
 // 수료증 설정 칸 이름(edu.cert.settings 의 fields)
 const CERT_FIELD = { issuer: "발급 명의", body: "문안", seal: "직인" };
 // detail 로 가르는 이름 — 같은 action 을 여러 화면이 남길 때(칸 이름·값은 서버 events-person.ts ministryLookupLog 와 한 벌)
@@ -55,6 +71,8 @@ export const LOOKUP_HISTORY_CHECK = "명부 찾기(사역 이력 살펴보기)";
 export const LOOKUP_HISTORY_EDIT = "명부 찾기(사역 이력 고치기)";
 // 교육신청 대신 등록 — 교인명부에서 이름으로 찾은 것(from:"education")
 export const LOOKUP_EDUCATION = "명부 찾기(교육신청)";
+// 봉사 당번 대신 넣기 — 교인명부에서 이름으로 찾은 것(from:"duty")
+export const LOOKUP_DUTY = "명부 찾기(봉사 당번)";
 export function labelOf(r) {
   const a = (r && r.action) || "";
   if (a === "people.lookup" && r.detail && r.detail.from === "ministry") return LOOKUP_MINISTRY;
@@ -62,6 +80,7 @@ export function labelOf(r) {
   if (a === "people.lookup" && r.detail && r.detail.from === "history-check") return LOOKUP_HISTORY_CHECK;
   if (a === "people.lookup" && r.detail && r.detail.from === "history-edit") return LOOKUP_HISTORY_EDIT;
   if (a === "people.lookup" && r.detail && r.detail.from === "education") return LOOKUP_EDUCATION;
+  if (a === "people.lookup" && r.detail && r.detail.from === "duty") return LOOKUP_DUTY;
   return LABEL[a] || a;
 }
 const STATUS = { pending: "대기", active: "사용", disabled: "정지" };
@@ -134,6 +153,27 @@ export function detailText(r) {
   if (r.action === "edu.cert.revoke") return d.enrollment != null ? `신청 #${d.enrollment}` : "";
   if (r.action === "edu.cert.print") return `${d.count ?? 0}분`;
   if (r.action === "edu.cert.settings") return (Array.isArray(d.fields) ? d.fields : []).map((f) => CERT_FIELD[f] || f).join("·");
+  // 봉사 당번(2026-10-06) — 이름은 싣지 않는다(지원 번호·자리 번호·날짜·수만)
+  if (r.action === "duty.board.save") return joinDot(d.created ? "새 당번" : "", DUTY_STATUS[d.status] || d.status || "", d.was ? `(${DUTY_STATUS[d.was] || d.was}에서)` : "");
+  if (r.action === "duty.staff.set") return (d.count ?? 0) > 0 ? `담당 ${d.count}분` : "담당 없음";
+  if (r.action === "duty.line.save") return joinDot(`틀 #${d.line ?? ""}`, d.created ? "새 틀" : "고침", d.made ? `자리 ${d.made}개 만듦` : "",
+    d.updated ? `정원 바꾼 자리 ${d.updated}` : "", d.kept ? `지원이 있어 남긴 자리 ${d.kept}` : "");
+  if (r.action === "duty.line.remove") return joinDot(`틀 #${d.line ?? ""}`, d.deleted ? "지움" : "남김(자리가 있음)", d.kept ? `앞날 자리 ${d.kept}개 남음` : "");
+  if (r.action === "duty.date.add") return joinDot(d.date || "", `자리 ${d.made ?? 0}개 만듦`, d.existed ? `이미 있음 ${d.existed}` : "");
+  if (r.action === "duty.day.set") return joinDot(d.date || "", DUTY_DAY_OP[d.op] || d.op || "", d.op === "confirm" ? `선 분 ${d.active ?? 0}` : "");
+  if (r.action === "duty.days.off") return joinDot(d.from === d.to ? d.from || "" : `${d.from || ""} ~ ${d.to || ""}`, d.off ? "쉬는 날로" : "다시 엶",
+    `${d.days ?? 0}일`, `선 분 ${d.active ?? 0}`);
+  if (r.action === "duty.slot.set") return joinDot(`자리 #${d.slot ?? ""}`, d.capacity != null ? `정원 ${d.capacity}` : "",
+    d.off === true ? "이 자리만 쉼" : d.off === false ? "다시 엶" : "");
+  if (r.action === "duty.slot.delete") return `자리 #${d.slot ?? ""}`;
+  if (r.action === "duty.sign.add") return joinDot(`지원 #${d.signup ?? ""}`, d.app ? "앱 계정에" : "앱 없음", d.revived ? "되살림" : "",
+    d.force ? "정원·겹침 넘김" : "", d.locked ? "잠긴 날" : "");
+  if (r.action === "duty.sign.remove") return joinDot(`지원 #${d.signup ?? ""}`, d.date || "", d.locked ? "잠긴 날" : "");
+  if (r.action === "duty.sign.move") return joinDot(`지원 #${d.signup ?? ""}`, d.from === d.to ? d.to || "" : `${d.from || ""} → ${d.to || ""}`,
+    d.force ? "정원·겹침 넘김" : "");
+  if (r.action === "duty.sign.note") return joinDot(`지원 #${d.signup ?? ""}`, d.has ? "메모 적음" : "메모 지움");
+  if (r.action === "duty.sign.askclear") return `지원 #${d.signup ?? ""}`;
+  if (r.action === "duty.export") return joinDot(`${d.from || ""} ~ ${d.to || ""}`, `${d.count ?? 0}줄`);
   if (r.action === "history.request") {
     return [`#${d.id ?? r.target}`, REQ_KIND[d.kind] || d.kind || "", `${d.from || ""} → ${d.to || ""}`, d.verified ? "본인 확인" : ""].filter(Boolean).join(" · ");
   }

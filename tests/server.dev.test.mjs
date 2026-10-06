@@ -229,6 +229,26 @@ const PROBE = {
   eduCertSettingsSave: { seal: "x" },
   // 교육 통계(4단계 C · 2026-10-06) — 읽기만 · 없는 학기라 빈 목록(SQL edu_stats 한 번)
   eduStats: { term: "ca-test-probe-none" },
+  // 봉사 당번(1단계 · 2026-10-06) — 읽기거나, 없는 당번(not-found)·틀린 id(bad-id)·틀린 입력(no-title·bad-date …)이라 아무것도 쓰지도 기록하지도 않는다
+  dutyBoardList: {},
+  dutyBoardSave: { board: { title: "" } },                         // no-title — 아무것도 안 만든다
+  dutyStaffCandidates: {},
+  dutyStaffSet: { board_id: ZERO, member_ids: [] },                // 없는 당번 → not-found
+  dutyLineSave: { board_id: ZERO, line: { service: "" } },         // no-service
+  dutyLineRemove: { id: 0 },
+  dutyDateAdd: { board_id: ZERO, date: "x", line_ids: [] },        // bad-date
+  dutyRoster: { board_id: ZERO },                                  // 없는 당번 → not-found(SQL duty_roster 가 아무것도 만들지 않는다)
+  dutyExport: { board_id: ZERO },
+  dutyDaySet: { board_id: ZERO, date: "x", op: "confirm" },        // bad-date
+  dutyDaysOff: { board_id: ZERO, from: "x", to: "x", off: true },  // bad-date
+  dutySlotSet: { slot_id: 0, capacity: 1 },
+  dutySlotDelete: { slot_id: 0 },
+  dutySignAdd: { slot_id: 0, ident: { name: "" } },
+  dutySignRemove: { id: 0 },
+  dutySignMove: { id: 0, to_slot: 0 },
+  dutySignNote: { id: 0, note: "" },
+  dutyAskClear: { id: 0 },
+  dutyPeopleLookup: { board_id: ZERO, name: "" },                  // 없는 당번 → not-found(명부에 묻지도 기록하지도 않는다)
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 

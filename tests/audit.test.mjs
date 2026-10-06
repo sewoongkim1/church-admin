@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, LOOKUP_HISTORY_CHECK, LOOKUP_HISTORY_EDIT, LOOKUP_EDUCATION, detailText, labelOf } from "../js/menus/system/audit.js";
+import { readFileSync } from "node:fs";
+import { LABEL, LOOKUP_MINISTRY, LOOKUP_HISTORY, LOOKUP_HISTORY_CHECK, LOOKUP_HISTORY_EDIT, LOOKUP_EDUCATION, LOOKUP_DUTY, detailText, labelOf } from "../js/menus/system/audit.js";
 import { ministryApplicant, ministryLookupLog, personOutFor } from "../supabase/functions/church-admin/events-person.ts";
 
 // 기록 한 줄 — 서버 auditList 가 주는 모양({action, target, detail})
@@ -318,4 +319,49 @@ test("수료 기록(3단계) — 이름이 정해져 있고 detail 은 id·수·
   assert.equal(detailText(R("edu.cert.print", { course: C, count: 20 }, C)), "20분");
   assert.equal(detailText(R("edu.cert.settings", { fields: ["issuer", "seal"] }, "1")), "발급 명의·직인");
   assert.equal(detailText(R("edu.cert.settings", { fields: ["body"] }, "1")), "문안");
+});
+
+// ---------- 봉사 당번(2026-10-06) ----------
+test("봉사 당번 기록 — 서버 duty-db.ts 가 남기는 action 마다 한국말 이름이 있다(없으면 화면에 영문 코드가 뜬다) · 명부 찾기는 따로 불린다", () => {
+  const src = readFileSync(new URL("../supabase/functions/church-admin/duty-db.ts", import.meta.url), "utf8");
+  const acts = [...new Set([...src.matchAll(/audit\(ctx, "(duty\.[a-z.]+)"/g)].map((m) => m[1]))].sort();
+  assert.deepEqual(acts, ["duty.board.save", "duty.date.add", "duty.day.set", "duty.days.off", "duty.export", "duty.line.remove", "duty.line.save",
+    "duty.sign.add", "duty.sign.askclear", "duty.sign.move", "duty.sign.note", "duty.sign.remove", "duty.slot.delete", "duty.slot.set", "duty.staff.set"]);
+  for (const a of acts) assert.ok(LABEL[a] && LABEL[a] !== a && /\(봉사 당번\)$/.test(LABEL[a]), a);
+  assert.deepEqual(Object.keys(LABEL).filter((k) => k.startsWith("duty.")).sort(), acts, "서버가 남기지 않는 duty 이름이 화면에 있다");
+  assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 1, from: "duty" })), LOOKUP_DUTY);
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 1, from: "duty" })), "‘홍길동’ · 1명");
+});
+
+test("봉사 당번 기록 — detail 줄은 번호·날짜·수만(서버 duty-db.ts 와 한 벌)", () => {
+  const B = "11111111-1111-4111-8111-111111111111";
+  const T = (action, detail) => detailText(R(action, detail, B));
+  assert.equal(T("duty.board.save", { status: "draft", created: true }), "새 당번 · 준비 중");
+  assert.equal(T("duty.board.save", { status: "open" }), "받는 중");
+  assert.equal(T("duty.board.save", { status: "closed", was: "open" }), "지원 멈춤 · (받는 중에서)");
+  assert.equal(T("duty.staff.set", { count: 2 }), "담당 2분");
+  assert.equal(T("duty.staff.set", { count: 0 }), "담당 없음");
+  assert.equal(T("duty.line.save", { line: 7, created: true, kept: 0, updated: 0, made: 8 }), "틀 #7 · 새 틀 · 자리 8개 만듦");
+  assert.equal(T("duty.line.save", { line: 7, created: false, kept: 1, updated: 3, made: 0 }), "틀 #7 · 고침 · 정원 바꾼 자리 3 · 지원이 있어 남긴 자리 1");
+  assert.equal(T("duty.line.remove", { line: 7, deleted: true, kept: 0 }), "틀 #7 · 지움");
+  assert.equal(T("duty.line.remove", { line: 7, deleted: false, kept: 2 }), "틀 #7 · 남김(자리가 있음) · 앞날 자리 2개 남음");
+  assert.equal(T("duty.date.add", { date: "2026-12-25", made: 2, existed: 1 }), "2026-12-25 · 자리 2개 만듦 · 이미 있음 1");
+  assert.equal(T("duty.day.set", { date: "2026-10-18", op: "confirm", active: 5 }), "2026-10-18 · 확정 · 선 분 5");
+  assert.equal(T("duty.day.set", { date: "2026-10-18", op: "unconfirm" }), "2026-10-18 · 확정 풂");
+  assert.equal(T("duty.day.set", { date: "2026-10-18", op: "note" }), "2026-10-18 · 메모 고침");
+  assert.equal(T("duty.days.off", { from: "2026-08-02", to: "2026-08-16", off: true, days: 3, active: 4 }), "2026-08-02 ~ 2026-08-16 · 쉬는 날로 · 3일 · 선 분 4");
+  assert.equal(T("duty.days.off", { from: "2026-08-02", to: "2026-08-02", off: false, days: 1, active: 0 }), "2026-08-02 · 다시 엶 · 1일 · 선 분 0");
+  assert.equal(T("duty.slot.set", { slot: 31, capacity: 3, active: 2 }), "자리 #31 · 정원 3");
+  assert.equal(T("duty.slot.set", { slot: 31, off: true, active: 2 }), "자리 #31 · 이 자리만 쉼");
+  assert.equal(T("duty.slot.set", { slot: 31, off: false, active: 0 }), "자리 #31 · 다시 엶");
+  assert.equal(T("duty.slot.delete", { slot: 31 }), "자리 #31");
+  assert.equal(T("duty.sign.add", { slot: 31, signup: 501, app: true, revived: false, force: false, locked: true }), "지원 #501 · 앱 계정에 · 잠긴 날");
+  assert.equal(T("duty.sign.add", { slot: 31, signup: 502, app: false, revived: true, force: true, locked: false }), "지원 #502 · 앱 없음 · 되살림 · 정원·겹침 넘김");
+  assert.equal(T("duty.sign.remove", { signup: 501, date: "2026-10-18", locked: true }), "지원 #501 · 2026-10-18 · 잠긴 날");
+  assert.equal(T("duty.sign.move", { signup: 501, from: "2026-10-18", to: "2026-10-25", slot: 40, force: false }), "지원 #501 · 2026-10-18 → 2026-10-25");
+  assert.equal(T("duty.sign.move", { signup: 501, from: "2026-10-18", to: "2026-10-18", slot: 32, force: true }), "지원 #501 · 2026-10-18 · 정원·겹침 넘김");
+  assert.equal(T("duty.sign.note", { signup: 501, has: true }), "지원 #501 · 메모 적음");
+  assert.equal(T("duty.sign.note", { signup: 501, has: false }), "지원 #501 · 메모 지움");
+  assert.equal(T("duty.sign.askclear", { signup: 501 }), "지원 #501");
+  assert.equal(T("duty.export", { from: "2026-10-12", to: "2026-12-07", count: 31 }), "2026-10-12 ~ 2026-12-07 · 31줄");
 });
