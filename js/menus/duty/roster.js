@@ -11,7 +11,7 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { openBoardForm } from "./board-form.js";
-import { emptyWhy, liveLineCount } from "./duty-logic.js";
+import { emptyWhy, seenOfRoster } from "./duty-logic.js";
 import { openLineForm, openDateAddForm, openOffForm, offFlow, openAddForm, openNoteForm, openDayNoteForm, openCapacityForm, failText } from "./roster-forms.js";
 import {
   boardRest, contactHtml, maxBack, lineText, lineSavedText, lineRemovedText, boardSavedText, initialDay, dayChip, dayStateText, dayActions, dayLabel, addDays, slotName, timeRange,
@@ -183,8 +183,8 @@ export async function render(el, { call, query }) {
     if (!cur || !ros) { el.innerHTML = TITLE + boardBtn() + `<p class="empty">당번을 골라 주세요</p>`; return; }
     const b = ros.board, ro = b.status === "archived";
     const note = ro || b.status === "draft" ? "" : appNote(ros.appOpen === true);   // 준비 중 당번은 준비 중 안내 하나만(누구에게도 안 보인다)
-    // 받는 중·지원 멈춤인데 앱 당번표에 날짜가 하나도 안 보이는 까닭(자리 틀 없음 · 앞날 자리 없음) — 앞날 자리 = 지난 날·앱에 안 보이는 날을 뺀 날의 자리
-    const emptyNow = emptyWhy(b.status, liveLineCount(ros.lines), (ros.days || []).filter((x) => !x.past && !x.notYet && !x.afterUntil).reduce((k, x) => k + ((x.slots || []).length), 0));
+    // 받는 중·지원 멈춤인데 앱에서 지원할 날짜가 없는 까닭(틀 없음 · 남은 자리만 · 끝 날짜 지남 · 보이는 기간 밖 · 날짜 없음) — 앱과 같은 범위로 센다(seenOfRoster)
+    const emptyNow = emptyWhy(b.status, seenOfRoster(ros, today));
     el.innerHTML = TITLE + boardBtn() +
       `<p class="muted dty-info">${b.place ? `📍 ${esc(b.place)} · ` : ""}${b.contact ? `📞 ${contactHtml(b.contact)} · ` : ""}${esc(boardRest(b))}</p>` +
       (note ? `<p class="be-note">${esc(note)}</p>` : "") +
@@ -234,7 +234,7 @@ export async function render(el, { call, query }) {
   // ---------- 그날 ----------
   async function dayAct(act, d) {
     if (act === "confirm") {
-      const yes = await dialog({ title: "🔒 이 날 확정", text: confirmDayAsk(d), ok: "확정", cancel: "그만두기" });
+      const yes = await dialog({ title: "🔒 이 날 확정", text: confirmDayAsk(d, ros.board.status), ok: "확정", cancel: "그만두기" });
       if (!yes) return;
       const r = await busy(el, () => call("dutyDaySet", { board_id: cur.id, date: d.date, op: "confirm" }));
       await settle(r, r.ok ? (r.already ? "이미 확정된 날이에요" : `${dayLabel(d.date)}을 확정했어요${notifyTail(r)}`) : "");
@@ -380,7 +380,7 @@ export async function render(el, { call, query }) {
           const got = await openOffForm({ call, boardId: cur.id, today });
           if (got) { toast(offDoneText(got.r, got.off)); await busy(el, () => reload()); }
         } else if (act === "settings") {
-          const got = await openBoardForm({ call, board: { ...ros.board, staff: ros.staff, lines: ros.lines }, chief: ros.chief === true, appOpen: ros.appOpen === true });
+          const got = await openBoardForm({ call, board: { ...ros.board, staff: ros.staff, lines: ros.lines }, chief: ros.chief === true, appOpen: ros.appOpen === true, seen: seenOfRoster(ros, today) });
           if (got === "gone") { toast("그사이 바뀌었어요 — 새로 불러올게요"); await busy(el, reloadAll); }
           else if (got === "stale") { toast(STALE_BOARD); await busy(el, reloadAll); }
           else if (got) { toast(got.staffErr || boardSavedText(got, false)); await busy(el, reloadAll); }

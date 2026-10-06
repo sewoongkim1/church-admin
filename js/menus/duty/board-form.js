@@ -10,7 +10,7 @@ import { esc, dialog, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne, pickMany, pickDate } from "../../core/picker.js";
 import { staffOptions, staffFieldText, sameIds } from "../education/courses-logic.js";
-import { STATUS_OPTIONS, LEAD_STATUS_OPTIONS, STATUS_LABEL, leadCanSetStatus, openDaysOptions, openDaysText, formToBoard, boardToForm, hideAsk, afterAsk, openWarn, liveLineCount,
+import { STATUS_OPTIONS, LEAD_STATUS_OPTIONS, STATUS_LABEL, leadCanSetStatus, openDaysOptions, openDaysText, formToBoard, boardToForm, hideAsk, afterAsk, openWarn, emptyKind,
   dutyWord, dayLabel, staffFailText, STAFF_NO_CAND, STAFF_ROLE_HINTS } from "./duty-logic.js";
 
 const labelOf = (opts, v) => (opts.find((o) => o.value === v) || {}).label || v || "";
@@ -28,7 +28,7 @@ export function boardFormHtml(v, { isNew = false, chief = false, staff = null } 
   const statusOpts = chief ? STATUS_OPTIONS : LEAD_STATUS_OPTIONS;
   const canStatus = chief || leadCanSetStatus(v.status);
   const staffText = staff ? (staff.cands === null ? "담당자 후보를 불러오지 못했어요" : staffFieldText(staff.ids, staff.opts, "담당자 없음")) : "";
-  return (isNew ? `<p class="be-note">새 당번은 「준비 중」으로 만들어져 성도님께 안 보여요 — 📅 당번 명단에서 자리 틀을 넣고 상태를 「받는 중」으로 바꾸면 보여요</p>` : "") +
+  return (isNew ? `<p class="be-note">새 당번은 상태를 「준비 중」으로 두면 성도님께 안 보여요 — 📅 당번 명단에서 자리 틀을 넣은 뒤 「받는 중」으로 바꾸면 지원을 받아요</p>` : "") +
     (chief ? txt("title", "당번 이름", v.title, `maxlength="40" placeholder="예: 식당 봉사"`)
       : hid("title", v.title) + fixed("당번 이름", v.title, "이름은 당번 총괄이 바꿔요")) +
     `<label class="field"><span>설명 <small>(앱 당번 화면 맨 위에 보여요)</small></span><textarea data-f="description" maxlength="1000" rows="4" placeholder="예: 예배 뒤 식당에서 함께 설거지해요. 앞치마는 식당에 있어요.">${esc(v.description)}</textarea></label>` +
@@ -56,7 +56,8 @@ const readForm = (root) => {
 //   그사이 없어졌거나 맡은 당번에서 빠졌으면 "gone" · 그사이 다른 분이 고쳤으면 "stale"(둘 다 부른 쪽이 새로 불러온다).
 //   board = 서버 boardOut 꼴(없으면 새 당번) · cands = 담당자 후보(dutyStaffCandidates · 못 불러왔으면 null · undefined 면 담당자 칸 없음)
 //   appOpen = 봉사 당번이 성도님 앱에 열렸는가(「받는 중」 확인 글을 사실대로)
-export function openBoardForm({ call, board = null, chief = false, cands, appOpen = false }) {
+//   seen = 지금 앱 당번표에 무엇이 보이나({ lines, shown, later, untilPast } — duty-logic.js seenOfCounts·seenOfRoster · 새 당번은 null)
+export function openBoardForm({ call, board = null, chief = false, cands, appOpen = false, seen = null }) {
   const v = boardToForm(board);
   const withStaff = chief && cands !== undefined;
   const staff0 = withStaff ? ((board && board.staff) || []).map((x) => x.id) : [];
@@ -110,7 +111,12 @@ export function openBoardForm({ call, board = null, chief = false, cands, appOpe
       if (board && !f.board.id) return { ok: false, message: "당번 번호를 읽지 못했어요 — 닫고 다시 열어 주세요" };   // 고치기가 새 당번을 만들지 않게
       // 받는 중으로 **바꿀 때만** 확인(이미 받는 중인 당번의 다른 칸을 고칠 때는 묻지 않는다)
       if (f.board.status === "open" && (!board || board.status !== "open")) {
-        const yes = await dialog({ title: "👁 지원을 받을까요?", text: openWarn(appOpen, { noLines: liveLineCount(board && board.lines) === 0 }), ok: "저장", cancel: "그만두기" });
+        // 열어도 앱에 지원할 날짜가 없으면 그 까닭을 덧붙인다. 이 저장이 끝 날짜·보이는 기간도 함께 바꾸면 저장 뒤의 날짜를 여기서 알 수 없다 —
+        //   그때는 틀에 관한 말(이 창에서 바뀌지 않는다)만 한다(저장 뒤에는 당번 카드의 칩·명단 머리가 말한다).
+        const sameWindow = !!board && String(f.board.until_date || "") === String(board.untilDate || "") && Number(f.board.open_days) === Number(board.openDays || 56);
+        let kind = emptyKind("open", seen || { lines: 0, shown: 0, later: 0, untilPast: false });
+        if (!sameWindow && kind !== "no-lines" && kind !== "leftover") kind = "";
+        const yes = await dialog({ title: "👁 지원을 받을까요?", text: openWarn(appOpen, { kind }), ok: "저장", cancel: "그만두기" });
         if (!root.isConnected) return { ok: false };
         if (!yes) return { ok: false, message: "저장하지 않았어요 — 아무것도 바뀌지 않았어요" };
       }

@@ -268,10 +268,11 @@ export function forceAsk(r, verb = "넣을까요") {
   return `${bits.join(" ")} 그래도 ${verb}?`;
 }
 export const needsForce = (r) => !!r && !r.ok && (r.error === "full" || r.error === "overlap");
-export function confirmDayAsk(d) {
+//   status = 당번 상태 — 받는 중일 때만 「빈 자리 지원은 계속 받아요」(지원 멈춤 당번은 앱 지원을 받지 않는다 — 담당자가 넣는다 · 검증 2026-10-06)
+export function confirmDayAsk(d, status = "open") {
   const n = dayActive(d);
   return `${dayLabel(d.date)}을 확정할까요? 확정하면 성도님은 앱에서 취소·변경을 못 해요(지금 ${n}분${d.need ? ` · 빈 자리 ${d.need}` : ""}). ` +
-    "빈 자리 지원은 계속 받아요 — 바꿀 일은 담당자가 넣기·빼기·옮기기로 해요.";
+    (status === "open" ? "빈 자리 지원은 계속 받아요 — " : "빈 자리는 담당자가 「넣기」로 채워요 — ") + "바꿀 일은 담당자가 넣기·빼기·옮기기로 해요.";
 }
 export const unconfirmAsk = (d) => `${dayLabel(d.date)}의 확정을 풀까요? 풀면 앱으로 지원한 분은 다시 스스로 취소할 수 있어요` +
   `(담당자가 넣은 분은 그대로 못 빼요 · ${cutoffText(d.cutoff) || "전날 저녁"}에는 다시 자동으로 확정돼요).`;
@@ -305,38 +306,76 @@ export const APP_LIVE = true;
 // 앱에 아직 열지 않은 동안(문 dutyOpen 닫힘) — 받는 중·지원 멈춤 당번에 선 분의 이름이 🧪 시험 참여자 앱에 보인다.
 //   개인정보 안내에 적기 전이라 진짜 명단은 「준비 중」에 넣어 두게 한다(설계 §11 ⚠️ · 검토 반영 2026-10-06).
 export const TESTERS_SEE_NAMES = "받는 중·지원 멈춤 당번에 선 분의 이름이 시험 참여자 앱에 보여요 — 앱에 열기 전에는 시험 당번만 열어 두고, 진짜 명단은 「준비 중」 당번에 넣어 두세요";
-// 앱 당번표에 날짜가 하나도 안 보이는 까닭(받는 중·지원 멈춤 당번만) — 자리 틀이 없다 / 틀은 있는데 앞날 자리가 없다
-//   (날짜를 골라 넣는 틀에 날짜를 아직 안 더함 · 끝 날짜가 지남). 날짜가 보이면(또는 준비 중·보관이면) "".
-//   당번 설정(이름·장소·기간)만 저장하고 「받는 중」으로 열면 앱에는 당번만 보이고 지원할 날짜가 없다 — 화면이 그 까닭을 말한다(친구 제보 2026-10-06).
-//   liveLines = 살아 있는 자리 틀 수 · slots = 앞날 자리 수(dutyBoardList counts.slots — 보이는 기간 · 끝 날짜까지)
-export function emptyWhy(status, liveLines, slots) {
+// 플레이스토어 앱에서는 🙋 단추를 숨겨 두었다(성경암송 app.js `MINISTRY_HIDE_ON_PLAY` — 심사가 끝난 날 그쪽을 false 로 뒤집을 때 이 값도 false 로).
+//   그 앱을 쓰는 시험 참여자에게는 「시험 참여자만 볼 수 있어요」라는 말과 달리 단추가 없다 — 까닭을 화면이 말한다(검증 2026-10-06).
+export const PLAY_HIDDEN = true;
+export const PLAY_NOTE = "플레이스토어 앱에서는 심사가 끝날 때까지 🙋 단추가 보이지 않아요 — 안드로이드는 크롬으로 열어 확인해 주세요";
+// ── 앱 당번표에 무엇이 보이나(받는 중·지원 멈춤 당번) ──
+//   앱(duty_board_view)은 오늘 ~ 오늘+보이는 기간 · 끝 날짜까지의 **자리가 있는 날**만 보여 준다. 그래서 「앱에 날짜가 안 보여요」는 그 범위의 자리 수(shown)가 0 일 때만 참이다.
+//   o = { lines: 살아 있는 자리 틀 수 · shown: 그 범위의 자리 수 · later: 범위 밖(끝 날짜 안)의 앞날 자리 수 · untilPast: 끝 날짜가 지났다 }
+//   → ""          날짜가 보이고 틀도 있다(또는 준비 중·보관 — 앱에 없다)
+//     "no-lines"  틀도 자리도 없다(당번 설정만 저장하고 열었다 — 친구 제보 2026-10-06)
+//     "leftover"  살아 있는 틀은 없는데 남은 자리(지원이 달려 못 지운 자리)의 날짜·이름은 앱에 보인다 — 「날짜가 안 보여요」라고 하면 거짓이다
+//     "until-past" 끝 날짜가 지났다 · "later" 자리가 모두 보이는 기간 밖이다(가까워지면 저절로 보인다 — 김장처럼 먼 날짜를 더해 둔 당번)
+//     "no-dates"  틀은 있는데 보일 날짜가 없다(날짜를 골라 넣는 틀에 날짜를 아직 안 더함 · 끝 날짜가 첫 날보다 이름)
+export function emptyKind(status, o = {}) {
   if (status !== "open" && status !== "closed") return "";
-  if (!(Number(liveLines) > 0)) return "자리 틀이 아직 없어요 — 앱 당번표에 날짜가 보이지 않아 지원할 수 없어요. 「자리 틀」에서 먼저 넣어 주세요(예: 매주 주일 · 2부 · 설거지 · 11:30~12:30 · 2명)";
-  if (!(Number(slots) > 0)) return "앞날 자리가 없어요 — 앱 당번표에 날짜가 보이지 않아요. 「날짜 더하기」로 자리를 만들거나 끝 날짜·보이는 기간을 확인해 주세요";
-  return "";
+  const v = o || {}, lines = Number(v.lines) > 0;
+  if (Number(v.shown) > 0) return lines ? "" : "leftover";
+  if (v.untilPast === true) return "until-past";
+  if (Number(v.later) > 0) return "later";
+  return lines ? "no-dates" : "no-lines";
 }
-// 당번 카드의 경고 칩(짧게) — 없으면 ""
-export function emptyChip(status, liveLines, slots) {
-  const w = emptyWhy(status, liveLines, slots);
-  return !w ? "" : !(Number(liveLines) > 0) ? "자리 틀 없음 — 앱에 날짜가 안 보여요" : "앞날 자리 없음 — 앱에 날짜가 안 보여요";
-}
+const EMPTY_WHY = {
+  "no-lines": "자리 틀이 아직 없어요 — 앱 당번표에 날짜가 보이지 않아 지원할 수 없어요. 「자리 틀」에서 먼저 넣어 주세요(예: 매주 주일 · 2부 · 설거지 · 11:30~12:30 · 2명)",
+  leftover: "살아 있는 자리 틀이 없어요 — 앱 당번표에는 남은 자리의 날짜와 선 분 이름만 보이고, 새 날짜가 생기지 않아 지원을 받지 않아요. 「자리 틀」에서 넣어 주세요",
+  "until-past": "끝 날짜가 지났어요 — 앱 당번표에 날짜가 보이지 않아요. 계속 받으려면 「당번 설정」에서 끝 날짜를 늦추거나 비워 주세요",
+  later: "앞날 자리가 모두 보이는 기간 밖이에요 — 앱 당번표에는 아직 날짜가 보이지 않아요(날이 가까워지면 저절로 보여요). 지금부터 받으려면 「당번 설정」의 「얼마나 앞까지 보여 줄까요」를 늘려 주세요",
+  "no-dates": "앱에 보이는 날짜가 없어요 — 「날짜 더하기」로 날짜를 넣거나 끝 날짜를 확인해 주세요",
+};
+const EMPTY_CHIP = {
+  "no-lines": "자리 틀 없음 — 앱에 날짜가 안 보여요", leftover: "자리 틀 없음 — 앱에 남은 자리만 보여요", "until-past": "끝 날짜 지남 — 앱에 날짜가 안 보여요",
+  later: "보이는 기간 밖 — 앱에 아직 날짜가 안 보여요", "no-dates": "날짜 없음 — 앱에 날짜가 안 보여요",
+};
+// 📅 당번 명단 머리의 한 줄 · 🧰 당번 카드의 경고 칩(없으면 "")
+export const emptyWhy = (status, o) => EMPTY_WHY[emptyKind(status, o)] || "";
+export const emptyChip = (status, o) => EMPTY_CHIP[emptyKind(status, o)] || "";
 // 살아 있는 자리 틀 수(목록의 lines 는 살아 있는 것만 · 명단의 lines 는 active 칸이 있다)
 export const liveLineCount = (lines) => (Array.isArray(lines) ? lines : []).filter((l) => l && l.active !== false).length;
+// emptyKind 의 재료 — 🧰 당번 관리(목록)에서: counts.shown 은 서버(duty_board_counts)가 준다. 옛 서버면 칸이 없다 → slots 로 본다
+//   (slots = 끝 날짜까지의 앞날 자리 — 보이는 기간으로 자르지 않은 수라 「보이는 기간 밖뿐인 당번」을 못 가린다. 0 이면 shown 도 0 이라 거짓 경고는 없다)
+export function seenOfCounts(b, today = "") {
+  const n = (b && b.counts) || {}, known = n.shown !== null && n.shown !== undefined, slots = Number(n.slots) || 0, shown = known ? Number(n.shown) || 0 : slots;
+  return { lines: liveLineCount(b && b.lines), shown, later: known ? Math.max(0, slots - shown) : 0, untilPast: !!(b && b.untilDate && today && b.untilDate < today) };
+}
+// emptyKind 의 재료 — 📅 당번 명단에서: 날짜마다 past·notYet(보이는 기간 밖)·afterUntil(끝 날짜 뒤)이 온다(duty_roster) — 앱과 같은 범위로 센다
+export function seenOfRoster(ros, today = "") {
+  const days = (ros && ros.days) || [], b = (ros && ros.board) || {};
+  const cnt = (keep) => days.filter((x) => x && !x.past && !x.afterUntil && keep(x)).reduce((k, x) => k + ((x.slots || []).length), 0);
+  return { lines: liveLineCount(ros && ros.lines), shown: cnt((x) => !x.notYet), later: cnt((x) => x.notYet === true), untilPast: !!(b.untilDate && today && b.untilDate < today) };
+}
 // 「받는 중」으로 바꾸는 저장의 확인 글 — appOpen = 봉사 당번이 성도님 앱에 열렸는가(서버가 준다 · app_config dutyOpen)
-//   noLines = 자리 틀이 아직 없다 — 열어도 앱에 날짜가 안 보인다는 한 줄을 덧붙인다(열기 전에 넣으라고 막지는 않는다 — 저장한 뒤 넣어도 된다)
-const NO_LINES_TAIL = " ⚠️ 자리 틀이 아직 없어요 — 넣기 전에는 앱 당번표에 날짜가 보이지 않아 지원할 수 없어요(저장한 뒤 「📅 당번 명단」의 「자리 틀」에서 넣어 주세요).";
-export const openWarn = (appOpen, opt = {}) => openWarnBase(appOpen, opt) + (opt.noLines === true ? NO_LINES_TAIL : "");
-const openWarnBase = (appOpen, { live = APP_LIVE } = {}) => (!live
+//   kind = emptyKind("open", …) — 열어도 앱에 지원할 날짜가 없으면 그 까닭을 한 줄 덧붙인다(막지는 않는다 — 저장한 뒤 넣어도 된다).
+//   ⚠️ 같은 저장이 끝 날짜·보이는 기간도 바꾸면 저장 뒤의 날짜를 알 수 없다 — 부르는 쪽(board-form.js)이 틀에 관한 말(no-lines·leftover)만 남긴다.
+const OPEN_TAIL = {
+  "no-lines": " ⚠️ 자리 틀이 아직 없어요 — 넣기 전에는 앱 당번표에 날짜가 보이지 않아 지원할 수 없어요(저장한 뒤 「📅 당번 명단」의 「자리 틀」에서 넣어 주세요).",
+  leftover: " ⚠️ 살아 있는 자리 틀이 없어요 — 앱 당번표에는 남은 자리의 날짜만 보이고 새 지원은 받지 않아요(「📅 당번 명단」의 「자리 틀」에서 넣어 주세요).",
+  "until-past": " ⚠️ 끝 날짜가 지났어요 — 끝 날짜를 늦추거나 비우기 전에는 앱 당번표에 날짜가 보이지 않아 지원할 수 없어요.",
+  later: " ⚠️ 앞날 자리가 모두 보이는 기간 밖이에요 — 날이 가까워질 때까지 앱 당번표에 날짜가 보이지 않아요(지금부터 받으려면 「얼마나 앞까지 보여 줄까요」를 늘려 주세요).",
+  "no-dates": " ⚠️ 앱에 보이는 날짜가 아직 없어요 — 「📅 당번 명단」의 「날짜 더하기」로 날짜를 넣기 전에는 지원할 수 없어요.",
+};
+export const openWarn = (appOpen, opt = {}) => openWarnBase(appOpen, opt) + (OPEN_TAIL[opt.kind] || "");
+const openWarnBase = (appOpen, { live = APP_LIVE, play = PLAY_HIDDEN } = {}) => (!live
   ? "「받는 중」으로 저장해요. 성경암송 앱에는 아직 봉사 당번 화면이 없어서 지금은 성도님께 보이지 않아요 — 화면이 열리는 날 이 당번이 바로 보이고 지원을 받아요."
   : appOpen
     ? "「받는 중」으로 저장하면 성경암송 앱의 🙋 봉사 당번에 이 당번이 바로 보이고 지원을 받아요."
-    : `「받는 중」으로 저장해요. 봉사 당번은 아직 성도님 앱에 열지 않아서, 지금은 🧪 시험 참여자에게만 보여요 — 앱에 열리는 날 이 당번이 바로 보이고 지원을 받아요. ⚠️ ${TESTERS_SEE_NAMES}.`);
+    : `「받는 중」으로 저장해요. 봉사 당번은 아직 성도님 앱에 열지 않아서, 지금은 🧪 시험 참여자에게만 보여요 — 앱에 열리는 날 이 당번이 바로 보이고 지원을 받아요. ⚠️ ${TESTERS_SEE_NAMES}.${play ? ` ${PLAY_NOTE}.` : ""}`);
 // 화면 머리에 두는 안내 한 줄(사실대로 · 없으면 "") — 앱에 화면이 없다 / 아직 열지 않았다(시험 참여자만) / 앱 알림이 아직 안 나간다.
 //   알림 말은 문(appOpen)과 따로다 — 문을 열어도 알림(3단계 · NOTIFY_LIVE)이 올라가기 전에는 「따로 알려 주세요」가 그대로 뜬다.
-export function appNote(appOpen, { live = APP_LIVE, notify = NOTIFY_LIVE } = {}) {
+export function appNote(appOpen, { live = APP_LIVE, notify = NOTIFY_LIVE, play = PLAY_HIDDEN } = {}) {
   const tell = "넣거나 바꾼 것은 그분께 따로 알려 주세요";
   if (!live) return `🙈 성경암송 앱에는 아직 봉사 당번 화면이 없어요 — 지금 넣는 것은 준비예요. 성도님께는 보이지도 알림이 가지도 않으니 ${tell}.`;
-  if (!appOpen) return `🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. ⚠️ ${TESTERS_SEE_NAMES}.` + (notify ? "" : ` 앱 알림도 아직 보내지 않으니 ${tell}.`);
+  if (!appOpen) return `🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. ⚠️ ${TESTERS_SEE_NAMES}.` + (play ? ` ${PLAY_NOTE}.` : "") + (notify ? "" : ` 앱 알림도 아직 보내지 않으니 ${tell}.`);
   return notify ? "" : `🔕 앱 알림(확정·전날·담당자가 바꾼 것)은 아직 보내지 않아요 — ${tell}.`;
 }
 // 설정 창을 연 뒤 다른 분이 그 당번을 고쳤을 때(dutyBoardSave changed) — 창을 닫고 새로 불러온 뒤 알린다
@@ -347,7 +386,16 @@ export const afterAsk = (active, until) => `새 끝 날짜${dayLabel(until) ? `(
 // 넣기 창의 안내 한 줄 — ① 담당자가 넣은 분은 앱에서 스스로 못 뺀다 ② 못 오시면 앱의 「못 가게 됐어요」로 이 명단에 표시가 뜬다
 //   (담당자 휴대폰으로 가는 알림이 아니다 — 명단을 열어야 보인다) ③ 넣은 분(앱을 안 쓰는 분·새가족 포함)의 이름이 앱 당번표에 보인다(설계 §0-1 ⑫ —
 //   받는 중·지원 멈춤 당번일 때 · 준비 중·보관 당번은 앱에 없다).
-export const ADD_NOTE = "담당자가 넣은 분은 앱에서 스스로 뺄 수 없어요 — 못 오시면 앱의 「못 가게 됐어요」로 이 명단에 표시해 와요(담당자께 따로 알림은 오지 않아요) · 넣은 분의 이름은 받는 중·지원 멈춤 당번이면 성경암송 앱 당번표에 보여요(이름만)";
+//   ⚠️ 지난 날·끝 날짜 뒤·보이는 기간 밖 날에도 「넣기」가 있다(담당자 길은 그 날짜도 받는다) — 그날은 앱 당번표에 실리지 않으므로 「보여요」라고 하지 않는다
+//      (「내 당번」은 오늘 이후 내 줄을 보이는 기간과 무관하게 싣는다 — 앱을 쓰는 분께는 거기에 보인다 · 검증 2026-10-06).
+const ADD_BASE = "담당자가 넣은 분은 앱에서 스스로 뺄 수 없어요 — 못 오시면 앱의 「못 가게 됐어요」로 이 명단에 표시해 와요(담당자께 따로 알림은 오지 않아요)";
+export function addNote(d) {
+  if (d && d.past) return "지난 날짜예요 — 앱에는 보이지 않아요(명단에 기록으로 남아요)";
+  if (d && d.afterUntil) return `${ADD_BASE} · 끝 날짜 뒤라 이 날짜는 앱 당번표에 보이지 않아요(앱을 쓰는 분의 「내 당번」에는 보여요)`;
+  if (d && d.notYet) return `${ADD_BASE} · 보이는 기간 밖이라 이 날짜는 앱 당번표에 아직 안 보여요(앱을 쓰는 분의 「내 당번」에는 보이고, 날이 가까워지면 당번표에도 이름이 보여요)`;
+  return `${ADD_BASE} · 넣은 분의 이름은 받는 중·지원 멈춤 당번이면 성경암송 앱 당번표에 보여요(이름만)`;
+}
+export const ADD_NOTE = addNote(null);
 // 준비 중인 당번의 안내 — 총괄은 스스로 열 수 있고, 담당은 총괄께 부탁한다
 export const draftNote = (chief) => (chief
   ? "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣고 「당번 설정」에서 상태를 「받는 중」으로 바꾸면 지원을 받아요."
@@ -368,7 +416,7 @@ export const movedText = (r, name) => (r && r.already ? "같은 자리예요" : 
 // reopened = 이미 있던 남은 자리(요일을 바꾼 틀의 옛 요일 자리)를 다시 살린 수 — 앱에서 지원을 다시 받는다
 export const dateAddedText = (r, date) => (r && (r.made || r.reopened)
   ? [r.made ? `${dayLabel(date)}에 자리 ${r.made}개를 만들었어요` : "",
-     r.reopened ? `${r.made ? "" : `${dayLabel(date)}의 `}남은 자리 ${r.reopened}개를 다시 열었어요(앱에서 지원을 받아요)` : "",
+     r.reopened ? `${r.made ? "" : `${dayLabel(date)}의 `}남은 자리 ${r.reopened}개를 다시 열었어요` : "",
      r.existed ? `이미 있던 ${r.existed}개는 그대로예요` : ""].filter(Boolean).join(" · ")
   : `${dayLabel(date)}에는 고른 자리가 이미 있어요`);
 export const offDoneText = (r, off) => (r && r.days ? `${r.days}일을 ${off ? "쉬는 날로 바꿨어요" : "다시 열었어요"}${notifyTail(r)}` : "바뀐 날이 없어요");

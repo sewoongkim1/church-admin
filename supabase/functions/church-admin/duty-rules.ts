@@ -135,14 +135,16 @@ const str = (v: unknown): string => (v === null || v === undefined ? "" : String
 const num = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 // 당번 한 줄(duty_boards) + 요약 수(duty_board_counts) + 담당자 + 살아 있는 자리 틀(duty_lines 줄) → 화면 칸
-//   counts.after = 끝 날짜 뒤에 살아 있는 지원 수(그 자리는 앱에 안 보인다 — 담당자가 옮기거나 뺀다)
+//   counts.after = 끝 날짜 뒤에 살아 있는 지원 수(그 자리는 앱에 안 보인다 — 담당자가 옮기거나 뺀다) · counts.shown = 앱이 보여 주는 기간의 자리 수
 export function boardOut(r: any, counts: any = {}, staff: { id?: string; name: string; stale?: boolean }[] = [], lines: any[] = []) {
   return {
     id: r.id, title: str(r.title), description: str(r.description), place: str(r.place), contact: str(r.contact_note),
     openDays: num(r.open_days) || 56, untilDate: r.until_date || null, maxAhead: r.max_ahead ?? null,
     status: str(r.status), statusLabel: DUTY_STATUS_LABEL[r.status] || str(r.status), updatedAt: r.updated_at || null,
     counts: { lines: num(counts?.lines), slots: num(counts?.slots), need: num(counts?.need), asks: num(counts?.asks), active: num(counts?.active),
-      after: num(counts?.after) },
+      after: num(counts?.after),
+      // shown = 성도님 앱 당번표가 보여 주는 기간의 자리 수(duty_board_counts — 0 이면 앱에 날짜가 안 보인다). SQL 이 줄 때만 싣는다 — 옛 SQL 이면 칸이 없고 화면은 slots 로 본다
+      ...(counts?.shown === undefined || counts?.shown === null ? {} : { shown: num(counts.shown) }) },
     // 담당자 — 총괄에게는 {id, name}, 담당에게는 이름만(duty-db.ts 가 staffNames 로 id 를 뗀 목록을 넘긴다 — id 칸을 아예 싣지 않는다)
     staff: (staff || []).map((x: any) => ({ ...(x.id ? { id: x.id } : {}), name: x.name, ...(x.stale === true ? { stale: true } : {}) })),
     lines: (lines || []).map(lineRowOut).sort(lineOrder),

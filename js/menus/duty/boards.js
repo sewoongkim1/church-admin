@@ -6,7 +6,7 @@
 import { esc, toast, busy, errorText } from "../../core/ui.js";
 import { STALE_MARK } from "../education/courses-logic.js";
 import { openBoardForm } from "./board-form.js";
-import { linesSummary, boardSavedText, boardRest, contactHtml, dutyWord, appNote, STALE_BOARD, emptyChip, liveLineCount } from "./duty-logic.js";
+import { linesSummary, boardSavedText, boardRest, contactHtml, dutyWord, appNote, STALE_BOARD, emptyChip, seenOfCounts } from "./duty-logic.js";
 
 const TITLE = `<h2 class="page-title">🧰 당번 관리</h2>`;
 const failText = (r) => dutyWord(r?.error) || errorText(r);
@@ -16,9 +16,10 @@ const chip = (text, warn) => `<span class="dty-chip${warn ? " warn" : ""}">${esc
 const staffHtml = (b) => ((b.staff || []).length
   ? b.staff.map((x) => (x.stale ? `<span class="ec-stale">${esc(x.name)}${esc(STALE_MARK)}</span>` : esc(x.name))).join(", ") : "없음");
 
-export function boardCard(b) {
+//   today = 서버의 오늘(끝 날짜가 지났는지) · 수 칩 줄은 살아 있는 틀이 없어도 남은 자리·「못 온다는 분」이 있으면 그린다(틀을 뺀 뒤에도 그분들은 서 있다)
+export function boardCard(b, today = "") {
   const n = b.counts || {};
-  const empty = emptyChip(b.status, liveLineCount(b.lines), n.slots);   // 받는 중·지원 멈춤인데 앱에 날짜가 하나도 안 보이는 당번
+  const empty = emptyChip(b.status, seenOfCounts(b, today));   // 받는 중·지원 멈춤인데 앱에 날짜가 하나도 안 보이는 당번
   return `<div class="card dty-card" data-id="${esc(b.id)}">
     <div class="dty-head"><b>${esc(b.title)}</b> <span class="badge${b.status === "open" ? " ok" : ""}">${esc(b.statusLabel)}</span></div>
     <div class="dty-kvs">
@@ -28,7 +29,7 @@ export function boardCard(b) {
       ${row("기간", esc(boardRest(b)))}
     </div>
     ${empty ? `<div class="dty-chips">${chip(empty, true)}</div>` : ""}
-    ${n.lines ? `<div class="dty-chips">${chip(`앞날 자리 ${n.slots || 0}`)}${chip(`빈 자리 ${n.need || 0}`, b.status === "open" && n.need > 0)}${
+    ${n.lines || n.slots || n.asks || n.after ? `<div class="dty-chips">${chip(`앞날 자리 ${n.slots || 0}`)}${chip(`빈 자리 ${n.need || 0}`, b.status === "open" && n.need > 0)}${
       n.asks ? chip(`못 온다는 분 ${n.asks}`, true) : ""}${n.after ? chip(`끝 날짜 뒤에 선 분 ${n.after}`, true) : ""}</div>` : ""}
     <div class="acts"><button type="button" class="btn" data-act="edit">고치기</button>
       <button type="button" class="btn" data-act="roster">명단 열기</button></div>
@@ -40,6 +41,7 @@ export async function render(el, { call, go }) {
   let boards = [];
   let cands = [];       // 담당자 후보(dutyStaffCandidates) — 못 불러왔으면 null(폼의 담당자 칸을 잠근다 · 목록은 그대로)
   let showOld = false;  // 보관한 당번 펼침
+  let today = "";       // 서버의 오늘(끝 날짜가 지났는지)
   let appOpen = false;  // 봉사 당번이 성도님 앱에 열렸는가(서버가 준다)
 
   const load = async () => {
@@ -47,6 +49,7 @@ export async function render(el, { call, go }) {
     if (!r.ok) { el.innerHTML = TITLE + `<p class="empty">${esc(failText(r))}</p>`; return false; }
     boards = r.boards || [];
     appOpen = r.appOpen === true;
+    today = r.today || "";
     cands = c && c.ok ? c.members || [] : null;
     return true;
   };
@@ -55,10 +58,10 @@ export async function render(el, { call, go }) {
     const note = appNote(appOpen);
     el.innerHTML = TITLE + (note ? `<p class="be-note">${esc(note)}</p>` : "") +
       `<div class="acts dty-top"><button type="button" class="btn primary" data-act="new">＋ 새 당번</button></div>
-      <div class="dty-list">${live.length ? live.map(boardCard).join("")
+      <div class="dty-list">${live.length ? live.map((b) => boardCard(b, today)).join("")
         : `<p class="empty">아직 당번이 없어요 — 「＋ 새 당번」으로 만들어 주세요<br>(예: 식당 봉사 · 주차 봉사 · 김장 봉사)</p>`}</div>
       ${old.length ? `<details class="dty-old" data-old ${showOld ? "open" : ""}><summary>보관한 당번 ${old.length}개</summary>
-        <div class="dty-list">${old.map(boardCard).join("")}</div></details>` : ""}`;
+        <div class="dty-list">${old.map((b) => boardCard(b, today)).join("")}</div></details>` : ""}`;
   };
   const reload = async () => { if (await load()) draw(); };
 
@@ -84,7 +87,7 @@ export async function render(el, { call, go }) {
         done = !!got;
         if (got && got !== "gone") toast(got.staffErr || boardSavedText(got, true));
       } else if (act === "edit" && board) {
-        const got = await openBoardForm({ call, board, chief: true, cands, appOpen });
+        const got = await openBoardForm({ call, board, chief: true, cands, appOpen, seen: seenOfCounts(board, today) });
         done = !!got;
         if (got === "gone") toast("그 당번을 찾지 못해 목록을 새로 불러왔어요");
         else if (got === "stale") toast(STALE_BOARD);

@@ -8,8 +8,9 @@ import {
   askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, offAsk, removeAsk, slotOffAsk, hideAsk, notifyTail, addDoneText,
   movedText, dateAddedText, offDoneText, hasWord, dutyWord, needsReload, lostBoard, fileTitle, exportFileName, exportRanges,
   dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, appNote, APP_LIVE, NOTIFY_LIVE, STALE_BOARD, TESTERS_SEE_NAMES, ADD_NOTE,
-  emptyWhy, emptyChip, liveLineCount,
+  emptyWhy, emptyChip, liveLineCount, emptyKind, seenOfCounts, seenOfRoster, addNote, PLAY_HIDDEN, PLAY_NOTE,
 } from "../js/menus/duty/duty-logic.js";
+import { boardCard } from "../js/menus/duty/boards.js";
 import { DUTY_STATUS, DUTY_STATUS_LABEL } from "../supabase/functions/church-admin/duty-rules.ts";
 
 test("상태 — 서버(duty-rules.ts)와 같은 값·같은 말 · 담당은 받는 중↔지원 멈춤만", () => {
@@ -231,6 +232,9 @@ test("forceAsk — 정원·겹침을 한 번에 알린다 · 남의 당번이면
 test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(confirmDayAsk(DAYS[1]).startsWith("10월 18일(일)을 확정할까요?"));
   assert.ok(confirmDayAsk(DAYS[1]).includes("지금 2분 · 빈 자리 1"));
+  // 「빈 자리 지원은 계속 받아요」는 받는 중 당번에서만 참이다 — 지원 멈춤 당번은 앱 지원을 받지 않는다(담당자가 넣는다 · 검증 2026-10-06)
+  assert.ok(confirmDayAsk(DAYS[1]).includes("빈 자리 지원은 계속 받아요") && confirmDayAsk(DAYS[1], "open").includes("빈 자리 지원은 계속 받아요"));
+  for (const s of ["closed", "draft"]) assert.ok(confirmDayAsk(DAYS[1], s).includes("빈 자리는 담당자가 「넣기」로 채워요") && !confirmDayAsk(DAYS[1], s).includes("지원은 계속 받아요"), s);
   assert.ok(unconfirmAsk(DAYS[3]).includes("10월 31일(토) 저녁 7시에는 다시 자동으로 확정"), "마감 시각은 서버가 준 값으로");
   assert.ok(unconfirmAsk(DAYS[3]).includes("담당자가 넣은 분은 그대로 못 빼요"));
   assert.ok(unconfirmAsk({ date: "2026-11-01" }).includes("전날 저녁에는 다시 자동으로 확정"));
@@ -290,21 +294,103 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(draftNote(false).includes("당번 총괄께") && !draftNote(false).includes("「당번 설정」에서"));
 });
 
-test("앱에 날짜가 하나도 안 보이는 당번 — 까닭을 말한다(자리 틀 없음 · 앞날 자리 없음) · 받는 중·지원 멈춤만", () => {
-  // 당번 설정만 저장하고 「받는 중」으로 열면 앱에는 「지금 보이는 날짜가 없어요」만 뜬다(친구 제보 2026-10-06)
-  assert.ok(emptyWhy("open", 0, 0).startsWith("자리 틀이 아직 없어요") && emptyWhy("open", 0, 0).includes("앱 당번표에 날짜가 보이지 않아 지원할 수 없어요"));
-  assert.ok(emptyWhy("closed", 0, 0).startsWith("자리 틀이 아직 없어요"));
-  assert.ok(emptyWhy("open", 2, 0).startsWith("앞날 자리가 없어요") && emptyWhy("open", 2, 0).includes("「날짜 더하기」"));
-  assert.equal(emptyWhy("open", 2, 14), ""); assert.equal(emptyWhy("draft", 0, 0), "", "준비 중은 준비 중 안내가 따로 있다"); assert.equal(emptyWhy("archived", 0, 0), "");
-  assert.equal(emptyWhy("open", undefined, undefined).startsWith("자리 틀이"), true);
-  assert.equal(emptyChip("open", 0, 0), "자리 틀 없음 — 앱에 날짜가 안 보여요"); assert.equal(emptyChip("open", 1, 0), "앞날 자리 없음 — 앱에 날짜가 안 보여요");
-  assert.equal(emptyChip("open", 1, 3), ""); assert.equal(emptyChip("draft", 0, 0), "");
-  assert.equal(liveLineCount([{ active: true }, { active: false }, {}, null]), 2); assert.equal(liveLineCount(null), 0);
-  // 「받는 중」으로 바꾸는 저장의 확인 글 — 자리 틀이 없으면 한 줄 더(문이 열렸든 닫혔든 · 앱 화면이 있든 없든)
-  for (const o of [{ live: true }, { live: false }]) for (const open of [true, false]) {
-    assert.ok(openWarn(open, { ...o, noLines: true }).includes("자리 틀이 아직 없어요") && openWarn(open, { ...o, noLines: true }).startsWith(openWarn(open, o)));
-    assert.equal(openWarn(open, { ...o, noLines: false }), openWarn(open, o)); assert.equal(openWarn(open, o).includes("자리 틀이 아직 없어요"), false);
+test("앱 당번표에 무엇이 보이나 — 지원할 날짜가 없는 까닭을 가른다(받는 중·지원 멈춤만) · 「날짜가 안 보여요」는 보이는 자리가 0 일 때만", () => {
+  const K = (status, lines, shown, later = 0, untilPast = false) => emptyKind(status, { lines, shown, later, untilPast });
+  // 당번 설정만 저장하고 「받는 중」으로 열었다 — 앱에는 날짜가 하나도 없다(친구 제보 2026-10-06)
+  assert.equal(K("open", 0, 0), "no-lines"); assert.equal(K("closed", 0, 0), "no-lines");
+  assert.ok(emptyWhy("open", { lines: 0 }).startsWith("자리 틀이 아직 없어요") && emptyWhy("open", { lines: 0 }).includes("앱 당번표에 날짜가 보이지 않아 지원할 수 없어요"));
+  assert.equal(emptyChip("open", { lines: 0 }), "자리 틀 없음 — 앱에 날짜가 안 보여요");
+  assert.equal(K("open", 2, 14), ""); assert.equal(K("open", 2, 14, 30), ""); assert.equal(emptyWhy("open", { lines: 2, shown: 14 }), ""); assert.equal(emptyChip("open", { lines: 2, shown: 14 }), "");
+  // 틀을 뺐어도 남은 자리(지원이 달려 못 지운 자리)의 날짜·이름은 앱에 보인다 — 「날짜가 안 보여요」라고 하지 않는다(검증 S-1)
+  assert.equal(K("open", 0, 3), "leftover");
+  assert.ok(emptyWhy("open", { lines: 0, shown: 3 }).includes("남은 자리의 날짜와 선 분 이름만 보이고") && !emptyWhy("open", { lines: 0, shown: 3 }).includes("날짜가 보이지 않아"));
+  assert.equal(emptyChip("open", { lines: 0, shown: 3 }), "자리 틀 없음 — 앱에 남은 자리만 보여요");
+  // 더한 날짜가 보이는 기간 밖뿐이다(김장 — 날짜를 골라 넣는 틀 · 60일 뒤) — 가까워지면 저절로 보인다(검증 S-2)
+  assert.equal(K("open", 1, 0, 1), "later");
+  assert.ok(emptyWhy("open", { lines: 1, shown: 0, later: 1 }).startsWith("앞날 자리가 모두 보이는 기간 밖이에요") && emptyWhy("open", { lines: 1, shown: 0, later: 1 }).includes("날이 가까워지면 저절로 보여요"));
+  assert.equal(emptyChip("open", { lines: 1, shown: 0, later: 1 }), "보이는 기간 밖 — 앱에 아직 날짜가 안 보여요");
+  // 끝 날짜가 지났다 · 틀은 있는데 날짜가 없다(날짜를 골라 넣는 틀에 아직 안 더함)
+  assert.equal(K("open", 1, 0, 0, true), "until-past"); assert.equal(K("open", 0, 0, 0, true), "until-past");
+  assert.ok(emptyWhy("open", { lines: 1, untilPast: true }).includes("끝 날짜를 늦추거나 비워")); assert.equal(emptyChip("open", { lines: 1, untilPast: true }), "끝 날짜 지남 — 앱에 날짜가 안 보여요");
+  assert.equal(K("open", 1, 0), "no-dates"); assert.ok(emptyWhy("open", { lines: 1 }).includes("「날짜 더하기」")); assert.equal(emptyChip("open", { lines: 1 }), "날짜 없음 — 앱에 날짜가 안 보여요");
+  // 준비 중·보관은 앱에 없다(따로 안내가 있다) · 빈 값
+  for (const s of ["draft", "archived", "", undefined]) { assert.equal(K(s, 0, 0), ""); assert.equal(emptyWhy(s, { lines: 0 }), ""); assert.equal(emptyChip(s, {}), ""); }
+  assert.equal(emptyKind("open"), "no-lines"); assert.equal(emptyKind("open", null), "no-lines");
+  // 어느 말도 보이는 자리가 있는데 「날짜가 안 보여요」라고 하지 않는다
+  for (const lines of [0, 1]) for (const later of [0, 2]) for (const untilPast of [false, true]) {
+    const t = emptyWhy("open", { lines, shown: 5, later, untilPast }) + emptyChip("open", { lines, shown: 5, later, untilPast });
+    assert.equal(/날짜가 (안 보여요|보이지 않아)/.test(t), false, t);
   }
+  assert.equal(liveLineCount([{ active: true }, { active: false }, {}, null]), 2); assert.equal(liveLineCount(null), 0);
+});
+
+test("앱 당번표에 무엇이 보이나 — 재료: 당번 카드는 서버의 shown(옛 서버면 slots) · 명단은 날짜의 past·notYet·afterUntil 로 앱과 같은 범위를 센다", () => {
+  const T0 = "2026-10-06";
+  const B = (counts, x) => ({ status: "open", lines: [{ id: 1 }], untilDate: null, counts, ...x });
+  assert.deepEqual(seenOfCounts(B({ lines: 1, slots: 5, shown: 2 }), T0), { lines: 1, shown: 2, later: 3, untilPast: false });
+  assert.deepEqual(seenOfCounts(B({ lines: 1, slots: 1, shown: 0 }), T0), { lines: 1, shown: 0, later: 1, untilPast: false }, "김장 — 자리는 있는데 보이는 기간 밖");
+  assert.deepEqual(seenOfCounts(B({ lines: 1, slots: 5 }), T0), { lines: 1, shown: 5, later: 0, untilPast: false }, "옛 서버(shown 칸 없음) — slots 로 본다");
+  assert.deepEqual(seenOfCounts(B({ slots: 0, shown: 0 }, { lines: [], untilDate: "2026-10-05" }), T0), { lines: 0, shown: 0, later: 0, untilPast: true });
+  assert.equal(seenOfCounts(B({}, { untilDate: T0 }), T0).untilPast, false, "끝 날짜가 오늘이면 아직 지나지 않았다");
+  assert.equal(seenOfCounts(B({}, { untilDate: "2026-10-05" }), "").untilPast, false, "오늘을 모르면 지났다고 하지 않는다");
+  assert.deepEqual(seenOfCounts(null, T0), { lines: 0, shown: 0, later: 0, untilPast: false });
+  const S = (n) => Array.from({ length: n }, (_, i) => ({ id: i }));
+  const ros = { board: { untilDate: "2026-11-30" }, lines: [{ id: 1, active: true }, { id: 2, active: false }], days: [
+    { date: "2026-10-04", past: true, slots: S(2) }, { date: "2026-10-11", slots: S(2) }, { date: "2026-10-18", slots: S(3) },
+    { date: "2026-11-29", notYet: true, slots: S(4) }, { date: "2026-12-06", notYet: true, afterUntil: true, slots: S(5) }, { date: "2026-12-13", afterUntil: true, slots: S(1) }, null] };
+  assert.deepEqual(seenOfRoster(ros, T0), { lines: 1, shown: 5, later: 4, untilPast: false }, "지난 날·끝 날짜 뒤는 세지 않는다 · 보이는 기간 밖은 later 로");
+  assert.equal(emptyKind("open", seenOfRoster(ros, T0)), "");
+  assert.equal(emptyKind("open", seenOfRoster({ ...ros, days: ros.days.filter((d) => d && (d.past || d.notYet)) }, T0)), "later");
+  assert.equal(emptyKind("open", seenOfRoster({ ...ros, lines: [], days: ros.days.filter((d) => d && !d.notYet) }, T0)), "leftover");
+  assert.deepEqual(seenOfRoster({ board: {}, lines: [], days: [] }, T0), { lines: 0, shown: 0, later: 0, untilPast: false });
+  assert.deepEqual(seenOfRoster(null), { lines: 0, shown: 0, later: 0, untilPast: false });
+});
+
+test("당번 카드 — 경고 칩은 앱에서 지원할 날짜가 없을 때만 · 수 칩 줄은 틀이 없어도 남은 자리·못 온다는 분이 있으면 그린다", () => {
+  const C = (x) => boardCard({ id: "b1", title: "식당 봉사", status: "open", statusLabel: "받는 중", staff: [], openDays: 56, untilDate: null,
+    lines: [{ id: 1, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, weekday: 0 }], counts: { lines: 1, slots: 16, shown: 8, need: 5, asks: 0, after: 0 }, ...x }, "2026-10-06");
+  const healthy = C();
+  assert.equal(/앱에 (아직 )?(날짜가 안 보여요|남은 자리만 보여요)/.test(healthy), false, "건강한 당번에는 경고가 없다"); assert.ok(healthy.includes("앞날 자리 16") && healthy.includes("빈 자리 5"));
+  // 자리 틀도 자리도 없다
+  const none = C({ lines: [], counts: { lines: 0, slots: 0, shown: 0, need: 0, asks: 0, after: 0 } });
+  assert.ok(none.includes("자리 틀 없음 — 앱에 날짜가 안 보여요") && !none.includes("앞날 자리"));
+  // 틀을 뺐지만 남은 자리에 서 있는 분·못 온다는 분이 있다 — 경고는 「남은 자리만 보여요」, 수 칩 줄은 그대로 보인다(검증 S-1)
+  const left = C({ lines: [], counts: { lines: 0, slots: 3, shown: 3, need: 0, asks: 1, after: 0 } });
+  assert.ok(left.includes("자리 틀 없음 — 앱에 남은 자리만 보여요") && left.includes("앞날 자리 3") && left.includes("못 온다는 분 1") && !left.includes("앱에 날짜가 안 보여요"));
+  // 자리가 보이는 기간 밖에만 있다(김장) — 경고가 뜬다(검증 S-2) · 옛 서버(shown 없음)면 예전처럼 slots 로 본다
+  const later = C({ counts: { lines: 1, slots: 1, shown: 0, need: 30, asks: 0, after: 0 } });
+  assert.ok(later.includes("보이는 기간 밖 — 앱에 아직 날짜가 안 보여요") && later.includes("앞날 자리 1"));
+  assert.equal(C({ counts: { lines: 1, slots: 1, need: 30, asks: 0, after: 0 } }).includes("보이는 기간 밖"), false);
+  // 끝 날짜가 지났다(오늘을 받아야 안다) · 준비 중·보관에는 경고가 없다
+  assert.ok(C({ untilDate: "2026-10-01", counts: { lines: 1, slots: 0, shown: 0, need: 0, asks: 0, after: 2 } }).includes("끝 날짜 지남 — 앱에 날짜가 안 보여요"));
+  for (const status of ["draft", "archived"]) assert.equal(/앱에 (아직 )?날짜가 안 보여요/.test(C({ status, statusLabel: "x", lines: [], counts: { lines: 0, slots: 0, shown: 0 } })), false, status);
+  assert.equal(boardCard({ id: "b9", title: "t", status: "open", statusLabel: "받는 중", lines: [{ id: 1 }], counts: { lines: 1, slots: 2, shown: 2 } }).includes("앱에 날짜가 안 보여요"), false, "오늘을 안 줘도 그린다");
+});
+
+test("「받는 중」 확인 글 — 열어도 앱에 지원할 날짜가 없으면 그 까닭을 덧붙인다 · 플레이스토어 앱에서는 시험 참여자에게도 안 보인다는 말 · 넣기 창", () => {
+  for (const o of [{ live: true }, { live: false }]) for (const open of [true, false]) {
+    for (const kind of ["no-lines", "leftover", "until-past", "later", "no-dates"]) {
+      const t = openWarn(open, { ...o, kind });
+      assert.ok(t.startsWith(openWarn(open, o)) && t.length > openWarn(open, o).length && t.includes("⚠️ "), kind);
+    }
+    assert.equal(openWarn(open, { ...o, kind: "" }), openWarn(open, o)); assert.equal(openWarn(open, { ...o, kind: "zzz" }), openWarn(open, o));
+    assert.equal(openWarn(open, o).includes("자리 틀이 아직 없어요"), false);
+  }
+  assert.ok(openWarn(true, { kind: "no-lines" }).includes("자리 틀이 아직 없어요") && openWarn(true, { kind: "leftover" }).includes("남은 자리의 날짜만 보이고"));
+  assert.equal(openWarn(true, { kind: "leftover" }).includes("날짜가 보이지 않아"), false, "남은 자리의 날짜는 보인다");
+  assert.ok(openWarn(true, { kind: "later" }).includes("날이 가까워질 때까지") && openWarn(true, { kind: "until-past" }).includes("끝 날짜가 지났어요") && openWarn(true, { kind: "no-dates" }).includes("「날짜 더하기」"));
+  // 플레이스토어 앱에서는 🙋 단추를 숨겨 두었다 — 문이 닫힌 동안(시험 참여자만)의 두 글이 그렇게 말한다
+  assert.equal(PLAY_HIDDEN, true, "성경암송 app.js 의 MINISTRY_HIDE_ON_PLAY 를 false 로 뒤집는 날 이 값과 이 줄도 함께 바꾼다");
+  for (const t of [openWarn(false, { live: true, play: true }), appNote(false, { live: true, notify: false, play: true }), appNote(false, { live: true, notify: true, play: true })]) assert.ok(t.includes(PLAY_NOTE), t);
+  for (const t of [openWarn(false, { live: true, play: false }), appNote(false, { live: true, notify: false, play: false }), openWarn(true, { live: true, play: true }),
+    appNote(true, { live: true, notify: false, play: true }), openWarn(false, { live: false, play: true }), appNote(false, { live: false, play: true })]) assert.equal(t.includes("플레이스토어"), false, t);
+  assert.equal(openWarn(false), openWarn(false, { live: APP_LIVE, play: PLAY_HIDDEN }));
+  // 넣기 창 — 그날이 앱 당번표에 실리는 날일 때만 「이름이 보여요」(지난 날·끝 날짜 뒤·보이는 기간 밖에도 넣기가 있다 · 검증 S-5)
+  assert.equal(addNote({ date: "2026-10-18" }), ADD_NOTE); assert.equal(addNote(null), ADD_NOTE); assert.equal(addNote(), ADD_NOTE);
+  assert.ok(addNote({ past: true }).startsWith("지난 날짜예요") && !addNote({ past: true }).includes("당번표에 보여요") && !addNote({ past: true }).includes("못 가게 됐어요"));
+  assert.ok(addNote({ afterUntil: true }).includes("끝 날짜 뒤라 이 날짜는 앱 당번표에 보이지 않아요") && addNote({ afterUntil: true }).includes("스스로 뺄 수 없어요") && !addNote({ afterUntil: true }).includes("당번표에 보여요(이름만)"));
+  assert.ok(addNote({ notYet: true }).includes("앱 당번표에 아직 안 보여요") && addNote({ notYet: true }).includes("「내 당번」에는 보이고") && !addNote({ notYet: true }).includes("당번표에 보여요(이름만)"));
+  assert.ok(addNote({ notYet: true, afterUntil: true }).includes("끝 날짜 뒤라"), "끝 날짜 뒤가 먼저");
 });
 
 test("저장 뒤 한 줄 — 알림(3단계)이 붙으면 덧붙인다", () => {
@@ -318,8 +404,8 @@ test("저장 뒤 한 줄 — 알림(3단계)이 붙으면 덧붙인다", () => {
   assert.equal(movedText({ ok: true, already: true }, "가상하나"), "같은 자리예요");
   assert.equal(dateAddedText({ made: 2, existed: 1 }, "2026-12-25"), "12월 25일(금)에 자리 2개를 만들었어요 · 이미 있던 1개는 그대로예요");
   assert.equal(dateAddedText({ made: 0, existed: 2 }, "2026-12-25"), "12월 25일(금)에는 고른 자리가 이미 있어요");
-  assert.equal(dateAddedText({ made: 0, existed: 0, reopened: 1 }, "2026-12-25"), "12월 25일(금)의 남은 자리 1개를 다시 열었어요(앱에서 지원을 받아요)");
-  assert.equal(dateAddedText({ made: 1, existed: 1, reopened: 1 }, "2026-12-25"), "12월 25일(금)에 자리 1개를 만들었어요 · 남은 자리 1개를 다시 열었어요(앱에서 지원을 받아요) · 이미 있던 1개는 그대로예요");
+  assert.equal(dateAddedText({ made: 0, existed: 0, reopened: 1 }, "2026-12-25"), "12월 25일(금)의 남은 자리 1개를 다시 열었어요");
+  assert.equal(dateAddedText({ made: 1, existed: 1, reopened: 1 }, "2026-12-25"), "12월 25일(금)에 자리 1개를 만들었어요 · 남은 자리 1개를 다시 열었어요 · 이미 있던 1개는 그대로예요");
   assert.equal(offDoneText({ days: 3 }, true), "3일을 쉬는 날로 바꿨어요"); assert.equal(offDoneText({ days: 1 }, false), "1일을 다시 열었어요");
   assert.equal(offDoneText({ days: 0 }, true), "바뀐 날이 없어요");
 });

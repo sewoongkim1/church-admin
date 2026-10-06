@@ -165,6 +165,10 @@ test("boardOut — 칸을 골라 옮긴다(없는 수는 0 · 담당자는 id·�
             { id: 2, sort: 0, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, weekday: 0, active: true }] });
   const e = boardOut({ id: "b2", title: "주차", status: "draft" });
   assert.deepEqual(e.counts, { lines: 0, slots: 0, need: 0, asks: 0, active: 0, after: 0 });
+  // shown(성도님 앱 당번표가 보여 주는 기간의 자리 수)은 SQL 이 줄 때만 싣는다 — 옛 SQL 이면 칸이 없고 화면은 slots 로 본다(0 을 지어내면 모든 당번에 「앱에 날짜가 안 보여요」가 뜬다)
+  assert.equal("shown" in e.counts, false); assert.equal("shown" in o.counts, false);
+  assert.deepEqual(boardOut({ id: "b3", status: "open" }, { slots: 3, shown: 0 }).counts, { lines: 0, slots: 3, need: 0, asks: 0, active: 0, after: 0, shown: 0 });
+  assert.equal(boardOut({ id: "b3", status: "open" }, { slots: 3, shown: "2" }).counts.shown, 2); assert.equal("shown" in boardOut({ id: "b3" }, { shown: null }).counts, false);
   assert.deepEqual([e.openDays, e.untilDate, e.maxAhead, e.staff, e.lines, e.statusLabel], [56, null, null, [], [], "준비 중"]);
   assert.equal(JSON.stringify(o).includes("zz"), false);
 });
