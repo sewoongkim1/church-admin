@@ -144,6 +144,13 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
   1차의 물음 17가지에 친구가 답했다(같은 날 · 그 파일의 `ANSWER` — 답이 적힌 엑셀은 `부서이음표_초안_답_2026-10-06.xlsx`): **「부설기관」 계열에 복지재단·봉사센터 · 도서관 · 시니어학교 · 샬롬부·사랑부** · 찬양부 아래 중보기도팀은 전도·중보기도 · 주보간지는 예배. 남은 확인 셋은 `OPEN`.
   ⚠️ 부서를 **이름만 보고 잇지 말 것** — 그 파일의 `EVENTS` 처럼 팀까지 내려가 앞뒤 해 사람 흐름으로 확인한다(이름으로 미뤘다가 세 번 틀렸다). ⚠️ 친구가 답을 적은 엑셀 위에 다시 만들지 말 것 — 새 판은 다른 이름으로.
   설계·근거는 성경암송 `docs/analysis/2026-10-06-ministry-stats-options.md` · `2026-10-06-work-ministry-dept-lineage-draft.md`.
+- **📊 사역 통계(2026-10-06 운영 · 메뉴 `mn-stats` · 역할 ministry + 총괄 · 읽기만):** 설계 v2 `docs/superpowers/specs/2026-10-06-ministry-stats-design.md` · 계획 `…/plans/2026-10-06-ministry-stats.md`.
+  SQL 013(`mh_key` · 표 `ministry_dept_map` 이음표 · `ministry_list_gaps` 명단이 일부인 해 · 함수 `ministry_stats_facts()` — 사람을 그 부름 안의 번호로 바꾼 재료 jsonb 하나) + 013b(이음표 씨앗 493줄 — `dept_lineage_draft.py --seed-sql` 로 다시 만든다) → 서버 `ministry-stats.ts`(순수 `buildStats` · 세는 규칙 전부) → 액션 `ministryStats` → 화면 `js/menus/ministry/stats.js`(+ `stats-logic.js`).
+  ⚠️ 응답·화면에 이름·교인ID·사람 번호·태어난 해를 싣지 않는다(묶음 숫자와 부서·팀 이름뿐 · 시험이 지킨다). 나이·성별·직분은 그 해 봉사자 30명부터, 1~4명 칸은 「5 미만」.
+  ⚠️ 명단이 일부인 해(`ministry_list_gaps`)는 견주는 해로 쓰지 않는다 — 안 그러면 「돌아옴」이 부풀려진다. 지금 넷은 **숫자로 미룬 후보**(사역 담당 확인 전) — 확인이 오면 이 표를 고친다. `tools/history/stats_check.py` 의 GAPS 도 같이.
+  ⚠️ 떠난 분을 가르는 못 이은 까닭 글자(`history-match.ts` R_NONE·R_KID·R_MISFIT·R_HAND_NONE·R_MANUAL_NONE)가 SQL 013 에도 있다 — 바꾸면 둘 다(`tests/ministry-stats.test.mjs` 가 맞댄다).
+  진짜 자료 대조(이 PC): `python tools/history/stats_check.py` — 통합 엑셀로 TS 세기와 따로 센 값을 맞댄다(2026-10-06: 7,803칸 같음 · 이름 기준 어림이라 운영 수와는 다르다).
+  운영 반영 2026-10-06: SQL 013·013b → 함수(내려받아 대조 뒤) → 푸시(5bd97f0). 재료 17,848줄 · 이음표에 없는 쌍 0 · 교인 1,682 · 떠난 분 577 · 못 정한 197(운영 묶음 수).
 - 개발 DB 씨앗: `node --experimental-strip-types tests/seed-history-dev.mjs [--clean]`(source_file `ca-demo-seed`).
 - 쓰기 액션은 쓴 뒤 바로 기록하고, 다시 맞추기는 try/catch — 실패하면 응답 rematched:false(화면이 「🔄 다시 맞추기」를 권한다).
 - 줄 응답의 in_directory(true/false/null) — 이어 둔 분이 지금 명부에 없으면 화면에 「⚠ 명부에 없음」. 12월 새 명부 뒤 「🔄 다시 맞추기」.
