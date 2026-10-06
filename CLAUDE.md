@@ -220,7 +220,11 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
   자리가 모두 보이는 기간 밖(`later` — 김장처럼 먼 날짜를 더해 둔 당번 · `slots` 만 보면 놓친다) · 틀은 있는데 날짜 없음(`no-dates`).
   「받는 중」 확인 글(`openWarn(appOpen, { kind })`)도 같은 까닭을 덧붙이되, 같은 저장이 끝 날짜·보이는 기간을 바꾸면 틀에 관한 말만 한다(저장 뒤의 날짜를 알 수 없다).
   넣기 창의 한 줄은 `addNote(day)` — 지난 날·끝 날짜 뒤·보이는 기간 밖 날에는 「앱 당번표에 보여요」라고 하지 않는다. 날짜 확정 창의 「빈 자리 지원은 계속 받아요」는 받는 중 당번에서만(`confirmDayAsk(d, status)`).
-- ⚠️ **알림(3단계 · 2026-10-07 운영)** — 저장·기록 **뒤에** 성경암송 `api` 의 `internalDutyNotify` 로 부탁만 한다(`index.ts` `notifyDuty` → `deps.dutyNotify` · 지원 번호만 보낸다). 실패해도 저장은 성공(`notified`·`notifyError`).
+- ⚠️ **알림(3단계 · 2026-10-07 운영)** — 저장·기록 **뒤에** 성경암송 `api` 의 `internalDutyNotify` 로 부탁만 한다(`index.ts` `notifyDuty` → `deps.dutyNotify` · 지원 번호만 보낸다). 실패해도 저장은 성공(`notified`·`missed`·`notifyError`).
+  ⚠️ **「N분께 앱 알림을 보냈어요」는 실제로 나간 분 수(`notified`)로만 말한다** — 가지 않은 분(`missed` — 받는 기기가 없다)은 「M분께는 앱 알림이 가지 않았어요 — 따로 알려 주세요」로 따로(`notifyTail`).
+  처음에는 api 가 준 수(글을 만든 분 수)를 그대로 「보냈어요」라고 해, 「알림 꺼짐」 딱지가 달린 분까지 보냈다고 말했다(검토 반영 2026-10-07). 알림을 보내지 못했으면(`notify-failed` · 꺼 둔 `notify-off`) 토스트가 아니라 **창**으로(`roster-forms.js` `sayDone`).
+  「＋ 넣기」의 알림은 **그 줄의 앱 계정**(SQL `hadUser`)으로 정하고, **되살린 줄(`revived`)은 잠기지 않은 날에도 알린다**(「빠진 분 → 다시 넣기」와 같게 — 그분의 마지막 알림이 「빼 드렸어요」일 수 있다).
+  「알림 꺼짐」 딱지는 받는 중·지원 멈춤 당번에서만(`notifyBadges` — 준비 중·보관 당번의 줄에는 어떤 알림도 가지 않는다 · `draftNote` 가 그렇게 말한다). 같은 이름의 줄이 또 있는 날 앱 줄을 빼려 하면 어느 줄을 빼야 하는지 말한다(`DUP_REMOVE_NOTE`).
   문·한 번만·앱 계정·오늘 이후 자리·글은 모두 그쪽(`dutyNotifySend`)이 본다 — 여기서 걸러 보내지 않는다. ⚠️ 성경암송 `api` 가 `internalDutyNotify` 를 가진 판이어야 한다(없는 판으로 되돌리면 저장마다 「앱 알림은 보내지 못했어요」가 뜬다 — 그때는 `NOTIFY_LIVE` 도 `false` 로).
 - 엑셀 두 시트: 「당번표」(날짜 × 자리 틀 · **이름만** — 벽에 붙는다) · 「명단」(한 분 한 줄 · 소속·넣은 곳 · **메모 없음**).
 - 개발 시험 `tests/duty.dev.test.mjs`(16가지 — 맡은 당번만 · 줄 번호로도 · 다시 넣기 · 겹침 · 끝 날짜 · 낡은 창 · 기록에 이름 없음 · 공개 키·로그인 사용자로 안 열림). 규칙·동시성 시험은 성경암송 `supabase/tests/duty_rules.dev.sql` · `tests/duty-concurrency.dev.sh`.

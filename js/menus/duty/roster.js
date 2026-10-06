@@ -12,11 +12,11 @@ import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { openBoardForm } from "./board-form.js";
 import { emptyWhy, seenOfRoster } from "./duty-logic.js";
-import { openLineForm, openDateAddForm, openOffForm, offFlow, openAddForm, openNoteForm, openDayNoteForm, openCapacityForm, failText } from "./roster-forms.js";
+import { openLineForm, openDateAddForm, openOffForm, offFlow, openAddForm, openNoteForm, openDayNoteForm, openCapacityForm, failText, sayDone } from "./roster-forms.js";
 import {
   boardRest, contactHtml, maxBack, lineText, lineSavedText, lineRemovedText, boardSavedText, initialDay, dayChip, dayStateText, dayActions, dayLabel, addDays, slotName, timeRange,
   slotCount, signupBadges, askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, removeAsk, restoreAsk, restoredText, slotOffAsk,
-  movedText, dateAddedText, dayHiddenText, draftNote, appNote, STALE_BOARD,
+  movedText, dateAddedText, dayHiddenText, draftNote, appNote, STALE_BOARD, notifyBadges, confirmDoneText,
   offDoneText, notifyTail, needsReload, lostBoard, exportFileName, exportRanges, EMPTY_ASSIGNED, EMPTY_ALL,
 } from "./duty-logic.js";
 
@@ -32,8 +32,9 @@ const STATE_NOTE = {
 let lastBoardId = "", lastDay = "";   // 메뉴를 나갔다 와도 보던 당번·날짜를 기억(모듈 안)
 
 // ---------- 그리기(글만) ----------
-function signupRow(e, ro) {
-  const badges = signupBadges(e).map((b) => `<span class="badge${b.cls ? " " + b.cls : ""}"${b.title ? ` title="${esc(b.title)}"` : ""}>${esc(b.text)}</span>`).join(" ");
+//   notify = 이 당번의 줄에 「알림 꺼짐」 딱지를 그릴까(받는 중·지원 멈춤 당번일 때만 — duty-logic.js notifyBadges)
+function signupRow(e, ro, notify) {
+  const badges = signupBadges(e, { notify }).map((b) => `<span class="badge${b.cls ? " " + b.cls : ""}"${b.title ? ` title="${esc(b.title)}"` : ""}>${esc(b.text)}</span>`).join(" ");
   const ask = askText(e);
   return `<div class="dty-row${e.asked ? " ask" : ""}" data-sid="${esc(e.id)}">
     <div class="dty-who"><b>${esc(e.name)}</b>${e.who ? `<span class="muted">${esc(e.who)}</span>` : ""}${badges}</div>
@@ -48,10 +49,10 @@ function signupRow(e, ro) {
 const endedRow = (e, ro) => `<div class="dty-ended" data-eid="${esc(e.id)}"><span><b>${esc(e.name)}</b>${e.who ? ` <span class="muted">${esc(e.who)}</span>` : ""} <span class="muted">· ${esc(endedText(e))}</span></span>${
   ro ? "" : `<button type="button" class="btn" data-op="restore">다시 넣기</button>`}</div>`;
 
-function slotHtml(s, d, ro, openFold) {
+function slotHtml(s, d, ro, openFold, notify) {
   const c = slotCount(s), off = d.off || s.off;
   const cnt = s.off ? `<span class="dty-cnt off">쉼</span>` : `<span class="dty-cnt${d.off ? " off" : c.over ? " over" : c.need ? " need" : ""}">${esc(c.text)}</span>`;
-  const rows = (s.signups || []).map((e) => signupRow(e, ro)).join("");
+  const rows = (s.signups || []).map((e) => signupRow(e, ro, notify)).join("");
   const ended = s.ended || [];
   return `<section class="dty-slot${off ? " off" : ""}" data-slot="${esc(s.id)}">
     <div class="dty-slot-h"><div class="dty-slot-t"><b>${esc(slotName(s))}</b><span class="muted">${esc(timeRange(s))}</span></div>${cnt}</div>
@@ -129,7 +130,7 @@ export async function render(el, { call, query }) {
   };
   // 서버 답 뒤처리 — 성공이면 말하고 다시 그린다 · 거절이면 말하고(상태가 달라졌으면) 다시 불러온다. → 성공 여부
   const settle = async (r, okText, wantDay) => {
-    if (r && r.ok) { if (okText) toast(okText); await busy(el, () => reload(wantDay)); return true; }
+    if (r && r.ok) { if (okText) await sayDone(okText, r); await busy(el, () => reload(wantDay)); return true; }
     toast(failText(r));
     if (lostBoard(r?.error)) await busy(el, reloadAll);
     else if (needsReload(r?.error)) await busy(el, () => reload(wantDay));
@@ -158,7 +159,7 @@ export async function render(el, { call, query }) {
     return `<div class="dty-bar"><b>${esc(dayLabel(d.date))}${d.date === today ? " · 오늘" : ""}</b><span>${esc(dayStateText(d))}</span>
         ${dayHiddenText(d) ? `<span${d.afterUntil ? ' class="dty-warn"' : ""}>${esc(dayHiddenText(d))}</span>` : ""}</div>
       ${acts.length ? `<div class="acts dty-dayacts">${acts.map((a) => `<button type="button" class="btn${a.danger ? " danger" : ""}" data-dact="${a.act}">${esc(a.label)}</button>`).join("")}</div>` : ""}
-      ${(d.slots || []).length ? d.slots.map((s) => slotHtml(s, d, ro, folds.has(String(s.id)))).join("")
+      ${(d.slots || []).length ? d.slots.map((s) => slotHtml(s, d, ro, folds.has(String(s.id)), notifyBadges(ros.board.status))).join("")
         : `<p class="empty">이 날은 자리가 없어요${ro ? "" : " — 「날짜 더하기」로 자리를 만들 수 있어요"}</p>`}`;
   };
 
@@ -237,7 +238,7 @@ export async function render(el, { call, query }) {
       const yes = await dialog({ title: "🔒 이 날 확정", text: confirmDayAsk(d, ros.board.status), ok: "확정", cancel: "그만두기" });
       if (!yes) return;
       const r = await busy(el, () => call("dutyDaySet", { board_id: cur.id, date: d.date, op: "confirm" }));
-      await settle(r, r.ok ? (r.already ? "이미 확정된 날이에요" : `${dayLabel(d.date)}을 확정했어요${notifyTail(r)}`) : "");
+      await settle(r, r.ok ? confirmDoneText(r, d.date) : "");
     } else if (act === "unconfirm") {
       const yes = await dialog({ title: "확정 풀기", text: unconfirmAsk(d), ok: "확정 풀기", cancel: "그만두기", danger: true });
       if (!yes) return;
@@ -245,11 +246,11 @@ export async function render(el, { call, query }) {
       await settle(r, r.ok ? (r.already ? "확정한 날이 아니에요" : "확정을 풀었어요") : "");
     } else if (act === "off") {
       const got = await openOffForm({ call, boardId: cur.id, today, from: d.date, to: d.date, note: d.note || "" });
-      if (got) { toast(offDoneText(got.r, got.off)); await busy(el, () => reload()); }
+      if (got) { await sayDone(offDoneText(got.r, got.off), got.r); await busy(el, () => reload()); }
     } else if (act === "reopen") {
       // 쉬는 까닭으로 적어 둔 메모는 다시 열 때 함께 지운다 — 지운다는 것을 확인 글에 적는다(메모가 없으면 건드리지 않는다)
       const g = await offFlow({ call, boardId: cur.id, from: d.date, to: d.date, off: false, ...(d.note ? { note: "", tail: `적어 둔 메모(「${d.note}」)도 함께 지워요.` } : {}) });
-      if (g.ok) { toast(offDoneText(g.r, false)); await busy(el, () => reload()); }
+      if (g.ok) { await sayDone(offDoneText(g.r, false), g.r); await busy(el, () => reload()); }
       else if (g.error) await settle(g.error, "");
     } else if (act === "note") {
       if (await openDayNoteForm({ call, boardId: cur.id, day: d })) { toast("메모를 저장했어요"); await busy(el, () => reload()); }
@@ -378,7 +379,7 @@ export async function render(el, { call, query }) {
           }
         } else if (act === "off-range") {
           const got = await openOffForm({ call, boardId: cur.id, today });
-          if (got) { toast(offDoneText(got.r, got.off)); await busy(el, () => reload()); }
+          if (got) { await sayDone(offDoneText(got.r, got.off), got.r); await busy(el, () => reload()); }
         } else if (act === "settings") {
           const got = await openBoardForm({ call, board: { ...ros.board, staff: ros.staff, lines: ros.lines }, chief: ros.chief === true, appOpen: ros.appOpen === true, seen: seenOfRoster(ros, today) });
           if (got === "gone") { toast("그사이 바뀌었어요 — 새로 불러올게요"); await busy(el, reloadAll); }

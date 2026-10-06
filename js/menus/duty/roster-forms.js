@@ -9,9 +9,15 @@ import { openForm } from "../../core/modal.js";
 import { pickOne, pickMany, pickDate, pickTime, fmtTimeLabel } from "../../core/picker.js";
 import { pickArgs, TYPED_SUB_HINT } from "../education/enrollments-logic.js";
 import { WEEKDAY_OPTIONS, weekdayText, formToLine, lineToForm, lineText, dayLabel, addDays, slotName, timeRange, forceAsk, needsForce, offAsk, addDoneText,
-  dutyWord, addNote } from "./duty-logic.js";
+  dutyWord, addNote, notifyFailed } from "./duty-logic.js";
 
 export const failText = (r) => dutyWord(r?.error) || errorText(r);
+// 저장 뒤 한 줄 — 평소에는 지나가는 토스트. **앱 알림을 보내지 못했으면 창으로 띄워 확인을 받는다**: 그분께 따로 알려야 하는데 4초짜리 글은 놓친다
+//   (core/ui.js 「놓치면 안 되는 것은 toast 가 아니라 dialog」). 빼기·넣기·옮기기·쉼은 다시 눌러 보낼 길도 없다(not-active·already 로 끝난다 · 검토 반영 2026-10-07).
+export async function sayDone(text, r) {
+  if (notifyFailed(r)) await dialog({ title: "앱 알림을 보내지 못했어요", text, ok: "확인", cancel: null });
+  else toast(text);
+}
 const hid = (k, v) => `<input type="hidden" data-f="${k}" value="${esc(v)}">`;
 const txt = (k, label, v, attrs = "", hint = "") => `<label class="field"><span>${esc(label)}${hint ? ` <small>(${esc(hint)})</small>` : ""}</span>` +
   `<input data-f="${k}" value="${esc(v)}" autocomplete="off" ${attrs}></label>`;
@@ -273,7 +279,7 @@ export async function openAddForm({ call, boardId, day, slot }) {
           // name 은 찾을 때 넣은 그 글자 · pick 은 받은 목록의 차례(0부터) · check 는 그 카드의 다섯 칸 그대로
           const r = await addCall(pickArgs(searched, i, p), p.name);
           if (!root.isConnected || r.kept) return;      // 닫힌 뒤에 끝난 넣기는 아래 then 이 알린다
-          if (r.ok) { added = true; done = true; shown = true; toast(addDoneText(r, p.name)); reg.textContent = "넣음"; return; }
+          if (r.ok) { added = true; done = true; shown = true; reg.textContent = "넣음"; await sayDone(addDoneText(r, p.name), r); return; }
           shown = true;
           if (r.error === "changed") { cands = []; res.innerHTML = `<p class="empty">그사이 교인명부가 바뀌었어요 — 다시 찾아 주세요</p>`; return; }
           toast(failText(r));
@@ -290,7 +296,7 @@ export async function openAddForm({ call, boardId, day, slot }) {
         const r = await addCall({ ident: { name: v.name, who_type: v.who, group_name: v.group, sub_name: v.sub } }, v.name.trim());
         shown = true;
         if (r.kept) return { ok: false };
-        if (r.ok) { added = true; toast(addDoneText(r, v.name.trim())); return { ok: true, value: true }; }
+        if (r.ok) { added = true; await sayDone(addDoneText(r, v.name.trim()), r); return { ok: true, value: true }; }
         return { ok: false, message: failText(r) };
       } finally { adding = false; }
     },
@@ -298,7 +304,7 @@ export async function openAddForm({ call, boardId, day, slot }) {
     // 창을 닫을 때 아직 가 있는 넣기가 있으면 끝나기를 기다린다 — 그래야 다시 불러온 명단에 그분이 보인다. 창 안에서 못 알린 결과는 여기서 알린다.
     const last = inflight ? await inflight : null;
     if (last && !shown) {
-      if (last.ok) toast(addDoneText(last, lastName));
+      if (last.ok) await sayDone(addDoneText(last, lastName), last);
       else if (last.late) toast("정원이 찼거나 겹치는 자리라 넣지 않았어요 — 다시 「＋ 넣기」에서 확인해 주세요");
       else if (!last.kept) toast(failText(last));
     }

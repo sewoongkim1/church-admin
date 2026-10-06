@@ -9,6 +9,7 @@ import {
   movedText, dateAddedText, offDoneText, hasWord, dutyWord, needsReload, lostBoard, fileTitle, exportFileName, exportRanges,
   dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, appNote, APP_LIVE, NOTIFY_LIVE, STALE_BOARD, TESTERS_SEE_NAMES, ADD_NOTE,
   emptyWhy, emptyChip, liveLineCount, emptyKind, seenOfCounts, seenOfRoster, addNote, PLAY_HIDDEN, PLAY_NOTE,
+  notifyFailed, confirmDoneText, notifyBadges, DUP_REMOVE_NOTE,
 } from "../js/menus/duty/duty-logic.js";
 import { boardCard } from "../js/menus/duty/boards.js";
 import { DUTY_STATUS, DUTY_STATUS_LABEL } from "../supabase/functions/church-admin/duty-rules.ts";
@@ -251,6 +252,11 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(removeAsk({ name: "가상하나", hasApp: true }, DAYS[1], DAYS[1].slots[0]).includes("스스로 다시 지원할 수 없어요"));
   assert.ok(!removeAsk({ name: "가상하나", hasApp: false }, DAYS[1], DAYS[1].slots[0]).includes("스스로 다시 지원"));
   assert.ok(removeAsk({ name: "가상하나", hasApp: false }, DAYS[1], DAYS[1].slots[0]).includes("「빠진 분」에서 다시 넣을 수 있어요"));
+  // 같은 이름의 줄이 또 있는 날 — 앱에 이어진 줄을 빼려 하면 어느 줄을 빼야 하는지 말한다(앱 없는 줄을 뺄 때는 말하지 않는다)
+  assert.ok(removeAsk({ name: "가상하나", hasApp: true, maybeDup: true }, DAYS[1], DAYS[1].slots[0]).endsWith(DUP_REMOVE_NOTE));
+  assert.ok(DUP_REMOVE_NOTE.includes("「앱 없음」 줄을 빼 주세요") && DUP_REMOVE_NOTE.includes("다른 분이면 따로 알려 주세요"));
+  assert.ok(!removeAsk({ name: "가상하나", hasApp: false, maybeDup: true }, DAYS[1], DAYS[1].slots[0]).includes("같은 이름의 줄"));
+  assert.ok(!removeAsk({ name: "가상하나", hasApp: true, maybeDup: false }, DAYS[1], DAYS[1].slots[0]).includes("같은 이름의 줄"));
   assert.ok(restoreAsk({ name: "가상하나" }, DAYS[1], DAYS[1].slots[0]).startsWith("가상하나 님을 10월 18일(일) 1부 설거지에 다시 넣을까요?"));
   assert.equal(restoredText({ ok: true, id: 1 }, "가상하나"), "가상하나 — 다시 넣었어요");
   assert.equal(restoredText({ ok: true, already: true }, "가상하나"), "가상하나 — 이미 서 계세요");
@@ -295,6 +301,7 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   // 준비 중 안내 — 총괄은 스스로 열고, 담당은 총괄께 부탁한다(담당은 준비 중을 못 바꾼다)
   assert.ok(draftNote(true).includes("「당번 설정」에서 상태를 「받는 중」으로"));
   assert.ok(draftNote(false).includes("당번 총괄께") && !draftNote(false).includes("「당번 설정」에서"));
+  for (const c of [true, false]) assert.ok(draftNote(c).endsWith("준비 중에는 넣기·확정을 해도 앱 알림이 가지 않아요."), "준비 중 당번에는 알림이 가지 않는다고 말한다");
 });
 
 test("앱 당번표에 무엇이 보이나 — 지원할 날짜가 없는 까닭을 가른다(받는 중·지원 멈춤만) · 「날짜가 안 보여요」는 보이는 자리가 0 일 때만", () => {
@@ -398,7 +405,23 @@ test("「받는 중」 확인 글 — 열어도 앱에 지원할 날짜가 없�
 
 test("저장 뒤 한 줄 — 알림(3단계)이 붙으면 덧붙인다", () => {
   assert.equal(notifyTail({ ok: true }), ""); assert.equal(notifyTail({ notified: 2, notifyError: null }), " · 2분께 앱 알림을 보냈어요");
-  assert.equal(notifyTail({ notified: 0, notifyError: null }), ""); assert.equal(notifyTail({ notified: 0, notifyError: "notify-failed" }), " · 앱 알림은 보내지 못했어요");
+  assert.equal(notifyTail({ notified: 0, notifyError: null }), ""); assert.equal(notifyTail({ notified: 0, notifyError: "notify-failed" }), " · 앱 알림은 보내지 못했어요 — 그분께 따로 알려 주세요");
+  // 검토 반영(2026-10-07) — 「보냈어요」는 실제로 나간 분 수로만 · 가지 않은 분(받는 기기 없음)은 따로 말한다(「알림 꺼짐」 딱지와 어긋나지 않게)
+  assert.equal(notifyTail({ notified: 0, missed: 1, notifyError: null }), " · 1분께는 앱 알림이 가지 않았어요 — 따로 알려 주세요", "한 분도 못 받았으면 「보냈어요」라고 하지 않는다");
+  assert.equal(notifyTail({ notified: 1, missed: 2, notifyError: null }), " · 1분께 앱 알림을 보냈어요 · 2분께는 앱 알림이 가지 않았어요 — 따로 알려 주세요");
+  assert.equal(notifyTail({ notified: 3, missed: 0, notifyError: null }), " · 3분께 앱 알림을 보냈어요");
+  assert.equal(notifyTail({ notified: 0, notifyError: "notify-off" }), " · 앱 알림은 지금 꺼 두었어요 — 그분께 따로 알려 주세요");
+  assert.equal(notifyFailed({ notifyError: "notify-failed" }), true); assert.equal(notifyFailed({ notifyError: "notify-off" }), true);
+  assert.equal(notifyFailed({ notified: 0, missed: 2, notifyError: null }), false, "가지 않은 분이 있는 것은 실패가 아니다(토스트로 말한다)"); assert.equal(notifyFailed({ ok: true }), false); assert.equal(notifyFailed(null), false);
+  assert.equal(confirmDoneText({ ok: true, already: true }, "2026-10-18"), "이미 확정된 날이에요");
+  assert.equal(confirmDoneText({ ok: true, active: 2, notified: 1, missed: 1, notifyError: null }, "2026-10-18"), "10월 18일(일)을 확정했어요 · 1분께 앱 알림을 보냈어요 · 1분께는 앱 알림이 가지 않았어요 — 따로 알려 주세요");
+  assert.equal(confirmDoneText({ ok: true, active: 2, notified: 0, notifyError: "notify-failed" }, "2026-10-18"),
+    "10월 18일(일)을 확정했어요 · 앱 알림은 보내지 못했어요 — 그분께 따로 알려 주세요 (「확정 풀기」 뒤 다시 확정하면 다시 보내요)");
+  assert.ok(!confirmDoneText({ ok: true, notified: 0, notifyError: "notify-off" }, "2026-10-18").includes("다시 확정하면"), "꺼 둔 동안에는 다시 확정해도 가지 않는다");
+  assert.equal(confirmDoneText({ ok: true, active: 0 }, "2026-10-18"), "10월 18일(일)을 확정했어요");
+  // 「알림 꺼짐」 딱지는 받는 중·지원 멈춤 당번에서만 — 준비 중·보관 당번의 줄에는 어떤 알림도 가지 않는다
+  assert.deepEqual(["open", "closed", "draft", "archived", ""].map((s) => notifyBadges(s, true)), [true, true, false, false, false]);
+  assert.equal(notifyBadges("open", false), false); assert.equal(notifyBadges("open"), NOTIFY_LIVE);
   assert.equal(addDoneText({ ok: true, id: 1, locked: false }, "가상하나"), "가상하나 — 넣었어요");
   assert.equal(addDoneText({ ok: true, id: 1, locked: true, notified: 1, notifyError: null }, "가상하나"), "가상하나 — 넣었어요 (확정된 날) · 1분께 앱 알림을 보냈어요");
   assert.equal(addDoneText({ ok: true, id: 1, locked: true, already: true }, "가상하나"), "가상하나 — 이미 이 자리에 서 계세요");
@@ -417,7 +440,7 @@ test("오류 말 — 서버(duty-db.ts · duty.sql)가 돌려주는 코드마다
   const codes = ["not-assigned", "chief-only", "has-upcoming", "archived", "no-title", "bad-days", "bad-max", "bad-status", "bad-char", "too-long", "no-service", "bad-time",
     "bad-capacity", "bad-weekday", "bad-line", "dup-line", "bad-date", "after-until", "bad-lines", "bad-range", "changed", "past", "too-late", "below-count", "has-signups",
     "use-off", "off", "full", "overlap", "already-there", "wrong-board", "not-active", "bad-ident", "bad-note", "bad-member", "nothing",
-    "no-slots", "too-many-lines", "has-after"];
+    "no-slots", "too-many-lines", "has-after", "to-past"];
   for (const c of codes) { assert.equal(hasWord(c), true, c); assert.ok(dutyWord(c).length > 4, c); }
   assert.equal(hasWord("server"), false); assert.equal(dutyWord("zzz"), "");
   assert.equal(hasWord("toString"), false);

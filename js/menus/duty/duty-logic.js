@@ -225,6 +225,9 @@ export function slotCount(s) {
 //   false 인 동안에는 「알림 꺼짐」 딱지를 그리지 않는다(딱지 없는 분께는 알림이 간다는 뜻으로 읽힌다 — 검토 반영 2026-10-06).
 //   ⚠️ 알림을 되돌리면(api 의 internalDutyNotify 를 뺀 판으로) 이 값도 false 로 되돌린다.
 export const NOTIFY_LIVE = true;
+// 이 당번의 명단에 「알림 꺼짐」 딱지를 그릴까 — 알림이 나가는 때(NOTIFY_LIVE)이고 **받는 중·지원 멈춤 당번**일 때만. 준비 중·보관 당번의 줄에는 어떤 알림도
+//   가지 않는다(성경암송 duty_notify_rows 가 그 당번의 줄을 주지 않는다) — 거기에 딱지를 달면 「딱지 없는 분께는 알림이 간다」로 읽힌다(검토 반영 2026-10-07).
+export const notifyBadges = (status, live = NOTIFY_LIVE) => !!live && (status === "open" || status === "closed");
 // 지원 줄의 딱지들 — [{ text, cls }] (앱/담당자 · 앱 없음 · 알림 꺼짐 · 시간 겹침 · 확정 뒤 지원 · 옮김 · 같은 분일 수 있어요)
 export function signupBadges(e, { notify = NOTIFY_LIVE } = {}) {
   const out = [{ text: e.source === "staff" ? "담당자" : "앱", cls: "" }];
@@ -289,8 +292,14 @@ export function offAsk({ from, to, off, active, days, tail = "" }) {
   return `${span}${dn}을 다시 열까요?` + (active ? ` 쉬기 전에 지원한 ${active}분의 자리가 그대로 살아나요.` : "") + (tail ? ` ${tail}` : "");
 }
 // 빼기 확인 — 앱 계정이 이어진 분은 뺀 뒤 스스로 다시 지원하지 못한다(계정 없이 넣은 줄은 그 말이 맞지 않아 뺀다 — 검토 반영)
+//   같은 이름의 줄이 또 있는 날(「같은 분일 수 있어요」)에 **앱에 이어진 줄**을 빼려 하면 어느 줄을 빼야 하는지 말한다 — 그 줄을 빼면 그분 앱의 「내 당번」이
+//   「담당자가 빼 드렸어요」가 되고, 남는 줄(앱 없음)은 그분 앱에 보이지 않는다. 같은 자리에 같은 이름의 줄이 남으면 서버는 「빼 드렸어요 — 안 나오셔도 돼요」
+//   알림을 보내지 않는다(그분은 남은 줄로 서 있다 — 성경암송 api dutyNoteKeep 의 dup) — 다른 분이면 따로 알려야 한다(검토 반영 2026-10-07).
+export const DUP_REMOVE_NOTE = "⚠️ 이 날 같은 이름의 줄이 또 있어요 — 같은 분이면 이 줄(앱에 이어진 줄)은 두고 「앱 없음」 줄을 빼 주세요. " +
+  "같은 자리에 같은 이름의 줄이 남아 있으면 이 줄을 빼도 그분께 앱 알림이 가지 않아요 — 다른 분이면 따로 알려 주세요.";
 export const removeAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에서 뺄까요?` +
-  (e.hasApp ? " 뺀 분은 앱에서 이 자리에 스스로 다시 지원할 수 없어요." : "") + " 잘못 뺐으면 「빠진 분」에서 다시 넣을 수 있어요.";
+  (e.hasApp ? " 뺀 분은 앱에서 이 자리에 스스로 다시 지원할 수 없어요." : "") + " 잘못 뺐으면 「빠진 분」에서 다시 넣을 수 있어요." +
+  (e.maybeDup && e.hasApp ? ` ${DUP_REMOVE_NOTE}` : "");
 export const restoreAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에 다시 넣을까요? 빠지기 전 그 줄이 그대로 살아나요.`;
 export const restoredText = (r, name) => (r && r.already ? `${name} — 이미 서 계세요` : `${name} — 다시 넣었어요${notifyTail(r)}`);
 export function slotOffAsk(s, off) {
@@ -401,17 +410,29 @@ export function addNote(d) {
 }
 export const ADD_NOTE = addNote(null);
 // 준비 중인 당번의 안내 — 총괄은 스스로 열 수 있고, 담당은 총괄께 부탁한다
+//   준비 중에는 앱 알림도 가지 않는다(넣기·확정·빼기 모두) — 그 말을 함께 한다(문이 닫힌 동안 진짜 명단을 넣어 두라고 권하는 자리가 여기다)
+const DRAFT_NO_NOTIFY = " 준비 중에는 넣기·확정을 해도 앱 알림이 가지 않아요.";
 export const draftNote = (chief) => (chief
   ? "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣고 「당번 설정」에서 상태를 「받는 중」으로 바꾸면 지원을 받아요."
-  : "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣은 뒤 당번 총괄께 「받는 중」으로 열어 달라고 말씀해 주세요.");
+  : "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣은 뒤 당번 총괄께 「받는 중」으로 열어 달라고 말씀해 주세요.") + DRAFT_NO_NOTIFY;
 
 // ---------- 저장 뒤 한 줄 ----------
-// 알림(3단계) — notified·notifyError 가 있으면 덧붙인다
+// 알림(3단계) — notified(실제로 나간 분) · missed(가지 않은 분) · notifyError 가 있으면 덧붙인다
+//   ⚠️ 「보냈어요」는 **실제로 나간 분 수**로만 말한다 — 앱 계정은 있어도 알림을 켜지 않은 분이 많다. 그분까지 세어 「보냈어요」라고 하면 담당자가 따로 알리지 않는다
+//      (같은 명단의 「알림 꺼짐 — 따로 알려 주세요」 딱지와도 어긋났다 · 뺀 뒤에는 그 딱지도 안 보인다 · 검토 반영 2026-10-07).
+//   가지 않은 까닭은 넘겨짚지 않는다(받는 기기가 없다 · 보낸 것이 모두 실패했다 — 화면은 어느 쪽인지 모른다).
 export function notifyTail(r) {
   if (!r || r.notifyError === undefined) return "";
-  if (r.notifyError) return " · 앱 알림은 보내지 못했어요";
-  return r.notified ? ` · ${r.notified}분께 앱 알림을 보냈어요` : "";
+  if (r.notifyError === "notify-off") return " · 앱 알림은 지금 꺼 두었어요 — 그분께 따로 알려 주세요";
+  if (r.notifyError) return " · 앱 알림은 보내지 못했어요 — 그분께 따로 알려 주세요";
+  const sent = Number(r.notified) || 0, missed = Number(r.missed) || 0;
+  return (sent ? ` · ${sent}분께 앱 알림을 보냈어요` : "") + (missed ? ` · ${missed}분께는 앱 알림이 가지 않았어요 — 따로 알려 주세요` : "");
 }
+// 알림을 보내지 못한 저장인가(부르지 못함 · 꺼 둠) — 그때는 지나가는 토스트가 아니라 창으로 알린다(roster-forms.js sayDone)
+export const notifyFailed = (r) => !!(r && r.notifyError);
+// 날짜 확정 뒤 한 줄 — 알림을 못 보냈으면 다시 보낼 길을 말한다(확정은 「풀기 → 다시 확정」으로 **안 간 분께만** 다시 간다 — 이미 받은 분은 서버가 한 번만 보낸다)
+export const confirmDoneText = (r, date) => (r && r.already ? "이미 확정된 날이에요"
+  : `${dayLabel(date)}을 확정했어요${notifyTail(r)}${r && r.notifyError === "notify-failed" ? " (「확정 풀기」 뒤 다시 확정하면 다시 보내요)" : ""}`);
 export function addDoneText(r, name) {
   const base = r && r.already ? `${name} — 이미 이 자리에 서 계세요` : r && r.revived ? `${name} — 다시 넣었어요` : `${name} — 넣었어요`;
   return base + (r && r.locked && !r.already ? " (확정된 날)" : "") + notifyTail(r);
@@ -461,6 +482,7 @@ const WORDS = {
   overlap: "같은 날 겹치는 자리에 이미 서 계세요",
   "already-there": "옮길 자리에 이미 서 계세요",
   "wrong-board": "다른 당번의 자리로는 옮길 수 없어요",
+  "to-past": "지난 날짜의 자리로는 옮길 수 없어요 — 빼고, 그날 자리에 「＋ 넣기」로 넣어 주세요",
   "not-active": "이미 빠진 줄이에요 — 새로 불러올게요",
   "bad-ident": "이름을 다시 확인해 주세요 (40자까지 · \" \\ , ( ) | 는 쓸 수 없어요)",
   "bad-note": "메모를 다시 적어 주세요",

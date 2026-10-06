@@ -13,7 +13,8 @@
 //    당번 설정(duty_boards) · 담당자 줄(duty_board_staff).
 //    ⚠️ **duty_signups 에는 직접 쓰지 않는다**(메모 한 칸도 duty_note_set) — 쓰기 연결 트리거가 「줄 → 전역 잠금」 차례로 잠가
 //       그 줄을 빼거나 옮기는 SQL 함수(전역 잠금 → 줄)와 서로 기다린다(검토 반영 2026-10-06).
-// ⚠️ 알림(3단계)은 저장·기록이 **끝난 뒤** 부탁만 한다(deps.dutyNotify — 없으면 아무것도 안 한다 · 실패해도 저장은 성공 → notified·notifyError).
+// ⚠️ 알림(3단계)은 저장·기록이 **끝난 뒤** 부탁만 한다(deps.dutyNotify — 없으면 아무것도 안 한다 · 실패해도 저장은 성공 → notified·missed·notifyError).
+//    notified = 실제로 나간 분 수 · missed = 가지 않은 분 수(받는 기기 없음 — 0 이면 싣지 않는다) · notifyError: notify-failed(부르지 못함) · notify-off(알림을 꺼 둠).
 import { boardOrder, boardOut, boardPatchFor, checkBoard, checkLine, checkLineIds, checkNote, dutyChief, DUTY_STAFF_ROLES, exportSheets,
   hidesFromApp, identHasCtrl, isDate, overlapForStaff, placeOut, rosterOut, staffByBoard, staffNames } from "./duty-rules.ts";
 import { checkStaffIds, checkTypedIdent, kstDate, staffCandidateOut } from "./edu-rules.ts";
@@ -35,12 +36,13 @@ const NOT_FOUND: Fail = { ok: false, error: "not-found" };
 // deps — peopleLookup: 교인명부에서 이름으로 찾기(후보 모양 · 교인ID 없음 · 기록 people.lookup from:"duty")
 //        personPick: 같은 찾기를 서버가 다시 돌려 pick 번째 분의 신원을 만든다(교인ID 는 서버 안에만 — 교육 대신 등록과 같은 함수)
 //        allRows: 1,000줄 쪽 넘기기(index.ts)
-//        dutyNotify: 알림 부탁(3단계 — 성경암송 api internalDutyNotify) · kind: confirmed·added·moved·removed·off·reopen · {sent} 또는 null(부르지 못함)
+//        dutyNotify: 알림 부탁(3단계 — 성경암송 api internalDutyNotify) · kind: confirmed·added·moved·removed·off·reopen ·
+//                    {sent, missed?, off?} 또는 null(부르지 못함)
 export function makeDuty(db: Db, audit: Audit, deps: {
   peopleLookup: (ctx: any, b: any) => Promise<any>;
   personPick: (name: unknown, pick: unknown, check: any) => Promise<{ ok: false; error: string } | { ok: true; ident: any; appUserId: string | null }>;
   allRows: (build: () => any) => Promise<any[]>;
-  dutyNotify?: (kind: string, ids: number[]) => Promise<{ sent: number } | null>;
+  dutyNotify?: (kind: string, ids: number[]) => Promise<{ sent: number; missed?: number; off?: boolean } | null>;
 }) {
   // 알림 부탁 — 저장·기록 뒤에만 부른다. 알릴 번호가 없거나 dep 가 없으면 r 그대로.
   //   문(dutyOpen·시험 참여자)·같은 알림 한 번·앱 계정·오늘 이후 자리 확인은 api 가 한다 — 여기서는 지원 번호만 보낸다(이름·user_id 없음).
@@ -49,7 +51,10 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     if (!list.length || !deps.dutyNotify) return r;
     try {
       const n = await deps.dutyNotify(kind, list);
-      return n ? { ...r, notified: Number(n.sent) || 0, notifyError: null } : { ...r, notified: 0, notifyError: "notify-failed" };
+      if (!n) return { ...r, notified: 0, notifyError: "notify-failed" };
+      if (n.off === true) return { ...r, notified: 0, notifyError: "notify-off" };   // 알림을 꺼 두었다 — 아무에게도 가지 않았다(화면이 「따로 알려 주세요」라고 말한다)
+      const missed = Number(n.missed) || 0;   // 가지 않은 분(받는 기기 없음·모두 실패) — 화면이 「N분께 보냈어요」와 따로 말한다
+      return { ...r, notified: Number(n.sent) || 0, ...(missed ? { missed } : {}), notifyError: null };
     } catch (_) {
       return { ...r, notified: 0, notifyError: "notify-failed" };
     }
@@ -476,6 +481,8 @@ export function makeDuty(db: Db, audit: Audit, deps: {
   // 대신 넣기 — 두 갈래: (1) 교인명부에서 고른 분 {slot_id, name, pick, check} (2) 직접 적은 분 {slot_id, ident}(새가족)
   //   정원·겹침은 알려 준 뒤 force:true 로 넘긴다(full · overlap). 담당자가 뺐던 분도 담당자는 다시 넣는다(revived).
   //   담당자가 넣은 줄은 본인이 앱에서 스스로 빼지 못한다(SQL staff-row) — 그래서 잠긴 날에 넣으면 그분 기기로 알린다(3단계).
+  //   **되살린 줄(revived — 담당자가 뺐거나 본인이 취소했던 줄)은 잠기지 않은 날에도 알린다** — 그분이 마지막으로 들은 말이 「빼 드렸어요 — 안 나오셔도 돼요」일 수
+  //   있다(「빠진 분 → 다시 넣기」는 늘 알린다 — 같은 일을 하는 두 길이 다르게 굴었다 · 검토 반영 2026-10-07).
   async function dutySignAdd(ctx: any, b: any) {
     const slot = posInt(b?.slot_id);
     if (!slot) return BAD_ID;
@@ -511,7 +518,10 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     if (r.already && !linked) return out;
     await audit(ctx, "duty.sign.add", at.board, { slot, signup: r.id, app: !!user, revived: r.revived === true, force, locked: r.locked === true,
       ...(linked ? { linked: true } : {}) });
-    return user && r.locked === true ? await withNotify(out, "added", [r.id]) : out;
+    // 알림을 정하는 것은 **그 줄의 앱 계정**(SQL hadUser)이다 — 이번 명부 찾기가 맞춘 계정(user)과 다를 수 있다(계정이 이어진 줄을 계정을 못 맞춘 채 되살려도
+    //   줄의 계정은 그대로다 → 잠긴 날인데 알림이 안 갔다). 옛 SQL 은 그 칸이 없다 — 그때는 user 로 본다.
+    const had = r.hadUser === undefined ? !!user : r.hadUser === true;
+    return had && (r.locked === true || r.revived === true) ? await withNotify(out, "added", [r.id]) : out;
   }
 
   // 빼기 — {id}. 언제든(지난 날짜도 — 당일 안 온 분을 다음 날 바로잡는다). 뺀 분은 본인이 그 자리에 스스로 다시 지원하지 못한다.

@@ -539,10 +539,25 @@ test("dutySignAdd — 명부에서 고른 분 / 직접 적은 분 · 담당자 �
   assert.equal(JSON.stringify(a.log.audit).includes("가상하나"), false);
   // 앱 계정이 정확히 하나로 맞은 분 — 그 계정에(p_user)
   const u = setup({ pick: { ok: true, ident: { name: "가상하나", ident_key: "person|9" }, appUserId: USER }, rpcs: { duty_apply: { ok: true, id: 502, locked: false, revived: true } } });
-  assert.deepEqual(await u.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {}, force: true }), { ok: true, id: 502, locked: false, revived: true });
+  // 되살린 줄(revived)은 잠기지 않은 날에도 알린다 — 그분이 마지막으로 들은 말이 「빼 드렸어요 — 안 나오셔도 돼요」일 수 있다(「빠진 분 → 다시 넣기」와 같게 · 검토 반영 2026-10-07)
+  assert.deepEqual(await u.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {}, force: true }), { ok: true, id: 502, locked: false, revived: true, notified: 1, notifyError: null });
   assert.equal(u.log.rpc[0][1].p_user, USER); assert.equal(u.log.rpc[0][1].p_force, true);
   assert.deepEqual(u.log.audit[0][2], { slot: 10, signup: 502, app: true, revived: true, force: true, locked: false });
-  assert.equal(u.log.notify.length, 0, "잠기지 않은 날은 알리지 않는다");
+  assert.deepEqual(u.log.notify.map((x) => [x[0], x[1]]), [["added", [502]]]);
+  // 새로 넣는 줄은 잠기지 않은 날이면 알리지 않는다(설계 — 확정·전날 저녁에 간다)
+  const fresh = setup({ pick: { ok: true, ident: { name: "가상하나", ident_key: "person|9" }, appUserId: USER }, rpcs: { duty_apply: { ok: true, id: 504, locked: false, hadUser: true } } });
+  assert.deepEqual(await fresh.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {} }), { ok: true, id: 504, locked: false });
+  assert.equal(fresh.log.notify.length, 0, "잠기지 않은 날의 새 줄은 알리지 않는다");
+  // 알림을 정하는 것은 그 줄의 앱 계정(SQL hadUser) — 이번 찾기가 계정을 못 맞췄어도(user null) 줄에 계정이 있으면 알리고, 맞췄어도 줄에 계정이 없으면 알리지 않는다
+  const noPick = { ok: true, ident: { name: "가상하나", ident_key: "person|9" }, appUserId: null };
+  const h1 = setup({ pick: noPick, rpcs: { duty_apply: { ok: true, id: 505, locked: true, revived: true, hadUser: true } } });
+  assert.deepEqual(await h1.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {} }), { ok: true, id: 505, locked: true, revived: true, notified: 1, notifyError: null });
+  const h2 = setup({ pick: { ...noPick, appUserId: USER }, rpcs: { duty_apply: { ok: true, id: 506, locked: true, hadUser: false } } });
+  assert.deepEqual(await h2.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {} }), { ok: true, id: 506, locked: true });
+  assert.equal(h2.log.notify.length, 0);
+  const h3 = setup({ pick: noPick, rpcs: { duty_apply: { ok: true, id: 507, locked: true, revived: true } } });   // 옛 SQL(hadUser 칸 없음) — 이번 찾기의 계정으로 본다
+  assert.deepEqual(await h3.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {} }), { ok: true, id: 507, locked: true, revived: true });
+  assert.equal(JSON.stringify(await h1.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {} })).includes("hadUser"), false, "hadUser 는 응답에 싣지 않는다");
   // 직접 적은 분(새가족) — 명부를 찾지 않는다
   const t = setup({ rpcs: { duty_apply: { ok: true, id: 503, locked: true } } });
   await t.duty.dutySignAdd(LEAD, { slot_id: 10, ident: { name: " 가상새가족 ", group: "새가족부" } });
@@ -692,6 +707,16 @@ test("알림 — dep 가 없으면(1단계) 응답 그대로 · 부르지 못하
   const thr = setup({ rpcs, notifyThrows: true });
   assert.deepEqual(await thr.duty.dutyDaySet(LEAD, body), { ok: true, active: 1, notified: 0, notifyError: "notify-failed" });
   assert.equal(thr.log.audit.length, 1, "기록은 이미 남았다");
+  // 검토 반영(2026-10-07) — 실제로 나간 분(notified)과 가지 않은 분(missed)을 가른다 · missed 가 0 이면 싣지 않는다 · 꺼 둔 알림은 notify-off
+  const part = setup({ rpcs, notifyRes: { sent: 0, missed: 1 } });
+  assert.deepEqual(await part.duty.dutyDaySet(LEAD, body), { ok: true, active: 1, notified: 0, missed: 1, notifyError: null });
+  const both = setup({ rpcs, notifyRes: { sent: 2, missed: 3, off: false } });
+  assert.deepEqual(await both.duty.dutyDaySet(LEAD, body), { ok: true, active: 1, notified: 2, missed: 3, notifyError: null });
+  const all = setup({ rpcs, notifyRes: { sent: 1, missed: 0 } });
+  assert.deepEqual(await all.duty.dutyDaySet(LEAD, body), { ok: true, active: 1, notified: 1, notifyError: null });
+  const off = setup({ rpcs, notifyRes: { sent: 0, missed: 0, off: true } });
+  assert.deepEqual(await off.duty.dutyDaySet(LEAD, body), { ok: true, active: 1, notified: 0, notifyError: "notify-off" });
+  assert.equal(off.log.audit.length, 1, "꺼 둔 알림이어도 저장·기록은 그대로");
   // 알릴 번호가 없으면 부르지 않는다 · 번호는 양의 정수만 · 겹친 번호는 한 번
   const zero = setup({ rpcs: { duty_day_set: { ok: true, ids: [], active: 0 } } });
   assert.deepEqual(await zero.duty.dutyDaySet(LEAD, body), { ok: true, active: 0 });

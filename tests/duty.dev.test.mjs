@@ -248,7 +248,7 @@ test("다시 넣기 — 뺀 줄을 그대로 되살린다 · 두 번은 already 
 
 test("확정·풀기 · 메모 · 쉬는 날(세기 → 쓰기 → 다시 열기) · 정원 · 이 자리만 쉬기", async () => {
   let r = got(await call(L.token, "dutyDaySet", { board_id: W.A, date: W.d2, op: "confirm" }));
-  assert.deepEqual(r.body, { ok: true, active: 2 }, JSON.stringify(r.body));       // 알림은 3단계 — 지금은 부탁하지 않는다
+  assert.deepEqual(r.body, { ok: true, active: 2 }, JSON.stringify(r.body));       // 계정 없는 줄뿐이라 알림 부탁이 없다(응답에 알림 칸이 없다)
   assert.deepEqual(got(await call(L.token, "dutyDaySet", { board_id: W.A, date: W.d2, op: "confirm" })).body, { ok: true, already: true });
   r = got(await call(L.token, "dutyRoster", { board_id: W.A, from: W.d2, to: W.d2 }));
   assert.deepEqual([r.body.days[0].confirmed, r.body.days[0].locked], [true, true]);
