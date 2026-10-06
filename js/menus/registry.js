@@ -45,6 +45,12 @@ export const MENUS = [
   // 📊 교육 통계(2026-10-06 · 4단계 C) — 교육 총괄만(서버 authz.ts eduStats "education" · edu-db.ts eduChief). 교육 묶음 맨 끝.
   { id: "edu-stats", group: "교육", icon: "📊", label: "교육 통계", desc: "학기별 강좌마다 신청·확정·출석률·수료 · 교구별 · 엑셀",
     role: "education", load: () => import("./education/stats.js") },
+  // 🙋 봉사 당번(2026-10-06 · 1단계) — 당번 관리(당번 총괄만 · 만들기·이름·상태·담당자 지정) · 당번 명단(당번 총괄 = 모든 당번 ·
+  //   당번 담당(맡은 당번) = 지정받은 당번만 — 서버 duty-db.ts 가 당번마다 막는다 not-assigned). 자리 틀·날짜·쉬는 날도 명단 메뉴에서.
+  { id: "duty-boards", group: "봉사 당번", icon: "🧰", label: "당번 관리", desc: "당번 만들기 · 상태 · 담당자 지정",
+    role: "duty", load: () => import("./duty/boards.js") },
+  { id: "duty-roster", group: "봉사 당번", icon: "📅", label: "당번 명단", desc: "날짜마다 선 분 · 넣기·빼기·옮기기 · 확정 · 쉬는 날 · 자리 틀 · 엑셀",
+    roles: ["duty", "dutylead"], load: () => import("./duty/roster.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
   // 🧪 시험 참여자 — 시스템 묶음 · 총괄만(2026-10-02 친구 요청 · 그전에는 사역신청 묶음 · 역할 ministry).
@@ -56,7 +62,7 @@ export const MENUS = [
 ];
 
 // 묶음(대분류) 머리의 아이콘 — 메뉴 줄(중분류)의 아이콘과 겹치지 않게 고른다
-export const GROUP_ICON = { "교인명부": "👥", "사역신청": "🤝", "성경필사(암송)": "✍️", "교육": "🎓", "시스템": "⚙️" };
+export const GROUP_ICON = { "교인명부": "👥", "사역신청": "🤝", "성경필사(암송)": "✍️", "교육": "🎓", "봉사 당번": "🙋", "시스템": "⚙️" };
 
 // 메뉴 하나가 받는 역할들 — roles 배열 · role 배열 · role 글자 하나 모두 배열로
 export function menuRoles(m) {

@@ -1674,3 +1674,107 @@ body.ec-cert-on{overflow:hidden}
 @media (min-width:1024px){
   .mst-page{max-width:1000px}
 }
+
+/* 🙋 봉사 당번(2026-10-06 · 1단계) — js/menus/duty/*.js · 접두사 dty- · 새 규칙만(위 규칙은 안 바꾼다).
+   폰 한 손: 날짜 칩은 옆으로 굴리고(44px 이상), 그날 판은 머리줄에 붙고, 줄마다 이름·소속·딱지 아래 단추 셋(오른쪽 · 40px 이상). 색은 토큰만.
+   칩 색 — 빈 자리 금색 · 못 온다 빨강 · 다 참 초록 · 쉼·지난 날 흐림. */
+/* 당번 카드(🧰 당번 관리) — 제목 · 라벨/값 줄 · 숫자 칩 · 단추(교육 강좌 카드와 같은 꼴) */
+.dty-top{margin-bottom:12px}
+.dty-card .dty-head{font-size:1.05rem;line-height:1.4;margin-bottom:8px}
+.dty-kvs{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--border)}
+.dty-kv{display:flex;gap:10px;font-size:14px;line-height:1.45}
+.dty-k{flex:0 0 40px;color:var(--gray);font-size:13px}
+.dty-v{min-width:0;word-break:keep-all;overflow-wrap:anywhere}
+.dty-v a,.dty-info a{color:var(--navy);font-weight:700;text-decoration:underline}
+.dty-chips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 12px}
+.dty-chip{display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border-radius:999px;background:var(--light);color:#333;font-size:13px}
+.dty-chip.warn{background:#fff3d6;color:#7a5200;font-weight:700}
+.dty-old{margin-top:16px}
+.dty-old > summary{min-height:var(--tap);display:flex;align-items:center;color:var(--gray);font-size:14px;cursor:pointer}
+.dty-old .dty-card{opacity:.75}
+.dty-fixed{margin:0;padding:10px 12px;border-radius:10px;background:var(--light);font-size:15px;line-height:1.45}
+.dty-check{display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;font-size:14px;line-height:1.45}
+.dty-check input{flex:none;width:20px;height:20px;margin:1px 0 0}
+/* 📅 당번 명단 — 머리 */
+.dty-pick{margin-bottom:8px}
+.dty-board{justify-content:flex-start;text-align:left;font-weight:700;line-height:1.35;padding:6px 14px}
+.dty-board:disabled{opacity:1;cursor:default}
+.dty-info{margin:0 0 10px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere}
+.dty-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+.dty-tabs button{min-height:var(--tap);font-size:14px;font-weight:700;color:var(--ink-2)}
+.dty-tabs button.on{color:#fff}
+.dty-tools{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.dty-tools .btn{min-width:0;padding:0 8px;font-size:14px}
+/* 날짜 칩 */
+.dty-chips-d{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;margin-bottom:4px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+.dty-chipd{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:76px;min-height:52px;padding:4px 10px;
+  border:1px solid var(--border);border-radius:12px;background:#fff;font:inherit;color:var(--ink);cursor:pointer;touch-action:manipulation}
+.dty-chipd b{font-size:14px;font-weight:700;white-space:nowrap}
+.dty-chipd i{font-style:normal;font-size:12px;line-height:1.3;white-space:nowrap;color:var(--gray)}
+.dty-chipd.need i{color:#7a5200;font-weight:700}
+.dty-chipd.ask i{color:var(--error);font-weight:700}
+.dty-chipd.full i{color:var(--green)}
+.dty-chipd.off,.dty-chipd.past,.dty-chipd.none{background:var(--light)}
+.dty-chipd.past b,.dty-chipd.off b{color:var(--gray)}
+.dty-chipd.more{min-width:64px;border-style:dashed}
+.dty-chipd.today{border-color:var(--navy);border-width:2px}
+.dty-chipd.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.dty-chipd.on b,.dty-chipd.on i{color:#fff}
+.dty-chipd:focus-visible,.dty-board:focus-visible{outline:3px solid var(--ghost-bd);outline-offset:1px}
+/* 그날 판 */
+.dty-bar{position:sticky;top:var(--head-h);z-index:5;display:flex;flex-direction:column;gap:1px;margin-bottom:8px;padding:8px 12px;
+  background:var(--cream);border:1px solid var(--border);border-radius:12px}
+.dty-bar b{font-size:15px;color:var(--navy-dark)}
+.dty-bar span{font-size:13px;color:var(--ink-2);word-break:keep-all;overflow-wrap:anywhere}
+.dty-bar .dty-warn{color:var(--error);font-weight:700}
+.dty-dayacts{margin-bottom:12px}
+.dty-dayacts .btn{min-height:40px;padding:0 10px;font-size:14px}
+/* 자리 */
+.dty-slot{margin-bottom:12px;padding:10px 12px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--navy);border-radius:12px}
+.dty-slot.off{border-left-color:var(--border);background:var(--light)}
+.dty-slot-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.dty-slot-t{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;min-width:0}
+.dty-slot-t b{font-size:1rem;color:var(--navy-dark)}
+.dty-cnt{flex:none;display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border-radius:999px;background:#e6f2e6;color:var(--green);
+  font-size:14px;font-weight:800;font-variant-numeric:tabular-nums}
+.dty-cnt.need{background:#fff3d6;color:#7a5200}
+.dty-cnt.over{background:var(--danger-bg);color:var(--error)}
+.dty-cnt.off{background:#e9ebf0;color:var(--gray)}
+.dty-none{margin:4px 0 8px;font-size:14px;color:var(--gray)}
+.dty-slot-acts{display:flex;gap:8px;margin-top:8px}
+.dty-slot-acts .btn{flex:1 1 0;min-width:0;min-height:40px;font-size:14px}
+/* 선 분 한 줄 */
+.dty-row{padding:8px 0;border-top:1px dashed var(--border)}
+.dty-row.ask{margin:0 -8px;padding:8px;border:1px solid var(--danger-bd);border-radius:10px;background:var(--danger-bg)}
+.dty-who{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0}
+.dty-who b{font-size:15px;color:var(--ink)}
+.dty-ask{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;margin-top:4px;font-size:14px;font-weight:700;color:var(--error)}
+.dty-ask .btn{min-height:36px;padding:0 12px;font-size:13px}
+.dty-memo{margin-top:2px;font-size:13px;color:var(--gray);white-space:pre-wrap;overflow-wrap:anywhere}
+.dty-acts{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:6px}
+.dty-acts .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}
+.badge.warn{background:#fff3d6;color:#7a5200}
+.dty-fold{margin-top:8px}
+.dty-fold > summary{min-height:36px;display:flex;align-items:center;color:var(--gray);font-size:13px;cursor:pointer}
+.dty-ended{padding:4px 0;font-size:14px;opacity:.75}
+/* 자리 틀 */
+.dty-line{padding:10px 12px}
+.dty-line-t{display:flex;flex-direction:column;gap:2px}
+.dty-line-t b{font-size:1rem;color:var(--navy-dark)}
+.dty-addsub{margin:0 0 10px;line-height:1.45}
+@media (min-width:720px){
+  .dty-tools{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media (min-width:1024px){
+  .dty-page{max-width:1000px}
+  .dty-top .btn{flex:0 0 auto;min-width:200px}
+  .dty-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:12px;align-items:start}
+  .dty-list > .card{margin-bottom:0}
+  .dty-list > .empty{grid-column:1/-1}
+  .dty-pick{max-width:520px}
+  .dty-tabs{max-width:360px}
+  .dty-tools{max-width:720px}
+  .dty-chips-d{flex-wrap:wrap;overflow:visible}
+  .dty-dayacts .btn{flex:0 0 auto;min-width:140px}
+  .dty-slot-acts .btn{flex:0 0 auto;min-width:140px}
+}
