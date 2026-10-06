@@ -18,7 +18,7 @@ export function formToCourse(v) {
   const cap = String(v.capacity ?? "").trim();
   return {
     ...(v.id ? { id: v.id } : {}), title: v.title || "", kind: v.kind || "", term: v.term || "", description: v.description || "",
-    teacher_label: v.teacher || "", place: v.place || "", fee_note: v.fee || "", target: v.target || "", track: v.track || "",
+    teacher_label: v.teacher || "", place: v.place || "", fee_note: v.fee || "", contact_note: v.contact || "", target: v.target || "", track: v.track || "",
     capacity: cap === "" ? null : Number(cap), mode: v.mode || "auto", waitlist: v.waitlist !== "off",
     apply_from: v.applyFrom || "", apply_to: v.applyTo || "", starts_on: v.startsOn || "", ends_on: v.endsOn || "", attend_pct: v.attendPct === "" || v.attendPct == null ? 80 : Number(v.attendPct),
     check_label: v.checkLabel || "", status: v.status || "draft", prereq_tracks: v.prereq || [],
@@ -39,7 +39,7 @@ export function checkFormNumbers(v) {
 // 서버 courseOut → 화면 폼 값
 export function courseToForm(c) {
   return { id: c.id, title: c.title, kind: c.kind, term: c.term, description: c.description, teacher: c.teacher, place: c.place,
-    fee: c.fee, target: c.target, track: c.track, capacity: c.capacity == null ? "" : String(c.capacity), mode: c.mode,
+    fee: c.fee, contact: c.contact || "", target: c.target, track: c.track, capacity: c.capacity == null ? "" : String(c.capacity), mode: c.mode,
     waitlist: c.waitlist ? "on" : "off", applyFrom: c.applyFrom || "", applyTo: c.applyTo || "", startsOn: c.startsOn || "", endsOn: c.endsOn || "", attendPct: c.attendPct ?? 80,
     checkLabel: c.checkLabel || "", status: c.status, prereq: c.prereq || [] };
 }

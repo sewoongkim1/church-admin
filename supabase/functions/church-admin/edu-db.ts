@@ -25,7 +25,7 @@ import { nameKey } from "./people-match.ts";
 type Db = any;
 type Audit = (ctx: any, action: string, target: string, detail?: Record<string, unknown>) => Promise<void>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const COURSE_COLS = "id,track,title,kind,term,description,teacher_label,place,fee_note,target,capacity,mode,waitlist,apply_from,apply_to,starts_on,ends_on,prereq_tracks,attend_pct,check_label,status,created_at,updated_at";
+const COURSE_COLS = "id,track,title,kind,term,description,teacher_label,place,fee_note,contact_note,target,capacity,mode,waitlist,apply_from,apply_to,starts_on,ends_on,prereq_tracks,attend_pct,check_label,status,created_at,updated_at";
 const ENROLL_COLS = "id,course_id,user_id,name,who_type,group_name,sub_name,status,source,waitlist_at,applied_at,decided_at,cancelled_at,fee_paid,staff_note";
 // 강좌 담당자 줄 + 이름·상태(admin_members 두 칸만 붙여 읽는다 — auth_user_id·카카오 칸은 읽지 않는다) · kind(manager|teacher)
 const STAFF_SEL = "course_id,member_id,kind,admin_members(name,status)";

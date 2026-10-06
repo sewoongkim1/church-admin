@@ -79,6 +79,7 @@ export function courseFormHtml(v, isNew, staff = { ids: [], opts: [], cands: [] 
     txt("place", "장소", v.place, `maxlength="80"`) +
     txt("target", "대상", v.target, `maxlength="120" placeholder="예: 새가족반 수료한 분"`) +
     txt("fee", "교재비 안내", v.fee, `maxlength="120" placeholder="예: 교재비 1만 원"`) +
+    txt("contact", "문의", v.contact, `maxlength="60" placeholder="예: 홍길동 집사 010-1234-5678"`, "앱 강좌 화면에 그대로 보여요 — 알려도 되는 번호만") +
     txt("capacity", "정원", v.capacity, `inputmode="numeric" maxlength="4" placeholder="비우면 제한 없음"`, "비우면 제한 없음") +
     pick("mode") + pick("waitlist") +
     `<div class="be-2col">${date("applyFrom")}${date("applyTo")}</div>` +
@@ -101,7 +102,7 @@ const readForm = (root) => {
 //   · 닫았으면 null · 없어진 강좌면 "gone". cands = 담당자 후보(eduStaffCandidates · 못 불러왔으면 null) · tcands = 강사 후보({kind:'teacher'})
 function openCourseForm({ call, course = null, term = "", cands = [], tcands = [] }) {
   const v = course ? courseToForm(course)
-    : { id: "", title: "", kind: "regular", term, description: "", teacher: "", place: "", fee: "", target: "", track: "", capacity: "",
+    : { id: "", title: "", kind: "regular", term, description: "", teacher: "", place: "", fee: "", contact: "", target: "", track: "", capacity: "",
         mode: "auto", waitlist: "on", applyFrom: "", applyTo: "", startsOn: "", endsOn: "", attendPct: 80, checkLabel: "", status: "draft", prereq: [] };
   const staff0 = ((course && course.staff) || []).map((x) => x.id);
   const staffOpts = staffOptions(cands || [], (course && course.staff) || []);

@@ -12,13 +12,14 @@ test("formToCourse — 빈 정원은 null · 숫자는 숫자", () => {
 test("courseToForm ↔ formToCourse 되돌림", () => {
   const c = { id: "x", title: "제자훈련", kind: "regular", term: "2027 상반기", capacity: 20, mode: "approve", waitlist: true,
     applyFrom: "2027-01-03", applyTo: "2027-01-24", attendPct: 80, checkLabel: "과제", status: "open", description: "설명",
-    teacher: "○○○ 목사", place: "3층", fee: "교재비 1만 원", target: "새가족반 수료", track: "discipleship-1", prereq: [] };
+    teacher: "○○○ 목사", place: "3층", fee: "교재비 1만 원", contact: "홍길동 집사 010-1234-5678", target: "새가족반 수료", track: "discipleship-1", prereq: [] };
   const back = formToCourse(courseToForm(c));
   assert.equal(back.mode, "approve");
   assert.equal(back.apply_to, "2027-01-24");
   assert.equal(back.check_label, "과제");
   assert.equal(back.teacher_label, "○○○ 목사");
   assert.equal(back.fee_note, "교재비 1만 원");
+  assert.equal(back.contact_note, "홍길동 집사 010-1234-5678");   // 문의 한 줄(2026-10-06)
   assert.equal(back.attend_pct, 80);
   assert.equal(back.id, "x");
 });

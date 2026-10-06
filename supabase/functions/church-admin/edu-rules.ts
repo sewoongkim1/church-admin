@@ -18,7 +18,7 @@ export const ENROLL_STATUS_LABEL: Record<string, string> = {
 };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-const LIMITS: Record<string, number> = { title: 80, term: 30, description: 2000, teacher_label: 60, place: 80, fee_note: 120, target: 120, track: 40, check_label: 40 };
+const LIMITS: Record<string, number> = { title: 80, term: 30, description: 2000, teacher_label: 60, place: 80, fee_note: 120, contact_note: 60, target: 120, track: 40, check_label: 40 };
 
 function isDate(s: string): boolean {
   if (!DATE_RE.test(s)) return false;
@@ -62,7 +62,7 @@ export function checkCourse(x: any): { ok: true; row: Record<string, unknown> } 
     ok: true,
     row: {
       title, kind, term: txt("term"), description: desc, teacher_label: txt("teacher_label"), place: txt("place"),
-      fee_note: txt("fee_note"), target: txt("target"), track: txt("track"), capacity, mode,
+      fee_note: txt("fee_note"), contact_note: txt("contact_note"), target: txt("target"), track: txt("track"), capacity, mode,
       waitlist: o.waitlist === undefined ? true : o.waitlist === true,
       apply_from: from || null, apply_to: to || null, starts_on: sOn || null, ends_on: eOn || null, prereq_tracks: prereq, attend_pct: pct,
       check_label: txt("check_label") || null, status,
@@ -181,7 +181,7 @@ export function courseOut(r: any, counts: { confirmed: number; waitlisted: numbe
   teachers: { id: string; name: string; stale?: boolean }[] = []) {
   return {
     id: r.id, title: r.title, kind: r.kind, kindLabel: EDU_KIND_LABEL[r.kind] || r.kind, term: r.term || "",
-    description: r.description || "", teacher: r.teacher_label || "", place: r.place || "", fee: r.fee_note || "",
+    description: r.description || "", teacher: r.teacher_label || "", place: r.place || "", fee: r.fee_note || "", contact: r.contact_note || "",
     target: r.target || "", track: r.track || "", capacity: r.capacity ?? null, mode: r.mode, waitlist: !!r.waitlist,
     applyFrom: r.apply_from || null, applyTo: r.apply_to || null, startsOn: r.starts_on || null, endsOn: r.ends_on || null, prereq: r.prereq_tracks || [],
     attendPct: r.attend_pct, checkLabel: r.check_label || null, status: r.status,

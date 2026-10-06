@@ -31,6 +31,9 @@ test("checkCourse — 틀린 값", () => {
   assert.equal(checkCourse({ title: "a", kind: "lecture", apply_from: "2027-02-01", apply_to: "2027-01-01" }).error, "bad-range");
   assert.equal(checkCourse({ title: "a", kind: "lecture", attend_pct: 101 }).error, "bad-pct");
   assert.equal(checkCourse({ title: "가".repeat(81), kind: "lecture" }).error, "too-long");
+  assert.equal(checkCourse({ title: "t", kind: "lecture", contact_note: "가".repeat(61) }).error, "too-long");   // 문의 한 줄은 60자
+  assert.equal(checkCourse({ title: "t", kind: "lecture", contact_note: " 홍길동 집사 010-1234-5678 " }).row.contact_note, "홍길동 집사 010-1234-5678");
+  assert.equal(checkCourse({ title: "t", kind: "lecture" }).row.contact_note, "");
   assert.equal(checkCourse({ title: "a", kind: "lecture", status: "x" }).error, "bad-status");
 });
 
