@@ -148,6 +148,11 @@ export function contactHtml(text) {
   if (!m) return esc(t);
   return esc(t.slice(0, m.index)) + `<a href="tel:${m[0].replace(/\D/g, "")}">${esc(m[0])}</a>` + esc(t.slice(m.index + m[0].length));
 }
+// 두 날짜 사이의 날 수(b − a) — 꼴이 틀리면 0
+export function daysBetween(a, b) {
+  if (!isDate(a) || !isDate(b)) return 0;
+  return Math.round((utc(b).getTime() - utc(a).getTime()) / 86400000);
+}
 // 지난 날을 얼마나 불러올 수 있나 — 서버 명단은 한 번에 400일까지(지난 날 + 보이는 기간)
 export const maxBack = (openDays) => Math.max(14, 400 - (Number(openDays) || 56));
 // 당번을 저장한 뒤 한 줄 — 끝 날짜 뒤에 선 분이 있으면 알린다
@@ -173,6 +178,8 @@ export function dayChip(d, today = "") {
   if (d.off) return { ...base, kind: "off", tag: "쉼" };
   if (d.past) return { ...base, kind: "past", tag: "지난 날" };
   if (!(d.slots || []).length) return { ...base, kind: "none", tag: "자리 없음" };
+  // 자리를 하나씩 모두 쉬게 한 날 — 빈 자리가 0 이라고 「다 찼어요」로 보이면 안 된다(엑셀 당번표도 「쉼」으로 적는다)
+  if (d.slots.every((s) => s.off)) return { ...base, kind: "off", tag: "자리 쉼" };
   if (d.asks > 0) return { ...base, kind: "ask", tag: `못 온다 ${d.asks}` };
   if (d.need > 0) return { ...base, kind: "need", tag: `빈 자리 ${d.need}` };
   return { ...base, kind: "full", tag: "다 찼어요" };
@@ -187,6 +194,13 @@ export function dayStateText(d) {
   if (d.locked) return `🔒 전날 저녁에 자동으로 확정됐어요${note}`;
   const at = cutoffText(d.cutoff);
   return `${at ? `${at}에 자동으로 확정돼요` : "아직 확정 전이에요"}${note}`;
+}
+// 그날이 앱에 안 보이는 까닭 한 줄(없으면 "") — 끝 날짜 뒤 · 보이는 기간 밖(미리 만들어 둔 날)
+export function dayHiddenText(d) {
+  if (!d || d.past) return "";
+  if (d.afterUntil) return "끝 날짜 뒤라 앱에는 안 보이는 날이에요 — 선 분이 있으면 옮기거나 빼 주세요";
+  if (d.notYet) return "보이는 기간 밖이라 앱에는 아직 안 보이는 날이에요(날이 가까워지면 저절로 보여요)";
+  return "";
 }
 // 그날 판의 단추 — [{ act, label, danger? }] (보관한 당번은 없음 · 지난 날은 메모만)
 //   확정: 아직 안 잠긴 오늘 이후 날 · 확정 풀기: 담당자가 확정했고 전날 저녁 마감 전(locked 이고 confirmed 인데 마감이 안 지남 = canUnconfirm)
@@ -208,11 +222,15 @@ export function slotCount(s) {
   const n = ((s && s.signups) || []).length, cap = (s && s.capacity) || 0;
   return { n, cap, need: Math.max(0, cap - n), over: n > cap, text: `${n}/${cap}명` };
 }
-// 지원 줄의 딱지들 — [{ text, cls }] (앱/담당자 · 앱 없음 · 알림 꺼짐 · 확정 뒤 지원 · 옮김 · 같은 분일 수 있어요)
-export function signupBadges(e) {
+// 앱 알림(확정·전날·담당자가 바꾼 것)이 실제로 나가는가 — 3단계(성경암송 api internalDutyNotify)를 운영에 올린 날 true 로 바꾼다.
+//   false 인 동안에는 「알림 꺼짐」 딱지를 그리지 않는다(딱지 없는 분께는 알림이 간다는 뜻으로 읽힌다 — 검토 반영 2026-10-06).
+export const NOTIFY_LIVE = false;
+// 지원 줄의 딱지들 — [{ text, cls }] (앱/담당자 · 앱 없음 · 알림 꺼짐 · 시간 겹침 · 확정 뒤 지원 · 옮김 · 같은 분일 수 있어요)
+export function signupBadges(e, { notify = NOTIFY_LIVE } = {}) {
   const out = [{ text: e.source === "staff" ? "담당자" : "앱", cls: "" }];
-  if (!e.hasApp) out.push({ text: "앱 없음", cls: "warn", title: "앱 계정이 없어 알림이 가지 않아요 — 따로 알려 주세요" });
-  else if (!e.hasPush) out.push({ text: "알림 꺼짐", cls: "warn", title: "앱 알림을 받는 기기가 없어요 — 따로 알려 주세요" });
+  if (!e.hasApp) out.push({ text: "앱 없음", cls: "warn", title: "앱 계정이 이어지지 않은 분이에요 — 앱의 내 당번·알림에 안 보이니 따로 알려 주세요" });
+  else if (notify && !e.hasPush) out.push({ text: "알림 꺼짐", cls: "warn", title: "앱 알림을 받는 기기가 없어요 — 따로 알려 주세요" });
+  if (e.overlap) out.push({ text: "시간 겹침", cls: "warn", title: "같은 날 시각이 겹치는 다른 자리에도 서 계세요 — 한쪽을 옮기거나 빼 주세요" });
   if (e.afterLock) out.push({ text: "확정 뒤 들어옴", cls: "" });
   if (e.moved) out.push({ text: "옮김", cls: "" });
   if (e.maybeDup) out.push({ text: "같은 분일 수 있어요", cls: "dup", title: "같은 날 같은 이름이 또 있어요 — 같은 분이면 한 줄을 빼 주세요" });
@@ -224,11 +242,11 @@ export const askText = (e) => (e && e.asked ? `⚠️ ${ASK_WHY[e.why] || "못 �
 // 빠진 분 줄의 까닭
 export const endedText = (e) => (e && e.reason === "staff" ? "담당자가 뺌" : e && e.reason === "merge" ? "기록을 합치며 정리" : "본인 취소");
 
-// 옮길 자리 고르기 — 같은 당번의 다른 자리(쉬는 날·쉬는 자리·지난 날 빼고 · 같은 날 자리는 지난 날이어도). 같은 날 먼저, 그다음 날짜 차례.
+// 옮길 자리 고르기 — 같은 당번의 다른 자리(쉬는 날·쉬는 자리·지난 날·끝 날짜 뒤 날 빼고 · 같은 날 자리는 지난 날이어도). 같은 날 먼저, 그다음 날짜 차례.
 export function moveOptions(days, fromSlotId, fromDate) {
   const out = [];
   for (const d of days || []) {
-    if (d.off || (d.past && d.date !== fromDate)) continue;
+    if (d.off || ((d.past || d.afterUntil) && d.date !== fromDate)) continue;   // 끝 날짜 뒤 날은 앱에 안 보인다 — 그리로 옮기지 않는다(같은 날 안에서는 된다)
     for (const s of d.slots || []) {
       if (s.off || s.id === fromSlotId) continue;
       const c = slotCount(s);
@@ -256,18 +274,24 @@ export function confirmDayAsk(d) {
   return `${dayLabel(d.date)}을 확정할까요? 확정하면 성도님은 앱에서 취소·변경을 못 해요(지금 ${n}분${d.need ? ` · 빈 자리 ${d.need}` : ""}). ` +
     "빈 자리 지원은 계속 받아요 — 바꿀 일은 담당자가 넣기·빼기·옮기기로 해요.";
 }
-export const unconfirmAsk = (d) => `${dayLabel(d.date)}의 확정을 풀까요? 풀면 성도님이 앱에서 다시 취소할 수 있어요(전날 저녁 7시에는 다시 자동으로 확정돼요).`;
+export const unconfirmAsk = (d) => `${dayLabel(d.date)}의 확정을 풀까요? 풀면 앱으로 지원한 분은 다시 스스로 취소할 수 있어요` +
+  `(담당자가 넣은 분은 그대로 못 빼요 · ${cutoffText(d.cutoff) || "전날 저녁"}에는 다시 자동으로 확정돼요).`;
 // 쉬는 날로 / 다시 열기 — active = 그 기간에 살아 있는 지원 수(서버가 센 값) · days = 바뀌는 날 수
-export function offAsk({ from, to, off, active, days }) {
+//   tail = 덧붙일 한 마디(날 판의 「다시 열기」가 그날 메모를 함께 지울 때 그 글)
+export function offAsk({ from, to, off, active, days, tail = "" }) {
   const span = from === to ? dayLabel(from) : `${dayLabel(from)} ~ ${dayLabel(to)}`;
   if (!days) return off ? `${span}에는 쉬게 할 날이 없어요(자리가 없거나 이미 쉬는 날이에요).` : `${span}에는 다시 열 날이 없어요.`;
   const dn = from === to ? "" : ` ${days}일`;
   if (off) {
     return `${span}${dn}을 쉬는 날로 바꿀까요?` + (active ? ` 이미 지원한 ${active}분께는 「이날은 쉬어요」로 보여요 — 지원은 지우지 않고 두었다가 다시 열면 그대로 살아나요.` : " 아직 지원한 분은 없어요.");
   }
-  return `${span}${dn}을 다시 열까요?` + (active ? ` 쉬기 전에 지원한 ${active}분의 자리가 그대로 살아나요.` : "");
+  return `${span}${dn}을 다시 열까요?` + (active ? ` 쉬기 전에 지원한 ${active}분의 자리가 그대로 살아나요.` : "") + (tail ? ` ${tail}` : "");
 }
-export const removeAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에서 뺄까요? 뺀 분은 앱에서 이 자리에 스스로 다시 지원할 수 없어요(담당자는 다시 넣을 수 있어요).`;
+// 빼기 확인 — 앱 계정이 이어진 분은 뺀 뒤 스스로 다시 지원하지 못한다(계정 없이 넣은 줄은 그 말이 맞지 않아 뺀다 — 검토 반영)
+export const removeAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에서 뺄까요?` +
+  (e.hasApp ? " 뺀 분은 앱에서 이 자리에 스스로 다시 지원할 수 없어요." : "") + " 잘못 뺐으면 「빠진 분」에서 다시 넣을 수 있어요.";
+export const restoreAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에 다시 넣을까요? 빠지기 전 그 줄이 그대로 살아나요.`;
+export const restoredText = (r, name) => (r && r.already ? `${name} — 이미 서 계세요` : `${name} — 다시 넣었어요${notifyTail(r)}`);
 export function slotOffAsk(s, off) {
   const n = ((s && s.signups) || []).length;
   return off ? `${slotName(s)} 자리만 쉬게 할까요?${n ? ` 지원한 ${n}분께는 「쉬어요」로 보여요(지원은 그대로 두었다가 다시 열면 살아나요).` : ""}`
@@ -275,7 +299,19 @@ export function slotOffAsk(s, off) {
 }
 // 당번을 앱에서 안 보이게 바꿀 때(받는 중·지원 멈춤 → 준비·보관) — 앞날에 선 분이 있으면
 export const hideAsk = (active, status) => `앞날에 ${active}분이 서 있어요. 그래도 「${STATUS_LABEL[status] || status}」으로 바꿀까요? 그분들 앱에서 이 당번과 내 당번이 사라져요(지원 줄은 지우지 않아요).`;
-export const OPEN_WARN = "「받는 중」으로 저장하면 성경암송 앱(🙋 봉사 당번이 보이는 분)에 이 당번이 바로 보이고 지원을 받아요.";
+// 「받는 중」으로 바꾸는 저장의 확인 글 — appOpen = 봉사 당번이 성도님 앱에 열렸는가(서버가 준다 · app_config dutyOpen)
+export const openWarn = (appOpen) => (appOpen
+  ? "「받는 중」으로 저장하면 성경암송 앱의 🙋 봉사 당번에 이 당번이 바로 보이고 지원을 받아요."
+  : "「받는 중」으로 저장해요. 봉사 당번은 아직 성도님 앱에 열지 않아서, 지금은 🧪 시험 참여자에게만 보여요 — 앱에 열리는 날 이 당번이 바로 보이고 지원을 받아요.");
+// 봉사 당번이 아직 성도님 앱에 안 열렸을 때 화면 머리에 두는 한 줄(사실대로 — 지금 넣는 것은 준비다)
+export const APP_CLOSED_NOTE = "🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. 앱 알림도 열린 뒤에 가니, 그 전에 넣거나 바꾼 것은 따로 알려 주세요.";
+// 끝 날짜를 당기는 저장 — 그 뒤에 선 분이 있을 때
+export const afterAsk = (active, until) => `새 끝 날짜(${dayLabel(until)}) 뒤에 ${active}분이 서 있어요. 그래도 끝 날짜를 당길까요? ` +
+  "그 뒤 날짜는 앱에서 안 보이게 돼요(지원 줄은 지우지 않아요 — 명단에서 옮기거나 빼 주세요).";
+// 준비 중인 당번의 안내 — 총괄은 스스로 열 수 있고, 담당은 총괄께 부탁한다
+export const draftNote = (chief) => (chief
+  ? "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣고 「당번 설정」에서 상태를 「받는 중」으로 바꾸면 지원을 받아요."
+  : "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣은 뒤 당번 총괄께 「받는 중」으로 열어 달라고 말씀해 주세요.");
 
 // ---------- 저장 뒤 한 줄 ----------
 // 알림(3단계) — notified·notifyError 가 있으면 덧붙인다
@@ -316,7 +352,10 @@ const WORDS = {
   "bad-range": "기간을 다시 골라 주세요 (오늘부터 · 한 번에 석 달까지)",
   changed: "그사이 지원이 바뀌었어요 — 다시 확인해 주세요",
   past: "지난 날짜는 확정할 수 없어요",
-  "too-late": "전날 저녁 7시가 지나 확정을 풀 수 없어요 — 넣기·빼기·옮기기로 바꿔 주세요",
+  "too-late": "전날 저녁 마감이 지나 확정을 풀 수 없어요 — 넣기·빼기·옮기기로 바꿔 주세요",
+  "no-slots": "이 날은 자리가 없어 확정할 것이 없어요",
+  "too-many-lines": "자리 틀은 한 당번에 40개까지 둘 수 있어요 — 안 쓰는 틀을 빼 주세요",
+  "has-after": "새 끝 날짜 뒤에 서 있는 분이 있어요 — 다시 확인해 주세요",
   "below-count": "지금 서 있는 분보다 적게는 줄일 수 없어요 — 먼저 옮기거나 빼 주세요",
   "has-signups": "지원한 분(빠진 분 포함)이 있어 지울 수 없어요 — 「이 자리만 쉬기」를 써 주세요",
   "use-off": "매주 생기는 자리라 지워도 다시 생겨요 — 「이 자리만 쉬기」를 써 주세요",

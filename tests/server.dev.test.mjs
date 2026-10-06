@@ -245,6 +245,7 @@ const PROBE = {
   dutySlotDelete: { slot_id: 0 },
   dutySignAdd: { slot_id: 0, ident: { name: "" } },
   dutySignRemove: { id: 0 },
+  dutySignRestore: { id: 0 },
   dutySignMove: { id: 0, to_slot: 0 },
   dutySignNote: { id: 0, note: "" },
   dutyAskClear: { id: 0 },

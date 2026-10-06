@@ -8,7 +8,7 @@ import { esc, dialog, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne, pickMany, pickDate } from "../../core/picker.js";
 import { staffOptions, staffFieldText, sameIds } from "../education/courses-logic.js";
-import { STATUS_OPTIONS, LEAD_STATUS_OPTIONS, STATUS_LABEL, leadCanSetStatus, openDaysOptions, openDaysText, formToBoard, boardToForm, hideAsk, OPEN_WARN,
+import { STATUS_OPTIONS, LEAD_STATUS_OPTIONS, STATUS_LABEL, leadCanSetStatus, openDaysOptions, openDaysText, formToBoard, boardToForm, hideAsk, afterAsk, openWarn,
   dutyWord, dayLabel, staffFailText, STAFF_NO_CAND, STAFF_ROLE_HINTS } from "./duty-logic.js";
 
 const labelOf = (opts, v) => (opts.find((o) => o.value === v) || {}).label || v || "";
@@ -53,7 +53,8 @@ const readForm = (root) => {
 // → { id, after, staffErr }(저장 · after = 끝 날짜 뒤에 선 분 수 · staffErr = 당번은 저장됐는데 담당자 저장이 실패한 말) · 닫았으면 null ·
 //   그사이 없어졌거나 맡은 당번에서 빠졌으면 "gone".
 //   board = 서버 boardOut 꼴(없으면 새 당번) · cands = 담당자 후보(dutyStaffCandidates · 못 불러왔으면 null · undefined 면 담당자 칸 없음)
-export function openBoardForm({ call, board = null, chief = false, cands }) {
+//   appOpen = 봉사 당번이 성도님 앱에 열렸는가(「받는 중」 확인 글을 사실대로)
+export function openBoardForm({ call, board = null, chief = false, cands, appOpen = false }) {
   const v = boardToForm(board);
   const withStaff = chief && cands !== undefined;
   const staff0 = withStaff ? ((board && board.staff) || []).map((x) => x.id) : [];
@@ -107,13 +108,15 @@ export function openBoardForm({ call, board = null, chief = false, cands }) {
       if (board && !f.board.id) return { ok: false, message: "당번 번호를 읽지 못했어요 — 닫고 다시 열어 주세요" };   // 고치기가 새 당번을 만들지 않게
       // 받는 중으로 **바꿀 때만** 확인(이미 받는 중인 당번의 다른 칸을 고칠 때는 묻지 않는다)
       if (f.board.status === "open" && (!board || board.status !== "open")) {
-        const yes = await dialog({ title: "👁 지원을 받을까요?", text: OPEN_WARN, ok: "저장", cancel: "그만두기" });
+        const yes = await dialog({ title: "👁 지원을 받을까요?", text: openWarn(appOpen), ok: "저장", cancel: "그만두기" });
         if (!root.isConnected) return { ok: false };
         if (!yes) return { ok: false, message: "저장하지 않았어요 — 아무것도 바뀌지 않았어요" };
       }
       let r = await call("dutyBoardSave", { board: f.board });
-      if (!r.ok && r.error === "has-upcoming") {
-        const yes = await dialog({ title: "앱에서 안 보이게 돼요", text: hideAsk(r.active, f.board.status), ok: "바꾸기", cancel: "그만두기", danger: true });
+      // 앱에서 안 보이게 되는 두 길 — 상태(준비·보관 · has-upcoming) · 끝 날짜 당기기(has-after). 수를 보여 주고 확인받아 force 로 다시 보낸다
+      if (!r.ok && (r.error === "has-upcoming" || r.error === "has-after")) {
+        const text = r.error === "has-after" ? afterAsk(r.active, f.board.until_date) : hideAsk(r.active, f.board.status);
+        const yes = await dialog({ title: "앱에서 안 보이게 돼요", text, ok: "바꾸기", cancel: "그만두기", danger: true });
         if (!root.isConnected) return { ok: false };
         if (!yes) return { ok: false, message: "저장하지 않았어요 — 아무것도 바뀌지 않았어요" };
         r = await call("dutyBoardSave", { board: f.board, force: true });

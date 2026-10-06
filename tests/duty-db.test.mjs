@@ -207,6 +207,7 @@ test("dutyBoardList — 총괄은 전부 · 담당은 맡은 당번만(남의 �
   assert.deepEqual(all.boards.map((x) => x.title), ["식당 봉사", "주차 봉사", "옛 당번"]);       // 받는 중(가나다) → 보관
   assert.deepEqual(all.boards[0].counts, { lines: 1, slots: 8, need: 3, asks: 1, active: 5, after: 0 });
   assert.deepEqual(all.boards[0].staff, [{ id: LEAD_M, name: "가상담당" }]);
+  assert.equal(all.appOpen, false);
   assert.deepEqual(all.boards[1].staff, [{ id: OTHER_M, name: "가상다른", stale: true }], "당번 역할이 없는 분은 stale");
   assert.deepEqual(all.boards[0].lines.map((l) => l.service), ["1부"], "뺀 틀(active false)은 카드에 없다");
   assert.match(all.today, /^\d{4}-\d{2}-\d{2}$/);
@@ -215,6 +216,7 @@ test("dutyBoardList — 총괄은 전부 · 담당은 맡은 당번만(남의 �
   const mine = await l.duty.dutyBoardList(LEAD);
   assert.deepEqual([mine.scope, mine.chief], ["assigned", false]);
   assert.deepEqual(mine.boards.map((x) => x.id).sort(), [A, Z].sort());
+  assert.deepEqual(mine.boards.find((x) => x.id === A).staff, [{ name: "가상담당" }], "당번 담당에게는 담당자 id 를 싣지 않는다");
   assert.equal(JSON.stringify(mine).includes("주차"), false);
   assert.equal(JSON.stringify(mine).includes("가상다른"), false);
   assert.deepEqual(l.log.rpc[0], ["duty_board_counts", { p_ids: [A, Z] }]);
@@ -277,9 +279,28 @@ test("dutyBoardSave — 앱에서 안 보이게 되는 저장은 앞날에 선 �
   assert.deepEqual(await z.duty.dutyBoardSave(LEAD, zb("open")), { ok: false, error: "chief-only" });
   assert.equal(z.log.writes.length, 0);
   assert.equal((await z.duty.dutyBoardSave(CHIEF, zb("draft"))).ok, true);
-  // 끝 날짜 뒤에 선 분 수(after)를 저장 뒤에 알린다
-  const u = setup({ rpcs: { duty_board_counts: { [A]: { active: 6, after: 2 } } } });
-  assert.deepEqual(await u.duty.dutyBoardSave(LEAD, { board: { id: A, title: "식당 봉사", status: "open", until_date: "2026-12-31" } }), { ok: true, id: A, after: 2 });
+  // 끝 날짜를 당기는(새로 두는) 저장 — 그 뒤에 선 분이 있으면 먼저 묻는다(has-after) · force 로 넘기면 쓰고 after 로 다시 알린다
+  const u = setup({ rpcs: { duty_board_counts: { [A]: { active: 6, after: 2 } }, duty_after_count: (x) => (x.p_date === "2026-12-31" ? 2 : 0) } });
+  const ub = (until_date) => ({ board: { id: A, title: "식당 봉사", status: "open", until_date } });
+  assert.deepEqual(await u.duty.dutyBoardSave(LEAD, ub("2026-12-31")), { ok: false, error: "has-after", active: 2 });
+  assert.deepEqual(u.log.rpc[0], ["duty_after_count", { p_board: A, p_date: "2026-12-31" }]);
+  assert.equal(u.log.writes.length, 0); assert.equal(u.log.audit.length, 0);
+  assert.deepEqual(await u.duty.dutyBoardSave(LEAD, { ...ub("2026-12-31"), force: true }), { ok: true, id: A, after: 2 });
+  assert.equal(u.t.duty_boards.find((x) => x.id === A).until_date, "2026-12-31");
+  // 그 뒤에 선 분이 없으면 묻지 않는다 · 끝 날짜를 늦추거나 지우는 저장은 세지도 않는다
+  assert.equal((await u.duty.dutyBoardSave(LEAD, ub("2026-11-30"))).ok, true);
+  const before = u.log.rpc.filter((x) => x[0] === "duty_after_count").length;
+  assert.equal((await u.duty.dutyBoardSave(LEAD, ub("2027-01-31"))).ok, true);
+  assert.equal((await u.duty.dutyBoardSave(LEAD, ub(""))).ok, true);
+  assert.equal(u.log.rpc.filter((x) => x[0] === "duty_after_count").length, before, "늦추거나 지울 때는 세지 않는다");
+  // 읽은 상태를 조건으로 쓴다 — 그사이 다른 분이 상태를 바꿨으면 changed(되돌리지 않는다)
+  const w = setup();
+  await w.duty.dutyBoardSave(LEAD, { board: { id: A, title: "식당 봉사", status: "closed" } });
+  assert.deepEqual(w.log.q.find((x) => x.table === "duty_boards" && x.op === "update").filters, [["eq", "id", A], ["eq", "status", "open"]]);
+  // 저장 뒤의 수 세기가 실패해도 저장은 성공으로 답한다(화면이 담당자 지정을 이어 간다)
+  const cf = setup({ rpcs: { duty_board_counts: () => { throw new Error("counts down"); } } });
+  assert.deepEqual(await cf.duty.dutyBoardSave(LEAD, { board: { id: A, title: "식당 봉사", status: "open", place: "새 식당" } }), { ok: true, id: A, after: 0 });
+  assert.equal(cf.log.audit.length, 1);
 });
 
 // ---------- 담당자 지정 ----------
@@ -307,6 +328,10 @@ test("dutyStaffCandidates · dutyStaffSet — 총괄만 · 새로 더하는 분�
   assert.deepEqual(await s.duty.dutyStaffSet(CHIEF, { board_id: B, member_ids: [OTHER_M] }), { ok: true, count: 1, changed: false });
   assert.deepEqual(await s.duty.dutyStaffSet(CHIEF, { board_id: B, member_ids: [] }), { ok: true, count: 0, changed: true });
   assert.deepEqual(s.log.writes, [["duty_board_staff", "delete", [OTHER_M]]]);
+  // 더하기와 빼기가 함께면 더하기 먼저(더하기가 실패하면 아무것도 안 바뀐다 — 맡은 분이 조용히 빠지지 않게)
+  const o = setup();
+  assert.deepEqual(await o.duty.dutyStaffSet(CHIEF, { board_id: A, member_ids: [CHIEF_M] }), { ok: true, count: 1, changed: true });
+  assert.deepEqual(o.log.writes.map((w) => w[1]), ["upsert", "delete"]);
   assert.equal(s.t.duty_board_staff.filter((r) => r.board_id === A).length, 1, "다른 당번의 담당 줄은 건드리지 않는다");
   // 틀린 입력
   assert.deepEqual(await s.duty.dutyStaffSet(CHIEF, { board_id: "zz", member_ids: [] }), { ok: false, error: "bad-id" });
@@ -363,13 +388,21 @@ test("dutyRoster — SQL 함수 한 번 · 칸을 골라 싣는다(pk·계정 �
   const r = await a.duty.dutyRoster(LEAD, { board_id: A, from: "2026-10-12", to: "2026-11-30" });
   assert.deepEqual(a.log.rpc[0], ["duty_roster", { p_board: A, p_from: "2026-10-12", p_to: "2026-11-30" }]);
   assert.deepEqual([r.ok, r.chief, r.board.title, r.days.length], [true, false, "식당 봉사", 1]);
-  assert.deepEqual(r.staff, [{ id: LEAD_M, name: "가상담당" }]);
+  assert.deepEqual(r.staff, [{ name: "가상담당" }], "당번 담당에게는 담당자 id 를 싣지 않는다(이름만)");
+  assert.equal(r.appOpen, false, "dutyOpen 이 없으면 닫힘");
   assert.equal(r.days[0].slots[0].signups[0].who, "기쁨 3목장");
   const txt = JSON.stringify(r);
   for (const w of ["LEAK", "abc123", "user_id", "ident_key", "\"pk\""]) assert.equal(txt.includes(w), false, w);
   assert.equal(a.log.audit.length, 0, "읽기는 기록하지 않는다");
   const c = setup({ rpcs: { duty_roster: SQL_ROSTER } });
-  assert.equal((await c.duty.dutyRoster(CHIEF, { board_id: A })).chief, true);
+  const cr = await c.duty.dutyRoster(CHIEF, { board_id: A });
+  assert.equal(cr.chief, true);
+  assert.deepEqual(cr.staff, [{ id: LEAD_M, name: "가상담당" }], "총괄에게는 id 도(담당자 고르기)");
+  const op = setup({ rpcs: { duty_roster: SQL_ROSTER }, tables: { app_config: [{ key: "dutyOpen", value: true }, { key: "eduOpen", value: false }] } });
+  assert.equal((await op.duty.dutyRoster(LEAD, { board_id: A })).appOpen, true);
+  assert.equal((await op.duty.dutyBoardList(LEAD)).appOpen, true);
+  const cl = setup({ tables: { app_config: [{ key: "dutyOpen", value: "true" }] } });
+  assert.equal((await cl.duty.dutyBoardList(CHIEF)).appOpen, false, "true 하나일 때만 열림(글자 true 는 아니다)");
   assert.deepEqual(c.log.rpc[0][1], { p_board: A, p_from: null, p_to: null });
   assert.deepEqual(await c.duty.dutyRoster(CHIEF, { board_id: A, from: "10/12" }), { ok: false, error: "bad-date" });
   const e = setup({ rpcs: { duty_roster: { ok: false, error: "bad-range" } } });
@@ -441,6 +474,8 @@ test("dutyDaysOff — expect 없이 오면 세기만(기록·알림 없음) · e
   assert.deepEqual(await c.duty.dutyDaysOff(LEAD, { ...body, from: "8/2" }), { ok: false, error: "bad-date" });
   assert.deepEqual(await c.duty.dutyDaysOff(LEAD, { ...body, expect: -1 }), { ok: false, error: "bad-expect" });
   assert.deepEqual(await c.duty.dutyDaysOff(LEAD, { ...body, expect: "4" }), { ok: false, error: "bad-expect" });
+  assert.deepEqual(await c.duty.dutyDaysOff(LEAD, { ...body, expect: 100001 }), { ok: false, error: "bad-expect" });
+  assert.deepEqual(await c.duty.dutyDaysOff(LEAD, { ...body, from: "0000-01-01" }), { ok: false, error: "bad-date" });
   assert.deepEqual(await c.duty.dutyDaysOff(LEAD, { ...body, note: "가\n나" }), { ok: false, error: "bad-char" });
   assert.equal(c.log.rpc.length, 0);
 });
@@ -466,6 +501,7 @@ test("dutySlotSet · dutySlotDelete — 바꿀 칸만 넘긴다 · 쉼이 바뀌
   for (const capacity of [0, 201, "3", 2.5]) assert.deepEqual(await d.duty.dutySlotSet(LEAD, { slot_id: 10, capacity }), { ok: false, error: "bad-capacity" }, String(capacity));
   assert.deepEqual(await d.duty.dutySlotSet(LEAD, { slot_id: 10, off: 1 }), { ok: false, error: "bad-op" });
   assert.deepEqual(await d.duty.dutySlotSet(LEAD, { slot_id: 10, off: true, expect: "2" }), { ok: false, error: "bad-expect" });
+  assert.deepEqual(await d.duty.dutySlotSet(LEAD, { slot_id: 10, off: true, expect: 2 ** 31 }), { ok: false, error: "bad-expect" });
   assert.equal(d.log.q.length, 0, "틀린 입력은 아무것도 읽지 않는다");
 
   const e = setup({ rpcs: { duty_slot_delete: (x) => (x.p_slot === 10 ? { ok: true } : { ok: false, error: "has-signups" }) } });
@@ -498,8 +534,22 @@ test("dutySignAdd — 명부에서 고른 분 / 직접 적은 분 · 담당자 �
   // 틀린 신원 · 고르기 단계의 changed 는 그대로(SQL 을 부르지 않는다)
   const e = setup({ pick: { ok: false, error: "changed" } });
   assert.deepEqual(await e.duty.dutySignAdd(LEAD, { slot_id: 10, ident: { name: "a|b" } }), { ok: false, error: "bad-ident" });
+  assert.deepEqual(await e.duty.dutySignAdd(LEAD, { slot_id: 10, ident: { name: "가상\u0000하나" } }), { ok: false, error: "bad-ident" });
+  assert.equal(e.log.audit.length, 0);
   assert.deepEqual(await e.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 3, check: {} }), { ok: false, error: "changed" });
-  assert.equal(e.log.rpc.length, 0); assert.equal(e.log.audit.length, 0);
+  assert.equal(e.log.rpc.length, 0);
+  // 명부에서 고르는 길이 거절로 끝나도 한 줄 남는다(people.lookup · from duty · pick) — 명부와 맞았는지를 기록 없이 떠볼 수 없게
+  assert.deepEqual(e.log.audit, [["people.lookup", "", { q: "가상하나", count: 0, from: "duty", pick: true }]]);
+  const f = setup({ rpcs: { duty_apply: { ok: false, error: "off" } } });
+  assert.deepEqual(await f.duty.dutySignAdd(LEAD, { slot_id: 10, name: " 가상하나 ", pick: 0, check: {} }), { ok: false, error: "off" });
+  assert.deepEqual(f.log.audit, [["people.lookup", "", { q: "가상하나", count: 1, from: "duty", pick: true }]]);
+  const g = setup({ rpcs: { duty_apply: { ok: false, error: "off" } } });
+  await g.duty.dutySignAdd(LEAD, { slot_id: 10, ident: { name: "가상새가족" } });
+  assert.equal(g.log.audit.length, 0, "직접 적은 분의 거절은 명부를 찾지 않았으니 남기지 않는다");
+  // 보관한 당번의 자리 — 명부를 찾기 전에 거절(명부 떠보기 길이 되지 않게)
+  const z = setup();
+  assert.deepEqual(await z.duty.dutySignAdd(LEAD, { slot_id: 30, name: "가상하나", pick: 0, check: {} }), { ok: false, error: "archived" });
+  assert.equal(z.log.picks, 0); assert.equal(z.log.rpc.length, 0); assert.equal(z.log.audit.length, 0);
 });
 
 test("dutySignAdd — 잠긴 날에 앱 계정이 있는 분을 넣으면 그분께 알린다(저장·기록 뒤) · 이미 선 분은 기록·알림 없음", async () => {
@@ -641,4 +691,34 @@ test("모든 응답 — 계정 번호·신원 키·교인ID 꼴이 없다(성공
   const txt = JSON.stringify(out);
   for (const w of ["LEAK", "user_id", "ident_key", "confirmed_by", "person|", "auth_user_id", "\"pk\""]) assert.equal(txt.includes(w), false, w);
   assert.ok(out.every((r) => r && r.ok === true), "준비한 요청은 모두 성공해야 한다");
+});
+
+// ---------- 검토 반영(2026-10-06) ----------
+test("dutySignRestore — 빠진 줄을 그 줄 그대로 · 정원·겹침은 넣기와 같이 force · 맡지 않은 당번은 not-assigned · 이미 살아 있으면 조용히", async () => {
+  const a = setup({ rpcs: { duty_restore: { ok: true, id: 100, date: "2026-10-18", locked: true, hadUser: true, user_id: "LEAK-UID" } } });
+  assert.deepEqual(await a.duty.dutySignRestore(LEAD, { id: 100 }), { ok: true, date: "2026-10-18", locked: true, notified: 1, notifyError: null });
+  assert.deepEqual(a.log.rpc[0], ["duty_restore", { p_signup: 100, p_force: false }]);
+  assert.deepEqual(a.log.audit[0], ["duty.sign.restore", A, { signup: 100, date: "2026-10-18", force: false, locked: true }]);
+  assert.deepEqual(a.log.notify[0].slice(0, 2), ["added", [100]], "앱 계정이 있는 분께 「다시 넣어 드렸어요」(3단계)");
+  const k = setup({ rpcs: { duty_restore: { ok: true, id: 100, date: "2026-10-18", locked: false, hadUser: false } } });
+  assert.deepEqual(await k.duty.dutySignRestore(LEAD, { id: 100, force: true }), { ok: true, date: "2026-10-18", locked: false });
+  assert.equal(k.log.rpc[0][1].p_force, true); assert.equal(k.log.notify.length, 0);
+  const f = setup({ rpcs: { duty_restore: { ok: false, error: "full", active: 2, capacity: 2, with: { board: "비밀 당번", service: "x", task: "", start: "09:00", same_board: false, draft: false } } } });
+  assert.deepEqual(await f.duty.dutySignRestore(LEAD, { id: 100 }), { ok: false, error: "full", active: 2, capacity: 2, with: { same: false, label: "" } });
+  assert.equal(f.log.audit.length, 0);
+  const s = setup({ rpcs: { duty_restore: { ok: true, already: true } } });
+  assert.deepEqual(await s.duty.dutySignRestore(LEAD, { id: 100 }), { ok: true, already: true });
+  assert.equal(s.log.audit.length, 0); assert.equal(s.log.notify.length, 0);
+  const n = setup();
+  assert.deepEqual(await n.duty.dutySignRestore(LEAD, { id: 200 }), NOT_ASSIGNED);
+  assert.deepEqual(await n.duty.dutySignRestore(LEAD, { board_id: A, id: 200 }), NOT_ASSIGNED);
+  assert.deepEqual(await n.duty.dutySignRestore(LEAD, { id: "100" }), { ok: false, error: "bad-id" });
+  assert.deepEqual(await n.duty.dutySignRestore(CHIEF, { id: 999 }), { ok: false, error: "not-found" });
+  assert.equal(n.log.rpc.length, 0);
+  for (const err of ["off", "archived", "already-there", "overlap"]) {
+    const e = setup({ rpcs: { duty_restore: { ok: false, error: err, ...(err === "overlap" ? { with: { same_board: true, service: "2부", task: "배식", start: "11:30" } } : {}) } } });
+    const r = await e.duty.dutySignRestore(LEAD, { id: 100 });
+    assert.equal(r.error, err); assert.equal(e.log.audit.length, 0, err);
+    if (err === "overlap") assert.deepEqual(r.with, { same: true, label: "2부 배식 11:30" });
+  }
 });

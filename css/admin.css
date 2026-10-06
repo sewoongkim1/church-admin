@@ -1749,14 +1749,17 @@ body.ec-cert-on{overflow:hidden}
 .dty-who{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0}
 .dty-who b{font-size:15px;color:var(--ink)}
 .dty-ask{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;margin-top:4px;font-size:14px;font-weight:700;color:var(--error)}
-.dty-ask .btn{min-height:36px;padding:0 12px;font-size:13px}
+.dty-ask .btn{min-height:40px;padding:0 12px;font-size:13px}
 .dty-memo{margin-top:2px;font-size:13px;color:var(--gray);white-space:pre-wrap;overflow-wrap:anywhere}
 .dty-acts{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:6px}
 .dty-acts .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}
-.badge.warn{background:#fff3d6;color:#7a5200}
+.dty-who .badge.warn{background:#fff3d6;color:#7a5200}
 .dty-fold{margin-top:8px}
-.dty-fold > summary{min-height:36px;display:flex;align-items:center;color:var(--gray);font-size:13px;cursor:pointer}
-.dty-ended{padding:4px 0;font-size:14px;opacity:.75}
+.dty-fold > summary{min-height:40px;display:flex;align-items:center;color:var(--gray);font-size:13px;cursor:pointer}
+.dty-ended{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;font-size:14px}
+.dty-ended > span{min-width:0;opacity:.75;overflow-wrap:anywhere}
+.dty-ended .btn{flex:none;min-height:40px;padding:0 12px;font-size:13px}
+.dty-left{margin:0 0 6px;padding:6px 10px;border-radius:8px;background:#fff3d6;color:#7a5200;font-size:13px;line-height:1.45;word-break:keep-all}
 /* 자리 틀 */
 .dty-line{padding:10px 12px}
 .dty-line-t{display:flex;flex-direction:column;gap:2px}

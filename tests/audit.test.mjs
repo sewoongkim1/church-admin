@@ -326,7 +326,8 @@ test("봉사 당번 기록 — 서버 duty-db.ts 가 남기는 action 마다 한
   const src = readFileSync(new URL("../supabase/functions/church-admin/duty-db.ts", import.meta.url), "utf8");
   const acts = [...new Set([...src.matchAll(/audit\(ctx, "(duty\.[a-z.]+)"/g)].map((m) => m[1]))].sort();
   assert.deepEqual(acts, ["duty.board.save", "duty.date.add", "duty.day.set", "duty.days.off", "duty.export", "duty.line.remove", "duty.line.save",
-    "duty.sign.add", "duty.sign.askclear", "duty.sign.move", "duty.sign.note", "duty.sign.remove", "duty.slot.delete", "duty.slot.set", "duty.staff.set"]);
+    "duty.sign.add", "duty.sign.askclear", "duty.sign.move", "duty.sign.note", "duty.sign.remove", "duty.sign.restore", "duty.slot.delete", "duty.slot.set",
+    "duty.staff.set"]);
   for (const a of acts) assert.ok(LABEL[a] && LABEL[a] !== a && /\(봉사 당번\)$/.test(LABEL[a]), a);
   assert.deepEqual(Object.keys(LABEL).filter((k) => k.startsWith("duty.")).sort(), acts, "서버가 남기지 않는 duty 이름이 화면에 있다");
   assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 1, from: "duty" })), LOOKUP_DUTY);
@@ -360,6 +361,12 @@ test("봉사 당번 기록 — detail 줄은 번호·날짜·수만(서버 duty-
   assert.equal(T("duty.sign.remove", { signup: 501, date: "2026-10-18", locked: true }), "지원 #501 · 2026-10-18 · 잠긴 날");
   assert.equal(T("duty.sign.move", { signup: 501, from: "2026-10-18", to: "2026-10-25", slot: 40, force: false }), "지원 #501 · 2026-10-18 → 2026-10-25");
   assert.equal(T("duty.sign.move", { signup: 501, from: "2026-10-18", to: "2026-10-18", slot: 32, force: true }), "지원 #501 · 2026-10-18 · 정원·겹침 넘김");
+  assert.equal(T("duty.sign.restore", { signup: 501, date: "2026-10-18", force: false, locked: true }), "지원 #501 · 2026-10-18 · 잠긴 날");
+  assert.equal(T("duty.sign.restore", { signup: 501, date: "2026-10-18", force: true, locked: false }), "지원 #501 · 2026-10-18 · 정원·겹침 넘김");
+  // 명부에서 고른 분의 넣기가 거절된 것 — people.lookup(from duty · pick) · 이름은 찾은 글자 그대로(열람 기록) · 「넣기는 안 됨」
+  assert.equal(labelOf(R("people.lookup", { q: "홍길동", count: 1, from: "duty", pick: true })), LOOKUP_DUTY);
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 1, from: "duty", pick: true })), "‘홍길동’ · 1명 · 넣기는 안 됨");
+  assert.equal(detailText(R("people.lookup", { q: "홍길동", count: 0, from: "duty", pick: true })), "‘홍길동’ · 0명 · 넣기는 안 됨");
   assert.equal(T("duty.sign.note", { signup: 501, has: true }), "지원 #501 · 메모 적음");
   assert.equal(T("duty.sign.note", { signup: 501, has: false }), "지원 #501 · 메모 지움");
   assert.equal(T("duty.sign.askclear", { signup: 501 }), "지원 #501");

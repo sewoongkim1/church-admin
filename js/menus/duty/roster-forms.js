@@ -117,12 +117,13 @@ export function openDateAddForm({ call, boardId, lines, today, untilDate = "" })
 // ---------- 쉬는 날 ----------
 // 먼저 세고 → 확인 → 쓴다. → { ok:true, r } · { cancelled:true } · { error: 서버 거절 }
 //   note: undefined 면 메모를 건드리지 않는다 · 다시 열기에는 "" 를 보내 쉬는 까닭을 지운다(서버가 이번에 연 날에만 지운다).
-export async function offFlow({ call, boardId, from, to, off, note }) {
+//   tail: 확인 글 끝에 덧붙일 한 마디(날 판의 「다시 열기」가 그날 메모를 함께 지울 때)
+export async function offFlow({ call, boardId, from, to, off, note, tail = "" }) {
   const base = { board_id: boardId, from, to, off, ...(note === undefined ? {} : { note }) };
   for (let i = 0; i < 3; i++) {
     const d = await call("dutyDaysOff", base);                       // expect 없이 = 세기만
     if (!d.ok) return { error: d };
-    const text = offAsk({ from, to, off, active: d.active, days: d.days });
+    const text = offAsk({ from, to, off, active: d.active, days: d.days, tail });
     if (!d.days) { await dialog({ title: off ? "😴 쉬는 날로" : "다시 열기", text, ok: "확인", cancel: null }); return { cancelled: true }; }
     const yes = await dialog({ title: off ? "😴 쉬는 날로" : "다시 열기", text, ok: off ? "쉬는 날로" : "다시 열기", cancel: "그만두기", danger: off });
     if (!yes) return { cancelled: true };
@@ -162,10 +163,11 @@ export function openOffForm({ call, boardId, today, from = "", to = "", note = "
         const d = e.target.closest("[data-d]");
         if (d) {
           const k = d.dataset.d, label = k === "from" ? "시작일" : "끝날";
-          const got = await pickDate({ anchor: d, title: label, value: st[k], min: k === "to" && st.from ? st.from : today, max: k === "from" ? st.to : "" });
+          // 시작일은 끝날에 묶지 않는다 — 더 늦은 날을 고르면 끝날이 따라온다(하루만 쉬는 일이 많아 끝날을 같은 날로 채워 두기 때문)
+          const got = await pickDate({ anchor: d, title: label, value: st[k], min: k === "to" && st.from ? st.from : today });
           if (got !== null && d.isConnected) {
             st[k] = got; setBtn(d, label, dateText(got), !got);
-            if (k === "from" && got && !st.to) { st.to = got; setBtn(root.querySelector('[data-d="to"]'), "끝날", dateText(got), false); }   // 하루만 쉬는 일이 많다
+            if (k === "from" && got && (!st.to || st.to < got)) { st.to = got; setBtn(root.querySelector('[data-d="to"]'), "끝날", dateText(got), false); }
           }
         }
       });
@@ -192,15 +194,17 @@ const candCard = (p, i) => `<div class="card ee-row" data-cand="${i}">
   ${p.church_mok || p.position ? `<div class="muted">${esc([p.church_mok, p.position].filter(Boolean).join(" · "))}</div>` : ""}
   <div class="ee-acts"><button type="button" class="btn primary" data-reg="${i}">넣기</button></div></div>`;
 
-// → 하나라도 넣었으면 true. day·slot = 명단의 그날·그 자리(제목과 서버로 보낼 slot_id)
+// → 넣기 요청을 한 번이라도 보냈으면 true(명단을 다시 불러온다). day·slot = 명단의 그날·그 자리(제목과 서버로 보낼 slot_id)
 export async function openAddForm({ call, boardId, day, slot }) {
   let tab = "pick", added = false, adding = false;
+  let tried = false;   // 넣기 요청을 한 번이라도 보냈나 — 응답 전에 창을 닫아도 명단을 다시 불러오게(넣어졌을 수 있다)
   let cands = [], searched = "", first = "";
   const typedVals = (root) => ({ name: root.querySelector("[data-t=name]").value, who: root.querySelector("[data-t=who]").value,
     group: root.querySelector("[data-t=group]").value, sub: root.querySelector("[data-t=sub]").value });
 
   // 한 번 부르고, 정원·겹침에 걸리면 알려 준 뒤 같은 인자에 force 를 더해 다시 부른다
   const addCall = async (args) => {
+    tried = true;
     let r = await call("dutySignAdd", { slot_id: slot.id, ...args });
     if (needsForce(r)) {
       const yes = await dialog({ title: "그래도 넣을까요?", text: forceAsk(r, "넣을까요"), ok: "넣기", cancel: "그만두기" });
@@ -212,7 +216,7 @@ export async function openAddForm({ call, boardId, day, slot }) {
 
   return openForm({
     title: `＋ 넣기 — ${dayLabel(day.date)} ${slotName(slot)}`, okLabel: "넣기", cancelLabel: "닫기", hideOk: true,   // 찾기 쪽은 카드마다 「넣기」가 있다
-    html: `<p class="muted dty-addsub">${esc(timeRange(slot))}${day.locked && !day.past ? " · 확정된 날 — 넣으면 그분은 앱에서 스스로 뺄 수 없어요" : ""}</p>
+    html: `<p class="muted dty-addsub">${esc(timeRange(slot))}${day.locked && !day.past ? " · 확정된 날" : ""} · 담당자가 넣은 분은 앱에서 스스로 뺄 수 없어요(못 오시면 「못 가게 됐어요」로 알려 와요)</p>
       <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="pick" class="on">교인명부에서 찾기</button>
         <button type="button" role="tab" data-tab="typed">직접 입력(새가족 등)</button></div>
       <div data-panel="pick">
@@ -279,7 +283,7 @@ export async function openAddForm({ call, boardId, day, slot }) {
         return { ok: false, message: failText(r) };
       } finally { adding = false; }
     },
-  }).then(() => added);
+  }).then(() => added || tried);
 }
 
 // ---------- 작은 창들 ----------

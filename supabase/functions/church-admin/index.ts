@@ -2557,6 +2557,7 @@ Deno.serve(async (req) => {
       case "dutySlotDelete":      return json(await duty.dutySlotDelete(ctx, b));
       case "dutySignAdd":         return json(await duty.dutySignAdd(ctx, b));
       case "dutySignRemove":      return json(await duty.dutySignRemove(ctx, b));
+      case "dutySignRestore":     return json(await duty.dutySignRestore(ctx, b));
       case "dutySignMove":        return json(await duty.dutySignMove(ctx, b));
       case "dutySignNote":        return json(await duty.dutySignNote(ctx, b));
       case "dutyAskClear":        return json(await duty.dutyAskClear(ctx, b));

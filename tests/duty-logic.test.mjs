@@ -7,6 +7,7 @@ import {
   formToBoard, boardToForm, countsLine, boardRest, contactHtml, maxBack, boardSavedText, initialDay, dayActive, dayChip, dayStateText, dayActions, slotCount, signupBadges,
   askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, offAsk, removeAsk, slotOffAsk, hideAsk, notifyTail, addDoneText,
   movedText, dateAddedText, offDoneText, hasWord, dutyWord, needsReload, lostBoard, fileTitle, exportFileName, exportRanges,
+  dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, daysBetween, APP_CLOSED_NOTE, NOTIFY_LIVE,
 } from "../js/menus/duty/duty-logic.js";
 import { DUTY_STATUS, DUTY_STATUS_LABEL } from "../supabase/functions/church-admin/duty-rules.ts";
 
@@ -107,6 +108,8 @@ test("당번 카드·머리의 한 줄", () => {
   assert.equal(contactHtml(null), "");
   // 지난 날 불러오기 한도 — 지난 날 + 보이는 기간이 400일을 넘지 않게
   assert.equal(maxBack(56), 344); assert.equal(maxBack(364), 36); assert.equal(maxBack(370), 30); assert.equal(maxBack(null), 344);
+  assert.equal(daysBetween("2026-09-28", "2026-10-12"), 14); assert.equal(daysBetween("2026-10-12", "2026-10-12"), 0);
+  assert.equal(daysBetween("2026-10-20", "2026-10-12"), -8); assert.equal(daysBetween("", "2026-10-12"), 0); assert.equal(daysBetween("2026-10-12", null), 0);
   assert.ok(boardSavedText({ after: 0 }, true).includes("자리 틀을 넣어"));
   assert.equal(boardSavedText({ after: 0 }, false), "저장했어요");
   assert.ok(boardSavedText({ after: 3 }, false).includes("끝 날짜 뒤에 3분"));
@@ -141,6 +144,15 @@ test("dayChip — 쉼 → 지난 날 → 못 온다 → 빈 자리 → 다 참 �
   assert.equal(dayChip(DAYS[1], "2026-10-18").today, true); assert.equal(dayChip(DAYS[1], "2026-10-12").today, false);
   assert.equal(dayChip({ ...DAYS[3], asks: 0 }).kind, "full");
   assert.equal(dayChip({ date: "2026-11-08", slots: [] }).kind, "none");
+  // 자리를 하나씩 모두 쉬게 한 날 — 빈 자리 0 이라고 「다 찼어요」가 아니다
+  const allOff = { ...DAYS[1], need: 0, slots: DAYS[1].slots.map((s) => ({ ...s, off: true })) };
+  assert.deepEqual([dayChip(allOff).kind, dayChip(allOff).tag], ["off", "자리 쉼"]);
+  assert.equal(dayChip(DAYS[1]).kind, "need", "자리 하나만 쉬면 그대로");
+  // 앱에 안 보이는 날의 까닭 한 줄 — 끝 날짜 뒤 · 보이는 기간 밖 · 지난 날은 말하지 않는다
+  assert.ok(dayHiddenText({ ...DAYS[1], afterUntil: true }).startsWith("끝 날짜 뒤라"));
+  assert.ok(dayHiddenText({ ...DAYS[1], notYet: true }).startsWith("보이는 기간 밖이라"));
+  assert.ok(dayHiddenText({ ...DAYS[1], afterUntil: true, notYet: true }).startsWith("끝 날짜 뒤라"), "둘 다면 끝 날짜가 먼저");
+  assert.equal(dayHiddenText(DAYS[1]), ""); assert.equal(dayHiddenText({ ...DAYS[0], afterUntil: true }), ""); assert.equal(dayHiddenText(null), "");
   assert.equal(dayActive(DAYS[1]), 2); assert.equal(dayActive(null), 0);
 });
 
@@ -169,7 +181,14 @@ test("slotCount · signupBadges · askText · endedText", () => {
   const texts = (e) => signupBadges(e).map((b) => b.text);
   assert.deepEqual(texts({ source: "app", hasApp: true, hasPush: true }), ["앱"]);
   assert.deepEqual(texts({ source: "staff", hasApp: false }), ["담당자", "앱 없음"]);
-  assert.deepEqual(texts({ source: "app", hasApp: true, hasPush: false, afterLock: true, moved: true, maybeDup: true }), ["앱", "알림 꺼짐", "확정 뒤 들어옴", "옮김", "같은 분일 수 있어요"]);
+  // 「알림 꺼짐」은 앱 알림이 실제로 나가는 때(3단계)에만 — 그전에는 딱지 없는 분께 알림이 간다는 뜻으로 읽힌다
+  assert.equal(NOTIFY_LIVE, false, "3단계(internalDutyNotify)를 운영에 올린 날 true 로 — 이 줄도 함께 고친다");
+  const e5 = { source: "app", hasApp: true, hasPush: false, afterLock: true, moved: true, maybeDup: true };
+  assert.deepEqual(texts(e5), ["앱", "확정 뒤 들어옴", "옮김", "같은 분일 수 있어요"]);
+  assert.deepEqual(signupBadges(e5, { notify: true }).map((b) => b.text), ["앱", "알림 꺼짐", "확정 뒤 들어옴", "옮김", "같은 분일 수 있어요"]);
+  assert.deepEqual(signupBadges({ source: "staff", hasApp: false, hasPush: false }, { notify: true }).map((b) => b.text), ["담당자", "앱 없음"], "앱 없음이면 알림 딱지는 겹쳐 달지 않는다");
+  assert.deepEqual(texts({ source: "app", hasApp: true, hasPush: true, overlap: true }), ["앱", "시간 겹침"]);
+  assert.equal(signupBadges({ source: "app", hasApp: true, overlap: true })[1].cls, "warn");
   assert.equal(askText({ asked: true, why: "cant" }), "⚠️ 사정이 생겨 못 온대요");
   assert.equal(askText({ asked: true, why: "notme" }), "⚠️ 본인이 지원한 것이 아니래요");
   assert.equal(askText({ asked: true, why: null }), "⚠️ 못 온다고 알렸어요");
@@ -186,6 +205,10 @@ test("moveOptions — 같은 당번의 다른 자리 · 쉬는 날·쉬는 자�
   const past = [{ ...DAYS[0], slots: [{ id: 1, service: "1부", task: "", start: "09:00", capacity: 2, off: false, signups: [] }, { id: 2, service: "2부", task: "", start: "11:00", capacity: 2, off: false, signups: [] }] }, DAYS[1]];
   assert.deepEqual(moveOptions(past, 1, "2026-10-11").map((x) => x.value), ["2", "11", "12"]);
   assert.deepEqual(moveOptions([], 1, "2026-10-11"), []);
+  // 끝 날짜 뒤 날(앱에 안 보인다)로는 옮기지 않는다 — 그날 안에서 자리만 바꾸는 것은 된다
+  const late = DAYS.map((d) => (d.date === "2026-11-01" ? { ...d, afterUntil: true, slots: [...d.slots, { id: 32, service: "2부", task: "설거지", start: "11:30", capacity: 2, off: false, signups: [] }] } : d));
+  assert.deepEqual(moveOptions(late, 11, "2026-10-18").map((x) => x.value), ["12"]);
+  assert.deepEqual(moveOptions(late, 31, "2026-11-01").map((x) => x.value), ["32", "11", "12"]);
 });
 
 test("forceAsk — 정원·겹침을 한 번에 알린다 · 남의 당번이면 이름 없이", () => {
@@ -202,17 +225,39 @@ test("forceAsk — 정원·겹침을 한 번에 알린다 · 남의 당번이면
 test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(confirmDayAsk(DAYS[1]).startsWith("10월 18일(일)을 확정할까요?"));
   assert.ok(confirmDayAsk(DAYS[1]).includes("지금 2분 · 빈 자리 1"));
-  assert.ok(unconfirmAsk(DAYS[3]).includes("다시 자동으로 확정"));
+  assert.ok(unconfirmAsk(DAYS[3]).includes("10월 31일(토) 저녁 7시에는 다시 자동으로 확정"), "마감 시각은 서버가 준 값으로");
+  assert.ok(unconfirmAsk(DAYS[3]).includes("담당자가 넣은 분은 그대로 못 빼요"));
+  assert.ok(unconfirmAsk({ date: "2026-11-01" }).includes("전날 저녁에는 다시 자동으로 확정"));
   assert.ok(offAsk({ from: "2026-10-18", to: "2026-10-18", off: true, active: 2, days: 1 }).startsWith("10월 18일(일)을 쉬는 날로 바꿀까요? 이미 지원한 2분께는"));
   assert.ok(offAsk({ from: "2026-08-02", to: "2026-08-16", off: true, active: 0, days: 3 }).startsWith("8월 2일(일) ~ 8월 16일(일) 3일을 쉬는 날로 바꿀까요? 아직 지원한 분은 없어요"));
   assert.ok(offAsk({ from: "2026-08-02", to: "2026-08-16", off: false, active: 4, days: 3 }).includes("4분의 자리가 그대로 살아나요"));
   assert.ok(offAsk({ from: "2026-08-03", to: "2026-08-04", off: true, active: 0, days: 0 }).includes("쉬게 할 날이 없어요"));
   assert.ok(offAsk({ from: "2026-08-03", to: "2026-08-04", off: false, active: 0, days: 0 }).includes("다시 열 날이 없어요"));
+  assert.ok(offAsk({ from: "2026-10-25", to: "2026-10-25", off: false, active: 1, days: 1, tail: "적어 둔 메모(「교회 행사」)도 함께 지워요." }).endsWith("살아나요. 적어 둔 메모(「교회 행사」)도 함께 지워요."));
+  assert.ok(!offAsk({ from: "2026-10-25", to: "2026-10-25", off: true, active: 1, days: 1, tail: "꼬리" }).includes("꼬리"), "쉬는 날로 바꿀 때는 덧붙이지 않는다");
   assert.ok(removeAsk({ name: "가상하나" }, DAYS[1], DAYS[1].slots[0]).startsWith("가상하나 님을 10월 18일(일) 1부 설거지에서 뺄까요?"));
+  // 「스스로 다시 지원할 수 없어요」는 앱 계정이 이어진 분께만 맞는 말이다 · 되돌릴 길(빠진 분 → 다시 넣기)은 늘 알린다
+  assert.ok(removeAsk({ name: "가상하나", hasApp: true }, DAYS[1], DAYS[1].slots[0]).includes("스스로 다시 지원할 수 없어요"));
+  assert.ok(!removeAsk({ name: "가상하나", hasApp: false }, DAYS[1], DAYS[1].slots[0]).includes("스스로 다시 지원"));
+  assert.ok(removeAsk({ name: "가상하나", hasApp: false }, DAYS[1], DAYS[1].slots[0]).includes("「빠진 분」에서 다시 넣을 수 있어요"));
+  assert.ok(restoreAsk({ name: "가상하나" }, DAYS[1], DAYS[1].slots[0]).startsWith("가상하나 님을 10월 18일(일) 1부 설거지에 다시 넣을까요?"));
+  assert.equal(restoredText({ ok: true, id: 1 }, "가상하나"), "가상하나 — 다시 넣었어요");
+  assert.equal(restoredText({ ok: true, already: true }, "가상하나"), "가상하나 — 이미 서 계세요");
+  assert.equal(restoredText({ ok: true, id: 1, notified: 1, notifyError: null }, "가상하나"), "가상하나 — 다시 넣었어요 · 1분께 앱 알림을 보냈어요");
   assert.ok(slotOffAsk(DAYS[1].slots[0], true).includes("지원한 1분께는"));
   assert.equal(slotOffAsk(DAYS[1].slots[2], true), "2부 배식 자리만 쉬게 할까요?");
   assert.ok(slotOffAsk(DAYS[1].slots[0], false).includes("다시 열까요"));
   assert.ok(hideAsk(3, "archived").includes("3분") && hideAsk(3, "archived").includes("「보관」"));
+  // 끝 날짜 당기기 — 그 뒤에 선 분 수와 새 끝 날짜를 함께
+  assert.ok(afterAsk(4, "2026-10-31").startsWith("새 끝 날짜(10월 31일(토)) 뒤에 4분이 서 있어요."));
+  assert.ok(afterAsk(4, "2026-10-31").includes("지원 줄은 지우지 않아요"));
+  // 「받는 중」 확인 — 앱에 아직 안 열렸으면 「바로 보여요」라고 말하지 않는다
+  assert.ok(openWarn(true).includes("바로 보이고 지원을 받아요") && !openWarn(true).includes("시험 참여자"));
+  assert.ok(openWarn(false).includes("아직 성도님 앱에 열지 않아서") && openWarn(false).includes("시험 참여자에게만"));
+  assert.ok(APP_CLOSED_NOTE.includes("아직 성도님 앱에 열지 않았어요") && APP_CLOSED_NOTE.includes("따로 알려 주세요"));
+  // 준비 중 안내 — 총괄은 스스로 열고, 담당은 총괄께 부탁한다(담당은 준비 중을 못 바꾼다)
+  assert.ok(draftNote(true).includes("「당번 설정」에서 상태를 「받는 중」으로"));
+  assert.ok(draftNote(false).includes("당번 총괄께") && !draftNote(false).includes("「당번 설정」에서"));
 });
 
 test("저장 뒤 한 줄 — 알림(3단계)이 붙으면 덧붙인다", () => {
@@ -233,7 +278,8 @@ test("저장 뒤 한 줄 — 알림(3단계)이 붙으면 덧붙인다", () => {
 test("오류 말 — 서버(duty-db.ts · duty.sql)가 돌려주는 코드마다 한국말이 있다", () => {
   const codes = ["not-assigned", "chief-only", "has-upcoming", "archived", "no-title", "bad-days", "bad-max", "bad-status", "bad-char", "too-long", "no-service", "bad-time",
     "bad-capacity", "bad-weekday", "bad-line", "dup-line", "bad-date", "after-until", "bad-lines", "bad-range", "changed", "past", "too-late", "below-count", "has-signups",
-    "use-off", "off", "full", "overlap", "already-there", "wrong-board", "not-active", "bad-ident", "bad-note", "bad-member", "nothing"];
+    "use-off", "off", "full", "overlap", "already-there", "wrong-board", "not-active", "bad-ident", "bad-note", "bad-member", "nothing",
+    "no-slots", "too-many-lines", "has-after"];
   for (const c of codes) { assert.equal(hasWord(c), true, c); assert.ok(dutyWord(c).length > 4, c); }
   assert.equal(hasWord("server"), false); assert.equal(dutyWord("zzz"), "");
   assert.equal(hasWord("toString"), false);

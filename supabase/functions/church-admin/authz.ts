@@ -173,6 +173,7 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   dutySlotDelete: DUTY_BOTH,
   dutySignAdd: DUTY_BOTH,
   dutySignRemove: DUTY_BOTH,
+  dutySignRestore: DUTY_BOTH,
   dutySignMove: DUTY_BOTH,
   dutySignNote: DUTY_BOTH,
   dutyAskClear: DUTY_BOTH,

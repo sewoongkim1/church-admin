@@ -20,10 +20,16 @@ export const DUTY_WEEKDAYS = ["주일", "월", "화", "수", "목", "금", "토"
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 // 제어 글자(줄바꿈 포함)와 방향 바꿈 글자 — 한 줄짜리 칸에 넣지 않는다(앱 화면·알림 글에 그대로 나간다)
-const CTRL_RE = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/;
+const CTRL_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/;
+// 여러 줄 글(설명·담당자 메모)용 — 줄바꿈·탭은 되고 널(\u0000 — DB 가 못 받는다)·그 밖의 제어·방향 바꿈 글자는 안 된다
+const CTRL_ML = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/;
+// 직접 적은 신원(새가족)의 칸에 제어 글자가 있는가 — checkTypedIdent(교육과 함께 쓰는 검사)는 | 와 길이만 본다
+export const identHasCtrl = (ident: any): boolean => ["name", "who_type", "group_name", "sub_name"].some((k) => CTRL_RE.test(String(ident?.[k] ?? "")));
 
+// 날짜 꼴 + 실제 날짜 + 해 범위(2000~2100 — 0000-01-01 같은 값은 JS 는 받지만 DB 가 못 받아 500 이 된다)
 export function isDate(s: unknown): boolean {
   if (typeof s !== "string" || !DATE_RE.test(s)) return false;
+  if (s < "2000-01-01" || s > "2100-12-31") return false;
   const d = new Date(s + "T00:00:00Z");
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
@@ -31,9 +37,9 @@ const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInt
 // 숫자 칸 — 숫자 또는 숫자 글자만(true·"3명" 같은 값이 숫자로 읽히지 않게)
 function intOf(v: unknown): number | null | undefined {
   if (v === null || v === undefined || v === "") return null;
-  if (isInt(v)) return v;
-  if (typeof v === "string" && /^-?\d+$/.test(v.trim())) return Number(v.trim());
-  return undefined;   // 틀린 값
+  if (isInt(v)) return Number.isSafeInteger(v) ? v : undefined;
+  if (typeof v === "string" && /^-?\d{1,15}$/.test(v.trim())) return Number(v.trim());
+  return undefined;   // 틀린 값(안전한 정수 밖도 — DB 의 int·bigint 변환 오류가 500 이 되지 않게)
 }
 
 // 당번 입력 → DB 줄(duty_boards). 칸·제약은 성경암송 supabase/duty.sql 이 정한다.
@@ -49,6 +55,7 @@ export function checkBoard(x: any): { ok: true; row: Record<string, unknown> } |
     if (CTRL_RE.test((o[k] ?? "").toString().trim())) return { ok: false, error: "bad-char" };
   }
   if (description.length > DUTY_LIMITS.description) return { ok: false, error: "too-long" };
+  if (CTRL_ML.test(description)) return { ok: false, error: "bad-char" };
   const days = o.open_days === undefined ? 56 : intOf(o.open_days);
   if (days === undefined || days === null || days < 7 || days > 370) return { ok: false, error: "bad-days" };
   const until = txt("until_date");
@@ -118,7 +125,7 @@ export function checkNote(x: unknown, max: number, oneLine: boolean): { ok: true
   if (typeof x !== "string") return { ok: false, error: "bad-note" };
   const note = x.normalize("NFC").trim();
   if (note.length > max) return { ok: false, error: "too-long" };
-  if (oneLine && CTRL_RE.test(note)) return { ok: false, error: "bad-char" };
+  if (oneLine ? CTRL_RE.test(note) : CTRL_ML.test(note)) return { ok: false, error: "bad-char" };
   return { ok: true, note };
 }
 
@@ -128,14 +135,15 @@ const num = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0)
 
 // 당번 한 줄(duty_boards) + 요약 수(duty_board_counts) + 담당자 + 살아 있는 자리 틀(duty_lines 줄) → 화면 칸
 //   counts.after = 끝 날짜 뒤에 살아 있는 지원 수(그 자리는 앱에 안 보인다 — 담당자가 옮기거나 뺀다)
-export function boardOut(r: any, counts: any = {}, staff: { id: string; name: string; stale?: boolean }[] = [], lines: any[] = []) {
+export function boardOut(r: any, counts: any = {}, staff: { id?: string; name: string; stale?: boolean }[] = [], lines: any[] = []) {
   return {
     id: r.id, title: str(r.title), description: str(r.description), place: str(r.place), contact: str(r.contact_note),
     openDays: num(r.open_days) || 56, untilDate: r.until_date || null, maxAhead: r.max_ahead ?? null,
     status: str(r.status), statusLabel: DUTY_STATUS_LABEL[r.status] || str(r.status), updatedAt: r.updated_at || null,
     counts: { lines: num(counts?.lines), slots: num(counts?.slots), need: num(counts?.need), asks: num(counts?.asks), active: num(counts?.active),
       after: num(counts?.after) },
-    staff: (staff || []).map((x) => (x.stale === true ? { id: x.id, name: x.name, stale: true } : { id: x.id, name: x.name })),
+    // 담당자 — 총괄에게는 {id, name}, 담당에게는 이름만(duty-db.ts 가 staffNames 로 id 를 뗀 목록을 넘긴다 — id 칸을 아예 싣지 않는다)
+    staff: (staff || []).map((x: any) => ({ ...(x.id ? { id: x.id } : {}), name: x.name, ...(x.stale === true ? { stale: true } : {}) })),
     lines: (lines || []).map(lineRowOut).sort(lineOrder),
   };
 }
@@ -168,6 +176,10 @@ export function staffByBoard(rows: any[], holders: Set<string> = new Set()): Map
 const lineOut = (l: any) => ({ id: num(l?.id), sort: num(l?.sort), service: str(l?.service), task: str(l?.task), start: str(l?.start), end: str(l?.end),
   capacity: num(l?.capacity), weekday: l?.weekday === null || l?.weekday === undefined ? null : num(l.weekday), active: l?.active !== false });
 
+// 담당자 목록을 이름만으로 — 당번 담당(맡은 당번)에게는 담당자 id(admin_members.id)를 싣지 않는다(id 는 총괄의 담당자 고르기에만 쓴다)
+export const staffNames = (list: { id?: string; name: string; stale?: boolean }[]) =>
+  (list || []).map((x) => (x.stale === true ? { name: x.name, stale: true } : { name: x.name }));
+
 // 같은 날 「이름은 같은데 같은 분인지 모르는」 줄 — pk(SQL 이 응답마다 새로 섞어 주는 표식)가 다른데 다듬은 이름이 같은 살아 있는 줄들의 id.
 //   같은 분이 1부·2부를 함께 서는 것(pk 가 같다)은 고르지 않는다. 앱 줄과 담당자가 넣은 줄 · 옛 계정과 새 계정을 잡는다.
 export function sameNameIds(signups: { id: number; name?: string; pk?: string }[]): Set<number> {
@@ -192,15 +204,16 @@ export function rosterOut(j: any) {
     const dup = sameNameIds(slots.flatMap((s: any) => (Array.isArray(s?.signups) ? s.signups : [])));
     return {
       date: str(d?.date), off: d?.off === true, note: str(d?.note), confirmed: d?.confirmed === true, locked: d?.locked === true,
-      cutoff: d?.cutoff || null, past: d?.past === true, afterUntil: d?.afterUntil === true, need: num(d?.need), asks: num(d?.asks),
+      cutoff: d?.cutoff || null, past: d?.past === true, afterUntil: d?.afterUntil === true, notYet: d?.notYet === true,
+      need: num(d?.need), asks: num(d?.asks),
       slots: slots.map((s: any) => ({
         id: num(s?.id), lineId: num(s?.lineId), service: str(s?.service), task: str(s?.task), start: str(s?.start), end: str(s?.end),
-        capacity: num(s?.capacity), off: s?.off === true,
+        capacity: num(s?.capacity), off: s?.off === true, leftover: s?.leftover === true,
         signups: (Array.isArray(s?.signups) ? s.signups : []).map((e: any) => ({
           id: num(e?.id), name: str(e?.name), who: whoOf({ who_type: e?.whoType, group_name: e?.group, sub_name: e?.sub }),
           source: e?.source === "staff" ? "staff" : "app", hasApp: e?.hasApp === true, hasPush: e?.hasPush === true, note: str(e?.note),
           moved: e?.moved === true, asked: e?.asked === true, why: e?.why || null, appliedAt: e?.appliedAt || null, afterLock: e?.afterLock === true,
-          maybeDup: dup.has(num(e?.id)),
+          overlap: e?.overlap === true, maybeDup: dup.has(num(e?.id)),
         })),
         ended: (Array.isArray(s?.ended) ? s.ended : []).map((e: any) => ({
           id: num(e?.id), name: str(e?.name), who: whoOf({ who_type: e?.whoType, group_name: e?.group, sub_name: e?.sub }),

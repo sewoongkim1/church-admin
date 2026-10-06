@@ -4,6 +4,7 @@
 // 하는 일: 당번 총괄 한 분·당번 담당 L 한 분(이메일 로그인 ca-test-duty-…@example.test)과 시험 당번 A·B 를 만들고, L 을 A 의 담당으로 지정한 뒤
 //   맡은 당번만(board_id·자리 번호·지원 번호·틀 번호로) · 자리 틀 → 자리가 저절로 · 넣기(정원 넘기기) · 옮기기 · 빼기 · 메모 · 확정·풀기 ·
 //   쉬는 날(세기 → 쓰기 → 다시 열기) · 정원 · 날짜 더하기·자리 지우기 · 끝 날짜 · 엑셀 · 기록(이름 없음) · 공개 키로는 안 열림을 본다.
+//   (2026-10-06 검토 반영) 다시 넣기 · 겹침(다른 당번·같은 당번) · 자리 없는 날 확정 · 먼 날짜(notYet) · 끝 날짜 당기기(has-after) · appOpen.
 //   끝나면(실패해도) 지원 → 자리 → 날짜 → 틀 → 담당 줄 → 당번 → 그 두 분의 기록·역할·담당자 → auth 사용자를 지우고 0 줄인지 본다.
 // ⚠️ 키·비밀번호를 찍지 않는다. 개발(ktpwthwqzgcqcrmsafdo)에만 돈다. v2 supabase/duty.sql 과 SQL 015 가 개발에 들어가 있어야 한다.
 import { test, before, after } from "node:test";
@@ -136,6 +137,7 @@ test("당번 만들기 — 총괄만 · 담당은 chief-only · 담당자 지정
   assert.deepEqual(r.body.boards[0].staff, [{ id: L.memberId, name: "시험-당번담당" }]);
   r = got(await call(chief.token, "dutyBoardList"));
   assert.ok(r.body.boards.some((b) => b.id === W.B) && r.body.scope === "all" && r.body.chief === true);
+  assert.equal(typeof r.body.appOpen, "boolean", "성도님 앱에 열렸는가를 함께 준다");
 });
 
 test("자리 틀 — 담당이 맡은 당번에 넣으면 자리가 저절로 생긴다 · 맡지 않은 당번은 not-assigned · 같은 이름 틀은 dup-line", async () => {
@@ -225,6 +227,24 @@ test("명단 — 넣은 곳·앱 없음 · 같은 이름·다른 표식이 아�
   assert.deepEqual([moved.id, moved.moved], [W.e3, true]);
 });
 
+test("다시 넣기 — 뺀 줄을 그대로 되살린다 · 두 번은 already · 정원이 차 있으면 full → force", async () => {
+  let r = got(await call(L.token, "dutySignRestore", { id: W.e2 }));
+  assert.deepEqual(r.body, { ok: true, date: W.d2, locked: false }, JSON.stringify(r.body));
+  assert.deepEqual(got(await call(L.token, "dutySignRestore", { id: W.e2 })).body, { ok: true, already: true });
+  r = got(await call(L.token, "dutyRoster", { board_id: W.A, from: W.d2, to: W.d2 }));
+  const s2 = r.body.days[0].slots.find((s) => s.id === W.s2);
+  assert.deepEqual([s2.signups.map((e) => e.id).sort((a, z) => a - z), s2.ended.length], [[W.e1, W.e2].sort((a, z) => a - z), 0]);
+  assert.equal(got(await call(L.token, "dutySignRemove", { id: W.e2 })).body.ok, true);
+  // 정원이 찬 자리로는 full(수) → force 로 넘긴다(넣기·옮기기와 같은 규칙)
+  assert.equal(got(await call(L.token, "dutySignRemove", { id: W.e4 })).body.ok, true);
+  const tmp = got(await call(L.token, "dutySignAdd", { slot_id: W.s1, ident: { name: `${TAG}${STAMP}-아` } })).body.id;
+  assert.ok(tmp, "1부에 다른 분");
+  assert.deepEqual(got(await call(L.token, "dutySignRestore", { id: W.e4 })).body, { ok: false, error: "full", active: 1, capacity: 1 });
+  assert.deepEqual(got(await call(L.token, "dutySignRestore", { id: W.e4, force: true })).body, { ok: true, date: W.d2, locked: false });
+  assert.equal(got(await call(L.token, "dutySignRemove", { id: tmp })).body.ok, true);
+  assert.equal(got(await call(L.token, "dutySignRestore", { id: 0 })).body.error, "bad-id");
+});
+
 test("확정·풀기 · 메모 · 쉬는 날(세기 → 쓰기 → 다시 열기) · 정원 · 이 자리만 쉬기", async () => {
   let r = got(await call(L.token, "dutyDaySet", { board_id: W.A, date: W.d2, op: "confirm" }));
   assert.deepEqual(r.body, { ok: true, active: 2 }, JSON.stringify(r.body));       // 알림은 3단계 — 지금은 부탁하지 않는다
@@ -234,6 +254,11 @@ test("확정·풀기 · 메모 · 쉬는 날(세기 → 쓰기 → 다시 열기
   assert.deepEqual(got(await call(L.token, "dutyDaySet", { board_id: W.A, date: W.d2, op: "unconfirm" })).body, { ok: true });
   assert.deepEqual(got(await call(L.token, "dutyDaySet", { board_id: W.A, date: W.d2, op: "note", note: "시험 메모" })).body, { ok: true });
   assert.equal(got(await call(L.token, "dutyDaySet", { board_id: W.B, date: W.d2, op: "confirm" })).body.error, "not-assigned");
+  // 자리가 없는 날은 확정할 것이 없다(no-slots) · 풀 것·지울 메모가 없으면 already(날짜 줄을 만들지 않는다)
+  assert.deepEqual(got(await call(L.token, "dutyDaySet", { board_id: W.A, date: kst(3), op: "confirm" })).body, { ok: false, error: "no-slots" });
+  assert.deepEqual(got(await call(L.token, "dutyDaySet", { board_id: W.A, date: kst(3), op: "unconfirm" })).body, { ok: true, already: true });
+  assert.deepEqual(got(await call(L.token, "dutyDaySet", { board_id: W.A, date: kst(3), op: "note", note: "" })).body, { ok: true, already: true });
+  assert.equal((await rest(`duty_days?select=on_date&board_id=eq.${W.A}&on_date=eq.${kst(3)}`)).length, 0, "빈 날에 날짜 줄이 생겼다");
   // 쉬는 날 — 먼저 세고(아무것도 안 바꿈) → 수가 다르면 changed → 맞으면 쓴다 → 지원 줄은 그대로
   r = got(await call(L.token, "dutyDaysOff", { board_id: W.A, from: W.d9, to: W.d9, off: true, note: "시험 쉼" }));
   assert.deepEqual(r.body, { ok: true, dry: true, active: 1, days: 1 });
@@ -268,8 +293,12 @@ test("날짜 더하기 · 자리 지우기 · 끝 날짜(그 뒤는 after-until 
   assert.equal(got(await call(L.token, "dutySlotDelete", { slot_id: W.sB })).body.error, "not-assigned");
   // 끝 날짜를 모레 뒤로 당기면 — 그 뒤(9일 뒤)에 선 한 분을 after 로 알리고, 그 뒤 날짜 더하기는 after-until
   const base = { id: W.A, title: `${TAG}A-${STAMP}`, place: "시험 식당", contact_note: "시험 문의", status: "open" };
+  //   끝 날짜를 당기는 저장은 그 뒤에 선 분이 있으면 먼저 묻는다(has-after · 수) → force 로 저장한다
   r = got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: kst(5) } }));
+  assert.deepEqual(r.body, { ok: false, error: "has-after", active: 1 });
+  r = got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: kst(5) }, force: true }));
   assert.deepEqual(r.body, { ok: true, id: W.A, after: 1 });
+  assert.deepEqual(got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: kst(5) } })).body, { ok: true, id: W.A, after: 1 }, "같은 끝 날짜로 다시 저장하면 묻지 않는다");
   assert.equal(got(await call(L.token, "dutyDateAdd", { board_id: W.A, date: kst(6), line_ids: [W.line] })).body.error, "after-until");
   r = got(await call(L.token, "dutyRoster", { board_id: W.A, from: W.d9, to: W.d9 }));
   assert.equal(r.body.days[0].afterUntil, true);
@@ -280,6 +309,50 @@ test("날짜 더하기 · 자리 지우기 · 끝 날짜(그 뒤는 after-until 
   r = got(await call(L.token, "dutyRoster", { board_id: W.A, from: W.d2, to: W.d2 }));
   assert.equal(r.body.days[0].asks, 1);
   assert.deepEqual(got(await call(L.token, "dutyAskClear", { id: W.e1 })).body, { ok: true, cleared: true });
+});
+
+test("겹침 — 다른 당번이면 이름 없이 · 같은 당번이면 자리 이름 · 명단에 겹침 표시 · 남의 당번 줄은 빼기·되살리기 모두 not-assigned", async () => {
+  const ga = { name: `${TAG}${STAMP}-가`, who_type: "새가족", group_name: "시험", sub_name: "1" };   // A 의 2부(11~12)에 서 있는 분
+  let r = got(await call(chief.token, "dutySignAdd", { slot_id: W.sB, ident: ga }));
+  assert.deepEqual(r.body, { ok: false, error: "overlap", with: { same: false, label: "" } }, JSON.stringify(r.body));
+  r = got(await call(chief.token, "dutySignAdd", { slot_id: W.sB, ident: ga, force: true }));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  W.eB = r.body.id;
+  const inA = async () => {
+    const x = got(await call(L.token, "dutyRoster", { board_id: W.A, from: W.d2, to: W.d2 }));
+    return x.body.days[0].slots;
+  };
+  let slots = await inA();
+  assert.equal(slots.find((s) => s.id === W.s2).signups.find((e) => e.id === W.e1).overlap, true, "11~12 가 겹친다");
+  assert.equal(slots.find((s) => s.id === W.s1).signups.find((e) => e.id === W.e4).overlap, false, "09~10 은 안 겹친다");
+  r = got(await call(chief.token, "dutyRoster", { board_id: W.B, from: W.d2, to: W.d2 }));
+  assert.equal(r.body.days[0].slots[0].signups[0].overlap, true);
+  // 담당 L 은 남의 당번(B)의 줄을 빼지도 되살리지도 못한다
+  assert.deepEqual(got(await call(L.token, "dutySignRemove", { id: W.eB })).body, { ok: false, error: "not-assigned" });
+  assert.deepEqual(got(await call(L.token, "dutySignRestore", { id: W.eB })).body, { ok: false, error: "not-assigned" });
+  assert.equal(got(await call(chief.token, "dutySignRemove", { id: W.eB })).body.ok, true);
+  slots = await inA();
+  assert.equal(slots.find((s) => s.id === W.s2).signups.find((e) => e.id === W.e1).overlap, false, "뺀 뒤에는 겹침이 아니다");
+  // 같은 당번 — 겹치는 틀(11:30~12:30)을 더해 그 자리에 같은 분을 넣으려 하면 자리 이름과 함께 알린다
+  r = got(await call(L.token, "dutyLineSave", { board_id: W.A, line: { service: "2부", task: "배식", start: "11:30", end: "12:30", capacity: 2, weekday: dow(W.d2) } }));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  const lineX = r.body.id;
+  const sx = (await inA()).find((s) => s.task === "배식").id;
+  assert.deepEqual(got(await call(L.token, "dutySignAdd", { slot_id: sx, ident: ga })).body, { ok: false, error: "overlap", with: { same: true, label: "2부 설거지 11:00" } });
+  r = got(await call(L.token, "dutyLineRemove", { id: lineX }));
+  assert.deepEqual([r.body.ok, r.body.deleted], [true, true], "지원이 없던 틀은 통째로 지운다: " + JSON.stringify(r.body));
+});
+
+test("먼 날짜 — 보이는 기간 밖에 더한 날도 명단에는 보인다(notYet) · 앱에 열렸는지(appOpen)를 함께 준다", async () => {
+  const far = kst(120);
+  let r = got(await call(L.token, "dutyDateAdd", { board_id: W.A, date: far, line_ids: [W.line] }));
+  assert.deepEqual(r.body, { ok: true, made: 1, existed: 0 });
+  r = got(await call(L.token, "dutyRoster", { board_id: W.A }));
+  const d = r.body.days.find((x) => x.date === far);
+  assert.ok(d, "기본 기간에 먼 날짜가 들어온다");
+  assert.deepEqual([d.notYet, d.afterUntil, r.body.days.find((x) => x.date === W.d2).notYet], [true, false, false]);
+  assert.equal(typeof r.body.appOpen, "boolean");
+  assert.deepEqual(got(await call(L.token, "dutySlotDelete", { slot_id: d.slots[0].id })).body, { ok: true });
 });
 
 test("자리 틀 고치기·빼기 — 정원을 앞날 자리에도 · 지원이 있는 틀은 남긴다 · 남의 당번 틀 번호는 not-assigned", async () => {
@@ -326,7 +399,7 @@ test("기록 — duty.* 가 남고 이름이 없다 · 응답 어디에도 계�
   const rows = await rest(`admin_audit?select=action,target,detail&member_id=in.(${made.members.join(",")})&order=id`);
   const acts = new Set(rows.map((x) => x.action));
   for (const a of ["duty.board.save", "duty.staff.set", "duty.line.save", "duty.line.remove", "duty.date.add", "duty.day.set", "duty.days.off", "duty.slot.set",
-    "duty.slot.delete", "duty.sign.add", "duty.sign.remove", "duty.sign.move", "duty.sign.note", "duty.sign.askclear", "duty.export", "people.lookup"]) {
+    "duty.slot.delete", "duty.sign.add", "duty.sign.remove", "duty.sign.restore", "duty.sign.move", "duty.sign.note", "duty.sign.askclear", "duty.export", "people.lookup"]) {
     assert.ok(acts.has(a), "기록 없음: " + a);
   }
   const duty = rows.filter((x) => x.action.startsWith("duty."));

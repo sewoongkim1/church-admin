@@ -48,12 +48,14 @@ export const LABEL = {
   //   board.save {status, created?, was?} · staff.set {count} · line.save {line, created, kept, updated, made} · line.remove {line, deleted, kept} ·
   //   date.add {date, made, existed} · day.set {date, op, active?} · days.off {from, to, off, days, active} · slot.set {slot, capacity?, off?, active} ·
   //   slot.delete {slot} · sign.add {slot, signup, app, revived, force, locked} · sign.remove {signup, date, locked} ·
-  //   sign.move {signup, from, to, slot, force} · sign.note {signup, has} · sign.askclear {signup} · export {from, to, count}
+  //   sign.move {signup, from, to, slot, force} · sign.note {signup, has} · sign.askclear {signup} · export {from, to, count} ·
+  //   sign.restore {signup, date, force, locked}. 거절된 명부 고르기는 people.lookup {q, count, from:"duty", pick:true}(아래 detailText).
   "duty.board.save": "당번 저장(봉사 당번)", "duty.staff.set": "당번 담당자 지정(봉사 당번)",
   "duty.line.save": "자리 틀 저장(봉사 당번)", "duty.line.remove": "자리 틀 뺌(봉사 당번)", "duty.date.add": "날짜 더함(봉사 당번)",
   "duty.day.set": "날짜 확정·메모(봉사 당번)", "duty.days.off": "쉬는 날 바꿈(봉사 당번)",
   "duty.slot.set": "자리 고침(봉사 당번)", "duty.slot.delete": "자리 지움(봉사 당번)",
   "duty.sign.add": "대신 넣음(봉사 당번)", "duty.sign.remove": "당번에서 뺌(봉사 당번)", "duty.sign.move": "자리 옮김(봉사 당번)",
+  "duty.sign.restore": "빠진 분 다시 넣음(봉사 당번)",
   "duty.sign.note": "담당자 메모 고침(봉사 당번)", "duty.sign.askclear": "못 온다는 표시 거둠(봉사 당번)",
   "duty.export": "당번 명단 내려받음(봉사 당번)",
 };
@@ -169,6 +171,7 @@ export function detailText(r) {
   if (r.action === "duty.sign.add") return joinDot(`지원 #${d.signup ?? ""}`, d.app ? "앱 계정에" : "앱 없음", d.revived ? "되살림" : "",
     d.force ? "정원·겹침 넘김" : "", d.locked ? "잠긴 날" : "");
   if (r.action === "duty.sign.remove") return joinDot(`지원 #${d.signup ?? ""}`, d.date || "", d.locked ? "잠긴 날" : "");
+  if (r.action === "duty.sign.restore") return joinDot(`지원 #${d.signup ?? ""}`, d.date || "", d.force ? "정원·겹침 넘김" : "", d.locked ? "잠긴 날" : "");
   if (r.action === "duty.sign.move") return joinDot(`지원 #${d.signup ?? ""}`, d.from === d.to ? d.to || "" : `${d.from || ""} → ${d.to || ""}`,
     d.force ? "정원·겹침 넘김" : "");
   if (r.action === "duty.sign.note") return joinDot(`지원 #${d.signup ?? ""}`, d.has ? "메모 적음" : "메모 지움");
@@ -259,7 +262,8 @@ export function detailText(r) {
   // 사역 이력 줄 창이 지금 이어진 분(다른 이름 · 오타 규칙 등)을 끝에 더해 보였으면 extra:1
   // 사역 이력 고치기(from:"history-edit")도 이 줄에서 그대로 「‘q’ · N명」으로 나온다(q 는 고친 뒤 이름)
   if (r.action === "people.lookup") {
-    return `‘${d.q || ""}’ · ${d.count ?? 0}명${d.byPhone === true ? " · 번호로 고름" : ""}${d.extra === 1 ? " · 지금 이어진 분 함께" : ""}`;
+    // 봉사 당번 대신 넣기에서 명부의 한 분을 골랐는데 넣기가 거절된 것(pick:true · count 1 = 명부와 맞음 · 0 = 그사이 바뀜)
+    return `‘${d.q || ""}’ · ${d.count ?? 0}명${d.byPhone === true ? " · 번호로 고름" : ""}${d.extra === 1 ? " · 지금 이어진 분 함께" : ""}${d.pick === true ? " · 넣기는 안 됨" : ""}`;
   }
   // people.fill — 2026-09-30 부터 명부에 물은 이름(asked·askedNames)도 남는다(SEC-2 · 채운 것이 없어도 한 줄). 그 전 기록은 옛 모양 그대로.
   if (r.action === "people.fill") {

@@ -1,7 +1,7 @@
 // 봉사 당번 — 순수 규칙 시험(서버 duty-rules.ts · 2026-10-06)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boardOrder, boardOut, boardPatchFor, checkBoard, checkLine, checkLineIds, checkNote, dutyChief, DUTY_LIMITS, DUTY_STAFF_ROLES,
+import { boardOrder, boardOut, boardPatchFor, checkBoard, checkLine, checkLineIds, checkNote, dutyChief, DUTY_LIMITS, DUTY_STAFF_ROLES, identHasCtrl, staffNames,
   DUTY_STATUS, DUTY_STATUS_LABEL, exportSheets, hidesFromApp, isDate, lineOrder, lineRowOut, overlapForStaff, placeOut, rosterOut, sameNameIds,
   slotLabel, staffByBoard } from "../supabase/functions/church-admin/duty-rules.ts";
 
@@ -12,6 +12,9 @@ test("isDate — 꼴과 실제 날짜", () => {
   assert.equal(isDate(""), false);
   assert.equal(isDate(20261018), false);
   assert.equal(isDate(null), false);
+  // 해 범위 2000~2100 — 0000-01-01 은 JS 는 받지만 DB 가 못 받는다(500 대신 여기서 거른다)
+  assert.equal(isDate("0000-01-01"), false); assert.equal(isDate("1999-12-31"), false);
+  assert.equal(isDate("2000-01-01"), true); assert.equal(isDate("2100-12-31"), true); assert.equal(isDate("2101-01-01"), false);
 });
 
 test("dutyChief — 총괄 관리자·당번 총괄만", () => {
@@ -32,7 +35,7 @@ test("checkBoard — 기본값·다듬기", () => {
   const m = checkBoard({ title: "주차", open_days: "28", until_date: "2026-12-31", max_ahead: 4, status: "open" });
   assert.deepEqual([m.row.open_days, m.row.until_date, m.row.max_ahead, m.row.status], [28, "2026-12-31", 4, "open"]);
   // 자모분리(NFD) 이름은 완성형으로
-  assert.equal(checkBoard({ title: "식당" }).row.title, "식당");
+  assert.equal(checkBoard({ title: "\u1109\u1175\u11A8\u1103\u1161\u11BC" }).row.title, "식당");
 });
 
 test("checkBoard — 거절", () => {
@@ -43,7 +46,7 @@ test("checkBoard — 거절", () => {
   bad({ title: "식당", place: "가".repeat(41) }, "too-long");
   bad({ title: "식당", contact_note: "가".repeat(61) }, "too-long");
   bad({ title: "식당", description: "가".repeat(1001) }, "too-long");
-  bad({ title: "식당‮봉사" }, "bad-char");
+  bad({ title: "식당\u202E봉사" }, "bad-char");
   bad({ title: "식당", place: "1층\n식당" }, "bad-char");
   bad({ title: "식당", open_days: 6 }, "bad-days");
   bad({ title: "식당", open_days: 371 }, "bad-days");
@@ -55,8 +58,12 @@ test("checkBoard — 거절", () => {
   bad({ title: "식당", max_ahead: 201 }, "bad-max");
   bad({ title: "식당", max_ahead: "많이" }, "bad-max");
   bad({ title: "식당", status: "running" }, "bad-status");
-  // 설명은 줄바꿈을 받는다
-  assert.equal(checkBoard({ title: "식당", description: "첫 줄\n둘째 줄" }).ok, true);
+  // 설명은 줄바꿈·탭을 받는다 — 널·그 밖의 제어·방향 바꿈 글자는 안 받는다(널은 DB 가 못 받아 500 이 된다)
+  assert.equal(checkBoard({ title: "식당", description: "첫 줄\n둘째 줄\t끝" }).ok, true);
+  bad({ title: "식당", description: "널\u0000글자" }, "bad-char");
+  bad({ title: "식당", description: "방향\u202E바꿈" }, "bad-char");
+  bad({ title: "식당", until_date: "0000-01-01" }, "bad-date");
+  bad({ title: "식당", max_ahead: 1e23 }, "bad-max");
 });
 
 test("boardPatchFor — 총괄은 전부 · 담당은 이름·준비·보관을 못 바꾼다(chief-only)", () => {
@@ -96,10 +103,12 @@ test("checkLine — 거절", () => {
   const bad = (patch, e) => assert.deepEqual(checkLine({ ...base, ...patch }), { ok: false, error: e }, JSON.stringify(patch));
   bad({ id: 0 }, "bad-id");
   bad({ id: "x" }, "bad-id");
+  bad({ id: 1e23 }, "bad-id");
+  bad({ id: "99999999999999999999" }, "bad-id");
   bad({ service: "" }, "no-service");
   bad({ service: "가".repeat(13) }, "too-long");
   bad({ task: "가".repeat(21) }, "too-long");
-  bad({ service: "2부​" }, "bad-char");
+  bad({ service: "2부\u200B" }, "bad-char");
   bad({ start: "9:00" }, "bad-time");
   bad({ start: "24:00" }, "bad-time");
   bad({ start: "12:00", end: "12:00" }, "bad-time");
@@ -117,7 +126,7 @@ test("checkLine — 거절", () => {
 
 test("checkLineIds · checkNote", () => {
   assert.deepEqual(checkLineIds([3, "5", 3]), { ok: true, ids: [3, 5] });
-  for (const x of [[], null, "3", [0], [-1], ["a"], [1.5], Array.from({ length: 51 }, (_, i) => i + 1)]) {
+  for (const x of [[], null, "3", [0], [-1], ["a"], [1.5], [1e23], Array.from({ length: 51 }, (_, i) => i + 1)]) {
     assert.deepEqual(checkLineIds(x), { ok: false, error: "bad-lines" }, JSON.stringify(x));
   }
   assert.deepEqual(checkNote(" 여름 휴가 ", 60, true), { ok: true, note: "여름 휴가" });
@@ -127,6 +136,15 @@ test("checkLineIds · checkNote", () => {
   assert.deepEqual(checkNote("첫 줄\n둘째", 500, false), { ok: true, note: "첫 줄\n둘째" });   // 담당자 메모는 줄바꿈을 살린다
   assert.deepEqual(checkNote(null, 60, true), { ok: false, error: "bad-note" });
   assert.deepEqual(checkNote(undefined, 500, false), { ok: false, error: "bad-note" });
+  assert.deepEqual(checkNote("메모\u0000", 500, false), { ok: false, error: "bad-char" });      // 여러 줄 메모에도 널·제어 글자는 안 된다
+  assert.deepEqual(checkNote("메모\u202E", 500, false), { ok: false, error: "bad-char" });
+  assert.deepEqual(checkNote("탭\t과\r\n줄바꿈", 500, false).ok, true);
+  // 직접 적은 신원의 제어 글자 · 담당자 이름만 남기기
+  assert.equal(identHasCtrl({ name: "가상\u0000", who_type: "새가족", group_name: "", sub_name: "" }), true);
+  assert.equal(identHasCtrl({ name: "가상하나", who_type: "새가족", group_name: "시험\n", sub_name: "" }), true);
+  assert.equal(identHasCtrl({ name: "가상하나", who_type: "새가족", group_name: "시험", sub_name: "1" }), false);
+  assert.deepEqual(staffNames([{ id: "m1", name: "가", stale: true }, { id: "m2", name: "나" }]), [{ name: "가", stale: true }, { name: "나" }]);
+  assert.deepEqual(staffNames(null), []);
 });
 
 test("boardOut — 칸을 골라 옮긴다(없는 수는 0 · 담당자는 id·이름·stale · 틀은 시작 시각 차례)", () => {
@@ -188,21 +206,21 @@ const ROSTER = {
   lines: [{ id: 1, sort: 0, service: "1부", task: "설거지", start: "09:00", end: "10:00", capacity: 2, weekday: 0, active: true },
           { id: 2, sort: 1, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, weekday: 0, active: true }],
   days: [
-    { date: "2026-10-18", off: false, note: "추수감사주일", confirmed: true, locked: true, cutoff: "2026-10-17T10:00:00+00:00", past: false, afterUntil: false, need: 1, asks: 1,
+    { date: "2026-10-18", off: false, note: "추수감사주일", confirmed: true, locked: true, cutoff: "2026-10-17T10:00:00+00:00", past: false, afterUntil: false, notYet: false, need: 1, asks: 1,
       slots: [
         { id: 11, lineId: 1, service: "1부", task: "설거지", start: "09:00", end: "10:00", capacity: 2, off: false,
           signups: [
             { id: 101, name: "가상하나", whoType: "교구", group: "기쁨", sub: "3", pk: "p1", source: "app", hasApp: true, hasPush: true, note: "", moved: false,
-              asked: true, why: "cant", appliedAt: "2026-10-10T01:00:00+00:00", afterLock: false, user_id: "SECRET-UID", ident_key: "SECRET-KEY" },
+              asked: true, why: "cant", appliedAt: "2026-10-10T01:00:00+00:00", afterLock: false, overlap: true, user_id: "SECRET-UID", ident_key: "SECRET-KEY" },
             { id: 102, name: "가상하나", whoType: "", group: "", sub: "", pk: "p2", source: "staff", hasApp: false, hasPush: false, note: "전화로 받음", moved: true,
               asked: false, why: null, appliedAt: "2026-10-11T01:00:00+00:00", afterLock: true },
           ],
           ended: [{ id: 103, name: "가상셋", whoType: "교회학교", group: "청년부", sub: "1", source: "app", hasApp: true, status: "removed", reason: "staff", endedAt: "2026-10-11T02:00:00+00:00", confirmed_by: "SECRET-BY" }] },
-        { id: 12, lineId: 2, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, off: false,
+        { id: 12, lineId: 2, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, off: false, leftover: true,
           signups: [{ id: 104, name: "가상하나", whoType: "교구", group: "기쁨", sub: "3", pk: "p1", source: "app", hasApp: true, hasPush: false, note: "", moved: false, asked: false, why: null, appliedAt: "x", afterLock: false }],
           ended: [] },
       ] },
-    { date: "2026-10-25", off: true, note: "교회 행사", confirmed: false, locked: false, cutoff: "c", past: false, afterUntil: true, need: 0, asks: 0,
+    { date: "2026-10-25", off: true, note: "교회 행사", confirmed: false, locked: false, cutoff: "c", past: false, afterUntil: true, notYet: true, need: 0, asks: 0,
       slots: [{ id: 21, lineId: 1, service: "1부", task: "설거지", start: "09:00", end: "10:00", capacity: 2, off: false, signups: [], ended: [] }] },
   ],
 };
@@ -218,7 +236,8 @@ test("rosterOut — 칸을 골라 옮기고 소속은 한 줄로 · pk·계정 �
   assert.deepEqual([d.date, d.off, d.note, d.confirmed, d.locked, d.past, d.afterUntil, d.need, d.asks], ["2026-10-18", false, "추수감사주일", true, true, false, false, 1, 1]);
   const s = d.slots[0].signups;
   assert.deepEqual(s[0], { id: 101, name: "가상하나", who: "기쁨 3목장", source: "app", hasApp: true, hasPush: true, note: "", moved: false, asked: true,
-    why: "cant", appliedAt: "2026-10-10T01:00:00+00:00", afterLock: false, maybeDup: true });
+    why: "cant", appliedAt: "2026-10-10T01:00:00+00:00", afterLock: false, overlap: true, maybeDup: true });
+  assert.deepEqual([s[1].overlap, d.slots[0].leftover, d.slots[1].leftover, d.notYet, o.days[1].notYet], [false, false, true, false, true]);
   assert.deepEqual([s[1].who, s[1].source, s[1].note, s[1].moved, s[1].afterLock, s[1].maybeDup], ["", "staff", "전화로 받음", true, true, true]);
   // 같은 분(pk 같음)의 다른 자리 줄도 「같은 이름 · 다른 표식」 묶음에 들어 있으면 표시된다 — 누구와 견줘야 하는지 세 줄 모두 보여 준다
   assert.equal(d.slots[1].signups[0].maybeDup, true);

@@ -298,7 +298,7 @@ test("봉사 당번 — 그 밖의 액션(역할 배열)은 당번 총괄·당�
   // ⚠️ 당번 액션을 더하면 이 목록에도 — 빠진 액션이 다른 역할로 새지 않게
   assert.deepEqual(acts.sort(), ["dutyAskClear", "dutyBoardList", "dutyBoardSave", "dutyDateAdd", "dutyDaySet", "dutyDaysOff", "dutyExport",
     "dutyLineRemove", "dutyLineSave", "dutyPeopleLookup", "dutyRoster", "dutySignAdd", "dutySignMove", "dutySignNote", "dutySignRemove",
-    "dutySlotDelete", "dutySlotSet"]);
+    "dutySignRestore", "dutySlotDelete", "dutySlotSet"]);
   for (const a of acts) {
     assert.deepEqual([...ACTION_ROLES[a]].sort(), ["duty", "dutylead"], a);
     for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
