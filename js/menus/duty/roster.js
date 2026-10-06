@@ -238,7 +238,7 @@ export async function render(el, { call, query }) {
       const yes = await dialog({ title: "🔒 이 날 확정", text: confirmDayAsk(d, ros.board.status), ok: "확정", cancel: "그만두기" });
       if (!yes) return;
       const r = await busy(el, () => call("dutyDaySet", { board_id: cur.id, date: d.date, op: "confirm" }));
-      await settle(r, r.ok ? confirmDoneText(r, d.date) : "");
+      await settle(r, r.ok ? confirmDoneText(r, d.date, ros.board.status) : "");
     } else if (act === "unconfirm") {
       const yes = await dialog({ title: "확정 풀기", text: unconfirmAsk(d), ok: "확정 풀기", cancel: "그만두기", danger: true });
       if (!yes) return;

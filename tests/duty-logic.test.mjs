@@ -9,7 +9,7 @@ import {
   movedText, dateAddedText, offDoneText, hasWord, dutyWord, needsReload, lostBoard, fileTitle, exportFileName, exportRanges,
   dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, appNote, APP_LIVE, NOTIFY_LIVE, STALE_BOARD, TESTERS_SEE_NAMES, ADD_NOTE,
   emptyWhy, emptyChip, liveLineCount, emptyKind, seenOfCounts, seenOfRoster, addNote, PLAY_HIDDEN, PLAY_NOTE,
-  notifyFailed, confirmDoneText, notifyBadges, DUP_REMOVE_NOTE,
+  notifyFailed, confirmDoneText, notifyBadges, DUP_REMOVE_NOAPP, DUP_REMOVE_APP, slotTwins, addEndedNote, CONFIRM_RETRY,
 } from "../js/menus/duty/duty-logic.js";
 import { boardCard } from "../js/menus/duty/boards.js";
 import { DUTY_STATUS, DUTY_STATUS_LABEL } from "../supabase/functions/church-admin/duty-rules.ts";
@@ -113,7 +113,7 @@ test("당번 카드·머리의 한 줄", () => {
   assert.equal(maxBack(), 364); assert.equal(maxBack(56), 364);   // 지난 날은 52주까지 — 앞날과 따로(서버가 따로 자른다)
   assert.ok(boardSavedText({ after: 0 }, true).includes("자리 틀을 넣어"));
   assert.equal(boardSavedText({ after: 0 }, false), "저장했어요");
-  assert.ok(boardSavedText({ after: 3 }, false).includes("끝 날짜 뒤에 3분"));
+  assert.ok(boardSavedText({ after: 3 }, false).includes("끝 날짜 뒤에 지원 3건이 있어요"));
 });
 
 const DAYS = [
@@ -233,16 +233,16 @@ test("forceAsk — 정원·겹침을 한 번에 알린다 · 남의 당번이면
 
 test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(confirmDayAsk(DAYS[1]).startsWith("10월 18일(일)을 확정할까요?"));
-  assert.ok(confirmDayAsk(DAYS[1]).includes("지금 2분 · 빈 자리 1"));
+  assert.ok(confirmDayAsk(DAYS[1]).includes("지금 지원 2건 · 빈 자리 1"), "줄 수는 「건」으로(한 분이 두 자리에 서면 2 다)");
   // 「빈 자리 지원은 계속 받아요」는 받는 중 당번에서만 참이다 — 지원 멈춤 당번은 앱 지원을 받지 않는다(담당자가 넣는다 · 검증 2026-10-06)
   assert.ok(confirmDayAsk(DAYS[1]).includes("빈 자리 지원은 계속 받아요") && confirmDayAsk(DAYS[1], "open").includes("빈 자리 지원은 계속 받아요"));
   for (const s of ["closed", "draft"]) assert.ok(confirmDayAsk(DAYS[1], s).includes("빈 자리는 담당자가 「넣기」로 채워요") && !confirmDayAsk(DAYS[1], s).includes("지원은 계속 받아요"), s);
   assert.ok(unconfirmAsk(DAYS[3]).includes("10월 31일(토) 저녁 7시에는 다시 자동으로 확정"), "마감 시각은 서버가 준 값으로");
   assert.ok(unconfirmAsk(DAYS[3]).includes("담당자가 넣은 분은 그대로 못 빼요"));
   assert.ok(unconfirmAsk({ date: "2026-11-01" }).includes("전날 저녁에는 다시 자동으로 확정"));
-  assert.ok(offAsk({ from: "2026-10-18", to: "2026-10-18", off: true, active: 2, days: 1 }).startsWith("10월 18일(일)을 쉬는 날로 바꿀까요? 이미 지원한 2분께는"));
+  assert.ok(offAsk({ from: "2026-10-18", to: "2026-10-18", off: true, active: 2, days: 1 }).startsWith("10월 18일(일)을 쉬는 날로 바꿀까요? 이미 들어온 지원 2건은 그분들 앱에 「이날은 쉬어요」로 보여요"));
   assert.ok(offAsk({ from: "2026-08-02", to: "2026-08-16", off: true, active: 0, days: 3 }).startsWith("8월 2일(일) ~ 8월 16일(일) 3일을 쉬는 날로 바꿀까요? 아직 지원한 분은 없어요"));
-  assert.ok(offAsk({ from: "2026-08-02", to: "2026-08-16", off: false, active: 4, days: 3 }).includes("4분의 자리가 그대로 살아나요"));
+  assert.ok(offAsk({ from: "2026-08-02", to: "2026-08-16", off: false, active: 4, days: 3 }).includes("쉬기 전의 지원 4건이 그대로 살아나요."));
   assert.ok(offAsk({ from: "2026-08-03", to: "2026-08-04", off: true, active: 0, days: 0 }).includes("쉬게 할 날이 없어요"));
   assert.ok(offAsk({ from: "2026-08-03", to: "2026-08-04", off: false, active: 0, days: 0 }).includes("다시 열 날이 없어요"));
   assert.ok(offAsk({ from: "2026-10-25", to: "2026-10-25", off: false, active: 1, days: 1, tail: "적어 둔 메모(「교회 행사」)도 함께 지워요." }).endsWith("살아나요. 적어 둔 메모(「교회 행사」)도 함께 지워요."));
@@ -253,10 +253,25 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(!removeAsk({ name: "가상하나", hasApp: false }, DAYS[1], DAYS[1].slots[0]).includes("스스로 다시 지원"));
   assert.ok(removeAsk({ name: "가상하나", hasApp: false }, DAYS[1], DAYS[1].slots[0]).includes("「빠진 분」에서 다시 넣을 수 있어요"));
   // 같은 이름의 줄이 또 있는 날 — 앱에 이어진 줄을 빼려 하면 어느 줄을 빼야 하는지 말한다(앱 없는 줄을 뺄 때는 말하지 않는다)
-  assert.ok(removeAsk({ name: "가상하나", hasApp: true, maybeDup: true }, DAYS[1], DAYS[1].slots[0]).endsWith(DUP_REMOVE_NOTE));
-  assert.ok(DUP_REMOVE_NOTE.includes("「앱 없음」 줄을 빼 주세요") && DUP_REMOVE_NOTE.includes("다른 분이면 따로 알려 주세요"));
-  assert.ok(!removeAsk({ name: "가상하나", hasApp: false, maybeDup: true }, DAYS[1], DAYS[1].slots[0]).includes("같은 이름의 줄"));
-  assert.ok(!removeAsk({ name: "가상하나", hasApp: true, maybeDup: false }, DAYS[1], DAYS[1].slots[0]).includes("같은 이름의 줄"));
+  // 고침 검토 반영(2026-10-07) — 겹친 줄 안내는 서버가 「빼 드렸어요」를 거르는 범위와 같다: **같은 자리**에 같은 이름의 살아 있는 줄이 또 있을 때만
+  const twinSlot = (others) => ({ service: "1부", task: "설거지", signups: [{ id: 1, name: "가상하나", hasApp: true }, ...others] });
+  const meApp = { id: 1, name: "가상하나", hasApp: true, maybeDup: true }, D1 = DAYS[1];
+  assert.deepEqual(slotTwins(meApp, twinSlot([{ id: 2, name: "가상 하나", hasApp: false }])), { any: true, noApp: true }, "띄어쓰기는 무시한다(서버 dup 과 같다)");
+  assert.deepEqual(slotTwins(meApp, twinSlot([{ id: 2, name: "가상하나", hasApp: true }])), { any: true, noApp: false });
+  assert.deepEqual(slotTwins(meApp, twinSlot([{ id: 2, name: "가상둘", hasApp: false }])), { any: false, noApp: false });
+  assert.deepEqual(slotTwins(meApp, twinSlot([])), { any: false, noApp: false }, "자기 줄은 세지 않는다"); assert.deepEqual(slotTwins({ id: 1, name: "" }, twinSlot([{ id: 2, name: "" }])), { any: false, noApp: false });
+  assert.deepEqual(slotTwins(meApp, null), { any: false, noApp: false });
+  // ① 같은 자리 · 남는 줄에 「앱 없음」 줄이 있다 — 어느 줄을 빼야 하는지 · 아예 빼려면 차례
+  assert.ok(removeAsk(meApp, D1, twinSlot([{ id: 2, name: "가상하나", hasApp: false }])).endsWith(DUP_REMOVE_NOAPP));
+  assert.ok(DUP_REMOVE_NOAPP.includes("이 줄(앱에 이어진 줄)은 두고 「앱 없음」 줄을 빼 주세요") && DUP_REMOVE_NOAPP.includes("「앱 없음」 줄을 먼저 빼고 이 줄을 빼야 앱 알림이 가요") && DUP_REMOVE_NOAPP.includes("다른 분이면 따로 알려 주세요"));
+  // ② 같은 자리 · 남는 줄이 모두 앱 줄(동명이인 · 옛·새 계정) — 있지도 않은 「앱 없음」 줄을 가리키지 않는다
+  const both = removeAsk(meApp, D1, twinSlot([{ id: 2, name: "가상하나", hasApp: true }]));
+  assert.ok(both.endsWith(DUP_REMOVE_APP) && !both.includes("「앱 없음」"), both); assert.ok(DUP_REMOVE_APP.includes("빼는 분께 따로 알려 주세요"));
+  for (const t of [DUP_REMOVE_NOAPP, DUP_REMOVE_APP]) assert.ok(t.includes("같은 이름의 줄이 남아 있는 동안에는 이 줄을 빼도 그분께 앱 알림이 가지 않아요"), "어느 쪽이든 서버 규칙을 그대로 말한다");
+  // ③ 다른 자리에만 같은 이름이 있다(한 분의 두 당번 — 딱지 maybeDup 은 켜져 있다) — 말하지 않는다(다른 당번의 줄을 빼라고 하게 된다)
+  assert.ok(!removeAsk(meApp, D1, twinSlot([])).includes("같은 이름의 줄"), "다른 자리의 같은 이름");
+  // ④ 계정 없는 줄을 뺄 때는 말하지 않는다(그 줄에는 원래 알림이 없다)
+  assert.ok(!removeAsk({ id: 2, name: "가상하나", hasApp: false, maybeDup: true }, D1, twinSlot([{ id: 2, name: "가상하나", hasApp: false }])).includes("같은 이름의 줄"));
   assert.ok(restoreAsk({ name: "가상하나" }, DAYS[1], DAYS[1].slots[0]).startsWith("가상하나 님을 10월 18일(일) 1부 설거지에 다시 넣을까요?"));
   assert.equal(restoredText({ ok: true, id: 1 }, "가상하나"), "가상하나 — 다시 넣었어요");
   assert.equal(restoredText({ ok: true, already: true }, "가상하나"), "가상하나 — 이미 서 계세요");
@@ -264,11 +279,11 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(slotOffAsk(DAYS[1].slots[0], true).includes("지원한 1분께는"));
   assert.equal(slotOffAsk(DAYS[1].slots[2], true), "2부 배식 자리만 쉬게 할까요?");
   assert.ok(slotOffAsk(DAYS[1].slots[0], false).includes("다시 열까요"));
-  assert.ok(hideAsk(3, "archived").includes("3분") && hideAsk(3, "archived").includes("「보관」"));
+  assert.ok(hideAsk(3, "archived").startsWith("앞날에 지원 3건이 있어요.") && hideAsk(3, "archived").includes("「보관」"));
   // 끝 날짜 당기기 — 그 뒤에 선 분 수와 새 끝 날짜를 함께
-  assert.ok(afterAsk(4, "2026-10-31").startsWith("새 끝 날짜(10월 31일(토)) 뒤에 4분이 서 있어요."));
+  assert.ok(afterAsk(4, "2026-10-31").startsWith("새 끝 날짜(10월 31일(토)) 뒤에 지원 4건이 있어요."));
   assert.ok(afterAsk(4, "2026-10-31").includes("지원 줄은 지우지 않아요"));
-  assert.ok(afterAsk(2, "").startsWith("새 끝 날짜 뒤에 2분이"), "날짜를 못 읽어도 빈 괄호를 남기지 않는다");
+  assert.ok(afterAsk(2, "").startsWith("새 끝 날짜 뒤에 지원 2건이"), "날짜를 못 읽어도 빈 괄호를 남기지 않는다");
   // 「받는 중」 확인 — 앱에 아직 안 열렸으면 「바로 보여요」라고 말하지 않는다
   const LIVE = { live: true };
   assert.ok(openWarn(true, LIVE).includes("바로 보이고 지원을 받아요") && !openWarn(true, LIVE).includes("시험 참여자"));
@@ -415,8 +430,13 @@ test("저장 뒤 한 줄 — 알림(3단계)이 붙으면 덧붙인다", () => {
   assert.equal(notifyFailed({ notified: 0, missed: 2, notifyError: null }), false, "가지 않은 분이 있는 것은 실패가 아니다(토스트로 말한다)"); assert.equal(notifyFailed({ ok: true }), false); assert.equal(notifyFailed(null), false);
   assert.equal(confirmDoneText({ ok: true, already: true }, "2026-10-18"), "이미 확정된 날이에요");
   assert.equal(confirmDoneText({ ok: true, active: 2, notified: 1, missed: 1, notifyError: null }, "2026-10-18"), "10월 18일(일)을 확정했어요 · 1분께 앱 알림을 보냈어요 · 1분께는 앱 알림이 가지 않았어요 — 따로 알려 주세요");
+  // 고침 검토 반영(2026-10-07) — 다시 보내기는 약속하지 않는다(다시 확정해 가는 것은 아직 잡히지 않은 줄뿐) · 준비 중·보관 당번에서는 말하지 않는다
   assert.equal(confirmDoneText({ ok: true, active: 2, notified: 0, notifyError: "notify-failed" }, "2026-10-18"),
-    "10월 18일(일)을 확정했어요 · 앱 알림은 보내지 못했어요 — 그분께 따로 알려 주세요 (「확정 풀기」 뒤 다시 확정하면 다시 보내요)");
+    "10월 18일(일)을 확정했어요 · 앱 알림은 보내지 못했어요 — 그분께 따로 알려 주세요" + CONFIRM_RETRY);
+  assert.ok(CONFIRM_RETRY.includes("한 번 더 보내 봐요") && CONFIRM_RETRY.includes("뜨지 않으면 다시 보내지 못한 것이니 따로 알려 주세요") && !CONFIRM_RETRY.includes("다시 보내요)"));
+  for (const s of ["open", "closed"]) assert.ok(confirmDoneText({ ok: true, notified: 0, notifyError: "notify-failed" }, "2026-10-18", s).endsWith(CONFIRM_RETRY), s);
+  for (const s of ["draft", "archived", ""]) assert.equal(confirmDoneText({ ok: true, notified: 0, notifyError: "notify-failed" }, "2026-10-18", s),
+    "10월 18일(일)을 확정했어요 · 앱 알림은 보내지 못했어요 — 그분께 따로 알려 주세요", s + " — 알림이 없는 당번에서는 다시 확정해도 가지 않는다");
   assert.ok(!confirmDoneText({ ok: true, notified: 0, notifyError: "notify-off" }, "2026-10-18").includes("다시 확정하면"), "꺼 둔 동안에는 다시 확정해도 가지 않는다");
   assert.equal(confirmDoneText({ ok: true, active: 0 }, "2026-10-18"), "10월 18일(일)을 확정했어요");
   // 「알림 꺼짐」 딱지는 받는 중·지원 멈춤 당번에서만 — 준비 중·보관 당번의 줄에는 어떤 알림도 가지 않는다
@@ -454,4 +474,34 @@ test("엑셀 — 파일 이름 · 기간 고르기", () => {
   const r = exportRanges("2026-10-12", 56);
   assert.deepEqual(r.map((x) => [x.value, x.from, x.to]), [["next4", "2026-10-12", "2026-11-08"], ["all", "2026-10-12", "2026-12-07"], ["prev4", "2026-09-14", "2026-10-11"]]);
   assert.equal(r[1].label, "앞으로 8주(보이는 기간 전체)");
+});
+
+test("고침 검토 반영(2026-10-07) — 넣기 창: 이 자리의 빠진 분에 앱 줄이 있으면 「빠진 분 → 다시 넣기」를 권한다(넣기 전에)", () => {
+  assert.equal(addEndedNote({ ended: [] }), ""); assert.equal(addEndedNote({}), ""); assert.equal(addEndedNote(null), "");
+  assert.equal(addEndedNote({ ended: [{ id: 1, name: "가상하나", hasApp: false, reason: "staff" }] }), "", "앱에 안 이어진 줄만 빠져 있으면 말하지 않는다");
+  const one = addEndedNote({ ended: [{ id: 1, name: "가상하나", hasApp: true, reason: "staff" }, { id: 2, name: "가상둘", hasApp: false }] });
+  assert.ok(one.includes("(가상하나)") && one.includes("「빠진 분 → 다시 넣기」") && one.includes("새 줄이 될 수 있어요") && one.includes("그분을 다시 넣으려면"), one);
+  const many = addEndedNote({ ended: ["가", "나", "다", "라", "가"].map((n, i) => ({ id: i, name: n, hasApp: true })) });
+  assert.ok(many.includes("(가 · 나 · 다 외 1분)"), "이름은 셋까지 · 같은 이름은 한 번: " + many);
+});
+
+test("고침 검토 반영(2026-10-07) — 배선: 화면·함수가 그 규칙을 실제로 쓴다(되돌려도 아무도 모르던 줄)", async () => {
+  const fs = await import("node:fs");
+  const read = (p) => fs.readFileSync(new URL("../" + p, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const roster = read("js/menus/duty/roster.js"), forms = read("js/menus/duty/roster-forms.js"), index = read("supabase/functions/church-admin/index.ts");
+  // 명단: 딱지에 당번 상태 · 저장 뒤 말은 sayDone(실패는 창) · 확정 글에 당번 상태 · 빼기 창이 자리(s)를 넘긴다
+  assert.ok(roster.includes("signupBadges(e, { notify })") && roster.includes("notifyBadges(ros.board.status)"), "「알림 꺼짐」 딱지는 당번 상태를 본다");
+  assert.ok(roster.includes("if (okText) await sayDone(okText, r);"), "settle — 실패는 창으로");
+  assert.ok(roster.includes("confirmDoneText(r, d.date, ros.board.status)"), "확정 뒤 글 — 당번 상태");
+  assert.ok(roster.includes("text: removeAsk(e, d, s)"), "빼기 확인 — 그 자리의 줄들을 본다");
+  assert.equal((roster.match(/await sayDone\(offDoneText\(/g) || []).length, 3, "쉬는 날·다시 열기 세 곳");
+  assert.ok(roster.includes("draftNote(ros.chief === true)"), "준비 중 안내");
+  for (const f of ["restoredText(r, e.name)", "movedText(r, e.name)", "`${e.name} — 뺐어요${notifyTail(r)}`"]) assert.ok(roster.includes(f), f);
+  // 넣기 창: 실패는 창으로(세 곳) · 빠진 분의 앱 줄 안내
+  assert.ok(forms.includes('if (notifyFailed(r)) await dialog({ title: "앱 알림을 보내지 못했어요", text, ok: "확인", cancel: null });') && forms.includes("else toast(text);"), "sayDone");
+  assert.equal((forms.match(/await sayDone\(addDoneText\(/g) || []).length, 3, "넣기 세 곳");
+  assert.ok(forms.includes("addEndedNote(slot)"), "넣기 창 머리의 안내");
+  // 함수: api 의 답을 옮기는 것은 순수 함수 하나 · 당번 규칙에 알림 길을 넘긴다
+  assert.ok(index.includes('return dutyNotifyOut(await appApiInternal({ action: "internalDutyNotify", kind, signup_ids: ids }, "notifyDuty"));'));
+  assert.ok(/makeDuty\(db, audit, \{[^}]*dutyNotify: notifyDuty/.test(index), "makeDuty 에 dutyNotify 를 넘긴다");
 });

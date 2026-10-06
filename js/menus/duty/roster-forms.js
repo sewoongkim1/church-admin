@@ -9,7 +9,7 @@ import { openForm } from "../../core/modal.js";
 import { pickOne, pickMany, pickDate, pickTime, fmtTimeLabel } from "../../core/picker.js";
 import { pickArgs, TYPED_SUB_HINT } from "../education/enrollments-logic.js";
 import { WEEKDAY_OPTIONS, weekdayText, formToLine, lineToForm, lineText, dayLabel, addDays, slotName, timeRange, forceAsk, needsForce, offAsk, addDoneText,
-  dutyWord, addNote, notifyFailed } from "./duty-logic.js";
+  dutyWord, addNote, addEndedNote, notifyFailed } from "./duty-logic.js";
 
 export const failText = (r) => dutyWord(r?.error) || errorText(r);
 // 저장 뒤 한 줄 — 평소에는 지나가는 토스트. **앱 알림을 보내지 못했으면 창으로 띄워 확인을 받는다**: 그분께 따로 알려야 하는데 4초짜리 글은 놓친다
@@ -230,7 +230,7 @@ export async function openAddForm({ call, boardId, day, slot }) {
 
   return openForm({
     title: `＋ 넣기 — ${dayLabel(day.date)} ${slotName(slot)}`, okLabel: "넣기", cancelLabel: "닫기", hideOk: true,   // 찾기 쪽은 카드마다 「넣기」가 있다
-    html: `<p class="muted dty-addsub">${esc(timeRange(slot))}${day.locked && !day.past ? " · 확정된 날" : ""} · ${esc(addNote(day))}</p>
+    html: `<p class="muted dty-addsub">${esc(timeRange(slot))}${day.locked && !day.past ? " · 확정된 날" : ""} · ${esc(addNote(day))}</p>${addEndedNote(slot) ? `<p class="be-note">${esc(addEndedNote(slot))}</p>` : ""}
       <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="pick" class="on">교인명부에서 찾기</button>
         <button type="button" role="tab" data-tab="typed">직접 입력(새가족 등)</button></div>
       <div data-panel="pick">

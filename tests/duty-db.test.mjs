@@ -717,6 +717,12 @@ test("알림 — dep 가 없으면(1단계) 응답 그대로 · 부르지 못하
   const off = setup({ rpcs, notifyRes: { sent: 0, missed: 0, off: true } });
   assert.deepEqual(await off.duty.dutyDaySet(LEAD, body), { ok: true, active: 1, notified: 0, notifyError: "notify-off" });
   assert.equal(off.log.audit.length, 1, "꺼 둔 알림이어도 저장·기록은 그대로");
+  // 고침 검토 반영(2026-10-07) — 꺼 둔 동안: 보낼 분이 있었으면(held > 0) notify-off · 없었으면(held 0) 평소처럼 조용히 · 모르면(held 없음 — 옛 api·읽기 실패) 알리는 쪽
+  const offHeld = setup({ rpcs, notifyRes: { sent: 0, missed: 0, off: true, held: 2 } });
+  assert.deepEqual(await offHeld.duty.dutyDaySet(LEAD, body), { ok: true, active: 1, notified: 0, notifyError: "notify-off" });
+  const offNone = setup({ rpcs, notifyRes: { sent: 0, missed: 0, off: true, held: 0 } });
+  assert.deepEqual(await offNone.duty.dutyDaySet(LEAD, body), { ok: true, active: 1, notified: 0, notifyError: null }, "알릴 분이 없던 저장에는 「따로 알려 주세요」를 말하지 않는다");
+  assert.equal(offNone.log.notify.length, 1, "(부탁은 했다)");
   // 알릴 번호가 없으면 부르지 않는다 · 번호는 양의 정수만 · 겹친 번호는 한 번
   const zero = setup({ rpcs: { duty_day_set: { ok: true, ids: [], active: 0 } } });
   assert.deepEqual(await zero.duty.dutyDaySet(LEAD, body), { ok: true, active: 0 });

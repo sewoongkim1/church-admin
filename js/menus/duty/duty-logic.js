@@ -154,7 +154,7 @@ export const maxBack = () => 364;
 // 당번을 저장한 뒤 한 줄 — 끝 날짜 뒤에 선 분이 있으면 알린다
 export function boardSavedText(r, created) {
   const base = created ? "당번을 만들었어요 — 「📅 당번 명단」에서 자리 틀을 넣어 주세요" : "저장했어요";
-  return r && r.after ? `${base} · 끝 날짜 뒤에 ${r.after}분이 서 있어요 — 명단에서 옮기거나 빼 주세요` : base;
+  return r && r.after ? `${base} · 끝 날짜 뒤에 지원 ${r.after}건이 있어요 — 명단에서 옮기거나 빼 주세요` : base;
 }
 
 // ---------- 날짜 칩 · 그날 판 ----------
@@ -275,31 +275,47 @@ export const needsForce = (r) => !!r && !r.ok && (r.error === "full" || r.error 
 //   status = 당번 상태 — 받는 중일 때만 「빈 자리 지원은 계속 받아요」(지원 멈춤 당번은 앱 지원을 받지 않는다 — 담당자가 넣는다 · 검증 2026-10-06)
 export function confirmDayAsk(d, status = "open") {
   const n = dayActive(d);
-  return `${dayLabel(d.date)}을 확정할까요? 확정하면 성도님은 앱에서 취소·변경을 못 해요(지금 ${n}분${d.need ? ` · 빈 자리 ${d.need}` : ""}). ` +
+  return `${dayLabel(d.date)}을 확정할까요? 확정하면 성도님은 앱에서 취소·변경을 못 해요(지금 지원 ${n}건${d.need ? ` · 빈 자리 ${d.need}` : ""}). ` +
     (status === "open" ? "빈 자리 지원은 계속 받아요 — " : "빈 자리는 담당자가 「넣기」로 채워요 — ") + "바꿀 일은 담당자가 넣기·빼기·옮기기로 해요.";
 }
 export const unconfirmAsk = (d) => `${dayLabel(d.date)}의 확정을 풀까요? 풀면 앱으로 지원한 분은 다시 스스로 취소할 수 있어요` +
   `(담당자가 넣은 분은 그대로 못 빼요 · ${cutoffText(d.cutoff) || "전날 저녁"}에는 다시 자동으로 확정돼요).`;
-// 쉬는 날로 / 다시 열기 — active = 그 기간에 살아 있는 지원 수(서버가 센 값) · days = 바뀌는 날 수
+// 쉬는 날로 / 다시 열기 — active = 그 기간에 살아 있는 지원 **줄 수**(서버가 센 값 — 한 분이 여섯 주를 서 있으면 6) · days = 바뀌는 날 수
+//   ⚠️ 그래서 「N분」이 아니라 「지원 N건」이라고 말한다 — 저장 뒤의 「N분께 앱 알림을 보냈어요」는 사람 수라, 줄 수를 「분」이라 하면 한 화면의 두 수가 어긋난다
+//      (확정·당번 숨기기·끝 날짜 당기기의 확인 글도 같다 — 고침 검토 반영 2026-10-07).
 //   tail = 덧붙일 한 마디(날 판의 「다시 열기」가 그날 메모를 함께 지울 때 그 글)
 export function offAsk({ from, to, off, active, days, tail = "" }) {
   const span = from === to ? dayLabel(from) : `${dayLabel(from)} ~ ${dayLabel(to)}`;
   if (!days) return off ? `${span}에는 쉬게 할 날이 없어요(자리가 없거나 이미 쉬는 날이에요).` : `${span}에는 다시 열 날이 없어요.`;
   const dn = from === to ? "" : ` ${days}일`;
   if (off) {
-    return `${span}${dn}을 쉬는 날로 바꿀까요?` + (active ? ` 이미 지원한 ${active}분께는 「이날은 쉬어요」로 보여요 — 지원은 지우지 않고 두었다가 다시 열면 그대로 살아나요.` : " 아직 지원한 분은 없어요.");
+    return `${span}${dn}을 쉬는 날로 바꿀까요?` + (active ? ` 이미 들어온 지원 ${active}건은 그분들 앱에 「이날은 쉬어요」로 보여요 — 지원은 지우지 않고 두었다가 다시 열면 그대로 살아나요.` : " 아직 지원한 분은 없어요.");
   }
-  return `${span}${dn}을 다시 열까요?` + (active ? ` 쉬기 전에 지원한 ${active}분의 자리가 그대로 살아나요.` : "") + (tail ? ` ${tail}` : "");
+  return `${span}${dn}을 다시 열까요?` + (active ? ` 쉬기 전의 지원 ${active}건이 그대로 살아나요.` : "") + (tail ? ` ${tail}` : "");
 }
 // 빼기 확인 — 앱 계정이 이어진 분은 뺀 뒤 스스로 다시 지원하지 못한다(계정 없이 넣은 줄은 그 말이 맞지 않아 뺀다 — 검토 반영)
-//   같은 이름의 줄이 또 있는 날(「같은 분일 수 있어요」)에 **앱에 이어진 줄**을 빼려 하면 어느 줄을 빼야 하는지 말한다 — 그 줄을 빼면 그분 앱의 「내 당번」이
-//   「담당자가 빼 드렸어요」가 되고, 남는 줄(앱 없음)은 그분 앱에 보이지 않는다. 같은 자리에 같은 이름의 줄이 남으면 서버는 「빼 드렸어요 — 안 나오셔도 돼요」
-//   알림을 보내지 않는다(그분은 남은 줄로 서 있다 — 성경암송 api dutyNoteKeep 의 dup) — 다른 분이면 따로 알려야 한다(검토 반영 2026-10-07).
-export const DUP_REMOVE_NOTE = "⚠️ 이 날 같은 이름의 줄이 또 있어요 — 같은 분이면 이 줄(앱에 이어진 줄)은 두고 「앱 없음」 줄을 빼 주세요. " +
-  "같은 자리에 같은 이름의 줄이 남아 있으면 이 줄을 빼도 그분께 앱 알림이 가지 않아요 — 다른 분이면 따로 알려 주세요.";
-export const removeAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에서 뺄까요?` +
-  (e.hasApp ? " 뺀 분은 앱에서 이 자리에 스스로 다시 지원할 수 없어요." : "") + " 잘못 뺐으면 「빠진 분」에서 다시 넣을 수 있어요." +
-  (e.maybeDup && e.hasApp ? ` ${DUP_REMOVE_NOTE}` : "");
+//   **같은 자리에 같은 이름의 줄이 또 있을 때** 앱에 이어진 줄을 빼려 하면 말한다 — 서버는 같은 자리에 같은 이름의 살아 있는 줄이 남으면 「빼 드렸어요 — 안 나오셔도 돼요」
+//   알림을 보내지 않는다(겹친 줄을 정리한 것으로 본다 — 그분은 남은 줄로 서 있다 · 성경암송 duty_notify_rows 의 dup). 그래서 범위도 서버와 같다(같은 자리 — slotTwins).
+//   ⚠️ 다른 자리의 같은 이름(한 분의 두 당번 · 동명이인)에는 말하지 않는다 — 「이 줄은 두고 앱 없음 줄을 빼 주세요」가 다른 당번의 줄을 가리키게 된다
+//      (고침 검토 반영 2026-10-07). 그 줄들의 딱지 「같은 분일 수 있어요」(그날 전체 — maybeDup)는 그대로다.
+const nameKey = (v) => String(v == null ? "" : v).normalize("NFC").replace(/\s+/g, "");
+// 같은 자리에 선 같은 이름의 다른 줄 — any: 있다 · noApp: 그 가운데 앱에 안 이어진 줄(「앱 없음」)이 있다
+export function slotTwins(e, s) {
+  const k = nameKey(e && e.name);
+  const list = k ? ((s && s.signups) || []).filter((x) => x && x.id !== e.id && nameKey(x.name) === k) : [];
+  return { any: list.length > 0, noApp: list.some((x) => !x.hasApp) };
+}
+const DUP_REMOVE_HEAD = "⚠️ 이 자리에 같은 이름의 줄이 또 있어요 — 같은 이름의 줄이 남아 있는 동안에는 이 줄을 빼도 그분께 앱 알림이 가지 않아요.";
+// 남는 줄 가운데 「앱 없음」 줄이 있다 — 같은 분의 겹친 줄이면 그 줄을 빼는 것이 맞다(앱에 이어진 줄이 남아야 그분 앱·알림에 보인다)
+export const DUP_REMOVE_NOAPP = `${DUP_REMOVE_HEAD} 같은 분의 겹친 줄이면 이 줄(앱에 이어진 줄)은 두고 「앱 없음」 줄을 빼 주세요 — 그분을 아예 빼려면 「앱 없음」 줄을 먼저 빼고 이 줄을 빼야 앱 알림이 가요. 다른 분이면 따로 알려 주세요.`;
+// 남는 줄이 모두 앱에 이어진 줄이다(동명이인 · 한 분의 옛 계정과 새 계정) — 가리킬 「앱 없음」 줄이 없다
+export const DUP_REMOVE_APP = `${DUP_REMOVE_HEAD} 빼는 분께 따로 알려 주세요.`;
+export const removeAsk = (e, d, s) => {
+  const twins = e.hasApp ? slotTwins(e, s) : { any: false, noApp: false };
+  return `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에서 뺄까요?` +
+    (e.hasApp ? " 뺀 분은 앱에서 이 자리에 스스로 다시 지원할 수 없어요." : "") + " 잘못 뺐으면 「빠진 분」에서 다시 넣을 수 있어요." +
+    (twins.any ? ` ${twins.noApp ? DUP_REMOVE_NOAPP : DUP_REMOVE_APP}` : "");
+};
 export const restoreAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에 다시 넣을까요? 빠지기 전 그 줄이 그대로 살아나요.`;
 export const restoredText = (r, name) => (r && r.already ? `${name} — 이미 서 계세요` : `${name} — 다시 넣었어요${notifyTail(r)}`);
 export function slotOffAsk(s, off) {
@@ -308,7 +324,7 @@ export function slotOffAsk(s, off) {
     : `${slotName(s)} 자리를 다시 열까요?${n ? ` 지원한 ${n}분의 자리가 그대로 살아나요.` : ""}`;
 }
 // 당번을 앱에서 안 보이게 바꿀 때(받는 중·지원 멈춤 → 준비·보관) — 앞날에 선 분이 있으면
-export const hideAsk = (active, status) => `앞날에 ${active}분이 서 있어요. 그래도 「${STATUS_LABEL[status] || status}」으로 바꿀까요? 그분들 앱에서 이 당번과 내 당번이 사라져요(지원 줄은 지우지 않아요).`;
+export const hideAsk = (active, status) => `앞날에 지원 ${active}건이 있어요. 그래도 「${STATUS_LABEL[status] || status}」으로 바꿀까요? 그분들 앱에서 이 당번과 내 당번이 사라져요(지원 줄은 지우지 않아요).`;
 // 성경암송 앱에 봉사 당번 화면이 있는가 — 2026-10-06 2단계(앱 화면 + api 성도님 액션)를 운영에 올려 true 로 바꿨다(시험 한 줄도 함께).
 //   false 인 동안에는 「시험 참여자에게 보여요」라고 말하지 않는다 — 앱에 화면이 아예 없다(검토 반영 2026-10-06).
 //   ⚠️ 앱 쪽 2단계를 되돌리면(성경암송 화면 revert) 이 값도 false 로 되돌린다.
@@ -394,7 +410,7 @@ export function appNote(appOpen, { live = APP_LIVE, notify = NOTIFY_LIVE, play =
 // 설정 창을 연 뒤 다른 분이 그 당번을 고쳤을 때(dutyBoardSave changed) — 창을 닫고 새로 불러온 뒤 알린다
 export const STALE_BOARD = "그사이 다른 분이 이 당번 설정을 고쳤어요 — 새로 불러왔어요. 다시 확인하고 고쳐 주세요";
 // 끝 날짜를 당기는 저장 — 그 뒤에 선 분이 있을 때
-export const afterAsk = (active, until) => `새 끝 날짜${dayLabel(until) ? `(${dayLabel(until)})` : ""} 뒤에 ${active}분이 서 있어요. 그래도 끝 날짜를 당길까요? ` +
+export const afterAsk = (active, until) => `새 끝 날짜${dayLabel(until) ? `(${dayLabel(until)})` : ""} 뒤에 지원 ${active}건이 있어요. 그래도 끝 날짜를 당길까요? ` +
   "그 뒤 날짜는 앱에서 안 보이게 돼요(지원 줄은 지우지 않아요 — 명단에서 옮기거나 빼 주세요).";
 // 넣기 창의 안내 한 줄 — ① 담당자가 넣은 분은 앱에서 스스로 못 뺀다 ② 못 오시면 앱의 「못 가게 됐어요」로 이 명단에 표시가 뜬다
 //   (담당자 휴대폰으로 가는 알림이 아니다 — 명단을 열어야 보인다) ③ 넣은 분(앱을 안 쓰는 분·새가족 포함)의 이름이 앱 당번표에 보인다(설계 §0-1 ⑫ —
@@ -409,6 +425,16 @@ export function addNote(d) {
   return `${ADD_BASE} · 넣은 분의 이름은 받는 중·지원 멈춤 당번이면 성경암송 앱 당번표에 보여요(이름만)`;
 }
 export const ADD_NOTE = addNote(null);
+// 넣기 창 머리의 한 줄 더 — 이 자리의 「빠진 분」에 앱에 이어진 줄이 있을 때. 그분을 다시 넣는 맞는 길은 「빠진 분 → 다시 넣기」다(그 줄이 그대로 살아나 앱·알림에 이어진다).
+//   「＋ 넣기」는 이번 명부 찾기가 앱 계정을 못 맞추면(명부와 앱의 소속 글자가 다르다 · 직접 입력) 그 줄을 되살리지 못하고 **앱에 안 이어진 새 줄**을 만든다 —
+//   그분 앱에는 여전히 「담당자가 빼 드렸어요」이고 「넣어 드렸어요」 알림도 가지 않는다(서버는 두 줄이 같은 분인지 알 길이 없다 · 고침 검토 반영 2026-10-07).
+//   넣기 **전에** 말한다(넣은 뒤에는 두 줄을 이을 길이 없다). 이름만으로는 같은 분인지 모르므로 「그분을 다시 넣으려면」이라고 조건으로 쓴다.
+export function addEndedNote(slot) {
+  const names = [...new Set(((slot && slot.ended) || []).filter((e) => e && e.hasApp && e.name).map((e) => e.name))];
+  if (!names.length) return "";
+  const who = names.slice(0, 3).join(" · ") + (names.length > 3 ? ` 외 ${names.length - 3}분` : "");
+  return `⚠️ 이 자리에서 빠진 분 가운데 앱에 이어진 분이 있어요(${who}) — 그분을 다시 넣으려면 여기 말고 명단의 「빠진 분 → 다시 넣기」를 써 주세요. 여기서 넣으면 그분 앱·알림에 이어지지 않은 새 줄이 될 수 있어요.`;
+}
 // 준비 중인 당번의 안내 — 총괄은 스스로 열 수 있고, 담당은 총괄께 부탁한다
 //   준비 중에는 앱 알림도 가지 않는다(넣기·확정·빼기 모두) — 그 말을 함께 한다(문이 닫힌 동안 진짜 명단을 넣어 두라고 권하는 자리가 여기다)
 const DRAFT_NO_NOTIFY = " 준비 중에는 넣기·확정을 해도 앱 알림이 가지 않아요.";
@@ -430,9 +456,13 @@ export function notifyTail(r) {
 }
 // 알림을 보내지 못한 저장인가(부르지 못함 · 꺼 둠) — 그때는 지나가는 토스트가 아니라 창으로 알린다(roster-forms.js sayDone)
 export const notifyFailed = (r) => !!(r && r.notifyError);
-// 날짜 확정 뒤 한 줄 — 알림을 못 보냈으면 다시 보낼 길을 말한다(확정은 「풀기 → 다시 확정」으로 **안 간 분께만** 다시 간다 — 이미 받은 분은 서버가 한 번만 보낸다)
-export const confirmDoneText = (r, date) => (r && r.already ? "이미 확정된 날이에요"
-  : `${dayLabel(date)}을 확정했어요${notifyTail(r)}${r && r.notifyError === "notify-failed" ? " (「확정 풀기」 뒤 다시 확정하면 다시 보내요)" : ""}`);
+// 날짜 확정 뒤 한 줄 — 알림을 부르지 못했으면(notify-failed) 다시 보내 볼 길을 말한다. ⚠️ **약속하지 않는다**: 다시 확정해 실제로 가는 것은 아직 잡히지 않은 줄뿐이다
+//   (잡은 뒤 끊긴 줄 · 받는 기기가 없던 분 · 문이 닫힌 동안의 시험 참여자 아닌 분께는 다시 가지 않는다 — 화면은 어느 쪽인지 모른다). 그래서 「다시 보내요」가 아니라
+//   「한 번 더 보내 봐요 — 그때 『N분께 보냈어요』가 안 뜨면 따로」라고 말한다. status = 당번 상태 — 준비 중·보관 당번은 알림이 없어 그 길을 말하지 않는다
+//   (고침 검토 반영 2026-10-07 · 이미 받은 분은 서버가 한 번만 보낸다).
+export const CONFIRM_RETRY = " (「확정 풀기」 뒤 다시 확정하면 아직 보내지 못한 분께 한 번 더 보내 봐요 — 그때 「N분께 앱 알림을 보냈어요」가 뜨지 않으면 다시 보내지 못한 것이니 따로 알려 주세요)";
+export const confirmDoneText = (r, date, status = "open") => (r && r.already ? "이미 확정된 날이에요"
+  : `${dayLabel(date)}을 확정했어요${notifyTail(r)}${r && r.notifyError === "notify-failed" && notifyBadges(status, true) ? CONFIRM_RETRY : ""}`);
 export function addDoneText(r, name) {
   const base = r && r.already ? `${name} — 이미 이 자리에 서 계세요` : r && r.revived ? `${name} — 다시 넣었어요` : `${name} — 넣었어요`;
   return base + (r && r.locked && !r.already ? " (확정된 날)" : "") + notifyTail(r);

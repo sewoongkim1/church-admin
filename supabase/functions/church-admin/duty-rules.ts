@@ -293,3 +293,14 @@ export function exportSheets(r: { board: { title: string }; days: any[]; lines?:
   }
   return { table, list };
 }
+
+// 성경암송 api internalDutyNotify 의 답 → {sent, missed, off[, held]} · null = 부르지 못했다(index.ts notifyDuty 가 쓴다 — 시험하려고 여기 둔다).
+//   sent = 실제로 나간 분 수 · missed = 가지 않은 분 수(받는 기기가 없다 · 자기 기기가 모두 실패) · off = 알림을 꺼 두었다(성경암송 app_config dutyNotifyOff) ·
+//   held = 꺼 둔 동안 「꺼 두지 않았으면 보냈을 분 수」(0 이면 알릴 분이 없던 저장이다 — 수가 아니면 싣지 않는다: 모르는 것으로).
+//   ⚠️ 옛 api 는 missed·off·held 를 주지 않는다(0·false·없음으로 읽는다).
+export function dutyNotifyOut(j: any): { sent: number; missed: number; off: boolean; held?: number } | null {
+  if (!j) return null;
+  const out: { sent: number; missed: number; off: boolean; held?: number } = { sent: Number(j.sent) || 0, missed: Number(j.missed) || 0, off: j.off === true };
+  if (out.off && typeof j.held === "number" && Number.isFinite(j.held) && j.held >= 0) out.held = Math.floor(j.held);
+  return out;
+}

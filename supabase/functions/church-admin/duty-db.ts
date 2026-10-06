@@ -37,12 +37,12 @@ const NOT_FOUND: Fail = { ok: false, error: "not-found" };
 //        personPick: 같은 찾기를 서버가 다시 돌려 pick 번째 분의 신원을 만든다(교인ID 는 서버 안에만 — 교육 대신 등록과 같은 함수)
 //        allRows: 1,000줄 쪽 넘기기(index.ts)
 //        dutyNotify: 알림 부탁(3단계 — 성경암송 api internalDutyNotify) · kind: confirmed·added·moved·removed·off·reopen ·
-//                    {sent, missed?, off?} 또는 null(부르지 못함)
+//                    {sent, missed?, off?, held?} 또는 null(부르지 못함)
 export function makeDuty(db: Db, audit: Audit, deps: {
   peopleLookup: (ctx: any, b: any) => Promise<any>;
   personPick: (name: unknown, pick: unknown, check: any) => Promise<{ ok: false; error: string } | { ok: true; ident: any; appUserId: string | null }>;
   allRows: (build: () => any) => Promise<any[]>;
-  dutyNotify?: (kind: string, ids: number[]) => Promise<{ sent: number; missed?: number; off?: boolean } | null>;
+  dutyNotify?: (kind: string, ids: number[]) => Promise<{ sent: number; missed?: number; off?: boolean; held?: number } | null>;
 }) {
   // 알림 부탁 — 저장·기록 뒤에만 부른다. 알릴 번호가 없거나 dep 가 없으면 r 그대로.
   //   문(dutyOpen·시험 참여자)·같은 알림 한 번·앱 계정·오늘 이후 자리 확인은 api 가 한다 — 여기서는 지원 번호만 보낸다(이름·user_id 없음).
@@ -52,7 +52,10 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     try {
       const n = await deps.dutyNotify(kind, list);
       if (!n) return { ...r, notified: 0, notifyError: "notify-failed" };
-      if (n.off === true) return { ...r, notified: 0, notifyError: "notify-off" };   // 알림을 꺼 두었다 — 아무에게도 가지 않았다(화면이 「따로 알려 주세요」라고 말한다)
+      // 알림을 꺼 두었다 — 아무에게도 가지 않았다(화면이 「꺼 두었어요 — 따로 알려 주세요」 창을 띄운다). 다만 꺼 두지 않았어도 보낼 분이 없던 저장
+      //   (held 0 — 지난 날 바로잡기 · 준비 중 당번 · 앱 계정 없는 줄 · 문이 닫힌 동안의 시험 참여자 아닌 분)이면 평소처럼 조용히 끝낸다: 「따로 알려 주세요」는
+      //   알릴 분이 있을 때만 참이다(고침 검토 반영 2026-10-07). held 를 모르면(옛 api · 읽다 실패) 알리는 쪽으로 둔다.
+      if (n.off === true) return n.held === 0 ? { ...r, notified: 0, notifyError: null } : { ...r, notified: 0, notifyError: "notify-off" };
       const missed = Number(n.missed) || 0;   // 가지 않은 분(받는 기기 없음·모두 실패) — 화면이 「N분께 보냈어요」와 따로 말한다
       return { ...r, notified: Number(n.sent) || 0, ...(missed ? { missed } : {}), notifyError: null };
     } catch (_) {

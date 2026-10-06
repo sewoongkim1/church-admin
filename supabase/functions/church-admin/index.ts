@@ -73,6 +73,7 @@ import { makeHistory } from "./history-db.ts";
 import { buildStats as buildMinistryStats } from "./ministry-stats.ts";
 import { makeEdu } from "./edu-db.ts";
 import { makeDuty } from "./duty-db.ts";
+import { dutyNotifyOut } from "./duty-rules.ts";
 import { rosterIdent, rosterIdentity } from "./edu-rules.ts";
 // 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
@@ -506,11 +507,10 @@ async function notifyEduConfirmed(ids: number[], promoted: boolean): Promise<{ s
 // 봉사 당번 알림(3단계 · 2026-10-06) — 성경암송 api 의 내부 액션(internalDutyNotify)이 보낸다(문·같은 알림 한 번·앱 계정·오늘 이후 자리 확인은 그쪽).
 //   duty-db.ts 의 deps.dutyNotify — 저장·기록이 끝난 뒤에만 불린다 · kind: confirmed·added·moved·removed·off·reopen · 지원 번호만 보낸다(이름·user_id 없음).
 //   null 이면 그쪽(withNotify)이 응답에 notifyError 로 싣는다(저장은 그대로 성공).
-//   돌려주는 sent = 실제로 나간 분 수 · missed = 가지 않은 분 수(받는 기기가 없다 · 보낸 것이 모두 실패) · off = 알림을 꺼 두었다(성경암송 app_config dutyNotifyOff).
-//   ⚠️ 옛 api 는 missed·off 를 주지 않는다(0·false 로 읽는다 — 그때의 sent 는 「글을 만든 분 수」였다).
-async function notifyDuty(kind: string, ids: number[]): Promise<{ sent: number; missed: number; off: boolean } | null> {
-  const j = await appApiInternal({ action: "internalDutyNotify", kind, signup_ids: ids }, "notifyDuty");
-  return j ? { sent: Number(j.sent) || 0, missed: Number(j.missed) || 0, off: j.off === true } : null;
+//   돌려주는 것은 duty-rules.ts dutyNotifyOut — sent(실제로 나간 분) · missed(가지 않은 분) · off(알림을 꺼 두었다) · held(꺼 둔 동안 보냈을 분 수).
+//   ⚠️ 옛 api 는 missed·off·held 를 주지 않는다(0·false·없음으로 읽는다 — 그때의 sent 는 「글을 만든 분 수」였다).
+async function notifyDuty(kind: string, ids: number[]): Promise<{ sent: number; missed: number; off: boolean; held?: number } | null> {
+  return dutyNotifyOut(await appApiInternal({ action: "internalDutyNotify", kind, signup_ids: ids }, "notifyDuty"));
 }
 
 async function ministrySetStatus(ctx: Ctx, b: any) {

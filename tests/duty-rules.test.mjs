@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { boardOrder, boardOut, boardPatchFor, checkBoard, checkLine, checkLineIds, checkNote, dutyChief, DUTY_LIMITS, DUTY_STAFF_ROLES, identHasCtrl, staffNames,
   DUTY_STATUS, DUTY_STATUS_LABEL, exportSheets, hidesFromApp, isDate, lineOrder, lineRowOut, overlapForStaff, placeOut, rosterOut, sameNameIds,
-  slotLabel, staffByBoard } from "../supabase/functions/church-admin/duty-rules.ts";
+  slotLabel, staffByBoard, dutyNotifyOut } from "../supabase/functions/church-admin/duty-rules.ts";
 
 test("isDate — 꼴과 실제 날짜", () => {
   assert.equal(isDate("2026-10-18"), true);
@@ -296,4 +296,17 @@ test("exportSheets — 이 자리만 쉼 · 그 기간에 자리가 없는 틀�
   assert.deepEqual(table[0], ["날짜", "2부 11:00", "1부 09:00", "상태"]);
   assert.deepEqual(table[1], ["11월 1일(일)", "(빈 자리), (빈 자리)", "쉼", ""]);
   assert.equal(list.length, 1, "쉬는 자리의 줄은 명단에 넣지 않는다");
+});
+
+test("dutyNotifyOut — 성경암송 api 의 답을 옮긴다(옛 api 는 missed·off·held 가 없다 · held 는 꺼 둔 답의 수일 때만)", () => {
+  assert.equal(dutyNotifyOut(null), null); assert.equal(dutyNotifyOut(undefined), null);
+  assert.deepEqual(dutyNotifyOut({ ok: true, sent: 2 }), { sent: 2, missed: 0, off: false }, "옛 api");
+  assert.deepEqual(dutyNotifyOut({ ok: true, sent: 1, missed: 3 }), { sent: 1, missed: 3, off: false }, "missed 를 sent 에 더하지 않는다");
+  assert.deepEqual(dutyNotifyOut({ ok: true, sent: 0, missed: 0, off: true }), { sent: 0, missed: 0, off: true }, "held 를 모른다");
+  assert.deepEqual(dutyNotifyOut({ ok: true, sent: 0, missed: 0, off: true, held: 0 }), { sent: 0, missed: 0, off: true, held: 0 });
+  assert.deepEqual(dutyNotifyOut({ ok: true, sent: 0, missed: 0, off: true, held: 2.7 }), { sent: 0, missed: 0, off: true, held: 2 });
+  for (const h of ["2", null, -1, NaN, {}]) assert.deepEqual(dutyNotifyOut({ sent: 0, off: true, held: h }), { sent: 0, missed: 0, off: true }, "수가 아닌 held 는 싣지 않는다: " + String(h));
+  assert.deepEqual(dutyNotifyOut({ sent: 3, missed: 1, held: 5 }), { sent: 3, missed: 1, off: false }, "꺼 둔 답이 아니면 held 를 싣지 않는다");
+  for (const o of ["true", 1, null]) assert.equal(dutyNotifyOut({ sent: 0, off: o }).off, false, "off 는 true 하나일 때만");
+  assert.deepEqual(dutyNotifyOut({ sent: "x", missed: "y" }), { sent: 0, missed: 0, off: false });
 });
