@@ -6,7 +6,7 @@
 import { esc, toast, busy, errorText } from "../../core/ui.js";
 import { STALE_MARK } from "../education/courses-logic.js";
 import { openBoardForm } from "./board-form.js";
-import { linesSummary, boardSavedText, boardRest, contactHtml, dutyWord, APP_CLOSED_NOTE } from "./duty-logic.js";
+import { linesSummary, boardSavedText, boardRest, contactHtml, dutyWord, appNote, STALE_BOARD } from "./duty-logic.js";
 
 const TITLE = `<h2 class="page-title">🧰 당번 관리</h2>`;
 const failText = (r) => dutyWord(r?.error) || errorText(r);
@@ -50,7 +50,8 @@ export async function render(el, { call, go }) {
   };
   const draw = () => {
     const live = boards.filter((b) => b.status !== "archived"), old = boards.filter((b) => b.status === "archived");
-    el.innerHTML = TITLE + (appOpen ? "" : `<p class="be-note">${esc(APP_CLOSED_NOTE)}</p>`) +
+    const note = appNote(appOpen);
+    el.innerHTML = TITLE + (note ? `<p class="be-note">${esc(note)}</p>` : "") +
       `<div class="acts dty-top"><button type="button" class="btn primary" data-act="new">＋ 새 당번</button></div>
       <div class="dty-list">${live.length ? live.map(boardCard).join("")
         : `<p class="empty">아직 당번이 없어요 — 「＋ 새 당번」으로 만들어 주세요<br>(예: 식당 봉사 · 주차 봉사 · 김장 봉사)</p>`}</div>
@@ -84,6 +85,7 @@ export async function render(el, { call, go }) {
         const got = await openBoardForm({ call, board, chief: true, cands, appOpen });
         done = !!got;
         if (got === "gone") toast("그 당번을 찾지 못해 목록을 새로 불러왔어요");
+        else if (got === "stale") toast(STALE_BOARD);
         else if (got) toast(got.staffErr || boardSavedText(got, false));
       }
     } finally { open.delete(key); }

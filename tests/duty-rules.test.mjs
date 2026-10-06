@@ -48,6 +48,8 @@ test("checkBoard — 거절", () => {
   bad({ title: "식당", description: "가".repeat(1001) }, "too-long");
   bad({ title: "식당\u202E봉사" }, "bad-char");
   bad({ title: "식당", place: "1층\n식당" }, "bad-char");
+  bad({ title: "식당", contact_note: "문의 " + String.fromCharCode(0x061c) + "010-0000-0000" }, "bad-char");   // 방향 바꿈 글자 하나(아랍 글자 표식)도
+  bad({ title: "식당" + String.fromCharCode(0x2028) + "봉사" }, "bad-char");                                  // 한 줄 칸의 줄 가름 글자
   bad({ title: "식당", open_days: 6 }, "bad-days");
   bad({ title: "식당", open_days: 371 }, "bad-days");
   bad({ title: "식당", open_days: "8주" }, "bad-days");
@@ -133,6 +135,8 @@ test("checkLineIds · checkNote", () => {
   assert.deepEqual(checkNote("", 60, true), { ok: true, note: "" });
   assert.deepEqual(checkNote("가".repeat(61), 60, true), { ok: false, error: "too-long" });
   assert.deepEqual(checkNote("첫 줄\n둘째", 60, true), { ok: false, error: "bad-char" });
+  for (const c of [0x2028, 0x2029, 0x061c]) assert.deepEqual(checkNote("첫 줄" + String.fromCharCode(c) + "둘째", 60, true), { ok: false, error: "bad-char" }, c.toString(16));
+  assert.deepEqual(checkNote("메모" + String.fromCharCode(0x061c), 500, false), { ok: false, error: "bad-char" });
   assert.deepEqual(checkNote("첫 줄\n둘째", 500, false), { ok: true, note: "첫 줄\n둘째" });   // 담당자 메모는 줄바꿈을 살린다
   assert.deepEqual(checkNote(null, 60, true), { ok: false, error: "bad-note" });
   assert.deepEqual(checkNote(undefined, 500, false), { ok: false, error: "bad-note" });
@@ -202,7 +206,8 @@ test("sameNameIds — 이름은 같은데 표식(pk)이 다른 줄만 · 같은 
 // SQL duty_roster 가 주는 꼴(지어낸 값) — pk·모르는 칸은 화면으로 나가지 않는다
 const ROSTER = {
   ok: true, today: "2026-10-12", from: "2026-10-12", to: "2026-12-07",
-  board: { id: "b1", title: "식당 봉사", description: "", place: "식당", contact: "사무실", openDays: 56, untilDate: null, maxAhead: null, status: "open", secret: 1 },
+  board: { id: "b1", title: "식당 봉사", description: "", place: "식당", contact: "사무실", openDays: 56, untilDate: null, maxAhead: null, status: "open", secret: 1,
+    updatedAt: "2026-10-06T10:00:00.123456+00:00" },
   lines: [{ id: 1, sort: 0, service: "1부", task: "설거지", start: "09:00", end: "10:00", capacity: 2, weekday: 0, active: true },
           { id: 2, sort: 1, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, weekday: 0, active: true }],
   days: [
@@ -230,7 +235,7 @@ test("rosterOut — 칸을 골라 옮기고 소속은 한 줄로 · pk·계정 �
   const txt = JSON.stringify(o);
   for (const w of ["SECRET", "pk", "user_id", "ident_key", "confirmed_by", "whoType", "secret"]) assert.equal(txt.includes(w), false, w);
   assert.deepEqual(o.board, { id: "b1", title: "식당 봉사", description: "", place: "식당", contact: "사무실", openDays: 56, untilDate: null, maxAhead: null,
-    status: "open", statusLabel: "받는 중" });
+    status: "open", statusLabel: "받는 중", updatedAt: "2026-10-06T10:00:00.123456+00:00" });   // updatedAt — 설정 창이 dutyBoardSave 의 base 로 되돌려 보낸다
   assert.equal(o.lines.length, 2);
   const d = o.days[0];
   assert.deepEqual([d.date, d.off, d.note, d.confirmed, d.locked, d.past, d.afterUntil, d.need, d.asks], ["2026-10-18", false, "추수감사주일", true, true, false, false, 1, 1]);

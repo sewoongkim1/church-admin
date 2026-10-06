@@ -9,8 +9,10 @@
 //       몸통의 board_id 를 믿고 남의 당번의 줄 번호를 건드리지 못하게(교육 guardEnrollment 와 같은 까닭).
 //    ⚠️ 총괄만 되는 일(만들기·이름·준비/보관·담당자 지정)의 거절은 chief-only — forbidden 을 돌려주면 화면이 통째로 다시 부팅한다.
 //    액션 권한(어느 역할이 부르나)은 authz.ts ACTION_ROLES — 여기는 「어느 당번인가」만 본다.
-// ⚠️ 상태는 SQL 함수로만 바꾼다(지원·빼기·옮기기·확정·쉼·정원·틀). 여기서 표에 직접 쓰는 것은 셋뿐:
-//    당번 설정(duty_boards) · 담당자 줄(duty_board_staff) · 담당자 메모(duty_signups.staff_note).
+// ⚠️ 상태는 SQL 함수로만 바꾼다(지원·빼기·옮기기·확정·쉼·정원·틀·담당자 메모). 여기서 표에 직접 쓰는 것은 둘뿐:
+//    당번 설정(duty_boards) · 담당자 줄(duty_board_staff).
+//    ⚠️ **duty_signups 에는 직접 쓰지 않는다**(메모 한 칸도 duty_note_set) — 쓰기 연결 트리거가 「줄 → 전역 잠금」 차례로 잠가
+//       그 줄을 빼거나 옮기는 SQL 함수(전역 잠금 → 줄)와 서로 기다린다(검토 반영 2026-10-06).
 // ⚠️ 알림(3단계)은 저장·기록이 **끝난 뒤** 부탁만 한다(deps.dutyNotify — 없으면 아무것도 안 한다 · 실패해도 저장은 성공 → notified·notifyError).
 import { boardOrder, boardOut, boardPatchFor, checkBoard, checkLine, checkLineIds, checkNote, dutyChief, DUTY_STAFF_ROLES, exportSheets,
   hidesFromApp, identHasCtrl, isDate, overlapForStaff, placeOut, rosterOut, staffByBoard, staffNames } from "./duty-rules.ts";
@@ -99,6 +101,12 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     return (await mayTouch(ctx, board)) ? { ok: true, board } : NOT_ASSIGNED;
   }
 
+  // 같은 때인가 — 화면이 되돌려 보낸 updated_at 과 지금 줄의 것(둘 다 DB 가 적은 글자 · 꼴이 달라도 같은 순간이면 같다)
+  const sameInstant = (a: unknown, z: unknown): boolean => {
+    const x = Date.parse(String(a ?? "")), y = Date.parse(String(z ?? ""));
+    return Number.isFinite(x) && Number.isFinite(y) ? x === y : String(a ?? "") === String(z ?? "");
+  };
+
   // ---------- 읽기 도우미 ----------
   // 봉사 당번이 성도님 앱에 열렸는가 — app_config dutyOpen 이 true 하나일 때만(성경암송 api 의 문과 같은 값). 읽지 못하면 닫힘으로.
   //   화면이 이 값으로 「아직 성도님 앱에는 열지 않았어요 — 시험 참여자만 볼 수 있어요 · 알림도 그분들께만」을 사실대로 말한다.
@@ -181,8 +189,9 @@ export function makeDuty(db: Db, audit: Audit, deps: {
   //   만들기는 총괄만(chief-only). 고치기는 맡은 당번 · 이름과 준비·보관은 총괄만(boardPatchFor → chief-only).
   //   보관한 당번은 상태를 먼저 바꿔야 고친다(archived) — 보관 = 쓰기 거절(SQL 함수들과 같다).
   //   앱에서 안 보이게 되는 저장(받는 중·지원 멈춤 → 준비·보관)은 앞날에 선 분이 있으면 force 를 받아야 쓴다(has-upcoming · active).
-  //   끝 날짜를 당기는 저장은 그 뒤에 선 분이 있으면 force 를 받아야 쓴다(has-after · active). 저장 뒤 after 로 그 수를 다시 알린다
-  //   (자리·줄은 그대로 — 앱에는 안 보인다 · 담당자가 옮기거나 뺀다).
+  //   끝 날짜를 당기는 저장은 그 뒤에 선 분이 있으면 force_after 를 받아야 쓴다(has-after · active — 상태 확인(force)과 **따로** 묻는다:
+  //   한 번의 「바꾸기」가 두 물음에 함께 답하지 않게). 저장 뒤 after 로 그 수를 다시 알린다(자리·줄은 그대로 — 앱에는 안 보인다).
+  //   base = 화면이 설정 창을 열 때 본 updated_at. 그사이 다른 분이 고쳤으면 changed(낡은 창이 보관·지원 멈춤·끝 날짜를 되돌리지 않게).
   async function dutyBoardSave(ctx: any, b: any) {
     const c = checkBoard(b?.board);
     if (!c.ok) return c;
@@ -197,10 +206,12 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     }
     if (!UUID.test(raw)) return BAD_ID;
     if (!(await mayTouch(ctx, raw))) return NOT_ASSIGNED;
-    const { data: before, error: e0 } = await db.from("duty_boards").select("title,status,until_date").eq("id", raw).maybeSingle();
+    const { data: before, error: e0 } = await db.from("duty_boards").select("title,status,until_date,updated_at").eq("id", raw).maybeSingle();
     if (e0) throw e0;
     if (!before) return NOT_FOUND;
     const was = String(before.status);
+    const base = norm(b?.base);
+    if (base && !sameInstant(base, before.updated_at)) return { ok: false, error: "changed" };
     if (was === "archived" && c.row.status === "archived") return { ok: false, error: "archived" };
     const p = boardPatchFor(chief, before, c.row);
     if (!p.ok) return p;
@@ -212,7 +223,7 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     // 끝 날짜를 당기는(또는 새로 두는) 저장 — 그 뒤 자리는 앱에서 사라진다. 그 뒤에 선 분이 있으면 먼저 묻는다(has-after · active → force).
     //   (상태를 바꾸지 않고도 「앱에서 안 보이게」가 되는 길이라 has-upcoming 과 같은 확인을 둔다 — 날짜를 잘못 고른 저장도 여기서 멈춘다)
     const newUntil = (c.row.until_date as string | null) || null, oldUntil = (before.until_date as string | null) || null;
-    if (newUntil && (!oldUntil || newUntil < oldUntil) && b?.force !== true) {
+    if (newUntil && (!oldUntil || newUntil < oldUntil) && b?.force_after !== true) {
       const { data: n, error: ea } = await db.rpc("duty_after_count", { p_board: raw, p_date: newUntil });
       if (ea) throw ea;
       if (Number(n) > 0) return { ok: false, error: "has-after", active: Number(n) };
@@ -321,8 +332,10 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     const { data: r, error } = await db.rpc("duty_date_add", { p_board: at.board, p_date: date, p_line_ids: l.ids });
     if (error) throw error;
     if (!r?.ok) return r?.error ? { ok: false, error: String(r.error) } : { ok: false, error: "server" };
-    await audit(ctx, "duty.date.add", at.board, { date, made: Number(r.made) || 0, existed: Number(r.existed) || 0 });
-    return { ok: true, made: Number(r.made) || 0, existed: Number(r.existed) || 0 };
+    // reopened = 이미 있던 **남은 자리**(요일을 바꾼 틀의 옛 요일 자리)를 날짜로 더한 자리로 바꿔 다시 살린 수 — 앱 지원을 다시 받는다
+    const n = { made: Number(r.made) || 0, existed: Number(r.existed) || 0, reopened: Number(r.reopened) || 0 };
+    await audit(ctx, "duty.date.add", at.board, { date, ...n });
+    return { ok: true, ...n };
   }
 
   // ---------- 주별 명단 ----------
@@ -492,8 +505,12 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     if (error) throw error;
     if (!r?.ok) { if (picked) await trace(1); return applyFail(r); }
     const out = { ok: true, id: r.id, locked: r.locked === true, ...(r.already ? { already: true } : {}), ...(r.revived ? { revived: true } : {}) };
-    if (r.already) return out;                    // 이미 서 있는 분 — 바뀐 것이 없다(기록·알림 없음)
-    await audit(ctx, "duty.sign.add", at.board, { slot, signup: r.id, app: !!user, revived: r.revived === true, force, locked: r.locked === true });
+    // 이미 서 있는 분 — 바뀐 것이 없다(기록·알림 없음). 다만 계정 없는 줄로 서 있던 분에게 이번에 앱 계정을 이었으면(linked — SQL 이 줄을 썼다)
+    //   그것은 기록에 남기고, 잠긴 날이면 그분 기기로도 알린다(이제 그분 앱의 「내 당번」에 보이고 스스로 못 빼는 줄이다).
+    const linked = r.already === true && r.linked === true;
+    if (r.already && !linked) return out;
+    await audit(ctx, "duty.sign.add", at.board, { slot, signup: r.id, app: !!user, revived: r.revived === true, force, locked: r.locked === true,
+      ...(linked ? { linked: true } : {}) });
     return user && r.locked === true ? await withNotify(out, "added", [r.id]) : out;
   }
 
@@ -552,13 +569,10 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     if (!n.ok) return n;
     const at = await signupBoard(ctx, id);
     if (!at.ok) return at;
-    const { data: bd, error: e0 } = await db.from("duty_boards").select("status").eq("id", at.board).maybeSingle();
-    if (e0) throw e0;
-    if (bd?.status === "archived") return { ok: false, error: "archived" };
-    const { data, error } = await db.from("duty_signups").update({ staff_note: n.note, updated_at: new Date().toISOString() })
-      .eq("id", id).select("id").maybeSingle();
+    // 표에 직접 쓰지 않는다 — duty_note_set 이 전역 잠금을 먼저 잡고 쓴다(파일 머리 ⚠️). 보관한 당번·없는 줄은 SQL 이 거절한다.
+    const { data: r, error } = await db.rpc("duty_note_set", { p_signup: id, p_note: n.note });
     if (error) throw error;
-    if (!data) return NOT_FOUND;
+    if (!r?.ok) return { ok: false, error: String(r?.error || "server") };
     await audit(ctx, "duty.sign.note", at.board, { signup: id, has: n.note !== "" });
     return { ok: true };
   }

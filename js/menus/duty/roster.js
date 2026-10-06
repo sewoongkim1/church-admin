@@ -15,14 +15,14 @@ import { openLineForm, openDateAddForm, openOffForm, offFlow, openAddForm, openN
 import {
   boardRest, contactHtml, maxBack, lineText, lineSavedText, lineRemovedText, boardSavedText, initialDay, dayChip, dayStateText, dayActions, dayLabel, addDays, slotName, timeRange,
   slotCount, signupBadges, askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, removeAsk, restoreAsk, restoredText, slotOffAsk,
-  movedText, dateAddedText, dayHiddenText, draftNote, daysBetween, APP_CLOSED_NOTE,
+  movedText, dateAddedText, dayHiddenText, draftNote, appNote, STALE_BOARD,
   offDoneText, notifyTail, needsReload, lostBoard, exportFileName, exportRanges, EMPTY_ASSIGNED, EMPTY_ALL,
 } from "./duty-logic.js";
 
 const TITLE = `<h2 class="page-title">📅 당번 명단</h2>`;
 const LOADING = `<p class="empty">불러오는 중…</p>`;
 const TABS = [["roster", "명단"], ["lines", "자리 틀"]];
-const BACK_STEP = 28;   // 「지난 날 더 보기」 한 번에 4주(서버 한도 안에서 — duty-logic.js maxBack)
+const BACK_STEP = 28;   // 「지난 날 더 보기」 한 번에 4주(52주까지 — duty-logic.js maxBack)
 const STATE_NOTE = {
   closed: "지원 멈춤 — 앱에 당번표와 내 당번은 보이지만 새 지원은 받지 않아요. 담당자가 「넣기」로 넣어요.",
   archived: "보관한 당번이에요 — 볼 수만 있어요(당번 총괄이 🧰 당번 관리에서 상태를 바꾸면 다시 고칠 수 있어요).",
@@ -78,7 +78,6 @@ export async function render(el, { call, query }) {
   let day = "";          // 고른 날짜
   let tab = "roster";
   let back = 14;         // 지난 며칠까지 불러왔나
-  let olderEnd = false;  // 서버가 기간(400일)에 맞춰 앞을 당겼다 — 더 지난 날은 못 불러온다(「지난 날 더 보기」를 감춘다)
   const pending = new Set();
   const folds = new Set();   // 「빠진 분」을 펼쳐 둔 자리
 
@@ -93,16 +92,12 @@ export async function render(el, { call, query }) {
   // 당번 b 의 명단을 불러와 cur·ros 로 — 실패하면 아무것도 바꾸지 않는다(보던 당번이 그대로 남는다)
   //   → { ok:true } · { ok:false, gone:"당번을 놓을 까닭" } · { ok:false, error }
   const loadRoster = async (b, wantDay = day) => {
-    const asked = !!today;   // 앞을 정해 물었나(오늘을 아직 모르면 서버가 오늘부터 준다)
-    const r = await call("dutyRoster", { board_id: b.id, ...(asked ? { from: addDays(today, -back) } : {}) });
+    // 끝(to)은 보내지 않는다 — 서버가 앞날(가장 먼 날짜 줄까지 · 오늘 + 400일)과 지난 날을 따로 자른다
+    const r = await call("dutyRoster", { board_id: b.id, ...(today ? { from: addDays(today, -back) } : {}) });
     if (!r.ok && r.error === "not-found") return { ok: false, gone: "그 당번을 찾지 못했어요" };
     if (!r.ok && lostBoard(r.error)) return { ok: false, gone: failText(r), lost: true };   // 그사이 맡은 당번에서 빠졌다
     if (!r.ok) return { ok: false, error: r };
     cur = b; ros = r; today = r.today || today;
-    // 서버가 기간(400일)에 맞춰 앞을 당겼으면(먼 날짜를 더해 둔 당번) 그만큼만 읽은 것이다 — 더 불러올 지난 날이 없다
-    const got = daysBetween(r.from, today);
-    olderEnd = asked && got < back;
-    if (olderEnd) back = Math.max(14, got);
     day = initialDay(r.days, today, wantDay);
     lastBoardId = b.id; lastDay = day;
     return { ok: true };
@@ -173,7 +168,7 @@ export async function render(el, { call, query }) {
         <button type="button" class="btn" data-act="off-range">😴 쉬는 기간</button>`}
       <button type="button" class="btn" data-act="export">⬇ 엑셀</button>
       ${ro ? "" : `<button type="button" class="btn" data-act="settings">⚙️ 당번 설정</button>`}</div>`;
-    const chips = `<div class="dty-chips-d" role="group" aria-label="날짜">${!olderEnd && back < maxBack(ros.board.openDays) ? `<button type="button" class="dty-chipd more" data-act="older"><b>◀ 지난 날</b><i>더 보기</i></button>` : ""}${
+    const chips = `<div class="dty-chips-d" role="group" aria-label="날짜">${back < maxBack() ? `<button type="button" class="dty-chipd more" data-act="older"><b>◀ 지난 날</b><i>더 보기</i></button>` : ""}${
       days.map((x) => chipHtml(x, x.date === day, today)).join("")}</div>`;
     if (!days.length) {
       const live = ros.lines.some((l) => l.active);
@@ -186,9 +181,10 @@ export async function render(el, { call, query }) {
     if (!boards.length) { el.innerHTML = TITLE + `<p class="empty">${esc(scope === "assigned" ? EMPTY_ASSIGNED : EMPTY_ALL)}</p>`; return; }
     if (!cur || !ros) { el.innerHTML = TITLE + boardBtn() + `<p class="empty">당번을 골라 주세요</p>`; return; }
     const b = ros.board, ro = b.status === "archived";
+    const note = ro || b.status === "draft" ? "" : appNote(ros.appOpen === true);   // 준비 중 당번은 준비 중 안내 하나만(누구에게도 안 보인다)
     el.innerHTML = TITLE + boardBtn() +
       `<p class="muted dty-info">${b.place ? `📍 ${esc(b.place)} · ` : ""}${b.contact ? `📞 ${contactHtml(b.contact)} · ` : ""}${esc(boardRest(b))}</p>` +
-      (ros.appOpen === true || ro || b.status === "draft" ? "" : `<p class="be-note">${esc(APP_CLOSED_NOTE)}</p>`) +
+      (note ? `<p class="be-note">${esc(note)}</p>` : "") +
       (b.status === "draft" ? `<p class="be-note">${esc(draftNote(ros.chief === true))}</p>` : STATE_NOTE[b.status] ? `<p class="be-note">${esc(STATE_NOTE[b.status])}</p>` : "") +
       tabsHtml() + (tab === "lines" ? linesHtml(ro) : rosterHtml(ro));
     // 고른 날짜 칩이 칩 줄 가운데 오게 — 칩 줄만 옆으로 굴린다(scrollIntoView 는 화면까지 위로 끌어올린다 — 줄을 뺀 뒤 화면이 튀던 것)
@@ -365,7 +361,7 @@ export async function render(el, { call, query }) {
       }
       if (!cur || !ros) return;
       await once(act, async () => {
-        if (act === "older") { back = Math.min(maxBack(ros.board.openDays), back + BACK_STEP); await busy(el, () => reload()); }
+        if (act === "older") { back = Math.min(maxBack(), back + BACK_STEP); await busy(el, () => reload()); }
         else if (act === "export") await exportXlsx(a);
         else if (act === "date-add") {
           const live = ros.lines.filter((l) => l.active);
@@ -373,7 +369,7 @@ export async function render(el, { call, query }) {
           const got = await openDateAddForm({ call, boardId: cur.id, lines: live, today, untilDate: ros.board.untilDate || "" });
           if (got) {
             toast(dateAddedText(got.r, got.date));
-            if (got.date < addDays(today, -back)) back = Math.min(maxBack(ros.board.openDays), Math.max(back, 35));   // 지난 날짜를 더했으면 그날까지 불러온다
+            if (got.date < addDays(today, -back)) back = Math.min(maxBack(), Math.max(back, 35));   // 지난 날짜를 더했으면 그날까지 불러온다
             await busy(el, () => reload(got.date));
           }
         } else if (act === "off-range") {
@@ -382,6 +378,7 @@ export async function render(el, { call, query }) {
         } else if (act === "settings") {
           const got = await openBoardForm({ call, board: { ...ros.board, staff: ros.staff }, chief: ros.chief === true, appOpen: ros.appOpen === true });
           if (got === "gone") { toast("그사이 바뀌었어요 — 새로 불러올게요"); await busy(el, reloadAll); }
+          else if (got === "stale") { toast(STALE_BOARD); await busy(el, reloadAll); }
           else if (got) { toast(got.staffErr || boardSavedText(got, false)); await busy(el, reloadAll); }
         }
       });

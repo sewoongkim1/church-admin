@@ -347,6 +347,7 @@ test("봉사 당번 기록 — detail 줄은 번호·날짜·수만(서버 duty-
   assert.equal(T("duty.line.remove", { line: 7, deleted: true, kept: 0 }), "틀 #7 · 지움");
   assert.equal(T("duty.line.remove", { line: 7, deleted: false, kept: 2 }), "틀 #7 · 남김(자리가 있음) · 앞날 자리 2개 남음");
   assert.equal(T("duty.date.add", { date: "2026-12-25", made: 2, existed: 1 }), "2026-12-25 · 자리 2개 만듦 · 이미 있음 1");
+  assert.equal(T("duty.date.add", { date: "2026-12-25", made: 0, existed: 0, reopened: 1 }), "2026-12-25 · 자리 0개 만듦 · 남은 자리 1개 다시 엶");
   assert.equal(T("duty.day.set", { date: "2026-10-18", op: "confirm", active: 5 }), "2026-10-18 · 확정 · 선 분 5");
   assert.equal(T("duty.day.set", { date: "2026-10-18", op: "unconfirm" }), "2026-10-18 · 확정 풂");
   assert.equal(T("duty.day.set", { date: "2026-10-18", op: "note" }), "2026-10-18 · 메모 고침");
@@ -358,6 +359,7 @@ test("봉사 당번 기록 — detail 줄은 번호·날짜·수만(서버 duty-
   assert.equal(T("duty.slot.delete", { slot: 31 }), "자리 #31");
   assert.equal(T("duty.sign.add", { slot: 31, signup: 501, app: true, revived: false, force: false, locked: true }), "지원 #501 · 앱 계정에 · 잠긴 날");
   assert.equal(T("duty.sign.add", { slot: 31, signup: 502, app: false, revived: true, force: true, locked: false }), "지원 #502 · 앱 없음 · 되살림 · 정원·겹침 넘김");
+  assert.equal(T("duty.sign.add", { slot: 31, signup: 503, app: true, revived: false, force: false, locked: true, linked: true }), "지원 #503 · 앱 계정에 · 서 있던 줄에 앱 계정 이음 · 잠긴 날");
   assert.equal(T("duty.sign.remove", { signup: 501, date: "2026-10-18", locked: true }), "지원 #501 · 2026-10-18 · 잠긴 날");
   assert.equal(T("duty.sign.move", { signup: 501, from: "2026-10-18", to: "2026-10-25", slot: 40, force: false }), "지원 #501 · 2026-10-18 → 2026-10-25");
   assert.equal(T("duty.sign.move", { signup: 501, from: "2026-10-18", to: "2026-10-18", slot: 32, force: true }), "지원 #501 · 2026-10-18 · 정원·겹침 넘김");

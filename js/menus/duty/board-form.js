@@ -2,7 +2,9 @@
 //   서버: dutyBoardSave(·dutyStaffSet). 규칙·말은 duty-logic.js(시험).
 //   당번 담당(맡은 당번)은 이름과 「준비 중·보관」을 못 바꾼다 — 그 칸을 글로만 보여 준다(막는 것은 서버 chief-only).
 // ⚠️ 「받는 중」으로 **바꾸는** 저장에만 확인을 한 번 더(앱에 바로 보인다). 앱에서 안 보이게 되는 저장(준비·보관)은 앞날에 선 분이 있으면
-//    서버가 has-upcoming 으로 멈춘다 → 수를 보여 주고 확인받아 force 로 다시 보낸다.
+//    서버가 has-upcoming 으로 멈춘다 → 수를 보여 주고 확인받아 force 로 다시 보낸다. 끝 날짜를 당기는 저장은 has-after → force_after 로
+//    **따로** 묻는다(한 번의 「바꾸기」가 두 물음에 함께 답하지 않는다).
+// ⚠️ 창을 열 때 본 updatedAt 을 base 로 함께 보낸다 — 그사이 다른 분이 고쳤으면 서버가 changed 로 멈추고, 창을 닫아 새로 불러온다("stale").
 // ⚠️ 고르기·날짜는 picker.js 고르개만 — 시스템 select·date 칸 금지. 서버 글자는 모두 esc.
 import { esc, dialog, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
@@ -51,7 +53,7 @@ const readForm = (root) => {
 };
 
 // → { id, after, staffErr }(저장 · after = 끝 날짜 뒤에 선 분 수 · staffErr = 당번은 저장됐는데 담당자 저장이 실패한 말) · 닫았으면 null ·
-//   그사이 없어졌거나 맡은 당번에서 빠졌으면 "gone".
+//   그사이 없어졌거나 맡은 당번에서 빠졌으면 "gone" · 그사이 다른 분이 고쳤으면 "stale"(둘 다 부른 쪽이 새로 불러온다).
 //   board = 서버 boardOut 꼴(없으면 새 당번) · cands = 담당자 후보(dutyStaffCandidates · 못 불러왔으면 null · undefined 면 담당자 칸 없음)
 //   appOpen = 봉사 당번이 성도님 앱에 열렸는가(「받는 중」 확인 글을 사실대로)
 export function openBoardForm({ call, board = null, chief = false, cands, appOpen = false }) {
@@ -60,7 +62,7 @@ export function openBoardForm({ call, board = null, chief = false, cands, appOpe
   const staff0 = withStaff ? ((board && board.staff) || []).map((x) => x.id) : [];
   const staffOpts = withStaff ? staffOptions(cands || [], (board && board.staff) || [], STAFF_ROLE_HINTS) : [];
   const statusOpts = chief ? STATUS_OPTIONS : LEAD_STATUS_OPTIONS;
-  let first = "", gone = false;
+  let first = "", gone = false, stale = false;
   const setBtn = (b, label, text, empty) => {
     b.querySelector(".pk-field-v").textContent = text;
     b.setAttribute("aria-label", `${label}, ${text}`);
@@ -112,14 +114,19 @@ export function openBoardForm({ call, board = null, chief = false, cands, appOpe
         if (!root.isConnected) return { ok: false };
         if (!yes) return { ok: false, message: "저장하지 않았어요 — 아무것도 바뀌지 않았어요" };
       }
-      let r = await call("dutyBoardSave", { board: f.board });
-      // 앱에서 안 보이게 되는 두 길 — 상태(준비·보관 · has-upcoming) · 끝 날짜 당기기(has-after). 수를 보여 주고 확인받아 force 로 다시 보낸다
-      if (!r.ok && (r.error === "has-upcoming" || r.error === "has-after")) {
-        const text = r.error === "has-after" ? afterAsk(r.active, f.board.until_date) : hideAsk(r.active, f.board.status);
+      const base = board && board.updatedAt ? { base: board.updatedAt } : {};
+      let flags = {};
+      let r = await call("dutyBoardSave", { board: f.board, ...base });
+      // 앱에서 안 보이게 되는 두 길 — 상태(준비·보관 · has-upcoming → force) · 끝 날짜 당기기(has-after → force_after).
+      //   하나씩 수를 보여 주고 확인받는다(둘 다면 두 번 묻는다).
+      for (let i = 0; i < 2 && !r.ok && (r.error === "has-upcoming" || r.error === "has-after"); i++) {
+        const after = r.error === "has-after";
+        const text = after ? afterAsk(r.active, f.board.until_date) : hideAsk(r.active, f.board.status);
         const yes = await dialog({ title: "앱에서 안 보이게 돼요", text, ok: "바꾸기", cancel: "그만두기", danger: true });
         if (!root.isConnected) return { ok: false };
         if (!yes) return { ok: false, message: "저장하지 않았어요 — 아무것도 바뀌지 않았어요" };
-        r = await call("dutyBoardSave", { board: f.board, force: true });
+        flags = { ...flags, ...(after ? { force_after: true } : { force: true }) };
+        r = await call("dutyBoardSave", { board: f.board, ...base, ...flags });
       }
       if (r.ok) {
         // 담당자 — 바뀐 때만(새 당번은 방금 받은 id 로). 실패해도 당번은 이미 저장됐으니 창을 닫고 알린다(다시 누르면 새 당번이 또 생긴다)
@@ -131,8 +138,9 @@ export function openBoardForm({ call, board = null, chief = false, cands, appOpe
         return { ok: true, value: { id: r.id, after: Number(r.after) || 0, staffErr } };
       }
       if (r.error === "not-found" || r.error === "not-assigned") { gone = true; return { ok: true, value: null }; }   // 창을 닫고 목록을 새로 불러온다
+      if (r.error === "changed") { stale = true; return { ok: true, value: null }; }   // 그사이 다른 분이 고쳤다 — 낡은 값으로 덮지 않고 닫는다
       const m = dutyWord(r.error);
       return m ? { ok: false, message: m } : r;
     },
-  }).then((x) => (gone ? "gone" : x));
+  }).then((x) => (gone ? "gone" : stale ? "stale" : x));
 }

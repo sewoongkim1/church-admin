@@ -164,7 +164,7 @@ export function openOffForm({ call, boardId, today, from = "", to = "", note = "
         if (d) {
           const k = d.dataset.d, label = k === "from" ? "시작일" : "끝날";
           // 시작일은 끝날에 묶지 않는다 — 더 늦은 날을 고르면 끝날이 따라온다(하루만 쉬는 일이 많아 끝날을 같은 날로 채워 두기 때문)
-          const got = await pickDate({ anchor: d, title: label, value: st[k], min: k === "to" && st.from ? st.from : today });
+          const got = await pickDate({ anchor: d, title: label, value: st[k], min: k === "to" && st.from ? st.from : today, max: addDays(today, 400) });
           if (got !== null && d.isConnected) {
             st[k] = got; setBtn(d, label, dateText(got), !got);
             if (k === "from" && got && (!st.to || st.to < got)) { st.to = got; setBtn(root.querySelector('[data-d="to"]'), "끝날", dateText(got), false); }
@@ -198,20 +198,28 @@ const candCard = (p, i) => `<div class="card ee-row" data-cand="${i}">
 export async function openAddForm({ call, boardId, day, slot }) {
   let tab = "pick", added = false, adding = false;
   let tried = false;   // 넣기 요청을 한 번이라도 보냈나 — 응답 전에 창을 닫아도 명단을 다시 불러오게(넣어졌을 수 있다)
+  let inflight = null; // 지금 서버에 가 있는 넣기(끝나면 그 답) — 창을 닫아도 이것이 끝난 뒤에야 명단을 다시 불러온다
+  let rootEl = null, lastName = "", shown = false;   // shown = 방금 끝난 넣기의 결과를 창 안에서 이미 알렸나
   let cands = [], searched = "", first = "";
   const typedVals = (root) => ({ name: root.querySelector("[data-t=name]").value, who: root.querySelector("[data-t=who]").value,
     group: root.querySelector("[data-t=group]").value, sub: root.querySelector("[data-t=sub]").value });
 
   // 한 번 부르고, 정원·겹침에 걸리면 알려 준 뒤 같은 인자에 force 를 더해 다시 부른다
-  const addCall = async (args) => {
-    tried = true;
-    let r = await call("dutySignAdd", { slot_id: slot.id, ...args });
-    if (needsForce(r)) {
-      const yes = await dialog({ title: "그래도 넣을까요?", text: forceAsk(r, "넣을까요"), ok: "넣기", cancel: "그만두기" });
-      if (!yes) return { kept: true };
-      r = await call("dutySignAdd", { slot_id: slot.id, ...args, force: true });
-    }
-    return r;
+  //   창을 닫은 뒤에 온 정원·겹침 거절에는 확인 창을 띄우지 않는다(닫힌 창의 물음이 명단 위에 뜨지 않게) — 넣지 않고 { kept, late } 로 끝낸다.
+  const addCall = (args, name) => {
+    tried = true; shown = false; lastName = name;
+    const run = (async () => {
+      let r = await call("dutySignAdd", { slot_id: slot.id, ...args });
+      if (needsForce(r)) {
+        if (!rootEl || !rootEl.isConnected) return { kept: true, late: true };
+        const yes = await dialog({ title: "그래도 넣을까요?", text: forceAsk(r, "넣을까요"), ok: "넣기", cancel: "그만두기" });
+        if (!yes) return { kept: true };
+        r = await call("dutySignAdd", { slot_id: slot.id, ...args, force: true });
+      }
+      return r;
+    })();
+    inflight = run.catch(() => null);
+    return run;
   };
 
   return openForm({
@@ -231,6 +239,7 @@ export async function openAddForm({ call, boardId, day, slot }) {
         <p class="muted ee-hint">${esc(TYPED_SUB_HINT)}</p></div>`,
     onOpen: (root) => {
       const res = root.querySelector("[data-res]"), q = root.querySelector("[data-q]");
+      rootEl = root;
       first = JSON.stringify(typedVals(root));
       const find = async () => {
         const name = q.value;
@@ -262,9 +271,10 @@ export async function openAddForm({ call, boardId, day, slot }) {
         let done = false;
         try {
           // name 은 찾을 때 넣은 그 글자 · pick 은 받은 목록의 차례(0부터) · check 는 그 카드의 다섯 칸 그대로
-          const r = await addCall(pickArgs(searched, i, p));
-          if (!root.isConnected || r.kept) return;
-          if (r.ok) { added = true; done = true; toast(addDoneText(r, p.name)); reg.textContent = "넣음"; return; }
+          const r = await addCall(pickArgs(searched, i, p), p.name);
+          if (!root.isConnected || r.kept) return;      // 닫힌 뒤에 끝난 넣기는 아래 then 이 알린다
+          if (r.ok) { added = true; done = true; shown = true; toast(addDoneText(r, p.name)); reg.textContent = "넣음"; return; }
+          shown = true;
           if (r.error === "changed") { cands = []; res.innerHTML = `<p class="empty">그사이 교인명부가 바뀌었어요 — 다시 찾아 주세요</p>`; return; }
           toast(failText(r));
         } finally { adding = false; if (reg.isConnected && !done) reg.disabled = false; }
@@ -277,13 +287,23 @@ export async function openAddForm({ call, boardId, day, slot }) {
       if (!v.name.trim()) return { ok: false, message: "이름을 써 주세요" };
       adding = true;
       try {
-        const r = await addCall({ ident: { name: v.name, who_type: v.who, group_name: v.group, sub_name: v.sub } });
+        const r = await addCall({ ident: { name: v.name, who_type: v.who, group_name: v.group, sub_name: v.sub } }, v.name.trim());
+        shown = true;
         if (r.kept) return { ok: false };
         if (r.ok) { added = true; toast(addDoneText(r, v.name.trim())); return { ok: true, value: true }; }
         return { ok: false, message: failText(r) };
       } finally { adding = false; }
     },
-  }).then(() => added || tried);
+  }).then(async () => {
+    // 창을 닫을 때 아직 가 있는 넣기가 있으면 끝나기를 기다린다 — 그래야 다시 불러온 명단에 그분이 보인다. 창 안에서 못 알린 결과는 여기서 알린다.
+    const last = inflight ? await inflight : null;
+    if (last && !shown) {
+      if (last.ok) toast(addDoneText(last, lastName));
+      else if (last.late) toast("정원이 찼거나 겹치는 자리라 넣지 않았어요 — 다시 「＋ 넣기」에서 확인해 주세요");
+      else if (!last.kept) toast(failText(last));
+    }
+    return added || tried;
+  });
 }
 
 // ---------- 작은 창들 ----------

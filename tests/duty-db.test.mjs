@@ -285,7 +285,9 @@ test("dutyBoardSave — 앱에서 안 보이게 되는 저장은 앞날에 선 �
   assert.deepEqual(await u.duty.dutyBoardSave(LEAD, ub("2026-12-31")), { ok: false, error: "has-after", active: 2 });
   assert.deepEqual(u.log.rpc[0], ["duty_after_count", { p_board: A, p_date: "2026-12-31" }]);
   assert.equal(u.log.writes.length, 0); assert.equal(u.log.audit.length, 0);
-  assert.deepEqual(await u.duty.dutyBoardSave(LEAD, { ...ub("2026-12-31"), force: true }), { ok: true, id: A, after: 2 });
+  assert.deepEqual(await u.duty.dutyBoardSave(LEAD, { ...ub("2026-12-31"), force: true }), { ok: false, error: "has-after", active: 2 },
+    "상태 확인(force)은 끝 날짜 확인을 대신하지 않는다 — 한 번의 「바꾸기」가 두 물음에 함께 답하지 않게");
+  assert.deepEqual(await u.duty.dutyBoardSave(LEAD, { ...ub("2026-12-31"), force_after: true }), { ok: true, id: A, after: 2 });
   assert.equal(u.t.duty_boards.find((x) => x.id === A).until_date, "2026-12-31");
   // 그 뒤에 선 분이 없으면 묻지 않는다 · 끝 날짜를 늦추거나 지우는 저장은 세지도 않는다
   assert.equal((await u.duty.dutyBoardSave(LEAD, ub("2026-11-30"))).ok, true);
@@ -293,6 +295,20 @@ test("dutyBoardSave — 앱에서 안 보이게 되는 저장은 앞날에 선 �
   assert.equal((await u.duty.dutyBoardSave(LEAD, ub("2027-01-31"))).ok, true);
   assert.equal((await u.duty.dutyBoardSave(LEAD, ub(""))).ok, true);
   assert.equal(u.log.rpc.filter((x) => x[0] === "duty_after_count").length, before, "늦추거나 지울 때는 세지 않는다");
+  // 안 보이게 하면서 끝 날짜도 당기는 저장 — 두 확인을 차례로 받는다(force → force_after)
+  const both = setup({ rpcs: { duty_board_counts: { [A]: { active: 8, after: 5 } }, duty_after_count: 5 } });
+  const bb = { board: { id: A, title: "식당 봉사", status: "draft", until_date: "2026-10-31" } };
+  assert.deepEqual(await both.duty.dutyBoardSave(CHIEF, bb), { ok: false, error: "has-upcoming", active: 8 });
+  assert.deepEqual(await both.duty.dutyBoardSave(CHIEF, { ...bb, force: true }), { ok: false, error: "has-after", active: 5 });
+  assert.equal(both.log.writes.length, 0);
+  assert.equal((await both.duty.dutyBoardSave(CHIEF, { ...bb, force: true, force_after: true })).ok, true);
+  // 설정 창을 연 뒤 다른 분이 고쳤으면 changed — 낡은 창이 보관·지원 멈춤·끝 날짜를 되돌리지 않는다(base = 창을 열 때 본 updated_at)
+  const st = setup({ tables: { duty_boards: [{ id: A, title: "식당 봉사", description: "", place: "", contact_note: "", open_days: 56, until_date: null, max_ahead: null,
+    status: "archived", created_at: "2026-10-01", updated_at: "2026-10-06T10:00:00.123456+00:00" }] } });
+  const sb = { board: { id: A, title: "식당 봉사", status: "open", place: "새 식당" } };
+  assert.deepEqual(await st.duty.dutyBoardSave(CHIEF, { ...sb, base: "2026-10-05T09:00:00+00:00" }), { ok: false, error: "changed" });
+  assert.equal(st.log.writes.length, 0); assert.equal(st.log.audit.length, 0);
+  assert.equal((await st.duty.dutyBoardSave(CHIEF, { ...sb, base: "2026-10-06T10:00:00.123+00:00" })).ok, true, "같은 때(밀리초까지)면 지나간다");
   // 읽은 상태를 조건으로 쓴다 — 그사이 다른 분이 상태를 바꿨으면 changed(되돌리지 않는다)
   const w = setup();
   await w.duty.dutyBoardSave(LEAD, { board: { id: A, title: "식당 봉사", status: "closed" } });
@@ -361,10 +377,12 @@ test("dutyLineSave · dutyLineRemove · dutyDateAdd — 검사 뒤 SQL 함수에
   assert.deepEqual(r.log.rpc[0], ["duty_line_remove", { p_line: 1 }]);
   assert.deepEqual(r.log.audit[0], ["duty.line.remove", A, { line: 1, deleted: false, kept: 2 }]);
 
-  const d = setup({ rpcs: { duty_date_add: (x) => (x.p_date === "2026-12-25" ? { ok: true, made: 2, existed: 1 } : { ok: false, error: "after-until" }) } });
-  assert.deepEqual(await d.duty.dutyDateAdd(LEAD, { board_id: A, date: "2026-12-25", line_ids: [1, "3", 1] }), { ok: true, made: 2, existed: 1 });
+  const d = setup({ rpcs: { duty_date_add: (x) => (x.p_date === "2026-12-25" ? { ok: true, made: 2, existed: 1, reopened: 0 } : { ok: false, error: "after-until" }) } });
+  assert.deepEqual(await d.duty.dutyDateAdd(LEAD, { board_id: A, date: "2026-12-25", line_ids: [1, "3", 1] }), { ok: true, made: 2, existed: 1, reopened: 0 });
   assert.deepEqual(d.log.rpc[0], ["duty_date_add", { p_board: A, p_date: "2026-12-25", p_line_ids: [1, 3] }]);
-  assert.deepEqual(d.log.audit[0], ["duty.date.add", A, { date: "2026-12-25", made: 2, existed: 1 }]);
+  assert.deepEqual(d.log.audit[0], ["duty.date.add", A, { date: "2026-12-25", made: 2, existed: 1, reopened: 0 }]);
+  const ro = setup({ rpcs: { duty_date_add: { ok: true, made: 0, existed: 0, reopened: 1 } } });
+  assert.deepEqual(await ro.duty.dutyDateAdd(LEAD, { board_id: A, date: "2026-12-25", line_ids: [1] }), { ok: true, made: 0, existed: 0, reopened: 1 });
   assert.deepEqual(await d.duty.dutyDateAdd(LEAD, { board_id: A, date: "2027-01-01", line_ids: [1] }), { ok: false, error: "after-until" });
   assert.deepEqual(await d.duty.dutyDateAdd(LEAD, { board_id: A, date: "12/25", line_ids: [1] }), { ok: false, error: "bad-date" });
   assert.deepEqual(await d.duty.dutyDateAdd(LEAD, { board_id: A, date: "2026-12-25", line_ids: [] }), { ok: false, error: "bad-lines" });
@@ -560,6 +578,14 @@ test("dutySignAdd — 잠긴 날에 앱 계정이 있는 분을 넣으면 그분
   const b = setup({ pick, rpcs: { duty_apply: { ok: true, id: 510, locked: true, already: true } } });
   assert.deepEqual(await b.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {} }), { ok: true, id: 510, locked: true, already: true });
   assert.equal(b.log.audit.length, 0); assert.equal(b.log.notify.length, 0);
+  // 계정 없는 줄로 서 있던 분에게 이번에 앱 계정을 이었다(linked) — 「이미 서 계세요」지만 쓴 것이 있다 → 기록 한 줄 · 잠긴 날이면 알림
+  const l = setup({ pick, rpcs: { duty_apply: { ok: true, id: 510, locked: true, already: true, linked: true } } });
+  assert.deepEqual(await l.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {} }), { ok: true, id: 510, locked: true, already: true, notified: 1, notifyError: null });
+  assert.deepEqual(l.log.audit, [["duty.sign.add", A, { slot: 10, signup: 510, app: true, revived: false, force: false, locked: true, linked: true }]]);
+  assert.deepEqual(l.log.notify.map((x) => [x[0], x[1]]), [["added", [510]]]);
+  const l2 = setup({ pick, rpcs: { duty_apply: { ok: true, id: 510, locked: false, already: true, linked: true } } });
+  await l2.duty.dutySignAdd(LEAD, { slot_id: 10, name: "가상하나", pick: 0, check: {} });
+  assert.equal(l2.log.audit.length, 1); assert.equal(l2.log.notify.length, 0, "잠기지 않은 날은 알리지 않는다");
 });
 
 test("dutySignAdd·dutySignMove — 겹침은 같은 당번일 때만 자리 이름을 싣는다(남의 당번 이름이 응답에 없다) · 정원 거절은 수를 싣는다", async () => {
@@ -619,19 +645,18 @@ test("dutySignMove — 떠나는 줄의 당번만 확인하고(같은 당번 안
   assert.equal(s.log.audit.length, 0); assert.equal(s.log.notify.length, 0);
 });
 
-test("dutySignNote — 메모 한 칸만 쓴다 · 기록에 글 없음 · 보관한 당번은 고치지 않는다", async () => {
-  const a = setup();
+test("dutySignNote — SQL 함수(duty_note_set)로 쓴다(지원 줄에 직접 쓰지 않는다) · 기록에 글 없음 · 보관한 당번은 SQL 이 거절", async () => {
+  const a = setup({ rpcs: { duty_note_set: (x) => (x.p_signup === 300 ? { ok: false, error: "archived" } : { ok: true }) } });
   assert.deepEqual(await a.duty.dutySignNote(LEAD, { id: 100, note: " 전화로 받음\n2부도 가능 " }), { ok: true });
-  const w = a.log.writes[0];
-  assert.deepEqual([w[0], w[1], Object.keys(w[2]).sort(), w[3]], ["duty_signups", "update", ["staff_note", "updated_at"], [100]]);
-  assert.equal(a.t.duty_signups.find((x) => x.id === 100).staff_note, "전화로 받음\n2부도 가능");
+  assert.deepEqual(a.log.rpc[0], ["duty_note_set", { p_signup: 100, p_note: "전화로 받음\n2부도 가능" }]);
+  assert.equal(a.log.writes.length, 0, "duty_signups 에 직접 update 하지 않는다 — 잠금 차례가 뒤집힌다");
   assert.deepEqual(a.log.audit[0], ["duty.sign.note", A, { signup: 100, has: true }]);
   assert.deepEqual(await a.duty.dutySignNote(LEAD, { id: 100, note: "" }), { ok: true });
   assert.deepEqual(a.log.audit[1][2], { signup: 100, has: false });
   assert.deepEqual(await a.duty.dutySignNote(LEAD, { id: 100, note: "가".repeat(501) }), { ok: false, error: "too-long" });
   assert.deepEqual(await a.duty.dutySignNote(LEAD, { id: 100 }), { ok: false, error: "bad-note" });
   assert.deepEqual(await a.duty.dutySignNote(LEAD, { id: 300, note: "메모" }), { ok: false, error: "archived" });
-  assert.equal(a.log.writes.length, 2); assert.equal(a.log.rpc.length, 0);
+  assert.equal(a.log.writes.length, 0); assert.equal(a.log.rpc.length, 3); assert.equal(a.log.audit.length, 2, "거절은 기록하지 않는다");
 });
 
 test("dutyAskClear — 표시를 거두면 기록 · 표시가 없던 줄이면 기록 없음", async () => {

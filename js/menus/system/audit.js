@@ -161,14 +161,15 @@ export function detailText(r) {
   if (r.action === "duty.line.save") return joinDot(`틀 #${d.line ?? ""}`, d.created ? "새 틀" : "고침", d.made ? `자리 ${d.made}개 만듦` : "",
     d.updated ? `정원 바꾼 자리 ${d.updated}` : "", d.kept ? `지원이 있어 남긴 자리 ${d.kept}` : "");
   if (r.action === "duty.line.remove") return joinDot(`틀 #${d.line ?? ""}`, d.deleted ? "지움" : "남김(자리가 있음)", d.kept ? `앞날 자리 ${d.kept}개 남음` : "");
-  if (r.action === "duty.date.add") return joinDot(d.date || "", `자리 ${d.made ?? 0}개 만듦`, d.existed ? `이미 있음 ${d.existed}` : "");
+  if (r.action === "duty.date.add") return joinDot(d.date || "", `자리 ${d.made ?? 0}개 만듦`, d.reopened ? `남은 자리 ${d.reopened}개 다시 엶` : "",
+    d.existed ? `이미 있음 ${d.existed}` : "");
   if (r.action === "duty.day.set") return joinDot(d.date || "", DUTY_DAY_OP[d.op] || d.op || "", d.op === "confirm" ? `선 분 ${d.active ?? 0}` : "");
   if (r.action === "duty.days.off") return joinDot(d.from === d.to ? d.from || "" : `${d.from || ""} ~ ${d.to || ""}`, d.off ? "쉬는 날로" : "다시 엶",
     `${d.days ?? 0}일`, `선 분 ${d.active ?? 0}`);
   if (r.action === "duty.slot.set") return joinDot(`자리 #${d.slot ?? ""}`, d.capacity != null ? `정원 ${d.capacity}` : "",
     d.off === true ? "이 자리만 쉼" : d.off === false ? "다시 엶" : "");
   if (r.action === "duty.slot.delete") return `자리 #${d.slot ?? ""}`;
-  if (r.action === "duty.sign.add") return joinDot(`지원 #${d.signup ?? ""}`, d.app ? "앱 계정에" : "앱 없음", d.revived ? "되살림" : "",
+  if (r.action === "duty.sign.add") return joinDot(`지원 #${d.signup ?? ""}`, d.app ? "앱 계정에" : "앱 없음", d.linked ? "서 있던 줄에 앱 계정 이음" : "", d.revived ? "되살림" : "",
     d.force ? "정원·겹침 넘김" : "", d.locked ? "잠긴 날" : "");
   if (r.action === "duty.sign.remove") return joinDot(`지원 #${d.signup ?? ""}`, d.date || "", d.locked ? "잠긴 날" : "");
   if (r.action === "duty.sign.restore") return joinDot(`지원 #${d.signup ?? ""}`, d.date || "", d.force ? "정원·겹침 넘김" : "", d.locked ? "잠긴 날" : "");

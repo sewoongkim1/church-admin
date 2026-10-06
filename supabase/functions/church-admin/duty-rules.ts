@@ -19,10 +19,11 @@ export const DUTY_WEEKDAYS = ["주일", "월", "화", "수", "목", "금", "토"
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-// 제어 글자(줄바꿈 포함)와 방향 바꿈 글자 — 한 줄짜리 칸에 넣지 않는다(앱 화면·알림 글에 그대로 나간다)
-const CTRL_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/;
+// 제어 글자(줄바꿈 포함) · 방향 바꿈 글자(U+061C · U+200E·F · U+202A~E · U+2066~9) · 줄·문단 가름(U+2028·9) — 한 줄짜리 칸에 넣지 않는다
+//   (앱 화면·알림 글에 그대로 나간다 · 성경암송 duty.sql duty_name_out 과 같은 글자들)
+const CTRL_RE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2066-\u2069]/;
 // 여러 줄 글(설명·담당자 메모)용 — 줄바꿈·탭은 되고 널(\u0000 — DB 가 못 받는다)·그 밖의 제어·방향 바꿈 글자는 안 된다
-const CTRL_ML = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/;
+const CTRL_ML = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069]/;
 // 직접 적은 신원(새가족)의 칸에 제어 글자가 있는가 — checkTypedIdent(교육과 함께 쓰는 검사)는 | 와 길이만 본다
 export const identHasCtrl = (ident: any): boolean => ["name", "who_type", "group_name", "sub_name"].some((k) => CTRL_RE.test(String(ident?.[k] ?? "")));
 
@@ -225,7 +226,8 @@ export function rosterOut(j: any) {
   return {
     today: str(j?.today), from: str(j?.from), to: str(j?.to),
     board: { id: b.id, title: str(b.title), description: str(b.description), place: str(b.place), contact: str(b.contact), openDays: num(b.openDays) || 56,
-      untilDate: b.untilDate || null, maxAhead: b.maxAhead ?? null, status: str(b.status), statusLabel: DUTY_STATUS_LABEL[b.status] || str(b.status) },
+      untilDate: b.untilDate || null, maxAhead: b.maxAhead ?? null, status: str(b.status), statusLabel: DUTY_STATUS_LABEL[b.status] || str(b.status),
+      updatedAt: b.updatedAt || null },      // 설정 창이 dutyBoardSave 의 base 로 되돌려 보낸다(그사이 다른 분이 고쳤는지)
     lines: (Array.isArray(j?.lines) ? j.lines : []).map(lineOut),
     days,
   };

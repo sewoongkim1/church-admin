@@ -148,13 +148,9 @@ export function contactHtml(text) {
   if (!m) return esc(t);
   return esc(t.slice(0, m.index)) + `<a href="tel:${m[0].replace(/\D/g, "")}">${esc(m[0])}</a>` + esc(t.slice(m.index + m[0].length));
 }
-// 두 날짜 사이의 날 수(b − a) — 꼴이 틀리면 0
-export function daysBetween(a, b) {
-  if (!isDate(a) || !isDate(b)) return 0;
-  return Math.round((utc(b).getTime() - utc(a).getTime()) / 86400000);
-}
-// 지난 날을 얼마나 불러올 수 있나 — 서버 명단은 한 번에 400일까지(지난 날 + 보이는 기간)
-export const maxBack = (openDays) => Math.max(14, 400 - (Number(openDays) || 56));
+// 지난 날을 얼마나 불러올 수 있나 — 52주. 서버 명단(duty_roster)은 끝을 안 준 요청이면 앞날(오늘 + 400일)과 지난 날(오늘 − 400일)을
+//   **따로** 자른다 — 먼 앞날에 날짜를 더해 두어도 지난 날이 줄지 않는다(검토 반영 2026-10-06).
+export const maxBack = () => 364;
 // 당번을 저장한 뒤 한 줄 — 끝 날짜 뒤에 선 분이 있으면 알린다
 export function boardSavedText(r, created) {
   const base = created ? "당번을 만들었어요 — 「📅 당번 명단」에서 자리 틀을 넣어 주세요" : "저장했어요";
@@ -171,8 +167,8 @@ export function initialDay(days, today, want = "") {
 }
 // 그날 살아 있는 지원 수(쉬는 자리 포함 — 쉼을 풀면 살아난다)
 export const dayActive = (d) => ((d && d.slots) || []).reduce((n, s) => n + ((s.signups || []).length), 0);
-// 칩 하나 — { date, label, tag, kind } · kind: off(쉼) · past(지난 날) · ask(못 온다는 분) · need(빈 자리) · full(다 참) · none(자리 없음)
-//   차례: 쉼 → 지난 날 → 못 온다 → 빈 자리 → 다 참. 확정(담당자)·잠김(전날 저녁)은 lock 으로 따로(🔒) · today = 오늘인 날(칩에 「오늘」).
+// 칩 하나 — { date, label, tag, kind } · kind: off(쉼) · past(지난 날) · ask(못 온다는 분) · need(빈 자리) · full(다 참) · none(자리 없음 · 남은 자리뿐)
+//   차례: 쉼 → 지난 날 → 자리 없음 → 자리 쉼 → 못 온다 → 남은 자리뿐 → 빈 자리 → 다 참. 확정(담당자)·잠김(전날 저녁)은 lock 으로 따로(🔒) · today = 오늘인 날(칩에 「오늘」).
 export function dayChip(d, today = "") {
   const base = { date: d.date, label: dayShort(d.date), lock: d.locked === true && !d.off && !d.past, today: !!today && d.date === today };
   if (d.off) return { ...base, kind: "off", tag: "쉼" };
@@ -181,6 +177,8 @@ export function dayChip(d, today = "") {
   // 자리를 하나씩 모두 쉬게 한 날 — 빈 자리가 0 이라고 「다 찼어요」로 보이면 안 된다(엑셀 당번표도 「쉼」으로 적는다)
   if (d.slots.every((s) => s.off)) return { ...base, kind: "off", tag: "자리 쉼" };
   if (d.asks > 0) return { ...base, kind: "ask", tag: `못 온다 ${d.asks}` };
+  // 쉬지 않는 자리가 모두 남은 자리(뺀 틀·요일을 바꾼 틀)인 날 — 빈 자리 수에 안 들어 0 이지만 「다 찼어요」가 아니다(옮기거나 정리할 날)
+  if (d.slots.every((s) => s.off || s.leftover)) return { ...base, kind: "none", tag: "남은 자리" };
   if (d.need > 0) return { ...base, kind: "need", tag: `빈 자리 ${d.need}` };
   return { ...base, kind: "full", tag: "다 찼어요" };
 }
@@ -204,13 +202,14 @@ export function dayHiddenText(d) {
 }
 // 그날 판의 단추 — [{ act, label, danger? }] (보관한 당번은 없음 · 지난 날은 메모만)
 //   확정: 아직 안 잠긴 오늘 이후 날 · 확정 풀기: 담당자가 확정했고 전날 저녁 마감 전(locked 이고 confirmed 인데 마감이 안 지남 = canUnconfirm)
+//   서버가 늘 거절할 단추는 두지 않는다: 자리가 없는 날의 확정(no-slots).
 export function dayActions(d, { archived = false, now = Date.now() } = {}) {
   if (!d || archived) return [];
   const out = [];
   const cut = Date.parse(d.cutoff || "");
   const beforeCut = !isNaN(cut) && now < cut;
   if (!d.past && !d.off) {
-    if (!d.locked) out.push({ act: "confirm", label: "이 날 확정" });
+    if (!d.locked) { if ((d.slots || []).length) out.push({ act: "confirm", label: "이 날 확정" }); }
     else if (d.confirmed && beforeCut) out.push({ act: "unconfirm", label: "확정 풀기" });
   }
   if (!d.past) out.push(d.off ? { act: "reopen", label: "다시 열기" } : { act: "off", label: "쉬는 날로", danger: true });
@@ -299,12 +298,25 @@ export function slotOffAsk(s, off) {
 }
 // 당번을 앱에서 안 보이게 바꿀 때(받는 중·지원 멈춤 → 준비·보관) — 앞날에 선 분이 있으면
 export const hideAsk = (active, status) => `앞날에 ${active}분이 서 있어요. 그래도 「${STATUS_LABEL[status] || status}」으로 바꿀까요? 그분들 앱에서 이 당번과 내 당번이 사라져요(지원 줄은 지우지 않아요).`;
+// 성경암송 앱에 봉사 당번 화면이 있는가 — 2단계(앱 화면 + api 성도님 액션)를 운영에 올린 날 true 로 바꾼다(시험 한 줄도 함께).
+//   false 인 동안에는 「시험 참여자에게 보여요」라고 말하지 않는다 — 앱에 화면이 아예 없다(검토 반영 2026-10-06).
+export const APP_LIVE = false;
 // 「받는 중」으로 바꾸는 저장의 확인 글 — appOpen = 봉사 당번이 성도님 앱에 열렸는가(서버가 준다 · app_config dutyOpen)
-export const openWarn = (appOpen) => (appOpen
-  ? "「받는 중」으로 저장하면 성경암송 앱의 🙋 봉사 당번에 이 당번이 바로 보이고 지원을 받아요."
-  : "「받는 중」으로 저장해요. 봉사 당번은 아직 성도님 앱에 열지 않아서, 지금은 🧪 시험 참여자에게만 보여요 — 앱에 열리는 날 이 당번이 바로 보이고 지원을 받아요.");
-// 봉사 당번이 아직 성도님 앱에 안 열렸을 때 화면 머리에 두는 한 줄(사실대로 — 지금 넣는 것은 준비다)
-export const APP_CLOSED_NOTE = "🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. 앱 알림도 열린 뒤에 가니, 그 전에 넣거나 바꾼 것은 따로 알려 주세요.";
+export const openWarn = (appOpen, { live = APP_LIVE } = {}) => (!live
+  ? "「받는 중」으로 저장해요. 성경암송 앱에는 아직 봉사 당번 화면이 없어서 지금은 성도님께 보이지 않아요 — 화면이 열리는 날 이 당번이 바로 보이고 지원을 받아요."
+  : appOpen
+    ? "「받는 중」으로 저장하면 성경암송 앱의 🙋 봉사 당번에 이 당번이 바로 보이고 지원을 받아요."
+    : "「받는 중」으로 저장해요. 봉사 당번은 아직 성도님 앱에 열지 않아서, 지금은 🧪 시험 참여자에게만 보여요 — 앱에 열리는 날 이 당번이 바로 보이고 지원을 받아요.");
+// 화면 머리에 두는 안내 한 줄(사실대로 · 없으면 "") — 앱에 화면이 없다 / 아직 열지 않았다(시험 참여자만) / 앱 알림이 아직 안 나간다.
+//   알림 말은 문(appOpen)과 따로다 — 문을 열어도 알림(3단계 · NOTIFY_LIVE)이 올라가기 전에는 「따로 알려 주세요」가 그대로 뜬다.
+export function appNote(appOpen, { live = APP_LIVE, notify = NOTIFY_LIVE } = {}) {
+  const tell = "넣거나 바꾼 것은 그분께 따로 알려 주세요";
+  if (!live) return `🙈 성경암송 앱에는 아직 봉사 당번 화면이 없어요 — 지금 넣는 것은 준비예요. 성도님께는 보이지도 알림이 가지도 않으니 ${tell}.`;
+  if (!appOpen) return "🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요." + (notify ? "" : ` 앱 알림도 아직 보내지 않으니 ${tell}.`);
+  return notify ? "" : `🔕 앱 알림(확정·전날·담당자가 바꾼 것)은 아직 보내지 않아요 — ${tell}.`;
+}
+// 설정 창을 연 뒤 다른 분이 그 당번을 고쳤을 때(dutyBoardSave changed) — 창을 닫고 새로 불러온 뒤 알린다
+export const STALE_BOARD = "그사이 다른 분이 이 당번 설정을 고쳤어요 — 새로 불러왔어요. 다시 확인하고 고쳐 주세요";
 // 끝 날짜를 당기는 저장 — 그 뒤에 선 분이 있을 때
 export const afterAsk = (active, until) => `새 끝 날짜${dayLabel(until) ? `(${dayLabel(until)})` : ""} 뒤에 ${active}분이 서 있어요. 그래도 끝 날짜를 당길까요? ` +
   "그 뒤 날짜는 앱에서 안 보이게 돼요(지원 줄은 지우지 않아요 — 명단에서 옮기거나 빼 주세요).";
@@ -325,7 +337,12 @@ export function addDoneText(r, name) {
   return base + (r && r.locked && !r.already ? " (확정된 날)" : "") + notifyTail(r);
 }
 export const movedText = (r, name) => (r && r.already ? "같은 자리예요" : `${name} — ${r && r.to ? `${dayLabel(r.to.date)} ${slotName(r.to)}(${r.to.start})` : "새 자리"}로 옮겼어요${notifyTail(r)}`);
-export const dateAddedText = (r, date) => (r && r.made ? `${dayLabel(date)}에 자리 ${r.made}개를 만들었어요${r.existed ? ` · 이미 있던 ${r.existed}개는 그대로예요` : ""}` : `${dayLabel(date)}에는 고른 자리가 이미 있어요`);
+// reopened = 이미 있던 남은 자리(요일을 바꾼 틀의 옛 요일 자리)를 다시 살린 수 — 앱에서 지원을 다시 받는다
+export const dateAddedText = (r, date) => (r && (r.made || r.reopened)
+  ? [r.made ? `${dayLabel(date)}에 자리 ${r.made}개를 만들었어요` : "",
+     r.reopened ? `${r.made ? "" : `${dayLabel(date)}의 `}남은 자리 ${r.reopened}개를 다시 열었어요(앱에서 지원을 받아요)` : "",
+     r.existed ? `이미 있던 ${r.existed}개는 그대로예요` : ""].filter(Boolean).join(" · ")
+  : `${dayLabel(date)}에는 고른 자리가 이미 있어요`);
 export const offDoneText = (r, off) => (r && r.days ? `${r.days}일을 ${off ? "쉬는 날로 바꿨어요" : "다시 열었어요"}${notifyTail(r)}` : "바뀐 날이 없어요");
 
 // ---------- 오류 말 ----------
@@ -349,7 +366,7 @@ const WORDS = {
   "bad-date": "날짜를 다시 골라 주세요",
   "after-until": "끝 날짜 뒤예요 — 당번 설정에서 끝 날짜를 먼저 늦춰 주세요",
   "bad-lines": "자리 틀을 하나 이상 골라 주세요",
-  "bad-range": "기간을 다시 골라 주세요 (오늘부터 · 한 번에 석 달까지)",
+  "bad-range": "기간을 다시 골라 주세요 (오늘부터 · 한 번에 석 달까지 · 400일 안)",
   changed: "그사이 지원이 바뀌었어요 — 다시 확인해 주세요",
   past: "지난 날짜는 확정할 수 없어요",
   "too-late": "전날 저녁 마감이 지나 확정을 풀 수 없어요 — 넣기·빼기·옮기기로 바꿔 주세요",

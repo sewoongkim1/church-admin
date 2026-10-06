@@ -284,8 +284,8 @@ test("확정·풀기 · 메모 · 쉬는 날(세기 → 쓰기 → 다시 열기
 test("날짜 더하기 · 자리 지우기 · 끝 날짜(그 뒤는 after-until · 선 분 수 after) · 「못 가게 됐어요」 표시 거두기", async () => {
   const extra = kst(4);
   let r = got(await call(L.token, "dutyDateAdd", { board_id: W.A, date: extra, line_ids: [W.line, W.line] }));
-  assert.deepEqual(r.body, { ok: true, made: 1, existed: 0 });
-  assert.deepEqual(got(await call(L.token, "dutyDateAdd", { board_id: W.A, date: extra, line_ids: [W.line] })).body, { ok: true, made: 0, existed: 1 });
+  assert.deepEqual(r.body, { ok: true, made: 1, existed: 0, reopened: 0 });
+  assert.deepEqual(got(await call(L.token, "dutyDateAdd", { board_id: W.A, date: extra, line_ids: [W.line] })).body, { ok: true, made: 0, existed: 1, reopened: 0 });
   assert.equal(got(await call(L.token, "dutyDateAdd", { board_id: W.A, date: extra, line_ids: [W.lineB] })).body.error, "bad-lines", "남의 당번 틀");
   r = got(await call(L.token, "dutyRoster", { board_id: W.A, from: extra, to: extra }));
   const sx = r.body.days[0].slots[0].id;
@@ -297,13 +297,22 @@ test("날짜 더하기 · 자리 지우기 · 끝 날짜(그 뒤는 after-until 
   //   끝 날짜를 당기는 저장은 그 뒤에 선 분이 있으면 먼저 묻는다(has-after · 수) → force 로 저장한다
   r = got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: kst(5) } }));
   assert.deepEqual(r.body, { ok: false, error: "has-after", active: 1 });
-  r = got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: kst(5) }, force: true }));
+  assert.deepEqual(got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: kst(5) }, force: true })).body, { ok: false, error: "has-after", active: 1 },
+    "상태 확인(force)은 끝 날짜 확인을 대신하지 않는다");
+  r = got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: kst(5) }, force_after: true }));
   assert.deepEqual(r.body, { ok: true, id: W.A, after: 1 });
   assert.deepEqual(got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: kst(5) } })).body, { ok: true, id: W.A, after: 1 }, "같은 끝 날짜로 다시 저장하면 묻지 않는다");
   assert.equal(got(await call(L.token, "dutyDateAdd", { board_id: W.A, date: kst(6), line_ids: [W.line] })).body.error, "after-until");
   r = got(await call(L.token, "dutyRoster", { board_id: W.A, from: W.d9, to: W.d9 }));
   assert.equal(r.body.days[0].afterUntil, true);
   assert.deepEqual(got(await call(L.token, "dutyBoardSave", { board: { ...base, until_date: "" } })).body, { ok: true, id: W.A, after: 0 });
+  // 설정 창을 연 뒤 다른 분이 고쳤으면 changed(base = 창을 열 때 본 updatedAt) — 낡은 창이 덮지 않는다 · 방금 읽은 값이면 지나간다
+  assert.deepEqual(got(await call(L.token, "dutyBoardSave", { board: { ...base, place: "다른 식당" }, base: "2000-01-01T00:00:00+00:00" })).body, { ok: false, error: "changed" });
+  r = got(await call(L.token, "dutyRoster", { board_id: W.A, from: W.d2, to: W.d2 }));
+  assert.ok(r.body.board.updatedAt, "명단의 당번에 updatedAt");
+  assert.deepEqual(got(await call(L.token, "dutyBoardSave", { board: { ...base, place: "시험 식당" }, base: r.body.board.updatedAt })).body, { ok: true, id: W.A, after: 0 });
+  r = got(await call(chief.token, "dutyBoardList"));
+  assert.ok(r.body.boards.find((x) => x.id === W.A).updatedAt, "목록의 당번에 updatedAt");
   // 표시 거두기 — 표시가 없는 줄이면 cleared:false(기록 없음) · 표시를 직접 켜 두고(앱은 2단계) 거둔다
   assert.deepEqual(got(await call(L.token, "dutyAskClear", { id: W.e1 })).body, { ok: true, cleared: false });
   await rest(`duty_signups?id=eq.${W.e1}`, "PATCH", { ask_at: new Date().toISOString(), ask_why: "cant" });
@@ -347,7 +356,11 @@ test("겹침 — 다른 당번이면 이름 없이 · 같은 당번이면 자리
 test("먼 날짜 — 보이는 기간 밖에 더한 날도 명단에는 보인다(notYet) · 앱에 열렸는지(appOpen)를 함께 준다", async () => {
   const far = kst(120);
   let r = got(await call(L.token, "dutyDateAdd", { board_id: W.A, date: far, line_ids: [W.line] }));
-  assert.deepEqual(r.body, { ok: true, made: 1, existed: 0 });
+  assert.deepEqual(r.body, { ok: true, made: 1, existed: 0, reopened: 0 });
+  // 먼 앞날에 날짜 줄이 있어도 지난 날을 그대로 읽는다(앞날과 지난 날을 따로 자른다) · 쉬는 기간은 오늘 + 400일 안
+  r = got(await call(L.token, "dutyRoster", { board_id: W.A, from: kst(-30) }));
+  assert.equal(r.body.from, kst(-30), "지난 30일을 달라는 요청이 당겨졌다: " + r.body.from);
+  assert.equal(got(await call(L.token, "dutyDaysOff", { board_id: W.A, from: kst(398), to: kst(401), off: true })).body.error, "bad-range");
   r = got(await call(L.token, "dutyRoster", { board_id: W.A }));
   const d = r.body.days.find((x) => x.date === far);
   assert.ok(d, "기본 기간에 먼 날짜가 들어온다");
