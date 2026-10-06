@@ -221,9 +221,10 @@ export function slotCount(s) {
   const n = ((s && s.signups) || []).length, cap = (s && s.capacity) || 0;
   return { n, cap, need: Math.max(0, cap - n), over: n > cap, text: `${n}/${cap}명` };
 }
-// 앱 알림(확정·전날·담당자가 바꾼 것)이 실제로 나가는가 — 3단계(성경암송 api internalDutyNotify)를 운영에 올린 날 true 로 바꾼다.
+// 앱 알림(확정·전날·담당자가 바꾼 것)이 실제로 나가는가 — 2026-10-06 3단계(성경암송 api internalDutyNotify)를 운영에 올려 true 로 바꿨다.
 //   false 인 동안에는 「알림 꺼짐」 딱지를 그리지 않는다(딱지 없는 분께는 알림이 간다는 뜻으로 읽힌다 — 검토 반영 2026-10-06).
-export const NOTIFY_LIVE = false;
+//   ⚠️ 알림을 되돌리면(api 의 internalDutyNotify 를 뺀 판으로) 이 값도 false 로 되돌린다.
+export const NOTIFY_LIVE = true;
 // 지원 줄의 딱지들 — [{ text, cls }] (앱/담당자 · 앱 없음 · 알림 꺼짐 · 시간 겹침 · 확정 뒤 지원 · 옮김 · 같은 분일 수 있어요)
 export function signupBadges(e, { notify = NOTIFY_LIVE } = {}) {
   const out = [{ text: e.source === "staff" ? "담당자" : "앱", cls: "" }];
@@ -371,11 +372,14 @@ const openWarnBase = (appOpen, { live = APP_LIVE, play = PLAY_HIDDEN } = {}) => 
     ? "「받는 중」으로 저장하면 성경암송 앱의 🙋 봉사 당번에 이 당번이 바로 보이고 지원을 받아요."
     : `「받는 중」으로 저장해요. 봉사 당번은 아직 성도님 앱에 열지 않아서, 지금은 🧪 시험 참여자에게만 보여요 — 앱에 열리는 날 이 당번이 바로 보이고 지원을 받아요. ⚠️ ${TESTERS_SEE_NAMES}.${play ? ` ${PLAY_NOTE}.` : ""}`);
 // 화면 머리에 두는 안내 한 줄(사실대로 · 없으면 "") — 앱에 화면이 없다 / 아직 열지 않았다(시험 참여자만) / 앱 알림이 아직 안 나간다.
+//   문이 닫힌 동안에는 알림이 나가도(NOTIFY_LIVE) 시험 참여자에게만 간다 — 그렇게 말한다.
 //   알림 말은 문(appOpen)과 따로다 — 문을 열어도 알림(3단계 · NOTIFY_LIVE)이 올라가기 전에는 「따로 알려 주세요」가 그대로 뜬다.
 export function appNote(appOpen, { live = APP_LIVE, notify = NOTIFY_LIVE, play = PLAY_HIDDEN } = {}) {
   const tell = "넣거나 바꾼 것은 그분께 따로 알려 주세요";
   if (!live) return `🙈 성경암송 앱에는 아직 봉사 당번 화면이 없어요 — 지금 넣는 것은 준비예요. 성도님께는 보이지도 알림이 가지도 않으니 ${tell}.`;
-  if (!appOpen) return `🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. ⚠️ ${TESTERS_SEE_NAMES}.` + (play ? ` ${PLAY_NOTE}.` : "") + (notify ? "" : ` 앱 알림도 아직 보내지 않으니 ${tell}.`);
+  if (!appOpen) return `🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. ⚠️ ${TESTERS_SEE_NAMES}.` + (play ? ` ${PLAY_NOTE}.` : "") +
+    // 알림이 나가는 때에도 문이 닫힌 동안에는 시험 참여자에게만 간다(성경암송 api dutyNotifySend — 앱에서 🙋 가 보이는 분과 같은 규칙) — 「알림 꺼짐」 딱지가 없다고 그분께 알림이 가는 것이 아니다
+    (notify ? ` 앱 알림도 시험 참여자에게만 가요 — 다른 분께는 ${tell}.` : ` 앱 알림도 아직 보내지 않으니 ${tell}.`);
   return notify ? "" : `🔕 앱 알림(확정·전날·담당자가 바꾼 것)은 아직 보내지 않아요 — ${tell}.`;
 }
 // 설정 창을 연 뒤 다른 분이 그 당번을 고쳤을 때(dutyBoardSave changed) — 창을 닫고 새로 불러온 뒤 알린다

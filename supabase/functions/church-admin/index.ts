@@ -466,7 +466,7 @@ async function ministryList() {
 }
 
 // 성경암송 api 의 내부 액션 부르기 — 같은 프로젝트 서비스 키를 x-internal-key 머리로(api 의 sameSecret 문) ·
-//   임명 알림(internalMinistryNotify)·교육 확정 알림(internalEduNotify · 2026-10-05)이 함께 쓴다.
+//   임명 알림(internalMinistryNotify)·교육 확정 알림(internalEduNotify · 2026-10-05)·봉사 당번 알림(internalDutyNotify · 2026-10-06)이 함께 쓴다.
 //   성경암송 api 가 멈춰도 담당자의 저장이 오래 걸리지 않게 8초에서 끊는다. 실패(시간 초과·거절·ok 아님)면 null — 부른 쪽이 「알림 실패」로 알린다.
 async function appApiInternal(body: Record<string, unknown>, label: string): Promise<any | null> {
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -500,6 +500,14 @@ async function notifyAppointed(id: number) {
 //   edu-db.ts 의 deps.eduNotify — 저장이 끝난 뒤에만 불린다 · null 이면 그쪽이 응답에 notifyError 로 싣는다(저장은 그대로 성공).
 async function notifyEduConfirmed(ids: number[], promoted: boolean): Promise<{ sent: number } | null> {
   const j = await appApiInternal({ action: "internalEduNotify", kind: "confirmed", enrollment_ids: ids, promoted }, "notifyEduConfirmed");
+  return j ? { sent: Number(j.sent) || 0 } : null;
+}
+
+// 봉사 당번 알림(3단계 · 2026-10-06) — 성경암송 api 의 내부 액션(internalDutyNotify)이 보낸다(문·같은 알림 한 번·앱 계정·오늘 이후 자리 확인은 그쪽).
+//   duty-db.ts 의 deps.dutyNotify — 저장·기록이 끝난 뒤에만 불린다 · kind: confirmed·added·moved·removed·off·reopen · 지원 번호만 보낸다(이름·user_id 없음).
+//   null 이면 그쪽(withNotify)이 응답에 notifyError 로 싣는다(저장은 그대로 성공). 돌려주는 sent = 알린 분 수.
+async function notifyDuty(kind: string, ids: number[]): Promise<{ sent: number } | null> {
+  const j = await appApiInternal({ action: "internalDutyNotify", kind, signup_ids: ids }, "notifyDuty");
   return j ? { sent: Number(j.sent) || 0 } : null;
 }
 
@@ -2084,8 +2092,9 @@ async function eduPersonPick(name: unknown, pick: unknown, check: any) {
 const edu = makeEdu(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "education"), personPick: eduPersonPick, allRows,
   eduNotify: notifyEduConfirmed });   // 확정 알림(4단계) — 저장 뒤 성경암송 api internalEduNotify
 // 봉사 당번(2026-10-06 · duty-db.ts) — 대신 넣기의 명부 찾기·고르기는 교육과 **같은 함수**(같은 거르기·차례 · 교인ID 는 서버 안에만).
-//   찾기 기록은 people.lookup from:"duty". 알림(dutyNotify)은 3단계에서 잇는다 — 지금은 주지 않는다(저장만 한다).
-const duty = makeDuty(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "duty"), personPick: eduPersonPick, allRows });
+//   찾기 기록은 people.lookup from:"duty". 알림(dutyNotify · 3단계 2026-10-06)은 저장 뒤 성경암송 api internalDutyNotify 로 부탁한다.
+const duty = makeDuty(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "duty"), personPick: eduPersonPick, allRows,
+  dutyNotify: notifyDuty });
 
 // ---------- 성경필사(암송) — 이름을 누르면 교적 창 (Task 16 · 2026-09-30) ----------
 // 설계 §0 「이름을 누르면 교적 창」·§2 evPerson·§3 · 친구 결정 §8-8. 고르는 규칙·응답 모양은 events-person.ts(순수 함수)에 있다.

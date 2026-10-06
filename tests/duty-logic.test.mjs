@@ -189,13 +189,14 @@ test("slotCount · signupBadges · askText · endedText", () => {
   assert.deepEqual(texts({ source: "app", hasApp: true, hasPush: true }), ["앱"]);
   assert.deepEqual(texts({ source: "staff", hasApp: false }), ["담당자", "앱 없음"]);
   // 「알림 꺼짐」은 앱 알림이 실제로 나가는 때(3단계)에만 — 그전에는 딱지 없는 분께 알림이 간다는 뜻으로 읽힌다
-  assert.equal(NOTIFY_LIVE, false, "3단계(internalDutyNotify)를 운영에 올린 날 true 로 — 이 줄도 함께 고친다");
+  assert.equal(NOTIFY_LIVE, true, "2026-10-06 3단계(internalDutyNotify)를 운영에 올렸다 — 알림을 되돌리면 false 로(이 줄도 함께)");
   const e5 = { source: "app", hasApp: true, hasPush: false, afterLock: true, moved: true, maybeDup: true };
-  assert.deepEqual(texts(e5), ["앱", "확정 뒤 들어옴", "옮김", "같은 분일 수 있어요"]);
+  assert.deepEqual(signupBadges(e5, { notify: false }).map((b) => b.text), ["앱", "확정 뒤 들어옴", "옮김", "같은 분일 수 있어요"]);
+  assert.deepEqual(texts(e5), signupBadges(e5, { notify: NOTIFY_LIVE }).map((b) => b.text), "기본값은 스위치를 따른다");
   assert.deepEqual(signupBadges(e5, { notify: true }).map((b) => b.text), ["앱", "알림 꺼짐", "확정 뒤 들어옴", "옮김", "같은 분일 수 있어요"]);
   assert.deepEqual(signupBadges({ source: "staff", hasApp: false, hasPush: false }, { notify: true }).map((b) => b.text), ["담당자", "앱 없음"], "앱 없음이면 알림 딱지는 겹쳐 달지 않는다");
   assert.deepEqual(texts({ source: "app", hasApp: true, hasPush: true, overlap: true }), ["앱", "시간 겹침"]);
-  assert.equal(signupBadges({ source: "app", hasApp: true, overlap: true })[1].cls, "warn");
+  assert.equal(signupBadges({ source: "app", hasApp: true, hasPush: true, overlap: true })[1].cls, "warn");
   assert.equal(askText({ asked: true, why: "cant" }), "⚠️ 사정이 생겨 못 온대요");
   assert.equal(askText({ asked: true, why: "notme" }), "⚠️ 본인이 지원한 것이 아니래요");
   assert.equal(askText({ asked: true, why: null }), "⚠️ 못 온다고 알렸어요");
@@ -285,7 +286,9 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.equal(openWarn(false), openWarn(false, { live: APP_LIVE }));
   // 화면 머리 한 줄 — 문과 알림은 따로다(문을 열어도 알림이 올라가기 전에는 「따로 알려 주세요」가 남는다)
   assert.ok(appNote(false, { live: true, notify: false }).includes("시험 참여자만 볼 수 있어요") && appNote(false, { live: true, notify: false }).includes("따로 알려 주세요"));
-  assert.ok(appNote(false, { live: true, notify: true }).includes("시험 참여자만") && !appNote(false, { live: true, notify: true }).includes("따로 알려"));
+  // 알림이 나가는 때에도 문이 닫힌 동안에는 시험 참여자에게만 간다 — 그렇게 말한다(다른 분께는 따로 알려야 한다)
+  assert.ok(appNote(false, { live: true, notify: true }).includes("시험 참여자만") && appNote(false, { live: true, notify: true }).includes("앱 알림도 시험 참여자에게만 가요 — 다른 분께는"));
+  assert.equal(appNote(false, { live: true, notify: true }).includes("아직 보내지 않으니"), false);
   assert.ok(appNote(true, { live: true, notify: false }).startsWith("🔕") && appNote(true, { live: true, notify: false }).includes("따로 알려 주세요"));
   assert.equal(appNote(true, { live: true, notify: true }), "");
   assert.ok(STALE_BOARD.includes("다른 분이") && STALE_BOARD.includes("새로 불러왔어요"));
