@@ -139,6 +139,9 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 진짜 원본 엑셀은 저장소 밖으로 옮겼다(2026-10-01 친구) — 대조 도구는 `python tools/history/check_real.py <명단 엑셀> [교인명부 정리 엑셀]` 로 경로를 준다.
 - 2025년 이전 명단의 「기쁨-1」은 목장 모름으로 읽는다(검증 추정 · 2026-10-01 친구 확인) — 바뀌면 `parseRow` 한 줄과 시험만.
 - 규칙을 바꾸면 이 PC 에서 `python tools/history/check_real.py` — 진짜 명부·통합 엑셀로 수와 검증 지적 64줄을 맞대 본다(2026-09-29 명부 기준 4,042 · 51 · 수만 찍는다).
+- **부서 이음표 초안(2026-10-06 · 사역 통계 준비 — 아직 표·화면은 없다):** `python tools/history/dept_lineage_draft.py` — 통합 엑셀 둘(2010~2026 · 17,971줄)을 읽어 `C:\Projects\Data\정리\부서이음표_초안.xlsx`(저장소 밖 · 사람 이름 없음)를 만든다.
+  해마다 달리 적힌 부서 97가지·부서-팀 쌍 541가지를 **큰 분류(찬양 · 교회학교 · 그 밖 — 목양·기관은 따로) → 계열 → 표준 팀** 으로 잇는다. 친구·사역 담당이 확인하는 중.
+  ⚠️ 부서를 **이름만 보고 잇지 말 것** — 그 파일의 `EVENTS` 처럼 앞뒤 해 사람 흐름으로 확인한다(이름으로 미뤘다가 틀린 적이 있다). 설계·근거는 성경암송 `docs/analysis/2026-10-06-ministry-stats-options.md`.
 - 개발 DB 씨앗: `node --experimental-strip-types tests/seed-history-dev.mjs [--clean]`(source_file `ca-demo-seed`).
 - 쓰기 액션은 쓴 뒤 바로 기록하고, 다시 맞추기는 try/catch — 실패하면 응답 rematched:false(화면이 「🔄 다시 맞추기」를 권한다).
 - 줄 응답의 in_directory(true/false/null) — 이어 둔 분이 지금 명부에 없으면 화면에 「⚠ 명부에 없음」. 12월 새 명부 뒤 「🔄 다시 맞추기」.
