@@ -8,6 +8,7 @@ import {
   askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, offAsk, removeAsk, slotOffAsk, hideAsk, notifyTail, addDoneText,
   movedText, dateAddedText, offDoneText, hasWord, dutyWord, needsReload, lostBoard, fileTitle, exportFileName, exportRanges,
   dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, appNote, APP_LIVE, NOTIFY_LIVE, STALE_BOARD, TESTERS_SEE_NAMES, ADD_NOTE,
+  emptyWhy, emptyChip, liveLineCount,
 } from "../js/menus/duty/duty-logic.js";
 import { DUTY_STATUS, DUTY_STATUS_LABEL } from "../supabase/functions/church-admin/duty-rules.ts";
 
@@ -287,6 +288,23 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   // 준비 중 안내 — 총괄은 스스로 열고, 담당은 총괄께 부탁한다(담당은 준비 중을 못 바꾼다)
   assert.ok(draftNote(true).includes("「당번 설정」에서 상태를 「받는 중」으로"));
   assert.ok(draftNote(false).includes("당번 총괄께") && !draftNote(false).includes("「당번 설정」에서"));
+});
+
+test("앱에 날짜가 하나도 안 보이는 당번 — 까닭을 말한다(자리 틀 없음 · 앞날 자리 없음) · 받는 중·지원 멈춤만", () => {
+  // 당번 설정만 저장하고 「받는 중」으로 열면 앱에는 「지금 보이는 날짜가 없어요」만 뜬다(친구 제보 2026-10-06)
+  assert.ok(emptyWhy("open", 0, 0).startsWith("자리 틀이 아직 없어요") && emptyWhy("open", 0, 0).includes("앱 당번표에 날짜가 보이지 않아 지원할 수 없어요"));
+  assert.ok(emptyWhy("closed", 0, 0).startsWith("자리 틀이 아직 없어요"));
+  assert.ok(emptyWhy("open", 2, 0).startsWith("앞날 자리가 없어요") && emptyWhy("open", 2, 0).includes("「날짜 더하기」"));
+  assert.equal(emptyWhy("open", 2, 14), ""); assert.equal(emptyWhy("draft", 0, 0), "", "준비 중은 준비 중 안내가 따로 있다"); assert.equal(emptyWhy("archived", 0, 0), "");
+  assert.equal(emptyWhy("open", undefined, undefined).startsWith("자리 틀이"), true);
+  assert.equal(emptyChip("open", 0, 0), "자리 틀 없음 — 앱에 날짜가 안 보여요"); assert.equal(emptyChip("open", 1, 0), "앞날 자리 없음 — 앱에 날짜가 안 보여요");
+  assert.equal(emptyChip("open", 1, 3), ""); assert.equal(emptyChip("draft", 0, 0), "");
+  assert.equal(liveLineCount([{ active: true }, { active: false }, {}, null]), 2); assert.equal(liveLineCount(null), 0);
+  // 「받는 중」으로 바꾸는 저장의 확인 글 — 자리 틀이 없으면 한 줄 더(문이 열렸든 닫혔든 · 앱 화면이 있든 없든)
+  for (const o of [{ live: true }, { live: false }]) for (const open of [true, false]) {
+    assert.ok(openWarn(open, { ...o, noLines: true }).includes("자리 틀이 아직 없어요") && openWarn(open, { ...o, noLines: true }).startsWith(openWarn(open, o)));
+    assert.equal(openWarn(open, { ...o, noLines: false }), openWarn(open, o)); assert.equal(openWarn(open, o).includes("자리 틀이 아직 없어요"), false);
+  }
 });
 
 test("저장 뒤 한 줄 — 알림(3단계)이 붙으면 덧붙인다", () => {

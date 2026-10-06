@@ -6,7 +6,7 @@
 import { esc, toast, busy, errorText } from "../../core/ui.js";
 import { STALE_MARK } from "../education/courses-logic.js";
 import { openBoardForm } from "./board-form.js";
-import { linesSummary, boardSavedText, boardRest, contactHtml, dutyWord, appNote, STALE_BOARD } from "./duty-logic.js";
+import { linesSummary, boardSavedText, boardRest, contactHtml, dutyWord, appNote, STALE_BOARD, emptyChip, liveLineCount } from "./duty-logic.js";
 
 const TITLE = `<h2 class="page-title">🧰 당번 관리</h2>`;
 const failText = (r) => dutyWord(r?.error) || errorText(r);
@@ -18,6 +18,7 @@ const staffHtml = (b) => ((b.staff || []).length
 
 export function boardCard(b) {
   const n = b.counts || {};
+  const empty = emptyChip(b.status, liveLineCount(b.lines), n.slots);   // 받는 중·지원 멈춤인데 앱에 날짜가 하나도 안 보이는 당번
   return `<div class="card dty-card" data-id="${esc(b.id)}">
     <div class="dty-head"><b>${esc(b.title)}</b> <span class="badge${b.status === "open" ? " ok" : ""}">${esc(b.statusLabel)}</span></div>
     <div class="dty-kvs">
@@ -26,6 +27,7 @@ export function boardCard(b) {
       ${b.place ? row("장소", esc(b.place)) : ""}${b.contact ? row("문의", contactHtml(b.contact)) : ""}
       ${row("기간", esc(boardRest(b)))}
     </div>
+    ${empty ? `<div class="dty-chips">${chip(empty, true)}</div>` : ""}
     ${n.lines ? `<div class="dty-chips">${chip(`앞날 자리 ${n.slots || 0}`)}${chip(`빈 자리 ${n.need || 0}`, b.status === "open" && n.need > 0)}${
       n.asks ? chip(`못 온다는 분 ${n.asks}`, true) : ""}${n.after ? chip(`끝 날짜 뒤에 선 분 ${n.after}`, true) : ""}</div>` : ""}
     <div class="acts"><button type="button" class="btn" data-act="edit">고치기</button>

@@ -305,8 +305,28 @@ export const APP_LIVE = true;
 // 앱에 아직 열지 않은 동안(문 dutyOpen 닫힘) — 받는 중·지원 멈춤 당번에 선 분의 이름이 🧪 시험 참여자 앱에 보인다.
 //   개인정보 안내에 적기 전이라 진짜 명단은 「준비 중」에 넣어 두게 한다(설계 §11 ⚠️ · 검토 반영 2026-10-06).
 export const TESTERS_SEE_NAMES = "받는 중·지원 멈춤 당번에 선 분의 이름이 시험 참여자 앱에 보여요 — 앱에 열기 전에는 시험 당번만 열어 두고, 진짜 명단은 「준비 중」 당번에 넣어 두세요";
+// 앱 당번표에 날짜가 하나도 안 보이는 까닭(받는 중·지원 멈춤 당번만) — 자리 틀이 없다 / 틀은 있는데 앞날 자리가 없다
+//   (날짜를 골라 넣는 틀에 날짜를 아직 안 더함 · 끝 날짜가 지남). 날짜가 보이면(또는 준비 중·보관이면) "".
+//   당번 설정(이름·장소·기간)만 저장하고 「받는 중」으로 열면 앱에는 당번만 보이고 지원할 날짜가 없다 — 화면이 그 까닭을 말한다(친구 제보 2026-10-06).
+//   liveLines = 살아 있는 자리 틀 수 · slots = 앞날 자리 수(dutyBoardList counts.slots — 보이는 기간 · 끝 날짜까지)
+export function emptyWhy(status, liveLines, slots) {
+  if (status !== "open" && status !== "closed") return "";
+  if (!(Number(liveLines) > 0)) return "자리 틀이 아직 없어요 — 앱 당번표에 날짜가 보이지 않아 지원할 수 없어요. 「자리 틀」에서 먼저 넣어 주세요(예: 매주 주일 · 2부 · 설거지 · 11:30~12:30 · 2명)";
+  if (!(Number(slots) > 0)) return "앞날 자리가 없어요 — 앱 당번표에 날짜가 보이지 않아요. 「날짜 더하기」로 자리를 만들거나 끝 날짜·보이는 기간을 확인해 주세요";
+  return "";
+}
+// 당번 카드의 경고 칩(짧게) — 없으면 ""
+export function emptyChip(status, liveLines, slots) {
+  const w = emptyWhy(status, liveLines, slots);
+  return !w ? "" : !(Number(liveLines) > 0) ? "자리 틀 없음 — 앱에 날짜가 안 보여요" : "앞날 자리 없음 — 앱에 날짜가 안 보여요";
+}
+// 살아 있는 자리 틀 수(목록의 lines 는 살아 있는 것만 · 명단의 lines 는 active 칸이 있다)
+export const liveLineCount = (lines) => (Array.isArray(lines) ? lines : []).filter((l) => l && l.active !== false).length;
 // 「받는 중」으로 바꾸는 저장의 확인 글 — appOpen = 봉사 당번이 성도님 앱에 열렸는가(서버가 준다 · app_config dutyOpen)
-export const openWarn = (appOpen, { live = APP_LIVE } = {}) => (!live
+//   noLines = 자리 틀이 아직 없다 — 열어도 앱에 날짜가 안 보인다는 한 줄을 덧붙인다(열기 전에 넣으라고 막지는 않는다 — 저장한 뒤 넣어도 된다)
+const NO_LINES_TAIL = " ⚠️ 자리 틀이 아직 없어요 — 넣기 전에는 앱 당번표에 날짜가 보이지 않아 지원할 수 없어요(저장한 뒤 「📅 당번 명단」의 「자리 틀」에서 넣어 주세요).";
+export const openWarn = (appOpen, opt = {}) => openWarnBase(appOpen, opt) + (opt.noLines === true ? NO_LINES_TAIL : "");
+const openWarnBase = (appOpen, { live = APP_LIVE } = {}) => (!live
   ? "「받는 중」으로 저장해요. 성경암송 앱에는 아직 봉사 당번 화면이 없어서 지금은 성도님께 보이지 않아요 — 화면이 열리는 날 이 당번이 바로 보이고 지원을 받아요."
   : appOpen
     ? "「받는 중」으로 저장하면 성경암송 앱의 🙋 봉사 당번에 이 당번이 바로 보이고 지원을 받아요."

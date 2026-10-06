@@ -1765,6 +1765,7 @@ body.ec-cert-on{overflow:hidden}
 .dty-line-t{display:flex;flex-direction:column;gap:2px}
 .dty-line-t b{font-size:1rem;color:var(--navy-dark)}
 .dty-addsub{margin:0 0 10px;line-height:1.45}
+.be-note.dty-warn{background:#fff3d6;color:#7a5200;font-weight:700}
 @media (min-width:720px){
   .dty-tools{grid-template-columns:repeat(4,minmax(0,1fr))}
 }

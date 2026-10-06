@@ -10,7 +10,7 @@ import { esc, dialog, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne, pickMany, pickDate } from "../../core/picker.js";
 import { staffOptions, staffFieldText, sameIds } from "../education/courses-logic.js";
-import { STATUS_OPTIONS, LEAD_STATUS_OPTIONS, STATUS_LABEL, leadCanSetStatus, openDaysOptions, openDaysText, formToBoard, boardToForm, hideAsk, afterAsk, openWarn,
+import { STATUS_OPTIONS, LEAD_STATUS_OPTIONS, STATUS_LABEL, leadCanSetStatus, openDaysOptions, openDaysText, formToBoard, boardToForm, hideAsk, afterAsk, openWarn, liveLineCount,
   dutyWord, dayLabel, staffFailText, STAFF_NO_CAND, STAFF_ROLE_HINTS } from "./duty-logic.js";
 
 const labelOf = (opts, v) => (opts.find((o) => o.value === v) || {}).label || v || "";
@@ -110,7 +110,7 @@ export function openBoardForm({ call, board = null, chief = false, cands, appOpe
       if (board && !f.board.id) return { ok: false, message: "당번 번호를 읽지 못했어요 — 닫고 다시 열어 주세요" };   // 고치기가 새 당번을 만들지 않게
       // 받는 중으로 **바꿀 때만** 확인(이미 받는 중인 당번의 다른 칸을 고칠 때는 묻지 않는다)
       if (f.board.status === "open" && (!board || board.status !== "open")) {
-        const yes = await dialog({ title: "👁 지원을 받을까요?", text: openWarn(appOpen), ok: "저장", cancel: "그만두기" });
+        const yes = await dialog({ title: "👁 지원을 받을까요?", text: openWarn(appOpen, { noLines: liveLineCount(board && board.lines) === 0 }), ok: "저장", cancel: "그만두기" });
         if (!root.isConnected) return { ok: false };
         if (!yes) return { ok: false, message: "저장하지 않았어요 — 아무것도 바뀌지 않았어요" };
       }
