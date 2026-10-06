@@ -70,6 +70,7 @@ import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, r
 import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, requestAdminOut, requestAuditDetail, requestCounts, requestSetBlock, requestSetNoop, requestSetPatch, ROW_ADMIN_SELECT } from "./history-check.ts";
 // 사역 이력(2026-10-01 · 설계 v2 docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md) — 표 읽기·쓰기는 history-db.ts 한 곳
 import { makeHistory } from "./history-db.ts";
+import { buildStats as buildMinistryStats } from "./ministry-stats.ts";
 import { makeEdu } from "./edu-db.ts";
 import { rosterIdent, rosterIdentity } from "./edu-rules.ts";
 // 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
@@ -120,6 +121,14 @@ async function audit(ctx: Ctx, action: string, target: string, detail: Record<st
 
 // 사역 이력 액션 열(history-db.ts makeHistory) — db·audit 를 넘겨 만든다(이름은 historyApi — 「history」는 브라우저 전역과 헷갈린다)
 const historyApi = makeHistory({ db, audit });
+
+// 📊 사역 통계(2026-10-06) — 재료는 SQL ministry_stats_facts() 한 번(jsonb 하나 · 1,000줄 함정 없음), 세는 일은 ministry-stats.ts(순수).
+//   재료에는 사람 번호·태어난 해가 들어 있다 — 여기서 묶음 숫자로 바꿔 그 숫자만 돌려준다(재료를 응답에 싣지 않는다).
+async function ministryStats() {
+  const { data, error } = await db.rpc("ministry_stats_facts");
+  if (error) throw error;
+  return { ok: true, ...buildMinistryStats(data ?? { map: [], seats: [], people: [] }) };
+}
 
 async function knownRoleIds(): Promise<string[]> {
   const { data, error } = await db.from("admin_roles").select("id");
@@ -2546,6 +2555,7 @@ Deno.serve(async (req) => {
       case "historyLinkGroup":   return json(await historyApi.linkGroup(ctx, b));
       case "historyRematch":     return json(await historyApi.rematch(ctx, b));
       case "historyExport":      return json(await historyApi.exportRows(ctx, b));
+      case "ministryStats":      return json(await ministryStats());   // 📊 사역 통계(2026-10-06)
     }
     // ACTION_ROLES 에는 있는데 여기 없는 것 — 시험(PROBE)이 500/400 으로 잡는다
     return json({ ok: false, error: "unknown-action" }, 400);

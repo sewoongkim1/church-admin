@@ -103,6 +103,9 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   historyLinkGroup: "ministry",
   historyRematch: "ministry",
   historyExport: "ministry",
+  // 📊 사역 통계(2026-10-06 · 설계 v2 docs/superpowers/specs/2026-10-06-ministry-stats-design.md) — 읽기만 · 기록 없음.
+  //   응답은 묶음 숫자와 부서·팀 이름뿐(이름·교인ID·사람 번호·태어난 해 없음 — ministry-stats.ts buildStats).
+  ministryStats: "ministry",
   // 교육신청 1단계(2026-10-05 · 설계 v2 docs/superpowers/specs/2026-10-05-education-courses-design.md) — 역할 education(교육 총괄).
   //   강좌 만들기·회차·신청 현황·대신 등록·엑셀. 정원·대기 규칙은 성경암송 supabase/edu.sql 의 SQL 함수가 정한다(여기서 상태를 직접 쓰지 않는다).
   //   응답에 user_id·ident_key 없음(edu-rules.ts 칸 지도) · 쓰기는 바꾼 기록 edu.*(이름 없이 id·수만).

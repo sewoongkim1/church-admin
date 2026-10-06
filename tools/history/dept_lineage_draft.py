@@ -4,6 +4,9 @@
   python tools/history/dept_lineage_draft.py [--out 결과.xlsx] [명단 엑셀 ...]
     기본 명단: C:/Projects/Data/정리/2010-2021_사역임명_통합.xlsx · C:/Projects/Data/2022-2026_사역임명_통합.xlsx
     기본 결과: C:/Projects/Data/정리/부서이음표_2차.xlsx
+  python tools/history/dept_lineage_draft.py --seed-sql supabase/sql/013b_ministry_dept_map_seed.sql
+    📊 사역 통계의 이음표(ministry_dept_map) 씨앗 SQL 을 낸다(엑셀은 만들지 않는다 — 친구가 적고 있을 수 있는 엑셀을 덮지 않게).
+    부서·팀 이름과 이음만 든다(사람 정보 없음). 규칙을 고쳤으면 다시 만들어 개발 → 운영 차례로 돌린다.
 
 무엇: 해마다 달리 적힌 부서·팀 이름(부서 97가지 · 부서-팀 쌍 541가지)을 **큰 분류 → 계열 → 표준 팀** 에 잇는 표.
       사역 통계(시계열·부서)를 내기 전에 사역 담당과 친구가 이 엑셀을 보고 확인한다.
@@ -412,11 +415,60 @@ def paint(row, fill=ASK_FILL):
         c.fill = fill
 
 
+# DB(ministry_dept_map.big_group)에 적는 큰 분류 이름 — 엑셀의 「따로 · 목양」은 「목양」
+GROUP_DB = {G_PRAISE: "찬양", G_SCHOOL: "교회학교", G_ETC: "그 밖", G_MOK: "목양", G_ORG: "기관"}
+
+
+def write_seed_sql(path, pair):
+    """이음표 씨앗 — 열쇠는 SQL mh_key 와 같은 다듬기(NFC · 띄어쓰기 없음). 띄어쓰기만 다른 쌍은 한 줄로 모인다."""
+    seed = collections.OrderedDict()
+    for (dept, team), p in pair.items():
+        k = (ns(dept), ns(team))
+        v = (GROUP_DB[p["g"]], p["fam"], p["mid"], p["std"], p["memo"])
+        if k in seed and seed[k][:4] != v[:4]:
+            raise SystemExit("띄어쓰기만 다른 쌍이 다른 곳으로 이어진다: %r → %r / %r" % (k, seed[k][:4], v[:4]))
+        seed.setdefault(k, v)
+    q = lambda t: "'" + t.replace("'", "''") + "'"
+    keys = sorted(seed, key=lambda k: (seed[k][0], seed[k][1], seed[k][2], seed[k][3], k))
+    lines = [
+        "-- 교회 어드민 — 부서 이음표 씨앗(ministry_dept_map) · 📊 사역 통계(설계 v2 docs/superpowers/specs/2026-10-06-ministry-stats-design.md §3)",
+        "-- ⚠️ 손으로 고치지 말 것 — tools/history/dept_lineage_draft.py 의 규칙을 고치고 --seed-sql 로 다시 만든다.",
+        "-- ⚠️ 013_ministry_stats.sql 뒤에 · 개발 먼저, 그다음 운영. 여러 번 돌려도 안전하다.",
+        "--    화면에서 고친 줄(source = 'admin')은 덮지 않는다. 부서·팀 이름과 이음만 든다(사람 정보 없음).",
+        "-- 쌍 %d(띄어쓰기를 없앤 열쇠 기준 · 원래 쌍 %d) · 큰 분류 %d · 계열 %d · 표준 팀 %d"
+        % (len(seed), len(pair), len({v[0] for v in seed.values()}), len({v[1] for v in seed.values()}), len({(v[1], v[2], v[3]) for v in seed.values()})),
+        "begin;",
+        "insert into ministry_dept_map (committee_key, team_key, big_group, family, mid, team_std, note) values",
+    ]
+    lines += ["  (%s)%s" % (", ".join(q(x) for x in (*k, *seed[k])), "," if i < len(keys) - 1 else "") for i, k in enumerate(keys)]
+    lines += [
+        "on conflict (committee_key, team_key) do update",
+        "  set big_group = excluded.big_group, family = excluded.family, mid = excluded.mid, team_std = excluded.team_std, note = excluded.note, updated_at = now()",
+        "  where ministry_dept_map.source = 'seed'",
+        "    and (ministry_dept_map.big_group, ministry_dept_map.family, ministry_dept_map.mid, ministry_dept_map.team_std, ministry_dept_map.note)",
+        "        is distinct from (excluded.big_group, excluded.family, excluded.mid, excluded.team_std, excluded.note);",
+        "commit;",
+        "",
+        "-- 확인(수만)",
+        "select '이음표 줄' as t, count(*)::text as v from ministry_dept_map",
+        "union all select '큰 분류 ' || big_group, count(*)::text from ministry_dept_map group by big_group",
+        "union all select '재료 — 이음표에 없는 쌍(0에 가까워야)', jsonb_array_length(public.ministry_stats_facts()->'unmapped')::text;",
+        "",
+    ]
+    LF = chr(10)                               # 줄바꿈은 LF 로 고정(윈도에서 만들어도 같은 파일이 되게)
+    with open(path, "w", encoding="utf-8", newline=LF) as fh:
+        fh.write(LF.join(lines))
+    return len(seed)
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")       # 윈도 콘솔(cp949)에서 「—」 같은 글자로 멈추지 않게
     args = sys.argv[1:]
     out = DEFAULT_OUT
+    seed_sql = None
+    if "--seed-sql" in args:
+        i = args.index("--seed-sql"); seed_sql = args[i + 1]; del args[i:i + 2]
     if "--out" in args:
         i = args.index("--out"); out = args[i + 1]; del args[i:i + 2]
     paths = args or DEFAULT_IN
@@ -432,6 +484,11 @@ def main():
         k = (r["dept"], r["team"])
         p = pair.setdefault(k, {"years": collections.Counter(), **{x: r[x] for x in ("g", "fam", "mid", "std", "memo", "ask", "open", "dk")}})
         p["years"][r["year"]] += 1
+
+    if seed_sql:                               # 씨앗만 낸다 — 엑셀은 건드리지 않는다
+        n = write_seed_sql(seed_sql, pair)
+        print("이음표 씨앗 %d줄(원래 쌍 %d) → %s" % (n, len(pair), seed_sql))
+        return
 
     def people(sel):
         y, drx, trx = sel

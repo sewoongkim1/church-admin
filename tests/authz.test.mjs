@@ -54,7 +54,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "historyRequestDelete", "historyRequestList", "historyRequestSet", "historyRowAdd", "historyRowDelete", "historyRowSave", "historyUploadCheck", "historyUploadSave",
     "ministryAppointed", "ministryCatalogAdmin", "ministryCatalogOrder",
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
-    "ministryPerson", "ministryPhoneClear", "ministrySetStatus"]);
+    "ministryPerson", "ministryPhoneClear", "ministrySetStatus", "ministryStats"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
   assert.deepEqual(knownRoles(), ["bibleevent", "directory", "education", "educourse", "ministry", "super", "teacher"]);
 });

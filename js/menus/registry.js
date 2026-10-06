@@ -20,6 +20,8 @@ export const MENUS = [
     role: "ministry", load: () => import("./ministry/history.js") },
   { id: "mn-requests", group: "사역신청", icon: "📮", label: "정정 신청", desc: "앱에서 온 사역 이력 정정 신청 보기·처리",
     role: "ministry", load: () => import("./ministry/requests.js") },
+  { id: "mn-stats", group: "사역신청", icon: "📊", label: "사역 통계", desc: "해마다 봉사자·자리 · 계속·처음·쉼 · 계열별 · 나이·직분 · 엑셀",
+    role: "ministry", load: () => import("./ministry/stats.js") },
   { id: "be-roster", group: "성경필사(암송)", icon: "📋", label: "회차·명단", desc: "완서자 명단 보기 · 고치기 · 회차 설정",
     role: "bibleevent", load: () => import("./bibleevent/roster.js") },
   { id: "be-upload", group: "성경필사(암송)", icon: "📤", label: "명단 올리기", desc: "엑셀·붙여넣기로 한꺼번에 더하기",

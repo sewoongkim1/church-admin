@@ -195,6 +195,7 @@ const PROBE = {
   historyLinkGroup: { ids: [], op: "none" },
   historyRematch: {},
   historyExport: { years: [1951] },
+  ministryStats: {},
   // 교육신청(2026-10-05) — 아무것도 만들지도 바꾸지도 않는 입력
   eduCourses: {},
   eduCourseSave: { course: { title: "", kind: "lecture" } },      // no-title — 아무것도 안 만든다
