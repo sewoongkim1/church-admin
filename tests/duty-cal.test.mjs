@@ -182,7 +182,7 @@ test("읽은 범위는 줄이지 않는다(rosterFromKeep) — 화면을 연 채
     assert.ok(got <= rosterFrom(t, 14) && got <= read && got > addDays(t, -400) && got.endsWith("-01"), `${t} ${read} → ${got}`);
   }
   // 「지난 날」은 **읽은 처음보다 앞 달**이 될 때까지 간다 — 날이 바뀐 뒤(읽은 처음 9/1 · 「오늘 − 14일」의 달은 10월)에 4주만 더하면 9월을 다시 읽고 「없어요」라고만 한다
-  assert.equal(olderBack("2026-10-15", 14, 28, "2026-09-01"), 70, "9/17(같은 9월)을 지나 8/6(8월)까지"); assert.equal(rosterFrom("2026-10-15", 70), "2026-08-01");
+  assert.equal(olderBack("2026-10-15", 14, 28, "2026-09-01"), 70, "9/3(같은 9월 — 오늘 − 42일)을 지나 8/6(8월)까지"); assert.equal(rosterFrom("2026-10-15", 70), "2026-08-01");
   assert.equal(olderBack("2026-10-15", 14, 28, ""), 42, "읽은 것을 모르면 「오늘 − back」의 달에서"); assert.equal(olderBack("2026-10-15", 14, 28, "2026-10-01"), 42);
   assert.equal(olderBack("2026-10-15", 14, 28, "2026-11-01"), 42, "읽은 처음이 더 뒤라는 값은 믿지 않는다"); assert.equal(olderBack("2026-10-15", 14, 28, "x"), 42);
   assert.equal(olderBack("2026-11-13", 14, 28, "2026-11-01"), 70, "…믿으면 10/30 − 28일 = 10/2(같은 10월)에서 멈춰 같은 달을 다시 읽는다");
@@ -335,6 +335,33 @@ test("다시 그린 뒤의 화면 자리(calSettle) — 굴린 자리를 지킨�
     "moved 는 다른 셈(붙음·보이기·자판)보다 앞선다 — 판의 위(−200)를 선에(790 − 200 − 64) · 붙은 선 셈이면 345 다");
   assert.deepEqual(S({ moved: true, y0: 500, y: 500, panelTop: null, splitTop: null }), { to: 500, by: 0, grow: 0 }, "판을 잴 수 없으면 제자리");
   assert.equal(S({ moved: true, y0: 30, y: 30, panelTop: 20, splitTop: 20 }).to, 0, "0 아래로는 가지 않는다");
+  // ⑤ + 방금 옮긴 분의 줄(rowTop·rowBottom · 마지막 확인 반영) — 그 줄이 보이는 것이 먼저다. 줄이 「보인다」의 위쪽 끝은 머리줄 선(64) + 붙는 날짜 줄(barH) 아래 · 아래쪽 끝은 화면 − 8
+  const mv = { moved: true, y0: 1988, y: 1988, splitTop: -1700, panelTop: -1200, panelBottom: 900, barH: 58 };   // 긴 판 → 긴 판(같은 자리의 다음 주일로) · 화면 900 → 줄은 122~892 사이면 다 보인다
+  assert.deepEqual(S({ ...mv, rowTop: 644, rowBottom: 760 }), { to: 1988, by: 0, grow: 0 }, "옮긴 줄이 그 자리에서 다 보인다 → 그대로(판의 맨 위 724 로 튀지 않는다 — 운영하던 판과 같은 자리)");
+  assert.deepEqual(S({ ...mv }), { to: 724, by: 0, grow: 0 }, "줄을 모르면(거절 · 날짜 더하기 · 남은 당번이 열림) 새 판의 위로(1988 − 1200 − 64)");
+  assert.deepEqual(S({ ...mv, rowTop: 122, rowBottom: 238 }), { to: 1988, by: 0, grow: 0 }, "날짜 줄 바로 아래(64 + 58)에 딱 걸친 줄 — 보인다");
+  assert.deepEqual(S({ ...mv, rowTop: 100, rowBottom: 216 }), { to: 1312, by: 0, grow: 0 },
+    "머리줄 선보다는 아래지만 붙은 날짜 줄 밑에 깔린 줄(100 < 122) — 보이는 것이 아니다 → 판의 위(724)로 간 뒤 줄이 화면 아래(1480 > 892)라 588px 내린다(줄의 아래끝이 화면 − 8 에)");
+  assert.deepEqual(S({ ...mv, rowTop: 100, rowBottom: 216, barH: null }), { to: 1988, by: 0, grow: 0 }, "날짜 줄을 잴 수 없으면 머리줄 선(64)만 본다");
+  assert.deepEqual(S({ ...mv, rowTop: 40, rowBottom: 156, barH: -40 }), { to: 1252, by: 0, grow: 0 }, "음수 높이는 0 으로 — 머리줄 선(64) 밑에 깔린 줄(40)은 보이는 것이 아니다(724 로 간 뒤 528px 내린다)");
+  assert.deepEqual(S({ ...mv, rowTop: 776, rowBottom: 892 }), { to: 1988, by: 0, grow: 0 }, "화면 아래끝 − 8 에 딱 걸친 줄 — 보인다");
+  assert.deepEqual(S({ ...mv, rowTop: 780, rowBottom: 896 }), { to: 1992, by: 0, grow: 0 }, "아래로 4px 잘린 줄 → 4px 만 더 내린 자리(판의 위로 갔다가 줄이 보일 만큼 — 결과는 가장 덜 움직인 자리)");
+  assert.deepEqual(S({ ...mv, rowTop: -300, rowBottom: -184 }), { to: 912, by: 0, grow: 0 }, "화면 위로 지나간 줄(다섯째 자리에서 셋째 자리로) → 판의 위(724)에서는 화면 아래(1080)라 188px 내린다");
+  assert.deepEqual(S({ ...mv, rowTop: -1000, rowBottom: -884 }), { to: 724, by: 0, grow: 0 }, "판의 첫 화면에 드는 줄(첫 자리로) → 새 판을 맨 위부터(줄은 264~380 에 보인다)");
+  assert.deepEqual(S({ moved: true, y0: 500, y: 500, viewH: 844, splitTop: -200, panelTop: 300, panelBottom: 2400, rowTop: 1200, rowBottom: 1316, barH: 58 }), { to: 980, by: 0, grow: 0 },
+    "폰(달력 아래에 판): 판의 위는 보이는데 옮긴 줄이 화면 아래 → 480px 내린다(1316 − 836) · 달력을 누른 것이 아니어도 줄은 보여 준다");
+  assert.deepEqual(S({ moved: true, viewH: 300, panelTop: 100, panelBottom: 1500, rowTop: 500, rowBottom: 900, barH: 58 }), { to: 378, by: 0, grow: 0 },
+    "화면보다 긴 줄 — 줄의 위가 날짜 줄 밑으로 들어가지는 않게(500 − 122)만 내린다");
+  assert.deepEqual(S({ ...mv, rowTop: 760, rowBottom: 644 }), { to: 724, by: 0, grow: 0 }, "뒤집힌 값·한쪽만 온 값은 줄을 모르는 것으로");
+  assert.deepEqual(S({ ...mv, rowTop: 644, rowBottom: null }), { to: 724, by: 0, grow: 0 }); assert.deepEqual(S({ ...mv, rowTop: "644", rowBottom: 760 }), { to: 724, by: 0, grow: 0 });
+  assert.deepEqual(S({ ...mv, rowTop: 0, rowBottom: 0 }), { to: 724, by: 0, grow: 0 }, "높이가 없는 줄(떼어진 화면 · 접힌 줄)은 줄을 모르는 것으로");
+  assert.deepEqual(S({ ...mv, moved: false, rowTop: -300, rowBottom: -184 }), { to: 1988, by: 0, grow: 0 }, "같은 날의 다시 그리기(moved 아님)는 줄을 보지 않는다 — 굴린 자리 그대로");
+  for (const rt of [-2000, -500, 0, 63, 64, 121, 122, 400, 775, 777, 900, 3000]) {   // 어디에 있든: 갈 자리는 0 이상의 정수 · 늘리지 않는다 · 간 뒤 줄의 위는 날짜 줄 아래(판의 위에 머문 때는 판 안)
+    const r = S({ ...mv, rowTop: rt, rowBottom: rt + 116 });
+    assert.ok(Number.isInteger(r.to) && r.to >= 0 && r.by === 0 && r.grow === 0, `rowTop ${rt}`);
+    const top = rt + (mv.y - r.to), bottom = top + 116;
+    assert.ok(bottom <= 892 + 0.5 && (top >= 122 - 0.5 || r.to === 724), `rowTop ${rt} → 간 뒤 ${top}~${bottom}`);
+  }
   // 맨 위(갈 자리 0)에서는 늘리지 않는다(올리기 전 확인 반영) — 내용이 화면에 다 들어가는 큰 화면의 처음 그리기: 늘리면 올림 탓에 문서가 화면보다 1px 길어져 없던 굴림줄이 생긴다
   assert.deepEqual(S({ viewH: 1080, endBottom: 986.2, splitTop: 409, panelTop: 409, panelBottom: 700 }), { to: 0, by: 0, grow: 0 }, "굴린 적이 없고 내용이 화면보다 짧다 → min-height 없음");
   assert.deepEqual(S({ y0: 1, y: 0, viewH: 1080, endBottom: 986.2, splitTop: 409, panelTop: 409, panelBottom: 700 }), { to: 1, by: 0, grow: 655 }, "1px 이라도 굴려 두었으면 그 자리를 지킨다(1 + 1080 − 986.2 = 94.8px 모자란다)");
@@ -715,6 +742,66 @@ test("명단 화면 — 다시 그려도 달력은 제자리: 붙은 달력 옆�
       assert.deepEqual(jumps, [], "굴린 자리는 그대로 — 붙는 꼴(position: sticky)이 아닌 달력은 위로 끌어올리지 않는다");
     }, { win: { innerHeight: 475, scrollY: 233 }, doc: { activeElement: focus }, css: () => ({ position: "static", top: "64px" }) });
   }
+});
+
+test("명단 화면 — 날·당번이 바뀐 그리기의 잇기: 떼어진 화면은 건드리지 않는다 · 맡은 당번에서 빠져 남은 당번이 열려도(저장 길 안에서) 새 판을 위부터 · 옮긴 줄의 잇기(마지막 확인 반영)", async () => {
+  // ① 떼어진 화면 — 명단을 불러오는 사이 다른 메뉴로 옮기면(main.js route 가 section 을 갈아 끼운다) 늦게 온 답이 떼어진 화면에 그린다. 떼어진 요소의 상자는 모두 0 이라,
+  //    재면 「새 판의 위가 머리줄 선보다 위」로 읽혀 지금 보이는 다른 메뉴를 64px 올린다 — 재지도 굴리지도 않는다.
+  await withPage(async ({ scrolls, jumps, win }) => {
+    const zero = { getBoundingClientRect: () => ({ top: 0, bottom: 0, height: 0 }) }, split = { style: {}, ...zero, querySelector: () => null };
+    const sv = server("cal-x", DAYS), sc = screen({ ".dty-split": split, ".dty-day": zero }, { box: () => ({ bottom: 0 }) });
+    sc.el.isConnected = false;
+    await render(sc.el, { call: sv.call, query: {} });   // 늦게 온 처음 그리기 — 그 사이 다른 메뉴를 500 까지 굴려 두었다
+    assert.deepEqual([jumps, scrolls, split.style.minHeight, win.scrollY], [[], [], undefined, 500], "떼어진 화면의 처음 그리기는 다른 메뉴를 굴리지 않는다");
+    await sc.pick("2026-11-01", false);
+    assert.deepEqual([chosen(sc.el), jumps], ["2026-11-01", []], "날이 바뀐 그리기도(「옮기기」 저장 중에 메뉴를 옮긴 때)");
+    sc.el.isConnected = true;
+    await sc.pick("2026-10-25", false);
+    assert.deepEqual(jumps, [436], "붙어 있는 화면이면 같은 값에서 굴린다(500 − 64) — 위 둘이 조용했던 것은 떼어져 있어서다");
+  }, { win: { innerHeight: 900, scrollY: 500 } });
+  // ② 맡은 당번에서 빠져 남은 당번이 저절로 열림 — 저장 길(once · busy 안) 그대로: 「이 날 확정」을 눌러 확인 창에서 「확정」→ 서버가 not-assigned → 당번 목록부터 다시 →
+  //    하나 남은 당번이 열린다. **날은 같고 당번만 바뀐다**(두 당번의 날짜가 같다) — 날만 견주거나, 저장 길에서 「바뀐 그리기」를 놓치면 옛 당번에서 굴려 둔 자리를 지켜 빈 화면이 남는다.
+  //    확인 창(core/ui.js dialog)은 가짜 문서가 뜨자마자 「확정」을 누른다.
+  {
+    const geo = { splitTop: 409, panelTop: 409, panelBottom: 1900, docH: 4000 }, asked = [];
+    const split = { style: {}, getBoundingClientRect: () => ({ top: geo.splitTop, height: 1600 }), querySelector: () => null };
+    const panel = { getBoundingClientRect: () => ({ top: geo.panelTop, bottom: geo.panelBottom }) };
+    const dim = () => { const on = {}, parts = {}; return { className: "", innerHTML: "", remove() {}, addEventListener: (t, fn) => { (on[t] ||= []).push(fn); },
+      querySelector: (q) => (parts[q] ||= { textContent: "", hidden: false, innerHTML: "", classList: { add() {} } }),
+      press: (v) => { asked.push(parts["h3"].textContent); on.click.forEach((fn) => fn({ target: { closest: () => ({ dataset: { v } }) } })); } }; };
+    const doc = { createElement: dim, addEventListener() {}, removeEventListener() {}, body: { appendChild: (x) => { if (x.press) x.press("1"); } } };
+    await withPage(async ({ said, scrolls, jumps, win }) => {
+      const calls = [], st = { lost: false }, row = (id, title) => ({ id, title, status: "open", statusLabel: "받는 중" });
+      const call = async (action, body) => {
+        calls.push(action + (body && body.board_id ? ":" + body.board_id : ""));
+        if (action === "dutyBoardList") return { ok: true, scope: "assigned", today: TODAY, boards: st.lost ? [row("two-b", "주차 봉사")] : [row("two-a", "식당 봉사"), row("two-b", "주차 봉사")] };
+        if (action === "dutyDaySet") { st.lost = true; return { ok: false, error: "not-assigned" }; }
+        if (action === "dutyRoster") return st.lost && body.board_id === "two-a" ? { ok: false, error: "not-assigned" } : { ok: true, chief: false, appOpen: false, today: TODAY, staff: [],
+          lines: [{ id: 1, active: true, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, weekday: 0, sort: 0 }],
+          board: { ...row(body.board_id, body.board_id === "two-a" ? "식당 봉사" : "주차 봉사"), openDays: 56, untilDate: "", place: "", contact: "", maxAhead: null }, days: DAYS.filter((d) => d.date >= body.from) };
+        return { ok: false, error: "unknown-action" };
+      };
+      const sc = screen({ ".dty-split": split, ".dty-day": panel }, { box: () => ({ bottom: geo.docH - win.scrollY }) });
+      await render(sc.el, { call, query: { b: "two-a" } });
+      assert.ok(sc.el.innerHTML.includes("식당 봉사 · 받는 중") && chosen(sc.el) === "2026-10-09", "첫 당번의 10/9");
+      win.scrollY = 1500; Object.assign(geo, { splitTop: -1291, panelTop: -800, panelBottom: 1200 });   // 긴 판을 굴려 둔 채
+      await sc.click({ "button[data-dact]": { dataset: { dact: "confirm" } } });
+      assert.deepEqual(asked, ["🔒 이 날 확정"], "확인 창이 한 번 떴다");
+      assert.deepEqual(calls.slice(-3), ["dutyDaySet:two-a", "dutyBoardList", "dutyRoster:two-b"], "거절 → 당번 목록부터 다시 → 남은 당번");
+      assert.ok(sc.el.innerHTML.includes("주차 봉사 · 받는 중") && chosen(sc.el) === "2026-10-09", "남은 당번이 열렸다 — 날은 같다(10/9)");
+      assert.equal(said.textContent, "맡은 당번이 아니에요 — 목록을 새로 불러올게요");
+      assert.deepEqual([jumps, scrolls, split.style.minHeight], [[636], [], undefined], "새 판의 위를 머리줄 선에(1500 − 800 − 64) — 굴린 자리(1500)를 지키지 않고 늘리지도 않는다");
+    }, { win: { innerHeight: 900, scrollY: 0 }, doc });
+  }
+  // ③ 가짜 화면으로 못 일으키는 잇기(고르개가 뜨는 「옮기기」 · 입력 창이 뜨는 날짜 더하기)는 글자로 본다 — 끝까지는 진짜 브라우저에서(CLAUDE.md 「화면 자리를 고치면 다시 잴 길」)
+  const src = read("js/menus/duty/roster.js");
+  for (const line of ["const key = `${cur.id}|${day}`, moved = drawnKey !== key;", "settleView(y0, view ? { ...view, stuck } : moved ? { moved: true, row } : null);",
+    'const want = calFocus, view = calView, row = showRow; calFocus = ""; calView = null; showRow = "";', "if (r.ok) showRow = String(e.id);",
+    'await settle(r, r.ok ? movedText(r, e.name) : "", target ? target.date : day);', "await busy(el, () => reload(got.date));", "if (el.isConnected === false) return;",
+    'const rr = sid ? rect(el.querySelector(`[data-sid="${sid}"]`)) : null, br = rr ? rect(el.querySelector(".dty-bar")) : null;',
+    "rowTop: rr ? rr.top : null, rowBottom: rr ? rr.bottom : null, barH: br ? br.height : null });", "if (lack >= 1 && !moved && sp && sp.style && sr) {"]) assert.ok(src.includes(line), line);
+  assert.ok(src.indexOf("if (r.ok) showRow = String(e.id);") < src.indexOf('await settle(r, r.ok ? movedText(r, e.name) : "", target ? target.date : day);'), "표식은 다시 그리기 전에 적는다");
+  assert.ok(src.includes('data-sid="${esc(e.id)}"'), "살아 있는 줄은 data-sid 로 찾는다(옮겨도 줄 번호는 그대로 — 성경암송 duty_move 가 같은 줄을 고친다)");
 });
 
 test("명단 화면 — 날짜가 셋 이하면 칩 줄 그대로 · 날짜가 없어도 지난 날은 더 불러올 수 있다(끝난 한 번짜리 모집)", async () => {

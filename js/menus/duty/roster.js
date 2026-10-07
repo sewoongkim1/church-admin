@@ -1,6 +1,7 @@
 // 📅 당번 명단 — 당번 고르기 · 날짜 칩(날짜가 넷 이상이면 달력 — roster-cal.js) · 그날 판(확정·쉬는 날·메모) · 자리마다 선 분(넣기·빼기·옮기기·메모) · 자리 틀 · 날짜 더하기 · 쉬는 기간 · 엑셀
 //   명단은 **달을 통째로** 읽는다(rosterFrom — 달력이 그리는 달에 「아직 안 읽은 날」이 없게) · 달력이 있을 때 다시 그려도 화면은 제자리다(settleView — 달력이 손끝에서 달아나지 않게).
-//   다만 달력을 누르지 않았는데 보이는 날·당번이 바뀐 그리기(「옮기기」로 다른 날에 · 날짜 더하기 등)는 굴린 자리를 지키지 않고 새 판을 위부터 보인다(drawnKey — 지키면 빈 화면만 남는다).
+//   다만 달력을 누르지 않았는데 보이는 날·당번이 바뀐 그리기(「옮기기」로 다른 날에 · 날짜 더하기 등)는 굴린 자리를 지키지 않고 새 판을 위부터 보인다(drawnKey — 지키면 빈 화면만 남는다) ·
+//   방금 옮긴 분의 줄이 있으면 그 줄이 보이는 것이 먼저다(showRow). 메뉴를 옮겨 떼어진 화면에서는 화면 자리를 건드리지 않는다.
 //   (봉사 당번 1단계 · 2026-10-06 · 설계 v2 docs/superpowers/specs/2026-10-06-duty-roster-design.md §6)
 //   서버: dutyBoardList·dutyRoster·dutyBoardSave·dutyLineSave·dutyLineRemove·dutyDateAdd·dutyDaySet·dutyDaysOff·dutySlotSet·dutySlotDelete·
 //         dutySignAdd·dutySignRemove·dutySignMove·dutySignNote·dutyAskClear·dutyPeopleLookup·dutyExport
@@ -89,6 +90,7 @@ export async function render(el, { call, query }) {
   let calFocus = "";         // 눌러서 다시 그리면 눌렀던 단추가 사라진다 — 그린 뒤 초점을 돌려줄 곳("day" · "prev" · "next" · "older" = 달력 밖의 「지난 날 더 보기」)
   let calView = null;        // 이번 그리기가 무엇을 눌러서인가 — { cal: 달력을 눌렀다 · reveal: 날짜를 눌렀다(그날 판 보이기) · kb: 자판으로 눌렀다 } · 초점 표식처럼 한 번 쓰고 지운다
   let drawnKey = "";         // 지난번에 명단 탭에 그린 것("당번|날") — 달력을 누르지 않았는데 이것이 바뀐 그리기에서는 굴린 자리를 지키지 않는다(draw · calSettle ⑤)
+  let showRow = "";          // 방금 다른 자리로 옮긴 줄의 번호 — 날이 바뀐 그리기에서 그 줄이 보이게(calSettle ⑤) · 초점 표식처럼 한 번 쓰고 지운다
 
   const loadBoards = async () => {
     const r = await call("dutyBoardList", {});
@@ -199,6 +201,8 @@ export async function render(el, { call, query }) {
   //   셈은 duty-logic.js calSettle(시험) — 여기서는 재고 옮기기만 한다: 굴린 자리를 지키고(문서가 줄어 달력이 손끝에서 달아나지 않게),
   //   달력을 눌러 그린 것(view)이면 붙은 달력 옆의 그날 판을 맨 위부터 · 폰에서는 그날 판이 보일 만큼 · 자판으로 눌렀으면 초점이 가려지지 않게.
   //   달력을 누르지 않았는데 보이는 날·당번이 바뀐 그리기(view.moved)는 굴린 자리를 지키지 않는다 — 새 판의 위가 가려 있으면 머리줄 아래까지만 올린다.
+  //   「옮기기」로 다른 날에 옮긴 뒤(view.row = 옮긴 줄)에는 그 줄이 보이는 것이 먼저다 — 그 자리에서 보이면 그대로, 아니면 보일 만큼.
+  //   ⚠️ 메뉴를 옮겨 **떼어진 화면**에서는 재지도 굴리지도 않는다 — 늦게 온 답이 떼어진 화면에 그리면 잰 값이 모두 0 이라, 지금 보이는 **다른 메뉴**를 굴리게 된다(마지막 확인 2026-10-07).
   const pageY = () => (typeof window.scrollY === "number" ? window.scrollY : null);
   // 달력이 머리줄 아래에 붙어 있나(PC — css 의 position:sticky) → 붙은 선(px) · 아니면 null. **다시 그리기 전에** 잰다(그린 뒤에는 문서가 줄어 자리가 달라진다).
   const stuckAt = () => {
@@ -208,6 +212,7 @@ export async function render(el, { call, query }) {
     return cs.position === "sticky" && Number.isFinite(line) && sp.getBoundingClientRect().top < line - 0.5 ? line : null;
   };
   const settleView = (y0, view) => {
+    if (el.isConnected === false) return;   // 떼어진 화면(메뉴를 옮겼다) — 가짜 화면(시험)에는 이 값이 없어 false 와 견준다
     const p = el.querySelector(".dty-day");
     if (!p || !p.getBoundingClientRect) return;
     const rect = (x) => (x && x.getBoundingClientRect ? x.getBoundingClientRect() : null);
@@ -215,14 +220,19 @@ export async function render(el, { call, query }) {
     const a = view && view.kb && doc ? doc.activeElement : null, fr = a && el.contains && el.contains(a) ? rect(a) : null;
     // 내용의 끝 = 이 화면을 담은 판(main.view — 아래 여백까지)의 아래끝. 문서 높이(scrollHeight)로 재지 않는다 — 내용이 화면보다 짧으면 화면 높이를 준다
     const er = rect(el.parentElement) || rect(el);
+    // 방금 옮긴 줄(번호는 숫자뿐 — 다른 글자가 섞였으면 찾지 않는다)과, 머리줄 아래에 붙는 날짜 줄의 높이(줄이 그 밑에 깔리면 보이는 것이 아니다)
+    const moved = !!(view && view.moved), sid = moved && /^[0-9]+$/.test(String(view.row || "")) ? String(view.row) : "";
+    const rr = sid ? rect(el.querySelector(`[data-sid="${sid}"]`)) : null, br = rr ? rect(el.querySelector(".dty-bar")) : null;
     const s = calSettle({ y0, y, viewH: window.innerHeight, endBottom: er ? er.bottom : null,
       splitTop: sr ? sr.top : null, splitH: sr ? sr.height : null, panelTop: pr.top, panelBottom: pr.bottom, focusTop: fr ? fr.top : null, focusBottom: fr ? fr.bottom : null,
-      stuck: view ? view.stuck : null, reveal: !!(view && view.reveal), kb: !!(view && view.kb), moved: !!(view && view.moved) });
+      stuck: view ? view.stuck : null, reveal: !!(view && view.reveal), kb: !!(view && view.kb), moved,
+      rowTop: rr ? rr.top : null, rowBottom: rr ? rr.bottom : null, barH: br ? br.height : null });
     if (s.grow && sp && sp.style) sp.style.minHeight = `${s.grow}px`;
     if (s.to !== null && y !== null && Math.abs(s.to - y) >= 1 && window.scrollTo) {
       window.scrollTo(0, s.to);   // 바로(움직임 없이) — 제자리로 돌려놓는 것이라 보이지 않아야 한다
       const lack = s.to - (pageY() ?? s.to);   // 그래도 덜 갔으면(잰 것과 달리 문서가 조금 모자랐다) 그만큼 더 늘리고 한 번 더 — 달력이 제자리에 오는 것이 약속이다
-      if (lack >= 1 && sp && sp.style && sr) { sp.style.minHeight = `${(s.grow || Math.ceil(sr.height)) + Math.ceil(lack)}px`; window.scrollTo(0, s.to); }
+      //   날이 바뀐 그리기(moved)에서는 하지 않는다 — 지킬 자리가 없다(옮긴 줄을 보이려던 것이 조금 덜 갔다고 문서를 늘리지 않는다)
+      if (lack >= 1 && !moved && sp && sp.style && sr) { sp.style.minHeight = `${(s.grow || Math.ceil(sr.height)) + Math.ceil(lack)}px`; window.scrollTo(0, s.to); }
     }
     if (!s.by) return;
     const calm = !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -230,7 +240,7 @@ export async function render(el, { call, query }) {
   };
 
   const draw = () => {
-    const want = calFocus, view = calView; calFocus = ""; calView = null;   // 어느 길로 끝나든 한 번만 쓴다(다음 그리기로 넘어가 엉뚱한 때 초점·화면이 튀지 않게)
+    const want = calFocus, view = calView, row = showRow; calFocus = ""; calView = null; showRow = "";   // 어느 길로 끝나든 한 번만 쓴다(다음 그리기로 넘어가 엉뚱한 때 초점·화면이 튀지 않게)
     const y0 = pageY(), stuck = view && view.cal ? stuckAt() : null;       // 다시 그리기 **전의** 자리
     if (!boards.length) { el.innerHTML = TITLE + `<p class="empty">${esc(scope === "assigned" ? EMPTY_ASSIGNED : EMPTY_ALL)}</p>`; return; }
     if (!cur || !ros) { el.innerHTML = TITLE + boardBtn() + `<p class="empty">당번을 골라 주세요</p>`; return; }
@@ -262,9 +272,9 @@ export async function render(el, { call, query }) {
     if (tab !== "roster") return;
     // 달력을 누르지 않았는데(view 없음) 보이는 당번·날이 지난번 그린 것과 다른가 — 「옮기기」로 다른 날에(서버가 거절해 다시 읽은 때에도) · 날짜 더하기 ·
     //   맡은 당번에서 빠져 남은 당번이 저절로 열림. 그때는 옛 판에서 굴려 둔 자리를 지키지 않는다(지키면 짧은 새 판이 화면 위로 사라지고 빈 화면만 남는다 — 올리기 전 확인 2026-10-07).
-    const key = `${cur.id}|${day}`, moved = drawnKey !== key;   // 처음 그리기도 「바뀐 것」이다 — 맨 위(0)에서는 어느 쪽이든 같다
+    const key = `${cur.id}|${day}`, moved = drawnKey !== key;   // 처음 그리기도 「바뀐 것」이다 — 붙어 있는 화면의 처음 그리기는 늘 맨 위(0)라 어느 쪽이든 같다(떼어진 화면은 settleView 가 거른다)
     drawnKey = key;
-    settleView(y0, view ? { ...view, stuck } : moved ? { moved: true } : null);   // 달력을 눌러 그린 것(view)이 먼저다 — 그때는 날이 바뀌어도 달력의 자리를 지킨다
+    settleView(y0, view ? { ...view, stuck } : moved ? { moved: true, row } : null);   // 달력을 눌러 그린 것(view)이 먼저다 — 그때는 날이 바뀌어도 달력의 자리를 지킨다
   };
 
   // ---------- 처음 ----------
@@ -385,7 +395,9 @@ export async function render(el, { call, query }) {
         if (!yes) return;
         r = await busy(el, () => call("dutySignMove", { id: e.id, to_slot: to, force: true }));
       }
+      if (r.ok) showRow = String(e.id);   // 옮긴 줄 — 다시 그릴 때 그 줄이 보이게(draw 가 한 번 쓰고 지운다 · 줄 번호는 옮겨도 그대로다)
       await settle(r, r.ok ? movedText(r, e.name) : "", target ? target.date : day);
+      showRow = "";                       // 다시 그리지 못했으면(다시 읽기 실패) 남기지 않는다
     }
   }
 

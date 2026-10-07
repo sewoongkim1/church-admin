@@ -336,8 +336,12 @@ export function revealBy(top, viewH, { head = 56, keep = 220 } = {}) {
 //      판이 맨 위도 굴린 자리도 아닌 가운데로 수백 px 튄다(올리기 전 확인 2026-10-07).
 //   ⑤ 달력을 누르지 않았는데 **보이는 날(또는 당번)이 바뀐** 그리기(moved — 「옮기기」로 다른 날에 · 날짜 더하기 · 맡은 당번에서 빠져 남은 당번이 저절로 열림)는
 //      ① 을 하지 않는다: 옛 날의 긴 판에서 굴려 둔 자리를 지키면 짧은 새 판이 화면 위로 사라지고 늘린 빈 자리만 남는다(올리기 전 확인 — 「옮기기」 뒤 빈 화면).
-//      브라우저가 둔 자리(y)에서, 새 판의 위가 머리줄 아래 선보다 위에 있을 때만 그 선까지 올린다 — 아래로는 굴리지 않고 문서도 늘리지 않는다(지킬 손끝이 없다).
-//   g = { y0: 그리기 전 굴린 자리 · y: 지금 굴린 자리 · viewH · endBottom: 내용의 끝(명단 화면의 아래끝) · splitTop · splitH · panelTop · panelBottom · focusTop · focusBottom · stuck · reveal · kb · moved }
+//      브라우저가 둔 자리(y)에서, 새 판의 위가 머리줄 아래 선보다 위에 있을 때만 그 선까지 올린다 — 문서는 늘리지 않는다(지킬 손끝이 없다).
+//      **방금 옮긴 분의 줄**(rowTop·rowBottom — 「옮기기」가 성공한 때만 온다)이 있으면 그 줄이 보이는 것이 먼저다(마지막 확인 2026-10-07 — 같은 자리의 다음 주일로 옮기면
+//      그 줄이 손끝 근처에 그대로 있는데 판의 맨 위로 튀어 화면 밖으로 나갔다): 그 자리에서 다 보이면 그대로 두고, 아니면 새 판의 위로 간 뒤 줄이 화면 아래면 보일 만큼만 내린다.
+//      줄이 「보인다」의 위쪽 끝은 머리줄 아래에 붙는 날짜 줄(.dty-bar — barH)만큼 더 아래다(그 줄 밑에 깔리면 안 보인다).
+//   g = { y0: 그리기 전 굴린 자리 · y: 지금 굴린 자리 · viewH · endBottom: 내용의 끝(명단 화면의 아래끝) · splitTop · splitH · panelTop · panelBottom · focusTop · focusBottom · stuck · reveal · kb · moved
+//         · rowTop · rowBottom · barH }
 //     — top·bottom 은 지금(y) 화면 기준 · 잴 수 없는 값은 null. 굴린 자리를 잴 수 없으면(y 없음) ③ 만 한다.
 //     ⚠️ 문서의 끝은 **내용의 아래끝**으로 잰다(scrollHeight 가 아니다) — 내용이 화면보다 짧으면 scrollHeight 는 화면 높이라, 그것으로 셈하면 덜 늘려 달력이 내려간다(1920×1080 에서 잡았다).
 //     ⚠️ 갈 자리가 맨 위(0)면 늘리지 않는다 — 맨 위는 늘 닿는다. 내용이 화면에 다 들어가는 큰 화면에서 처음 그릴 때부터 늘리면 올림 탓에 문서가 화면보다 1px 길어져
@@ -350,7 +354,17 @@ export function calSettle(g, { head = 56, keep = 220, gap = 8 } = {}) {
   const side = splitTop !== null && panelTop !== null && Math.abs(panelTop - splitTop) <= 4;   // 달력 옆에 판(PC 두 칸) — 달력이 보이면 판도 같은 높이에서 보인다
   if (y === null) return { to: null, by: o.reveal && panelTop !== null && !side ? revealBy(panelTop, viewH, { head, keep }) : 0, grow: 0 };
   const y0 = num(o.y0) ?? y, stuck = num(o.stuck), floor = head + gap;
-  if (o.moved) return { to: Math.max(0, Math.round(panelTop === null ? y : Math.min(y, y + panelTop - floor))), by: 0, grow: 0 };   // ⑤
+  if (o.moved) {   // ⑤
+    const rt = num(o.rowTop), rb = num(o.rowBottom), has = rt !== null && rb !== null && rb > rt;
+    const under = floor + Math.max(0, num(o.barH) ?? 0);   // 줄이 가려지지 않는 위쪽 끝(머리줄 + 붙은 날짜 줄 아래)
+    if (has && rt >= under && rb <= viewH - gap) return { to: Math.max(0, Math.round(y)), by: 0, grow: 0 };   // 옮긴 줄이 그 자리에서 다 보인다
+    let to = panelTop === null ? y : Math.min(y, y + panelTop - floor);
+    if (has) {   // 새 판의 위로 간 뒤에도 줄이 화면 아래면 보일 만큼만 내린다 — 줄의 위가 날짜 줄 밑으로 들어가지는 않게
+      const t = rt + (y - to), b = rb + (y - to);
+      if (b > viewH - gap) to += Math.max(0, Math.min(b - (viewH - gap), t - under));
+    }
+    return { to: Math.max(0, Math.round(to)), by: 0, grow: 0 };
+  }
   const pinned = stuck !== null && splitTop !== null;   // ② — 붙어 있던 달력을 눌렀다
   let to = Math.max(0, Math.round(pinned ? y + splitTop - stuck : y0));
   const at = (v) => v + (y - to);   // 그 자리(to)로 간 뒤의 화면 기준 위치
