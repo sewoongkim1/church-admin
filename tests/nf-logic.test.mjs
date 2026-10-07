@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { birthIn, birthText, cardToForm, formToCard, blankPerson, personLine, guideLine, stageText, groupByStage, groupByCard,
-  helperOptions, foundMok, foundOptions, shrinkSize, nfWord, KIND_OPTIONS, KIND_LABEL, STAGE_ORDER, STAGE_HINT, lessonTitle, recordHint, waitDays, candOptions, exportName, confirmText }
+  helperOptions, foundMok, foundOptions, shrinkSize, nfWord, KIND_OPTIONS, KIND_LABEL, STAGE_ORDER, STAGE_HINT, lessonTitle, recordHint, waitDays, candOptions, exportName, confirmText, BASIS_OPTIONS, DONE_LABEL, rateText, yearOptions, statsSheet }
   from "../js/menus/newfamily/nf-logic.js";
-import { NF_KINDS, NF_STAGES, NF_SERVICES, NF_LESSONS } from "../supabase/functions/church-admin/nf-rules.ts";
+import { NF_KINDS, NF_STAGES, NF_SERVICES, NF_LESSONS, NF_BASES, NF_BASIS_LABEL } from "../supabase/functions/church-admin/nf-rules.ts";
 import { SERVICES, LESSONS } from "../js/menus/newfamily/nf-logic.js";
 
 test("화면과 서버의 목록이 같다 — 하는 일·단계·예배·교육 횟수", () => {
@@ -166,4 +166,19 @@ test("등록식 — 기다린 날 수 · 후보 줄 · 파일 이름 · 확정 �
   assert.match(t[1], /못 오심.*1분/);
   assert.equal(confirmText({ count: 2, away: 0, nextNo: "27-001" }).length, 2);
   for (const c of ["already", "empty", "confirmed", "changed"]) assert.ok(nfWord(c), c);
+});
+
+test("통계 — 기준 셋은 서버와 같다 · 비율 · 해 고르기 · 엑셀 맨 위에 기준", () => {
+  assert.deepEqual(BASIS_OPTIONS.map((o) => o.value), [...NF_BASES]);
+  for (const o of BASIS_OPTIONS) { assert.equal(o.label, NF_BASIS_LABEL[o.value]); assert.ok(DONE_LABEL[o.value]); }
+  assert.equal(rateText(106, 168), "63%");
+  assert.equal(rateText(0, 0), "");
+  assert.deepEqual(yearOptions([{ year: 2026 }, { year: 2027 }], 2026, 2027).map((o) => o.value), ["2027", "2026"]);
+  assert.deepEqual(yearOptions([], 2026, 2026).map((o) => o.label), ["2026년"]);
+  const sh = statsSheet({ basis: "parish", basisLabel: "교구가 배정된 날", today: "2026-10-11", year: 2026,
+    years: [{ year: 2026, came: 10, target: 8, done: 5 }], months: [{ ym: "2026-10", came: 10, target: 8, done: 5 }] });
+  assert.equal(sh.name, "새가족_통계_parish_20261011.xlsx");
+  assert.match(sh.rows[1][0], /세는 기준: 교구가 배정된 날/);
+  assert.deepEqual(sh.rows[3], ["해", "오신 분", "수료 대상", "교구 배정"]);
+  assert.deepEqual(sh.rows.at(-1), ["10월", 10, 8, 5]);
 });

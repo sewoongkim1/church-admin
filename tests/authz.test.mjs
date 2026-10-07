@@ -318,7 +318,7 @@ test("새가족 — 함께 쓰는 분·수료 대상 바꾸기는 운영팀만 �
   const chiefOnly = ["nfStaffList", "nfStaffApprove", "nfStaffSet", "nfHelperSave", "nfPersonSet",
     "nfCeremonyList", "nfCeremonySave", "nfCeremonyPeople", "nfCeremonyConfirm", "nfExport", "nfPersonDelete"];
   const both = ["nfMe", "nfPeopleFind", "nfCardGet", "nfCardSave", "nfPhotoPut", "nfPhotoUrl", "nfList", "nfAssign",
-    "nfLessons", "nfLessonSave", "nfLessonDelete", "nfPastorClass", "nfReportSend", "nfReportReturn", "nfParishList", "nfParishSet"];
+    "nfLessons", "nfLessonSave", "nfLessonDelete", "nfPastorClass", "nfReportSend", "nfReportReturn", "nfParishList", "nfParishSet", "nfStats"];
   for (const a of chiefOnly) {
     assert.equal(ACTION_ROLES[a], "newfamily", a);
     assert.equal(canCall(a, { status: "active", roles: ["nfteam"] }), "forbidden", a);

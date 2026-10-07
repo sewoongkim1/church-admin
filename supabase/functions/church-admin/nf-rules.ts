@@ -269,3 +269,95 @@ export function personOut(p: any, v: NfView, extra: any, today: string): Record<
 export const lessonOut = (l: any, written: string): Record<string, unknown> => ({
   id: l.id, kind: l.kind, metOn: l.met_on, content: l.content || "", note: l.note || "", writtenBy: written || "", updatedAt: l.updated_at || null,
 });
+
+// ── 통계(§1 「세는 기준 날짜를 고른다」 · 친구 2026-10-07 — 보는 기준이 그때그때 다르다) ───────────────
+// 기준 셋: card = 카드를 쓴 날 · parish = 교구가 배정된 날 · ceremony = 등록식 날.
+//   「오신 분」·「수료 대상」은 늘 카드를 쓴 날로 센다. 「등록」만 기준을 따른다:
+//     card     → 교구 배정까지 끝난 분을 **카드를 쓴 날**에(그해 오신 분 가운데 몇 분이 등록까지 가셨나)
+//     parish   → 교구 배정까지 끝난 분을 **교구가 배정된 날**에(그해에 등록 절차를 마친 분)
+//     ceremony → 수료번호를 받은 분을 **등록식 날**에
+//   12월에 카드를 쓰고 이듬해 1월에 교구가 배정된 분은 card 로는 앞의 해, parish 로는 뒤의 해에 들어간다.
+// ⚠️ 응답은 숫자와 교구·섬김이 이름뿐이다 — 새가족의 이름·전화·번호를 싣지 않는다.
+export const NF_BASES = ["card", "parish", "ceremony"] as const;
+export const NF_BASIS_LABEL: Record<string, string> = { card: "카드를 쓴 날", parish: "교구가 배정된 날", ceremony: "등록식 날" };
+// timestamptz → 한국 날짜
+export const kstDay = (iso: string | null | undefined): string => {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  return isNaN(t) ? "" : kstDate(t);
+};
+// 「믿음-35」 → 「믿음」(교구) · 붙임표가 없으면 그대로
+export const parishGroup = (s: string | null | undefined): string => norm(s).split("-")[0] || "";
+
+type StatIn = {
+  people: any[];                       // nf_people 줄
+  cards: Map<string, any>;             // id → { reg_date, self_come }
+  guides: Map<string, any[]>;          // card_id → [{ mok }]
+  ceremonies: Map<string, string>;     // id → held_on
+  lessons: Map<string, number>;        // person_id → 교육 줄 수
+  helpers: Map<string, string>;        // helper id → 이름
+};
+export function buildStats(d: StatIn, basis: string, year: number) {
+  const b = (NF_BASES as readonly string[]).includes(basis) ? basis : "card";
+  const months = new Map<string, { came: number; target: number; done: number }>();
+  const cell = (ym: string) => {
+    let c = months.get(ym);
+    if (!c) months.set(ym, c = { came: 0, target: 0, done: 0 });
+    return c;
+  };
+  const stages: Record<string, number> = {};
+  const stopAt = [0, 0, 0, 0, 0];
+  const byParish = new Map<string, number>(), byGuide = new Map<string, number>();
+  const helper = new Map<string, { assigned: number; done: number }>();
+  const y = String(year);
+  for (const p of d.people) {
+    const card = d.cards.get(String(p.card_id));
+    const reg = String(card?.reg_date || "");
+    const n = d.lessons.get(String(p.id)) ?? 0;
+    const st = stageOf(p, n);
+    stages[st] = (stages[st] ?? 0) + 1;
+    if (st === "stopped") stopAt[Math.min(n, NF_LESSONS)]++;
+    if (reg) {
+      const c = cell(reg.slice(0, 7));
+      c.came++;
+      if (p.target) c.target++;
+    }
+    // 「등록」을 세는 날 — 기준에 따라
+    const doneOn = b === "ceremony" ? (p.cert_no ? String(d.ceremonies.get(String(p.ceremony_id)) || "") : "")
+      : p.parish ? (b === "parish" ? kstDay(p.parish_at) : reg) : "";
+    if (doneOn) {
+      cell(doneOn.slice(0, 7)).done++;
+      if (doneOn.startsWith(y)) { const g = parishGroup(p.parish) || "모름"; byParish.set(g, (byParish.get(g) ?? 0) + 1); }
+    }
+    // 전도 교구 — 그해에 오신 수료 대상을 인도자의 목장(교구)으로. 인도자가 둘이면 반씩.
+    if (p.target && reg.startsWith(y)) {
+      const gs = (d.guides.get(String(p.card_id)) ?? []).map((g) => parishGroup(g.mok) || "모름");
+      const keys = card?.self_come || !gs.length ? ["스스로"] : gs;
+      for (const k of keys) byGuide.set(k, (byGuide.get(k) ?? 0) + 1 / keys.length);
+    }
+    if (p.helper_id && p.target) {
+      const k = String(p.helper_id), h = helper.get(k) ?? { assigned: 0, done: 0 };
+      h.assigned++;
+      if (p.parish) h.done++;
+      helper.set(k, h);
+    }
+  }
+  const ms = [...months.entries()].map(([ym, c]) => ({ ym, ...c })).sort((a, b2) => (a.ym < b2.ym ? -1 : 1));
+  const years = new Map<string, { came: number; target: number; done: number }>();
+  for (const m of ms) {
+    const k = m.ym.slice(0, 4), c = years.get(k) ?? { came: 0, target: 0, done: 0 };
+    c.came += m.came; c.target += m.target; c.done += m.done;
+    years.set(k, c);
+  }
+  const list = (m: Map<string, number>) => [...m.entries()].map(([name, n]) => ({ name, n: Math.round(n * 10) / 10 }))
+    .sort((a, b2) => b2.n - a.n || a.name.localeCompare(b2.name, "ko"));
+  return {
+    basis: b, basisLabel: NF_BASIS_LABEL[b], year,
+    years: [...years.entries()].map(([yy, c]) => ({ year: Number(yy), ...c })).sort((a, b2) => a.year - b2.year),
+    months: ms.filter((m) => m.ym.startsWith(y)),
+    stages, stopAt,
+    byParish: list(byParish), byGuide: list(byGuide),
+    helpers: [...helper.entries()].map(([id, h]) => ({ name: d.helpers.get(id) ?? "", ...h }))
+      .sort((a, b2) => b2.assigned - a.assigned || a.name.localeCompare(b2.name, "ko")),
+  };
+}

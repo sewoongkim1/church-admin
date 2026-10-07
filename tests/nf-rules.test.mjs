@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { stageOf, isQuiet, checkCard, checkLesson, lessonKindFor, lessonGate, classGate, reportGate, parishGate,
   phoneOf, dupKey, certNo, ageBand, personOut, checkKinds, listScope, canCardRead, canCardWrite, canAssign, canPastor,
-  canLessonRead, canLessonWrite, canSeePerson, NF_STAGES, NF_STAGE_LABEL, NF_STAGE_TURN, NF_LESSONS }
+  canLessonRead, canLessonWrite, canSeePerson, NF_STAGES, NF_STAGE_LABEL, NF_STAGE_TURN, NF_LESSONS, buildStats, kstDay, parishGroup, NF_BASES, NF_BASIS_LABEL }
   from "../supabase/functions/church-admin/nf-rules.ts";
 
 const TODAY = "2026-10-11";
@@ -249,4 +249,50 @@ test("personOut — 소식 없는 분 표시는 마지막 만남, 없으면 배�
   const p = { id: "p1", target: true, helper_id: "h1", assigned_at: "2026-09-01T00:00:00Z" };
   assert.equal(personOut(p, view(true), { lessons: 0 }, TODAY).quiet, true);
   assert.equal(personOut(p, view(true), { lessons: 1, lastOn: "2026-10-04" }, TODAY).quiet, false);
+});
+
+test("kstDay · parishGroup", () => {
+  assert.equal(kstDay("2026-12-31T16:00:00Z"), "2027-01-01");   // 한국은 이미 새해
+  assert.equal(kstDay(null), "");
+  assert.equal(parishGroup("믿음-35"), "믿음");
+  assert.equal(parishGroup("소망-남성1"), "소망");
+  assert.equal(parishGroup(""), "");
+  for (const b of NF_BASES) assert.ok(NF_BASIS_LABEL[b], b);
+});
+
+test("buildStats — 「등록」을 세는 날이 기준에 따라 달라진다 · 오신 분·수료 대상은 늘 카드를 쓴 날", () => {
+  const cards = new Map([["c1", { reg_date: "2026-12-20", self_come: false }], ["c2", { reg_date: "2026-11-01", self_come: true }]]);
+  const people = [
+    // 12월에 카드 → 이듬해 1월에 교구 배정 → 2월 등록식
+    { id: "a", card_id: "c1", target: true, helper_id: "h1", pastor_class_on: "2027-01-10", report_sent_at: "x", parish: "믿음-35", parish_at: "2027-01-11T03:00:00Z", ceremony_id: "e1", cert_no: "27-001" },
+    { id: "b", card_id: "c1", target: false },                                        // 아이 — 정보만
+    { id: "c", card_id: "c2", target: true, helper_id: "h1" },                        // 교육 중(두 번)
+    { id: "d", card_id: "c2", target: true, helper_id: "h2", stopped_at: "2026-11-20T00:00:00Z" },   // 한 번 하고 멈춤
+  ];
+  const d = { people, cards, guides: new Map([["c1", [{ mok: "기쁨-25" }, { mok: "소망-07" }]]]), ceremonies: new Map([["e1", "2027-02-07"]]),
+    lessons: new Map([["a", 4], ["c", 2], ["d", 1]]), helpers: new Map([["h1", "이섬김"], ["h2", "박섬김"]]) };
+
+  const byCard = buildStats(d, "card", 2026);
+  assert.deepEqual(byCard.years, [{ year: 2026, came: 4, target: 3, done: 1 }]);
+  assert.deepEqual(byCard.months, [{ ym: "2026-11", came: 2, target: 2, done: 0 }, { ym: "2026-12", came: 2, target: 1, done: 1 }]);
+  assert.deepEqual(byCard.byParish, [{ name: "믿음", n: 1 }]);
+
+  const byParish = buildStats(d, "parish", 2026);
+  assert.deepEqual(byParish.years, [{ year: 2026, came: 4, target: 3, done: 0 }, { year: 2027, came: 0, target: 0, done: 1 }]);
+  assert.deepEqual(byParish.byParish, []);                      // 2026년에 교구가 배정된 분은 없다
+  assert.deepEqual(buildStats(d, "parish", 2027).months, [{ ym: "2027-01", came: 0, target: 0, done: 1 }]);
+
+  const byCer = buildStats(d, "ceremony", 2027);
+  assert.deepEqual(byCer.months, [{ ym: "2027-02", came: 0, target: 0, done: 1 }]);
+  assert.equal(byCer.basisLabel, "등록식 날");
+
+  // 지금 단계 · 어디서 멈췄나 · 전도 교구(인도자 둘이면 반씩 · 스스로) · 섬김이
+  assert.deepEqual(byCard.stages, { done: 1, info: 1, learning: 1, stopped: 1 });
+  assert.deepEqual(byCard.stopAt, [0, 1, 0, 0, 0]);
+  assert.deepEqual(byCard.byGuide, [{ name: "스스로", n: 2 }, { name: "기쁨", n: 0.5 }, { name: "소망", n: 0.5 }]);
+  assert.deepEqual(byCard.helpers, [{ name: "이섬김", assigned: 2, done: 1 }, { name: "박섬김", assigned: 1, done: 0 }]);
+  // 모르는 기준은 card 로
+  assert.equal(buildStats(d, "x", 2026).basis, "card");
+  // 새가족의 이름·번호는 어디에도 없다
+  assert.equal(JSON.stringify(byCard).includes("27-001"), false);
 });

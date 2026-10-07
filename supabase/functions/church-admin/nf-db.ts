@@ -9,7 +9,7 @@
 // ⚠️ 기록(audit) detail 에 새가족의 이름·전화를 싣지 않는다(줄 id·수만). 담당자 이름은 다른 메뉴와 같이 실린다(nf.staff).
 // ⚠️ 승인(nfStaffApprove): 대기 중인 분을 active 로 만들며 **nfteam 하나만** 준다 — 역할 이름을 몸통에서 받지 않는다(친구 2026-10-07 판단 A).
 import { canAssign, canCardRead, canCardWrite, canLessonRead, canLessonWrite, canPastor, certNo, checkCard, checkKinds, checkLesson, classGate, dupKey, isDate, NF_LESSONS,
-  kstDate, lessonGate, lessonKindFor, lessonOut, listScope, NF_BAD, NF_KINDS, parishGate, personOut, reportGate, stageOf, type NfView } from "./nf-rules.ts";
+  kstDate, lessonGate, lessonKindFor, lessonOut, listScope, NF_BAD, NF_BASES, NF_KINDS, buildStats, parishGate, personOut, reportGate, stageOf, type NfView } from "./nf-rules.ts";
 import { norm } from "./authz.ts";
 
 type Db = any;
@@ -972,8 +972,35 @@ export function makeNf(db: Db, audit: Audit, deps: {
     return { ok: true, cardGone };
   }
 
+
+  // ══════════ 4단계 — 통계(운영팀·새가족 목사님) ══════════
+  // 숫자만 돌려준다(nf-rules.ts buildStats). basis: card·parish·ceremony · year: 볼 해(없으면 올해).
+  async function nfStats(ctx: any, b: any) {
+    const v = await viewOf(ctx);
+    if (!canPastor(v)) return NOT_ASSIGNED;
+    const basis = norm(b?.basis) || "card";
+    if (!(NF_BASES as readonly string[]).includes(basis)) return { ok: false, error: "bad-input" };
+    const thisYear = Number(today().slice(0, 4));
+    const year = b?.year === undefined || b?.year === null || b?.year === "" ? thisYear : Number(b.year);
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) return { ok: false, error: "bad-input" };
+    const [people, cards, guides, cers, lessons, names] = await Promise.all([
+      deps.allRows(() => db.from("nf_people").select("id,card_id,target,helper_id,pastor_class_on,report_sent_at,parish,parish_at,ceremony_id,cert_no,stopped_at").order("id")),
+      deps.allRows(() => db.from("nf_cards").select("id,reg_date,self_come").order("id")),
+      deps.allRows(() => db.from("nf_guides").select("card_id,seq,mok").order("card_id").order("seq")),
+      deps.allRows(() => db.from("nf_ceremonies").select("id,held_on").order("id")),
+      deps.allRows(() => db.from("nf_lessons").select("person_id").eq("kind", "lesson").order("id")),
+      helperNames(),
+    ]);
+    const gm = new Map<string, any[]>(), lm = new Map<string, number>();
+    for (const g of guides) gm.set(String(g.card_id), [...(gm.get(String(g.card_id)) ?? []), g]);
+    for (const l of lessons) lm.set(String(l.person_id), (lm.get(String(l.person_id)) ?? 0) + 1);
+    const out = buildStats({ people, cards: new Map(cards.map((c: any) => [String(c.id), c])), guides: gm,
+      ceremonies: new Map(cers.map((c: any) => [String(c.id), String(c.held_on)])), lessons: lm, helpers: names }, basis, year);
+    return { ok: true, today: today(), ...out };
+  }
+
   return { viewOf, nfMe, nfStaffList, nfStaffApprove, nfStaffSet, nfHelperSave, nfPeopleFind,
     nfCardGet, nfCardSave, nfPhotoPut, nfPhotoUrl, nfList, nfPersonSet, nfAssign,
     nfLessons, nfLessonSave, nfLessonDelete, nfPastorClass, nfReportSend, nfReportReturn, nfParishList, nfParishSet,
-    nfCeremonyList, nfCeremonySave, nfCeremonyPeople, nfCeremonyConfirm, nfExport, nfPersonDelete };
+    nfCeremonyList, nfCeremonySave, nfCeremonyPeople, nfCeremonyConfirm, nfExport, nfPersonDelete, nfStats };
 }

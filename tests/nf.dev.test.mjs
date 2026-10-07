@@ -456,6 +456,22 @@ test("3단계 — 등록식: 후보에서 담기 → 참석 표시 → 확정(�
   assert.equal((await call(chief.token, "nfCardGet", { card_id: W.card2 })).body.error, "not-found");
 });
 
+test("4단계 — 통계: 운영팀·목사님만 · 숫자뿐", async () => {
+  assert.equal((await call(H.token, "nfStats")).body.error, "not-assigned");
+  assert.equal((await call(G.token, "nfStats")).body.error, "not-assigned");
+  assert.equal((await call(chief.token, "nfStats", { basis: "x" })).body.error, "bad-input");
+  const y = Number(kst(-3).slice(0, 4));
+  for (const basis of ["card", "parish", "ceremony"]) {
+    const r = await call(chief.token, "nfStats", { basis, year: basis === "ceremony" ? Number(kst(7).slice(0, 4)) : y });
+    assert.equal(r.body.ok, true, basis + " " + JSON.stringify(r.body).slice(0, 200));
+    assert.equal(r.body.basis, basis);
+    assert.ok(r.body.years.reduce((n, x) => n + x.done, 0) >= 1, basis + " — 등록을 마친 분이 한 분은 있다");
+    assert.ok(r.body.helpers.some((h) => h.name === "시험-섬김이"));
+    const s = JSON.stringify(r.body);
+    for (const bad of [NAME, "010-0000", "시험시", W.p1]) assert.equal(s.includes(bad), false, basis + " 에 " + bad);
+  }
+});
+
 test("하는 일을 빼면 — nfteam 역할과 줄만 빠지고, 그 뒤로는 아무것도 못 한다", async () => {
   assert.equal(got(await call(chief.token, "nfStaffSet", { member_id: L.memberId, kinds: [] })).body.ok, true);
   assert.deepEqual(await rest(`admin_role_grants?select=role_id&member_id=eq.${L.memberId}`), []);

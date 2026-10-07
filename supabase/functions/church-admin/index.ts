@@ -2602,6 +2602,7 @@ Deno.serve(async (req) => {
       case "nfCeremonyPeople":    return json(await nf.nfCeremonyPeople(ctx, b));
       case "nfCeremonyConfirm":   return json(await nf.nfCeremonyConfirm(ctx, b));
       case "nfExport":            return json(await nf.nfExport(ctx, b));
+      case "nfStats":             return json(await nf.nfStats(ctx, b));
       case "nfPersonDelete":      return json(await nf.nfPersonDelete(ctx, b));
       case "dutyPeopleLookup":    return json(await duty.dutyPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));

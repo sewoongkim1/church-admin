@@ -158,6 +158,7 @@ const PROBE = {
   nfCeremonyConfirm: { ceremony_id: ZERO, expect: 1 },
   nfExport: { ceremony_id: ZERO },
   nfPersonDelete: { person_id: ZERO },
+  nfStats: {},
   membersList: {},
   membersApprove: { member_id: ZERO, roles: ["ministry"] },
   membersSetRoles: { member_id: ZERO, roles: ["ministry"] },

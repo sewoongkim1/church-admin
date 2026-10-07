@@ -220,3 +220,28 @@ export function confirmText({ count, away, nextNo }) {
   out.push("확정한 뒤에는 되돌릴 수 없어요 — 번호를 이미 드린 것이 되기 때문이에요.");
   return out;
 }
+
+// ── 통계 ─────────────────────────────────────────────────────────────────
+// 「등록」을 세는 기준 날짜 — 서버 nf-rules.ts NF_BASES 와 같은 값(시험이 본다)
+export const BASIS_OPTIONS = [
+  { value: "card", label: "카드를 쓴 날", hint: "그해에 오신 분 가운데 몇 분이 교구 배정까지 가셨는지" },
+  { value: "parish", label: "교구가 배정된 날", hint: "그해에 등록 절차(교구 배정)를 마친 분" },
+  { value: "ceremony", label: "등록식 날", hint: "그해 등록식에서 수료번호를 받은 분" },
+];
+// 표의 「등록」 칸 이름 — 기준에 따라
+export const DONE_LABEL = { card: "교구 배정까지", parish: "교구 배정", ceremony: "등록식" };
+// 「63%」 — 수료 대상이 없으면 빈칸
+export const rateText = (done, target) => (target > 0 ? `${Math.round((done / target) * 100)}%` : "");
+// 해 고르기 — 숫자가 있는 해 + 지금 보는 해 + 올해 · 늦은 해부터
+export function yearOptions(years, cur, thisYear) {
+  const set = new Set([...(years || []).map((y) => y.year), cur, thisYear].filter(Boolean));
+  return [...set].sort((a, b) => b - a).map((y) => ({ value: String(y), label: `${y}년` }));
+}
+// 엑셀 한 장 — 맨 위에 기준을 적는다(기준이 다른 두 숫자를 나란히 놓고 헷갈리지 않게)
+export function statsSheet(d) {
+  const done = DONE_LABEL[d.basis] || "등록";
+  const rows = [["새가족 통계"], [`세는 기준: ${d.basisLabel} · 받은 날 ${d.today}`], [],
+    ["해", "오신 분", "수료 대상", done], ...d.years.map((y) => [`${y.year}년`, y.came, y.target, y.done]), [],
+    [`${d.year}년`, "오신 분", "수료 대상", done], ...d.months.map((m) => [`${Number(m.ym.slice(5))}월`, m.came, m.target, m.done])];
+  return { name: `새가족_통계_${d.basis}_${String(d.today || "").replace(/-/g, "")}.xlsx`, rows };
+}

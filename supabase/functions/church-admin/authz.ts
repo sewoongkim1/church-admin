@@ -213,6 +213,8 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   nfCeremonyConfirm: "newfamily",
   nfExport: "newfamily",
   nfPersonDelete: "newfamily",
+  // 새가족 4단계 — 통계(숫자와 교구·섬김이 이름뿐 · 새가족 이름 없음). 운영팀과 새가족 목사님(nf-db.ts canPastor).
+  nfStats: NF_BOTH,
   // 대신 넣기의 명부 찾기 — 맡은 당번의 창에서만(board_id 필수 · 총괄도) · 기록 people.lookup from:"duty"
   dutyPeopleLookup: DUTY_BOTH,
 };
