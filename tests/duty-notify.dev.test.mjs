@@ -5,6 +5,8 @@
 //   확정 → 빼기 → 다시 넣기(되살리기) 하며 응답의 notified·missed·notifyError 를 본다. 스위치(dutyNotifyOff)를 켜면 알릴 분이 있던 저장은 notify-off,
 //   알릴 분이 없던 저장(어제 자리의 줄을 뺌 — 지난 날은 원래 알림이 없다)은 평소처럼 조용하다(api 의 held 0).
 //   끝나면(실패해도) 지원 → 자리 → 날짜 → 틀 → 당번 → 기록·역할·담당자 → auth 사용자를 지우고 app_config 를 원래대로 둔다. ⚠️ 키·비밀번호·계정 번호를 찍지 않는다.
+//   ⚠️ 「원래대로」 = 시작할 때 읽은 값으로: 스위치(dutyNotifyOff)가 **이미 켜져 있으면** 「시험할 수 없다」로 멈추고 그 줄을 건드리지 않는다(다른 세션이 켜 둔 것일 수 있다 —
+//      전에는 정리 단계가 그 줄을 지워 개발 알림이 말없이 다시 켜졌다 · 회귀 확인 반영 2026-10-07). 처음 값을 못 읽었으면(undefined) 그 줄은 손대지 않는다.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 
@@ -52,7 +54,7 @@ before(async () => {
 after(async () => {
   const errs = [];
   const step = async (name, fn) => { try { await fn(); } catch (e) { errs.push(name + ": " + String(e?.message).slice(0, 160)); } };
-  await step("dutyNotifyOff", () => delCfg("dutyNotifyOff"));
+  await step("dutyNotifyOff", () => (cfg.off === null ? delCfg("dutyNotifyOff") : null));   // 시작할 때 없던 때에만(이 시험이 켠 것) — 켜져 있었거나 못 읽었으면 그대로 둔다
   await step("dutyOpen", () => (cfg.open === null ? delCfg("dutyOpen") : cfg.open === undefined ? null : setCfg("dutyOpen", cfg.open)));
   if (made.boards.length) {
     const bs = made.boards.join(",");
@@ -70,9 +72,9 @@ after(async () => {
   await step("0 줄 확인", async () => { if (made.boards.length) assert.equal((await rest(`duty_boards?select=id&id=in.(${made.boards.join(",")})`)).length, 0); });
   await step("app_config 원래대로", async () => {
     const now = await rest("app_config?select=key,value&key=in.(dutyOpen,dutyNotifyOff)");
-    const open = now.find((x) => x.key === "dutyOpen");
-    assert.equal(now.some((x) => x.key === "dutyNotifyOff"), false, "dutyNotifyOff 가 남았다");
-    assert.deepEqual(open ? open.value : null, cfg.open === undefined ? null : cfg.open, "dutyOpen 이 원래 값이 아니다");
+    const open = now.find((x) => x.key === "dutyOpen"), off = now.find((x) => x.key === "dutyNotifyOff");
+    if (cfg.off !== undefined) assert.deepEqual(off ? off.value : null, cfg.off, "dutyNotifyOff 가 원래 값이 아니다");
+    if (cfg.open !== undefined) assert.deepEqual(open ? open.value : null, cfg.open, "dutyOpen 이 원래 값이 아니다");
   });
   if (errs.length) throw new Error("정리 실패 " + errs.length + "건: " + errs.join(" / "));
 });

@@ -263,7 +263,10 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.deepEqual(slotTwins(meApp, null), { any: false, noApp: false });
   // ① 같은 자리 · 남는 줄에 「앱 없음」 줄이 있다 — 어느 줄을 빼야 하는지 · 아예 빼려면 차례
   assert.ok(removeAsk(meApp, D1, twinSlot([{ id: 2, name: "가상하나", hasApp: false }])).endsWith(DUP_REMOVE_NOAPP));
-  assert.ok(DUP_REMOVE_NOAPP.includes("이 줄(앱에 이어진 줄)은 두고 「앱 없음」 줄을 빼 주세요") && DUP_REMOVE_NOAPP.includes("「앱 없음」 줄을 먼저 빼고 이 줄을 빼야 앱 알림이 가요") && DUP_REMOVE_NOAPP.includes("다른 분이면 따로 알려 주세요"));
+  assert.ok(DUP_REMOVE_NOAPP.includes("이 줄(앱에 이어진 줄)은 두고 「앱 없음」 줄을 빼 주세요") && DUP_REMOVE_NOAPP.includes("그분을 아예 빼려면 「앱 없음」 줄을 먼저 빼 주세요(이 줄을 먼저 빼면 앱 알림을 보내지 않아요)") && DUP_REMOVE_NOAPP.includes("다른 분이면 따로 알려 주세요"));
+  // 회귀 확인 반영(2026-10-07) — 알림이 **간다고** 약속하지 않는다: 준비 중 당번·지난 날·끝난 자리에서는 차례를 지켜도 알림이 없다(같은 창이 그 상태에서도 뜬다)
+  for (const t of [DUP_REMOVE_NOAPP, DUP_REMOVE_APP]) assert.equal(/알림이 가요|알림을 보내요|알림이 갑니다/.test(t), false, t);
+  assert.equal(removeAsk(meApp, DAYS[0], twinSlot([{ id: 2, name: "가상하나", hasApp: false }])).endsWith(DUP_REMOVE_NOAPP), true, "지난 날에도 같은 글이 뜬다 — 그래서 어느 경우에도 참이어야 한다");
   // ② 같은 자리 · 남는 줄이 모두 앱 줄(동명이인 · 옛·새 계정) — 있지도 않은 「앱 없음」 줄을 가리키지 않는다
   const both = removeAsk(meApp, D1, twinSlot([{ id: 2, name: "가상하나", hasApp: true }]));
   assert.ok(both.endsWith(DUP_REMOVE_APP) && !both.includes("「앱 없음」"), both); assert.ok(DUP_REMOVE_APP.includes("빼는 분께 따로 알려 주세요"));

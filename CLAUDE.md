@@ -227,7 +227,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
   「따로 알려 주세요」는 알릴 분이 있을 때만 참이다 · 모르면(옛 `api`·읽기 실패) 알리는 쪽 · 고침 검토 반영 2026-10-07). `api` 의 답을 옮기는 것은 순수 함수 `duty-rules.ts` `dutyNotifyOut`(시험이 값으로 본다).
   날짜 확정 알림을 부르지 못했을 때의 「다시 확정」 안내는 **약속하지 않는다**(`CONFIRM_RETRY` — 다시 가는 것은 아직 잡히지 않은 줄뿐이다 · 준비 중·보관 당번에서는 말하지 않는다 — `confirmDoneText(r, date, status)`).
   「＋ 넣기」의 알림은 **그 줄의 앱 계정**(SQL `hadUser`)으로 정하고, **되살린 줄(`revived`)은 잠기지 않은 날에도 알린다**(「빠진 분 → 다시 넣기」와 같게 — 그분의 마지막 알림이 「빼 드렸어요」일 수 있다).
-  「알림 꺼짐」 딱지는 받는 중·지원 멈춤 당번에서만(`notifyBadges` — 준비 중·보관 당번의 줄에는 어떤 알림도 가지 않는다 · `draftNote` 가 그렇게 말한다). **같은 자리에** 같은 이름의 줄이 또 있을 때 앱 줄을 빼려 하면 말한다(`slotTwins` → `DUP_REMOVE_NOAPP`·`DUP_REMOVE_APP` — 서버가 「빼 드렸어요」를 거르는 범위와 같다 · 다른 자리의 같은 이름에 「이 줄은 두고 앱 없음 줄을 빼 주세요」라고 하면 다른 당번의 줄을 빼게 된다 · 남는 줄이 모두 앱 줄이면 「빼는 분께 따로 알려 주세요」만 · 고침 검토 반영 2026-10-07).
+  「알림 꺼짐」 딱지는 받는 중·지원 멈춤 당번에서만(`notifyBadges` — 준비 중·보관 당번의 줄에는 어떤 알림도 가지 않는다 · `draftNote` 가 그렇게 말한다). **같은 자리에** 같은 이름의 줄이 또 있을 때 앱 줄을 빼려 하면 말한다(`slotTwins` → `DUP_REMOVE_NOAPP`·`DUP_REMOVE_APP` — 서버가 「빼 드렸어요」를 거르는 범위와 같다 · 다른 자리의 같은 이름에 「이 줄은 두고 앱 없음 줄을 빼 주세요」라고 하면 다른 당번의 줄을 빼게 된다 · 남는 줄이 모두 앱 줄이면 「빼는 분께 따로 알려 주세요」만 · 고침 검토 반영 2026-10-07). 그 글은 **알림이 간다고 약속하지 않는다**(「이 줄을 먼저 빼면 앱 알림을 보내지 않아요」 — 준비 중 당번·지난 날에는 차례를 지켜도 알림이 없다 · 회귀 확인 반영).
   넣기 창은 그 자리의 「빠진 분」에 앱 줄이 있으면 「빠진 분 → 다시 넣기」를 권한다(`addEndedNote` — 「＋ 넣기」가 앱 계정을 못 맞추면 앱에 안 이어진 새 줄이 되어 그분의 마지막 알림이 「빼 드렸어요」로 남는다 · 넣기 **전에** 말한다).
   ⚠️ 확인 창·저장 뒤 글의 수는 **「지원 N건」**(줄 수)이다 — 「N분」이라 하면 저장 뒤의 「N분께 앱 알림을 보냈어요」(사람 수)와 한 화면에서 어긋난다(`confirmDayAsk`·`offAsk`·`hideAsk`·`afterAsk`·`boardSavedText`).
   문·한 번만·앱 계정·오늘 이후 자리·글은 모두 그쪽(`dutyNotifySend`)이 본다 — 여기서 걸러 보내지 않는다. ⚠️ 성경암송 `api` 가 `internalDutyNotify` 를 가진 판이어야 한다(없는 판으로 되돌리면 저장마다 「앱 알림을 보내지 못했어요」 창이 뜬다 — 그때는 **`makeDuty` 에 `dutyNotify` 를 넘기지 않는 커밋**을 함께 올린다: `NOTIFY_LIVE` 만 `false` 로 두면 딱지·안내만 바뀌고 창은 그대로 뜬다 — `withNotify`·`sayDone` 은 그 값을 보지 않는다. 급히 멈추려면 성경암송 `app_config` 의 `dutyNotifyOff` 한 줄이 먼저다 · 차례는 성경암송 `docs/notes/duty-roster.md` 「통째로 걷는 차례」).
@@ -242,7 +242,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
   두 저장소의 시험이 **같은 지문**을 본다(표를 고치면 떨어지며 새 값을 보여 준다). 음력·대체공휴일을 **코드로 셈하지 말 것** — 2026년에 노동절·제헌절이 공휴일이 됐고, 2027·2028년 설날은 중국 춘절보다 하루 늦다.
   표는 2028-12-31 까지(2027년 6월 말 「2028년 월력요항」과 대조 · 2028년 가을에 2029년 줄 · 임시공휴일은 한 줄). 근거·고치는 차례 = 성경암송 `docs/notes/duty-roster.md` 「공휴일」.
 - 엑셀 두 시트: 「당번표」(날짜 × 자리 틀 · **이름만** — 벽에 붙는다) · 「명단」(한 분 한 줄 · 소속·넣은 곳 · **메모 없음**).
-- 개발 시험 `tests/duty-notify.dev.test.mjs`(알림 잇기 — 이 함수가 성경암송 `api` 의 답(`notified`·`missed`·`notify-off`·`held`)을 실제로 옮기는가 · 다른 시험은 가짜 `dutyNotify` 로 규칙만 본다 · 개발 `dutyOpen`·`dutyNotifyOff` 를 잠깐 바꿨다 되돌린다) · 화면·함수의 배선은 `tests/duty-logic.test.mjs` 끝의 글자 검사(`roster.js`·`roster-forms.js`·`index.ts` 가 그 규칙을 실제로 쓰는가).
+- 개발 시험 `tests/duty-notify.dev.test.mjs`(알림 잇기 — 이 함수가 성경암송 `api` 의 답(`notified`·`missed`·`notify-off`·`held`)을 실제로 옮기는가 · 다른 시험은 가짜 `dutyNotify` 로 규칙만 본다 · 개발 `dutyOpen`·`dutyNotifyOff` 를 잠깐 바꿨다 되돌린다 — 스위치가 이미 켜져 있으면 멈추고 그 줄을 건드리지 않는다) · 화면·함수의 배선은 `tests/duty-logic.test.mjs` 끝의 글자 검사(`roster.js`·`roster-forms.js`·`index.ts` 가 그 규칙을 실제로 쓰는가).
 - 개발 시험 `tests/duty.dev.test.mjs`(16가지 — 맡은 당번만 · 줄 번호로도 · 다시 넣기 · 겹침 · 끝 날짜 · 낡은 창 · 기록에 이름 없음 · 공개 키·로그인 사용자로 안 열림). 규칙·동시성 시험은 성경암송 `supabase/tests/duty_rules.dev.sql` · `tests/duty-concurrency.dev.sh`.
 - 설계·노트(운영 반영 차례 · 되돌리기 포함): 성경암송 `docs/superpowers/specs/2026-10-06-duty-roster-design.md` · `docs/notes/duty-roster.md`.
 
