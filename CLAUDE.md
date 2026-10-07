@@ -251,7 +251,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 종이 「새가족 등록카드」 → 섬김이 배정 → 섬김이 교육 네 번 → 새가족 목사님 교육 → 섬김이 보고서 → 교구 배정(여기까지 등록 절차) → 등록식(수료번호).
 **성도님 앱에는 아무것도 없다**(내부 담당자만). 설계 v2 `docs/superpowers/specs/2026-10-07-newfamily-design.md` · 담당자용 기획서 v2 `newfamily/`.
 - 묶음 「새가족」: 🌱 **새가족 카드** · 👣 **새가족 현황** · 🎉 **등록식** · 📊 **새가족 통계** · 🧑‍🤝‍🧑 **함께 쓰는 분** — SQL 016.
-  액션 `nf-db.ts`(29개) · 순수 규칙 `nf-rules.ts` · 화면 `js/menus/newfamily/`(`nf-logic.js` 시험 · `cards.js`·`card-form.js`·`photo.js`·`board.js`·`record.js`·`ceremony.js`·`stats.js`·`staff.js`) · CSS 접두사 `nf-`.
+  액션 `nf-db.ts`(28개) · 순수 규칙 `nf-rules.ts` · 화면 `js/menus/newfamily/`(`nf-logic.js` 시험 · `cards.js`·`card-form.js`·`photo.js`·`board.js`·`record.js`·`ceremony.js`·`stats.js`·`staff.js`) · CSS 접두사 `nf-`.
 - **역할 둘**: `newfamily` = 새가족 운영팀(전부) · `nfteam` = 새가족 섬김 — **하는 일은 `nf_staff.kind`**(greeter 영접팀 · lead 정착팀 총무 · helper 섬김이 · pastor 새가족 목사님 · 여럿 가능).
   ⚠️ 「자기 것만」은 **서버가** 본다(`nf-db.ts` `viewOf` → `nf-rules.ts` `canCardRead`·`canAssign`·`canLessonRead`·`canLessonWrite`·`canPastor`) → 아니면 `not-assigned` · 운영팀만 되는 일은 `chief-only`(`forbidden` 을 돌려주면 화면이 통째로 다시 부팅한다).
   새 액션을 `NF_BOTH` 로 열면 이 갈래를 꼭 지나게. `nfteam` 역할이 없으면 `nf_staff` 줄이 남아 있어도 아무것도 못 한다.
