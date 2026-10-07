@@ -16,7 +16,7 @@
 // ⚠️ 알림(3단계)은 저장·기록이 **끝난 뒤** 부탁만 한다(deps.dutyNotify — 없으면 아무것도 안 한다 · 실패해도 저장은 성공 → notified·missed·notifyError).
 //    notified = 실제로 나간 분 수 · missed = 가지 않은 분 수(받는 기기 없음 — 0 이면 싣지 않는다) · notifyError: notify-failed(부르지 못함) · notify-off(알림을 꺼 둠).
 import { boardOrder, boardOut, boardPatchFor, checkBoard, checkLine, checkLineIds, checkNote, dutyChief, DUTY_STAFF_ROLES, exportSheets,
-  hidesFromApp, identHasCtrl, isDate, overlapForStaff, placeOut, rosterOut, staffByBoard, staffNames } from "./duty-rules.ts";
+  hidesFromApp, historyOut, identHasCtrl, isDate, overlapForStaff, peopleInfoSheet, peopleOut, peopleSheet, placeOut, rosterOut, staffByBoard, staffNames, yearOf } from "./duty-rules.ts";
 import { checkStaffIds, checkTypedIdent, kstDate, staffCandidateOut } from "./edu-rules.ts";
 import { norm } from "./authz.ts";
 
@@ -370,6 +370,85 @@ export function makeDuty(db: Db, audit: Audit, deps: {
     return { ok: true, chief, appOpen: await appOpen(), ...rosterOut(r), staff: chief ? staff : staffNames(staff) };
   }
 
+  // ---------- 👥 봉사자(사람별 봉사 이력 · 2026-10-07 친구 요청 「담당자 쪽에는 이분의 봉사 이력을 사람별로 모아 보는 화면」) ----------
+  //   셈과 사람 잇기는 SQL duty_people 한 곳(성경암송 supabase/duty.sql) — 여기는 「어느 당번들 안에서」만 정한다.
+  // 이 분이 볼 수 있는 당번 — 총괄 = 모든 당번 · 담당 = 맡은 당번(dutyBoardList 와 같은 범위). board_id 를 주면 그 하나로 좁힌다
+  //   (꼴이 틀리면 bad-id · 볼 수 없는 당번이면 담당은 not-assigned · 총괄은 not-found). ⚠️ SQL 은 이 당번들 **안의 줄만으로** 사람을 잇는다.
+  //   scope·narrowed·boards 는 응답에 그대로 싣는다 — 화면이 「어느 범위의 수인지」를 서버가 본 대로 말하게(담당의 「지금까지 N번」은 맡은 당번 안의 수다).
+  type Scope = { ok: true; boards: string[]; scope: "all" | "assigned"; narrowed: boolean };
+  async function peopleBoards(ctx: any, b: any): Promise<Scope | Fail> {
+    const want = norm(b?.board_id).toLowerCase();
+    if (want && !UUID.test(want)) return BAD_ID;
+    const chief = dutyChief(ctx?.roles);
+    const scope = chief ? "all" as const : "assigned" as const;
+    let ids: string[];
+    if (chief) {
+      const { data, error } = await db.from("duty_boards").select("id").limit(1000);
+      if (error) throw error;
+      ids = ((data ?? []) as any[]).map((r) => String(r.id));
+    } else {
+      const mid = memberId(ctx);
+      if (!mid) return want ? NOT_ASSIGNED : { ok: true, boards: [], scope, narrowed: false };
+      const { data, error } = await db.from("duty_board_staff").select("board_id").eq("member_id", mid).limit(500);
+      if (error) throw error;
+      ids = [...new Set(((data ?? []) as any[]).map((r) => String(r.board_id)))];
+    }
+    ids = ids.filter((x) => UUID.test(x));
+    if (!want) return { ok: true, boards: ids, scope, narrowed: false };
+    if (!ids.includes(want)) return chief ? NOT_FOUND : NOT_ASSIGNED;
+    return { ok: true, boards: [want], scope, narrowed: true };
+  }
+  const scopeOut = (g: Scope) => ({ scope: g.scope, narrowed: g.narrowed, boards: g.boards.length });
+  async function peopleRead(boards: string[], year: number | null, signup: number | null) {
+    const { data: r, error } = await db.rpc("duty_people", { p_boards: boards, p_year: year, p_signup: signup });
+    if (error) throw error;
+    return r as any;
+  }
+  // 사람 목록 — {board_id?, year?} → {ok, today, year, people, scope, narrowed, boards} · 읽기만(기록 없음 — 명단 읽기와 같다)
+  async function dutyPeople(ctx: any, b: any) {
+    const g = await peopleBoards(ctx, b);
+    if (!g.ok) return g;
+    if (!g.boards.length) return { ok: true, today: kstDate(), year: yearOf(b?.year), people: [], ...scopeOut(g) };
+    const r = await peopleRead(g.boards, yearOf(b?.year), null);
+    if (!r?.ok) return { ok: false, error: String(r?.error || "server") };
+    return { ok: true, ...peopleOut(r), ...scopeOut(g) };
+  }
+  // 한 분의 이력 — {signup_id, board_id?, year?}. 그 줄의 당번을 **서버가 읽어** 볼 수 있는 당번인지 본다(signupBoard — 몸통의 board_id 를 믿지 않는다).
+  //   그다음 볼 수 있는 당번(좁혔으면 그 하나) 안의 줄만으로 그분을 잇는다. 좁힌 당번 밖의 줄이면 not-found.
+  //   (없는 번호는 not-found · 맡지 않은 당번의 번호는 not-assigned — 번호가 있는지만 드러난다. 빼기·옮기기 등 signupBoard 를 쓰는 액션 모두 같은 꼴이다 · 이름·당번·날짜는 답에 없다)
+  async function dutyPersonHistory(ctx: any, b: any) {
+    const id = posInt(b?.signup_id);
+    if (!id) return BAD_ID;
+    const at = await signupBoard(ctx, id);
+    if (!at.ok) return at;
+    const g = await peopleBoards(ctx, b);
+    if (!g.ok) return g;
+    if (!g.boards.includes(at.board)) return NOT_FOUND;
+    const r = await peopleRead(g.boards, yearOf(b?.year), id);
+    if (!r?.ok) return { ok: false, error: r?.error === "not-found" ? "not-found" : String(r?.error || "server") };
+    return { ok: true, ...historyOut(r), ...scopeOut(g) };
+  }
+  // 엑셀 — 목록과 같은 범위 · 시트 「봉사자」(peopleSheet — 이름·소속·수·날짜만 · 선 날도 앞날도 없는 분은 빼고) + 「안내」(범위·기준일·낱말의 뜻).
+  //   기록 duty.people.export {year, count, boards}(이름 없이 · target = 좁힌 당번 id · 볼 수 있는 당번 모두면 빈 글 — 기록 화면이 「볼 수 있는 당번 N개」로 읽는다)
+  async function dutyPeopleExport(ctx: any, b: any) {
+    const g = await peopleBoards(ctx, b);
+    if (!g.ok) return g;
+    const r = g.boards.length ? await peopleRead(g.boards, yearOf(b?.year), null) : { ok: true, today: kstDate(), year: yearOf(b?.year), people: [] };
+    if (!r?.ok) return { ok: false, error: String(r?.error || "server") };
+    const out = peopleOut(r);
+    const thisYear = Number(String(out.today || kstDate()).slice(0, 4)) || new Date().getUTCFullYear();
+    const year = out.year ?? thisYear, sheet = peopleSheet(out, thisYear), count = sheet.length - 1;
+    let scopeText = g.scope === "all" ? `모든 당번 ${g.boards.length}개` : `맡은 당번 ${g.boards.length}개`;
+    if (g.narrowed) {
+      const { data: bd, error } = await db.from("duty_boards").select("title").eq("id", g.boards[0]).maybeSingle();
+      if (error) throw error;
+      scopeText = `「${String(bd?.title ?? "")}」 당번`;
+    }
+    const info = peopleInfoSheet({ scopeText, today: out.today || kstDate(), year, hidden: out.people.length - count });
+    await audit(ctx, "duty.people.export", g.narrowed ? g.boards[0] : "", { year, count, boards: g.boards.length });
+    return { ok: true, today: out.today, year, sheet, info, count, hidden: out.people.length - count, ...scopeOut(g) };
+  }
+
   // 엑셀 — {board_id, from?, to?} · 시트 「당번표」(이름만)·「명단」(소속·넣은 곳 — 메모 없음). 기록 duty.export {from, to, count}.
   async function dutyExport(ctx: any, b: any) {
     const at = await boardIn(ctx, b);
@@ -616,6 +695,7 @@ export function makeDuty(db: Db, audit: Audit, deps: {
   }
 
   return { dutyBoardList, dutyBoardSave, dutyStaffCandidates, dutyStaffSet, dutyLineSave, dutyLineRemove, dutyDateAdd, dutyRoster, dutyExport,
+    dutyPeople, dutyPersonHistory, dutyPeopleExport,
     dutyDaySet, dutyDaysOff, dutySlotSet, dutySlotDelete, dutySignAdd, dutySignRemove, dutySignRestore, dutySignMove, dutySignNote, dutyAskClear,
     dutyPeopleLookup };
 }

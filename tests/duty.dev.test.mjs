@@ -397,6 +397,60 @@ test("엑셀 — 두 시트 · 메모 없음 · 맡지 않은 당번은 not-assi
   assert.equal(got(await call(L.token, "dutyExport", { board_id: W.B })).body.error, "not-assigned");
 });
 
+// 👥 봉사자(2026-10-07) — 「가」는 A 에 두 줄(e1·e4 — 같은 직접 적은 신원) · B 에 담당자가 뺀 한 줄(eB — 겹침 시험이 남긴 것).
+//   담당 L(A 만 맡음)에게는 A 의 줄만으로 한 분 · 총괄에게는 B 의 줄까지 이어 한 분. 셈의 규칙은 SQL 시험(성경암송 duty_rules.dev.sql)이 본다 — 여기는 범위·잇기·칸·기록.
+test("👥 봉사자 — 담당은 맡은 당번의 줄만으로 · 총괄은 모든 당번 · 이력은 볼 수 있는 당번 안에서 · 좁히면 그 당번만 · 엑셀 기록", async () => {
+  const ga = `${TAG}${STAMP}-가`, titleA = `${TAG}A-${STAMP}`, titleB = `${TAG}B-${STAMP}`;
+  let r = got(await call(L.token, "dutyPeople"));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body).slice(0, 200));
+  assert.equal(r.body.people.filter((p) => p.name === ga).length, 1, "같은 직접 적은 신원의 두 줄은 한 분");
+  assert.deepEqual([r.body.scope, r.body.narrowed, r.body.boards], ["assigned", false, 1], "담당의 범위 = 맡은 당번 하나");
+  // 담당의 목록에 있는 분의 번호(지원 번호)는 모두 A 의 줄이다
+  const ids = r.body.people.map((p) => p.id);
+  if (ids.length) {
+    const slots = [...new Set((await rest(`duty_signups?select=slot_id&id=in.(${ids.join(",")})`)).map((x) => x.slot_id))];
+    const bs = new Set((await rest(`duty_slots?select=board_id&id=in.(${slots.join(",")})`)).map((x) => x.board_id));
+    assert.deepEqual([...bs], [W.A], "담당의 목록에 맡지 않은 당번의 줄이 있다");
+  }
+  r = got(await call(chief.token, "dutyPeople"));
+  assert.equal(r.body.people.filter((p) => p.name === ga).length, 1, "총괄 — B 의 뺀 줄도 같은 분으로");
+  assert.deepEqual([r.body.scope, r.body.narrowed], ["all", false]);
+  // 이력 — 담당은 A 의 줄만 · 총괄은 B 의 뺀 줄(빠진 기록 · 담당자가 뺌)까지
+  r = got(await call(L.token, "dutyPersonHistory", { signup_id: W.e1 }));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body).slice(0, 200));
+  assert.ok(r.body.rows.length >= 1 && r.body.rows.every((x) => x.board === titleA), JSON.stringify(r.body.rows).slice(0, 300));
+  r = got(await call(chief.token, "dutyPersonHistory", { signup_id: W.e1 }));
+  assert.ok(r.body.rows.some((x) => x.board === titleB && x.kind === "missed" && x.why === "staff"), JSON.stringify(r.body.rows).slice(0, 300));
+  assert.equal(r.body.person.name, ga);
+  // 같은 분이면 B 의 줄로 열어도(총괄) 같은 줄들
+  const viaB = got(await call(chief.token, "dutyPersonHistory", { signup_id: W.eB }));
+  assert.deepEqual(viaB.body.rows.map((x) => x.id), r.body.rows.map((x) => x.id));
+  // 좁히기 — B 로 좁히면 A 의 줄로는 not-found · 담당은 B 의 줄·B 로 좁히기 모두 not-assigned · 없는 당번
+  assert.deepEqual(got(await call(chief.token, "dutyPersonHistory", { signup_id: W.e1, board_id: W.B })).body, { ok: false, error: "not-found" });
+  assert.deepEqual(got(await call(L.token, "dutyPersonHistory", { signup_id: W.eB })).body, { ok: false, error: "not-assigned" });
+  assert.deepEqual(got(await call(L.token, "dutyPeople", { board_id: W.B })).body, { ok: false, error: "not-assigned" });
+  assert.deepEqual(got(await call(chief.token, "dutyPeople", { board_id: ZERO })).body, { ok: false, error: "not-found" });
+  assert.deepEqual(got(await call(chief.token, "dutyPersonHistory", { signup_id: 0 })).body, { ok: false, error: "bad-id" });
+  r = got(await call(chief.token, "dutyPeople", { board_id: W.B }));
+  assert.deepEqual(r.body.people.map((p) => p.name), [ga], "B 로 좁히면 B 의 줄만(뺀 줄뿐인 분도 목록에)");
+  assert.deepEqual([r.body.people[0].served, r.body.people[0].upcoming], [0, 0]);
+  // 엑셀 — 담당(맡은 당번 모두 → target 빈 글) · 총괄이 A 로 좁혀서(target = A)
+  r = got(await call(L.token, "dutyPeopleExport"));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body).slice(0, 200));
+  assert.deepEqual(r.body.sheet[0].slice(1), ["소속", `${r.body.year}년`, "지금까지", "마지막으로 선 날", "앞으로"]);
+  assert.ok(r.body.sheet.some((row) => row[0] === ga && typeof row[2] === "number"), "한 분 한 줄 · 수는 수로");
+  assert.deepEqual(r.body.info[0], ["범위", "맡은 당번 1개"]);
+  r = got(await call(chief.token, "dutyPeopleExport", { board_id: W.A }));
+  assert.deepEqual([r.body.ok, r.body.info[0][1], r.body.narrowed], [true, `「${titleA}」 당번`, true]);
+  // B 로 좁힌 엑셀 — 「가」는 B 에 뺀 줄뿐이라(선 날도 앞날도 없다) 싣지 않고 안내가 그렇게 말한다
+  r = got(await call(chief.token, "dutyPeopleExport", { board_id: W.B }));
+  assert.deepEqual([r.body.sheet.length, r.body.count], [1, 0]);
+  assert.match(r.body.info.find((x) => x[0] === "이 파일에 없는 분")[1], /1분/);
+  const logs = await rest(`admin_audit?select=target,detail&action=eq.duty.people.export&member_id=in.(${made.members.join(",")})&order=id`);
+  assert.deepEqual(logs.map((x) => x.target), ["", W.A, W.B]);
+  assert.ok(logs.every((x) => Object.keys(x.detail).sort().join() === "boards,count,year"), "기록은 해·줄 수·당번 수만");
+});
+
 test("앱에서 안 보이게 되는 저장 — 앞날에 선 분이 있으면 has-upcoming · force 로 보관 · 보관한 당번은 쓰기 거절", async () => {
   const base = { id: W.A, title: `${TAG}A-${STAMP}`, place: "시험 식당", contact_note: "시험 문의" };
   let r = got(await call(chief.token, "dutyBoardSave", { board: { ...base, status: "archived" } }));
@@ -413,13 +467,15 @@ test("기록 — duty.* 가 남고 이름이 없다 · 응답 어디에도 계�
   const rows = await rest(`admin_audit?select=action,target,detail&member_id=in.(${made.members.join(",")})&order=id`);
   const acts = new Set(rows.map((x) => x.action));
   for (const a of ["duty.board.save", "duty.staff.set", "duty.line.save", "duty.line.remove", "duty.date.add", "duty.day.set", "duty.days.off", "duty.slot.set",
-    "duty.slot.delete", "duty.sign.add", "duty.sign.remove", "duty.sign.restore", "duty.sign.move", "duty.sign.note", "duty.sign.askclear", "duty.export", "people.lookup"]) {
+    "duty.slot.delete", "duty.sign.add", "duty.sign.remove", "duty.sign.restore", "duty.sign.move", "duty.sign.note", "duty.sign.askclear", "duty.export",
+    "duty.people.export", "people.lookup"]) {
     assert.ok(acts.has(a), "기록 없음: " + a);
   }
   const duty = rows.filter((x) => x.action.startsWith("duty."));
   assert.equal(JSON.stringify(duty).includes(`${TAG}${STAMP}`), false, "기록에 이름이 실렸다");
   assert.equal(JSON.stringify(duty).includes("전화로 받음"), false, "기록에 메모 글이 실렸다");
-  assert.ok(duty.every((x) => made.boards.includes(x.target)), "기록의 target 은 당번 id");
+  assert.ok(duty.every((x) => made.boards.includes(x.target) || (x.action === "duty.people.export" && x.target === "")),
+    "기록의 target 은 당번 id(👥 봉사자 엑셀을 볼 수 있는 당번 모두로 내려받으면 빈 글)");
   assert.equal(rows.find((x) => x.action === "people.lookup").detail.from, "duty");
   const txt = JSON.stringify(seen);
   for (const w of ["user_id", "ident_key", "confirmed_by", "auth_user_id", "\"pk\"", "staff|", "person|"]) assert.equal(txt.includes(w), false, w);

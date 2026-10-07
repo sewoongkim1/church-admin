@@ -326,7 +326,7 @@ test("봉사 당번 기록 — 서버 duty-db.ts 가 남기는 action 마다 한
   const src = readFileSync(new URL("../supabase/functions/church-admin/duty-db.ts", import.meta.url), "utf8");
   const acts = [...new Set([...src.matchAll(/audit\(ctx, "(duty\.[a-z.]+)"/g)].map((m) => m[1]))].sort();
   assert.deepEqual(acts, ["duty.board.save", "duty.date.add", "duty.day.set", "duty.days.off", "duty.export", "duty.line.remove", "duty.line.save",
-    "duty.sign.add", "duty.sign.askclear", "duty.sign.move", "duty.sign.note", "duty.sign.remove", "duty.sign.restore", "duty.slot.delete", "duty.slot.set",
+    "duty.people.export", "duty.sign.add", "duty.sign.askclear", "duty.sign.move", "duty.sign.note", "duty.sign.remove", "duty.sign.restore", "duty.slot.delete", "duty.slot.set",
     "duty.staff.set"]);
   for (const a of acts) assert.ok(LABEL[a] && LABEL[a] !== a && /\(봉사 당번\)$/.test(LABEL[a]), a);
   assert.deepEqual(Object.keys(LABEL).filter((k) => k.startsWith("duty.")).sort(), acts, "서버가 남기지 않는 duty 이름이 화면에 있다");
@@ -343,6 +343,10 @@ test("봉사 당번 기록 — detail 줄은 번호·날짜·수만(서버 duty-
   assert.equal(T("duty.staff.set", { count: 2 }), "담당 2분");
   assert.equal(T("duty.staff.set", { count: 0 }), "담당 없음");
   assert.equal(T("duty.line.save", { line: 7, created: true, kept: 0, updated: 0, made: 8 }), "틀 #7 · 새 틀 · 자리 8개 만듦");
+  assert.equal(T("duty.people.export", { year: 2026, count: 12, boards: 1 }), "2026년 횟수 · 12분 · 당번 하나", "좁힌 당번(target 이 당번 id)");
+  assert.equal(detailText(R("duty.people.export", { year: 2026, count: 5, boards: 3 }, "")), "2026년 횟수 · 5분 · 볼 수 있는 당번 3개");
+  assert.equal(detailText(R("duty.people.export", { year: 2026, count: 0 }, "")), "2026년 횟수 · 0분 · 볼 수 있는 당번 모두", "당번 수가 없는 옛 줄");
+  assert.equal(LABEL["duty.people.export"], "봉사자 명단 내려받음(봉사 당번)", "이름·소속이 든 명단이다 — 「수」만 받은 것처럼 적지 않는다");
   assert.equal(T("duty.line.save", { line: 7, created: false, kept: 1, updated: 3, made: 0 }), "틀 #7 · 고침 · 정원 바꾼 자리 3 · 지원이 있어 남긴 자리 1");
   assert.equal(T("duty.line.remove", { line: 7, deleted: true, kept: 0 }), "틀 #7 · 지움");
   assert.equal(T("duty.line.remove", { line: 7, deleted: false, kept: 2 }), "틀 #7 · 남김(자리가 있음) · 앞날 자리 2개 남음");

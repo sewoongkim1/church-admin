@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { boardOrder, boardOut, boardPatchFor, checkBoard, checkLine, checkLineIds, checkNote, dutyChief, DUTY_LIMITS, DUTY_STAFF_ROLES, identHasCtrl, staffNames,
   DUTY_STATUS, DUTY_STATUS_LABEL, exportSheets, hidesFromApp, isDate, lineOrder, lineRowOut, overlapForStaff, placeOut, rosterOut, sameNameIds,
-  slotLabel, staffByBoard, dutyNotifyOut } from "../supabase/functions/church-admin/duty-rules.ts";
+  slotLabel, staffByBoard, dutyNotifyOut, historyOut, peopleOut, peopleSheet, peopleInfoSheet, peopleIdle, PEOPLE_KINDS, PEOPLE_WHYS, yearOf } from "../supabase/functions/church-admin/duty-rules.ts";
 
 test("isDate — 꼴과 실제 날짜", () => {
   assert.equal(isDate("2026-10-18"), true);
@@ -309,4 +309,69 @@ test("dutyNotifyOut — 성경암송 api 의 답을 옮긴다(옛 api 는 missed
   assert.deepEqual(dutyNotifyOut({ sent: 3, missed: 1, held: 5 }), { sent: 3, missed: 1, off: false }, "꺼 둔 답이 아니면 held 를 싣지 않는다");
   for (const o of ["true", 1, null]) assert.equal(dutyNotifyOut({ sent: 0, off: o }).off, false, "off 는 true 하나일 때만");
   assert.deepEqual(dutyNotifyOut({ sent: "x", missed: "y" }), { sent: 0, missed: 0, off: false });
+});
+
+// ---------- 👥 봉사자(2026-10-07) ----------
+test("yearOf — 2000~2100 의 정수만(그 밖은 null — SQL 이 올해로 본다)", () => {
+  assert.equal(yearOf(2026), 2026); assert.equal(yearOf(2000), 2000); assert.equal(yearOf(2100), 2100);
+  for (const v of [1999, 2101, 2026.5, "2026", null, undefined, NaN, true]) assert.equal(yearOf(v), null, String(v));
+});
+
+test("peopleOut — 번호 있는 줄만 · 소속은 한 줄로 · 수는 0 이상 정수(그해 ≤ 지금까지) · 날짜는 꼴이 맞을 때만 · 신원 칸은 옮기지 않는다", () => {
+  const r = peopleOut({ ok: true, today: "2026-10-07", year: 2026, people: [
+    { id: 7, name: "가상하나", whoType: "교회학교", group: "유년부", sub: "2학년", hasApp: "true", directory: 1, served: "4", inYear: 9, upcoming: -2, last: "2026-13-01", next: "2026-10-11", user_id: "u", ident_key: "k" },
+    { id: "8", name: "글자 번호" }, { id: -1 }, { id: 1.5 }, null, { id: 9, name: null, served: 2.7, inYear: 1 },
+  ] });
+  assert.deepEqual(r.people, [
+    { id: 7, name: "가상하나", who: "유년부 2학년", hasApp: false, directory: false, served: 4, inYear: 4, upcoming: 0, last: null, next: "2026-10-11" },
+    { id: 8, name: "글자 번호", who: "", hasApp: false, directory: false, served: 0, inYear: 0, upcoming: 0, last: null, next: null },
+    { id: 9, name: "", who: "", hasApp: false, directory: false, served: 2, inYear: 1, upcoming: 0, last: null, next: null },
+  ]);
+  assert.deepEqual([r.today, r.year], ["2026-10-07", 2026]);
+  assert.deepEqual(peopleOut(null), { today: "", year: null, people: [] });
+  assert.deepEqual(peopleOut({ people: "x", year: "2026" }).year, null);
+});
+
+test("historyOut — 줄의 갈래(섰던 날·앞으로·빠진 기록)와 까닭은 정한 값만 · 「못 가게 됐어요」는 asked 일 때만 · 400줄까지 · total ≥ 줄 수", () => {
+  const row = (o) => ({ id: 1, date: "2026-10-04", board: "식당", boardStatus: "open", service: "1부", task: "", start: "09:00", end: "10:00", kind: "served", why: null,
+    off: false, asked: false, askWhy: null, moved: false, source: "app", ...o });
+  const r = historyOut({ today: "2026-10-07", year: 2026, served: 2, inYear: 5, upcoming: 1, total: 1, person: { name: "가상하나", whoType: "교구", group: "기쁨", sub: "3", hasApp: true },
+    rows: [row({ id: 1 }), row({ id: 2, kind: "missed", why: "staff" }), row({ id: 3, kind: "served", why: "self" }), row({ id: 4, kind: "nope", why: "nope" }),
+      row({ id: 5, kind: "upcoming", asked: true, askWhy: "cant", off: true }), row({ id: 6, asked: false, askWhy: "cant" }), row({ id: 7, asked: true, askWhy: "x" }),
+      row({ id: 8, boardStatus: "secret", source: "other" }), row({ id: 9, date: "10/04" }), row({ id: 0 }), row({ id: 10, kind: "missed", why: "off-slot", ident_key: "k", user_id: "u" })] });
+  assert.deepEqual(r.rows.map((x) => [x.id, x.kind, x.why]), [[1, "served", null], [2, "missed", "staff"], [3, "served", null], [4, "missed", null], [5, "upcoming", null],
+    [6, "served", null], [7, "served", null], [8, "served", null], [10, "missed", "off-slot"]], "날짜·번호가 틀린 줄은 버린다 · 모르는 갈래는 빠진 기록(까닭 없음)");
+  assert.deepEqual([r.rows[4].asked, r.rows[4].askWhy, r.rows[4].off], [true, "cant", true]);
+  assert.deepEqual([r.rows[5].asked, r.rows[5].askWhy, r.rows[6].asked, r.rows[6].askWhy], [false, null, true, null]);
+  assert.deepEqual([r.rows[7].boardStatus, r.rows[7].source], ["", "app"]);
+  assert.equal(JSON.stringify(r).includes("ident_key") || JSON.stringify(r).includes("user_id"), false);
+  assert.deepEqual([r.served, r.inYear, r.upcoming, r.total], [2, 2, 1, 9], "그해 ≤ 지금까지 · total 은 줄 수보다 작지 않게");
+  assert.deepEqual(r.person, { name: "가상하나", who: "기쁨 3목장", hasApp: true, directory: false });
+  for (const w of PEOPLE_WHYS) assert.equal(historyOut({ rows: [row({ kind: "missed", why: w })] }).rows[0].why, w);
+  assert.deepEqual(PEOPLE_KINDS, ["served", "upcoming", "missed"]);
+  assert.deepEqual(PEOPLE_WHYS, ["self", "staff", "off-day", "off-slot", "archived"]);
+  assert.equal(historyOut({ rows: [row({ kind: "missed", why: "hidden" })] }).rows[0].why, null, "모르는 까닭(처음 판의 이름 hidden)은 싣지 않는다");
+  const many = historyOut({ rows: Array.from({ length: 450 }, (_, i) => row({ id: i + 1 })) });
+  assert.deepEqual([many.rows.length, many.total], [400, 400]);
+  assert.deepEqual(historyOut(null).rows, []);
+});
+
+test("peopleSheet — 머리줄의 해는 고른 해(없으면 올해) · 수는 수로 · 계정·명부 여부는 싣지 않는다 · 선 날도 앞날도 없는 분은 뺀다", () => {
+  const people = [{ id: 7, name: "가상하나", who: "기쁨 3목장", hasApp: true, directory: true, served: 4, inYear: 2, upcoming: 1, last: "2026-10-04", next: "2026-10-11" },
+    { id: 8, name: "가상둘", who: "", hasApp: false, directory: false, served: 0, inYear: 0, upcoming: 0, last: null, next: null },
+    { id: 9, name: "가상셋", who: "화평 1목장", hasApp: true, directory: false, served: 0, inYear: 0, upcoming: 2, last: null, next: "2026-10-11" }];
+  assert.deepEqual(peopleSheet({ year: 2025, people }, 2026), [["이름", "소속", "2025년", "지금까지", "마지막으로 선 날", "앞으로"],
+    ["가상하나", "기쁨 3목장", 2, 4, "2026-10-04", 1], ["가상셋", "화평 1목장", 0, 0, "", 2]], "앞으로만 있는 분은 싣는다 · 0·0 인 분은 뺀다");
+  assert.equal(peopleSheet({ year: null, people: [] }, 2026)[0][2], "2026년");
+  assert.deepEqual(people.map(peopleIdle), [false, true, false]);
+  assert.equal(peopleIdle(null), true);
+});
+
+test("peopleInfoSheet — 범위 · 기준일 · 해 · 낱말의 뜻 · 빠진 분 수(이름 없음)", () => {
+  const info = peopleInfoSheet({ scopeText: "맡은 당번 2개", today: "2026-10-07", year: 2026, hidden: 3 });
+  assert.deepEqual(info.map((x) => x[0]), ["범위", "기준일", "횟수의 해", "지금까지", "앞으로", "이 파일에 없는 분", "성도님 앱과 다른 점"]);
+  assert.deepEqual([info[0][1], info[1][1]], ["맡은 당번 2개", "2026-10-07"]);
+  assert.match(info[5][1], /3분/);
+  assert.equal(peopleInfoSheet({ scopeText: "x", today: "2026-10-07", year: 2026, hidden: 0 })[5][1], "없음");
+  assert.ok(info.every((x) => x.length === 2 && x.every((c) => typeof c === "string")));
 });

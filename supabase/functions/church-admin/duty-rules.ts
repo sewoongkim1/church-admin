@@ -294,6 +294,70 @@ export function exportSheets(r: { board: { title: string }; days: any[]; lines?:
   return { table, list };
 }
 
+// ---------- 👥 봉사자(사람별 봉사 이력 · 2026-10-07 친구 요청) ----------
+//   SQL duty_people(성경암송 supabase/duty.sql)의 jsonb → 화면 응답. 칸을 하나씩 골라 옮긴다 — SQL 이 칸을 늘려도 신원 칸(user_id·ident_key·교인ID)이
+//   화면으로 새지 않게. 사람을 가리키는 것은 지원 번호(id — 명단에 이미 보이는 번호)뿐이다.
+export const PEOPLE_KINDS = ["served", "upcoming", "missed"];
+export const PEOPLE_WHYS = ["self", "staff", "off-day", "off-slot", "archived"];
+const ASK_WHYS = ["cant", "mistake", "notme"];
+const cnt = (v: unknown): number => { const x = Math.floor(Number(v)); return Number.isFinite(x) && x > 0 ? x : 0; };
+const idOf = (v: unknown): number => { const x = Number(v); return Number.isSafeInteger(x) && x > 0 ? x : 0; };
+const dayOrNull = (v: unknown): string | null => (isDate(v) ? String(v) : null);
+// 「그해」 — 2000~2100 의 정수만(그 밖은 null — SQL 이 올해로 본다)
+export const yearOf = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v >= 2000 && v <= 2100 ? v : null);
+
+// 사람 목록 — {today, year, people: [{id, name, who, hasApp, directory, served, inYear, upcoming, last, next}]} (SQL 의 차례 그대로 · 번호 없는 줄은 버린다)
+export function peopleOut(j: any) {
+  const people = (Array.isArray(j?.people) ? j.people : []).filter((p: any) => idOf(p?.id)).map((p: any) => ({
+    id: idOf(p.id), name: str(p?.name), who: whoOf({ who_type: str(p?.whoType), group_name: str(p?.group), sub_name: str(p?.sub) }),
+    hasApp: p?.hasApp === true, directory: p?.directory === true,
+    served: cnt(p?.served), inYear: Math.min(cnt(p?.inYear), cnt(p?.served)), upcoming: cnt(p?.upcoming), last: dayOrNull(p?.last), next: dayOrNull(p?.next),
+  }));
+  return { today: dayOrNull(j?.today) || "", year: yearOf(j?.year), people };
+}
+
+// 한 분의 이력 — {today, year, person, served, inYear, upcoming, total, rows: [가까운 날부터 · 400줄까지]}
+//   kind: served(섰던 날 — 끝난 자리) · upcoming(앞으로 — 안 끝난 자리) · missed(빠진 기록 — why: self 본인 취소 · staff 담당자가 뺌 · off-day · off-slot · archived 보관한 뒤의 자리)
+export function historyOut(j: any) {
+  const p = j?.person || {};
+  const rows = (Array.isArray(j?.rows) ? j.rows : []).filter((r: any) => isDate(r?.date) && idOf(r?.id)).slice(0, 400).map((r: any) => {
+    const kind = PEOPLE_KINDS.includes(r?.kind) ? r.kind : "missed";
+    return {
+      id: idOf(r.id), date: String(r.date), board: str(r?.board), boardStatus: (DUTY_STATUS as readonly string[]).includes(r?.boardStatus) ? r.boardStatus : "",
+      service: str(r?.service), task: str(r?.task), start: str(r?.start), end: str(r?.end), kind,
+      why: kind === "missed" && PEOPLE_WHYS.includes(r?.why) ? r.why : null, off: r?.off === true,
+      asked: r?.asked === true, askWhy: r?.asked === true && ASK_WHYS.includes(r?.askWhy) ? r.askWhy : null,
+      moved: r?.moved === true, source: r?.source === "staff" ? "staff" : "app",
+    };
+  });
+  const served = cnt(j?.served);
+  return {
+    today: dayOrNull(j?.today) || "", year: yearOf(j?.year),
+    person: { name: str(p.name), who: whoOf({ who_type: str(p.whoType), group_name: str(p.group), sub_name: str(p.sub) }), hasApp: p.hasApp === true, directory: p.directory === true },
+    served, inYear: Math.min(cnt(j?.inYear), served), upcoming: cnt(j?.upcoming), total: Math.max(cnt(j?.total), rows.length), rows,
+  };
+}
+
+// 엑셀 「봉사자」 시트 — peopleOut 결과를 받는다. 한 분 한 줄: 이름 · 소속 · 그해 · 지금까지 · 마지막으로 선 날 · 앞으로(수는 수로 — 엑셀에서 더하고 고를 수 있게).
+//   계정·명부 여부·메모는 싣지 않는다(파일째 돌려도 되게 — 「명단」 시트와 같다).
+//   선 날도 앞으로 설 날도 없는 분(취소·빠짐만 있는 분)은 싣지 않는다 — 0·0·빈칸·0 한 줄은 받는 분에게 뜻이 없다(독립 검토 반영 · 「안내」 시트가 그렇게 말한다).
+export const peopleIdle = (p: any): boolean => !(cnt(p?.served) > 0 || cnt(p?.upcoming) > 0);
+export function peopleSheet(r: { year: number | null; people: any[] }, thisYear: number): (string | number)[][] {
+  const y = r.year ?? thisYear;
+  return [["이름", "소속", `${y}년`, "지금까지", "마지막으로 선 날", "앞으로"],
+    ...(r.people || []).filter((p: any) => !peopleIdle(p))
+      .map((p: any) => [str(p.name), str(p.who), cnt(p.inYear), cnt(p.served), p.last ? String(p.last) : "", cnt(p.upcoming)])];
+}
+// 엑셀 「안내」 시트 — 파일만 받은 분이 무엇을 센 수인지 알 수 있게(범위 · 기준일 · 낱말의 뜻). 이름 없음.
+//   scopeText = 「〈당번 이름〉 당번」 · 「모든 당번 5개」 · 「맡은 당번 2개」(duty-db.ts 가 정한다)
+export function peopleInfoSheet(o: { scopeText: string; today: string; year: number; hidden: number }): string[][] {
+  return [["범위", str(o.scopeText)], ["기준일", str(o.today)], ["횟수의 해", `${o.year}년(그 밖의 칸은 해와 상관없어요)`],
+    ["지금까지", "이름이 남은 채 끝난 자리의 수 — 쉬는 날·쉬는 자리, 당번을 보관한 뒤의 자리는 세지 않아요"],
+    ["앞으로", "아직 끝나지 않은 자리의 수 — 쉬는 날·쉬는 자리는 빼고"],
+    ["이 파일에 없는 분", o.hidden > 0 ? `선 날도 앞으로 설 날도 없는 ${o.hidden}분(취소했거나 빠진 기록만 있는 분)` : "없음"],
+    ["성도님 앱과 다른 점", "준비 중 당번과 명부에서 넣은 줄도 세고 오늘 끝난 자리도 바로 세어서, 앱 「지난 봉사」의 수보다 클 수 있어요"]];
+}
+
 // 성경암송 api internalDutyNotify 의 답 → {sent, missed, off[, held]} · null = 부르지 못했다(index.ts notifyDuty 가 쓴다 — 시험하려고 여기 둔다).
 //   sent = 실제로 나간 분 수 · missed = 가지 않은 분 수(받는 기기가 없다 · 자기 기기가 모두 실패) · off = 알림을 꺼 두었다(성경암송 app_config dutyNotifyOff) ·
 //   held = 꺼 둔 동안 「꺼 두지 않았으면 보냈을 분 수」(0 이면 알릴 분이 없던 저장이다 — 수가 아니면 싣지 않는다: 모르는 것으로).

@@ -281,6 +281,9 @@ const PROBE = {
   dutySignNote: { id: 0, note: "" },
   dutyAskClear: { id: 0 },
   dutyPeopleLookup: { board_id: ZERO, name: "" },                  // 없는 당번 → not-found(명부에 묻지도 기록하지도 않는다)
+  dutyPeople: { board_id: ZERO },                                  // 없는 당번 → not-found(총괄) · not-assigned(담당)
+  dutyPersonHistory: { signup_id: 0 },                             // bad-id
+  dutyPeopleExport: { board_id: ZERO },                            // 없는 당번 → not-found(기록하지 않는다)
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 

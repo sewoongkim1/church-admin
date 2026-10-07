@@ -2605,6 +2605,9 @@ Deno.serve(async (req) => {
       case "nfStats":             return json(await nf.nfStats(ctx, b));
       case "nfPersonDelete":      return json(await nf.nfPersonDelete(ctx, b));
       case "dutyPeopleLookup":    return json(await duty.dutyPeopleLookup(ctx, b));
+      case "dutyPeople":          return json(await duty.dutyPeople(ctx, b));
+      case "dutyPersonHistory":   return json(await duty.dutyPersonHistory(ctx, b));
+      case "dutyPeopleExport":    return json(await duty.dutyPeopleExport(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));

@@ -58,6 +58,9 @@ export const LABEL = {
   "duty.sign.restore": "빠진 분 다시 넣음(봉사 당번)",
   "duty.sign.note": "담당자 메모 고침(봉사 당번)", "duty.sign.askclear": "못 온다는 표시 거둠(봉사 당번)",
   "duty.export": "당번 명단 내려받음(봉사 당번)",
+  // 👥 봉사자 엑셀(2026-10-07) — detail {year, count, boards}(이름 없음) · target 은 좁힌 당번 id(볼 수 있는 당번 모두면 빈 글).
+  //   내려가는 것은 이름·소속이 든 명단이라 「명단」이라고 적는다(독립 검토 반영 — 「수」만 받은 것처럼 읽히지 않게)
+  "duty.people.export": "봉사자 명단 내려받음(봉사 당번)",
 };
 // 봉사 당번 기록 줄의 말(상태·날짜 op)
 const DUTY_STATUS = { draft: "준비 중", open: "받는 중", closed: "지원 멈춤", archived: "보관" };   // 서버 duty-rules.ts DUTY_STATUS_LABEL 과 같다
@@ -178,6 +181,8 @@ export function detailText(r) {
   if (r.action === "duty.sign.note") return joinDot(`지원 #${d.signup ?? ""}`, d.has ? "메모 적음" : "메모 지움");
   if (r.action === "duty.sign.askclear") return `지원 #${d.signup ?? ""}`;
   if (r.action === "duty.export") return joinDot(`${d.from || ""} ~ ${d.to || ""}`, `${d.count ?? 0}줄`);
+  if (r.action === "duty.people.export") return joinDot(`${d.year ?? ""}년 횟수`, `${d.count ?? 0}분`,
+    r.target ? "당번 하나" : d.boards != null ? `볼 수 있는 당번 ${d.boards}개` : "볼 수 있는 당번 모두");
   if (r.action === "history.request") {
     return [`#${d.id ?? r.target}`, REQ_KIND[d.kind] || d.kind || "", `${d.from || ""} → ${d.to || ""}`, d.verified ? "본인 확인" : ""].filter(Boolean).join(" · ");
   }

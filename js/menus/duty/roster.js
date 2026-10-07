@@ -4,7 +4,7 @@
 //   방금 옮긴 분의 줄이 있으면 그 줄이 보이는 것이 먼저다(showRow). 메뉴를 옮겨 떼어진 화면에서는 화면 자리를 건드리지 않는다.
 //   (봉사 당번 1단계 · 2026-10-06 · 설계 v2 docs/superpowers/specs/2026-10-06-duty-roster-design.md §6)
 //   서버: dutyBoardList·dutyRoster·dutyBoardSave·dutyLineSave·dutyLineRemove·dutyDateAdd·dutyDaySet·dutyDaysOff·dutySlotSet·dutySlotDelete·
-//         dutySignAdd·dutySignRemove·dutySignMove·dutySignNote·dutyAskClear·dutyPeopleLookup·dutyExport
+//         dutySignAdd·dutySignRemove·dutySignMove·dutySignNote·dutyAskClear·dutyPeopleLookup·dutyExport · dutyPersonHistory(이름 → 이력 창 · person-window.js)
 //   역할 duty(당번 총괄 — 모든 당번) · dutylead(당번 담당 — 맡은 당번만). 당번 고르기는 dutyBoardList 가 준 목록 그대로
 //   (서버가 담당에게는 맡은 당번만 준다 · scope "assigned"). 맡지 않은 당번은 서버가 not-assigned 로 막는다 — 여기서 숨기는 것은 편의일 뿐.
 //   말·차례·단추는 duty-logic.js(시험). 정원·겹침·잠금·쉼은 SQL 함수 한 곳 — 화면은 서버가 준 판정(locked·need·asks·cutoff)을 그대로 쓴다.
@@ -14,6 +14,7 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { openBoardForm } from "./board-form.js";
+import { openPersonHistory } from "./person-window.js";
 import { emptyWhy, seenOfRoster, calUse, calStep, olderPick, olderText, rosterFrom, rosterFromKeep, olderBack, calSettle } from "./duty-logic.js";
 import { calHtml } from "./roster-cal.js";
 import { openLineForm, openDateAddForm, openOffForm, offFlow, openAddForm, openNoteForm, openDayNoteForm, openCapacityForm, failText, sayDone } from "./roster-forms.js";
@@ -36,12 +37,14 @@ const STATE_NOTE = {
 let lastBoardId = "", lastDay = "";   // 메뉴를 나갔다 와도 보던 당번·날짜를 기억(모듈 안)
 
 // ---------- 그리기(글만) ----------
+// 이름 — 누르면 그분의 봉사 이력 창(👥 봉사자와 같은 창 · person-window.js · 2026-10-07 친구 요청). 보관한 당번(볼 수만)에서도 열린다.
+const nameBtn = (e) => `<button type="button" class="dty-name" data-op="person" title="이분의 봉사 이력">${esc(e.name)}</button>`;
 //   notify = 이 당번의 줄에 「알림 꺼짐」 딱지를 그릴까(받는 중·지원 멈춤 당번일 때만 — duty-logic.js notifyBadges)
 function signupRow(e, ro, notify) {
   const badges = signupBadges(e, { notify }).map((b) => `<span class="badge${b.cls ? " " + b.cls : ""}"${b.title ? ` title="${esc(b.title)}"` : ""}>${esc(b.text)}</span>`).join(" ");
   const ask = askText(e);
   return `<div class="dty-row${e.asked ? " ask" : ""}" data-sid="${esc(e.id)}">
-    <div class="dty-who"><b>${esc(e.name)}</b>${e.who ? `<span class="muted">${esc(e.who)}</span>` : ""}${badges}</div>
+    <div class="dty-who">${nameBtn(e)}${e.who ? `<span class="muted">${esc(e.who)}</span>` : ""}${badges}</div>
     ${ask ? `<div class="dty-ask"><span>${esc(ask)}</span>${ro ? "" : `<button type="button" class="btn" data-op="askclear">표시 거두기</button>`}</div>` : ""}
     ${e.note ? `<div class="dty-memo">메모: ${esc(e.note)}</div>` : ""}
     ${ro ? "" : `<div class="dty-acts"><button type="button" class="btn" data-op="note">메모</button>
@@ -50,7 +53,7 @@ function signupRow(e, ro, notify) {
   </div>`;
 }
 // 빠진 분 한 줄 — 「다시 넣기」로 그 줄을 그대로 되살린다(잘못 뺐을 때 · 보관한 당번에는 단추 없음)
-const endedRow = (e, ro) => `<div class="dty-ended" data-eid="${esc(e.id)}"><span><b>${esc(e.name)}</b>${e.who ? ` <span class="muted">${esc(e.who)}</span>` : ""} <span class="muted">· ${esc(endedText(e))}</span></span>${
+const endedRow = (e, ro) => `<div class="dty-ended" data-eid="${esc(e.id)}"><span>${nameBtn(e)}${e.who ? ` <span class="muted">${esc(e.who)}</span>` : ""} <span class="muted">· ${esc(endedText(e))}</span></span>${
   ro ? "" : `<button type="button" class="btn" data-op="restore">다시 넣기</button>`}</div>`;
 
 function slotHtml(s, d, ro, openFold, notify) {
@@ -362,7 +365,12 @@ export async function render(el, { call, query }) {
 
   // ---------- 지원 줄 ----------
   async function rowOp(op, anchor, d, s, e) {
-    if (op === "note") {
+    if (op === "person") {
+      // 그분의 이력 — 볼 수 있는 모든 당번에서(이 당번으로 좁히지 않는다 · 사람을 잇는 범위는 서버가 정하고 창이 그 범위를 말한다). 읽기만이라 다시 불러올 것이 없다.
+      //   불러오는 동안 이 화면의 단추를 잠근다(host) · 창이 닫히면 누른 이름으로 초점이 돌아온다(anchor) · 그사이 맡은 당번에서 빠졌으면(lost) 말한 대로 목록부터 다시
+      const r = await openPersonHistory({ call, signupId: e.id, host: el, anchor });
+      if (r && r.lost) await busy(el, reloadAll);
+    } else if (op === "note") {
       if (await openNoteForm({ call, e })) { toast("메모를 저장했어요"); await busy(el, () => reload()); }
     } else if (op === "remove") {
       const yes = await dialog({ title: `빼기 — ${e.name}`, text: removeAsk(e, d, s), ok: "빼기", cancel: "그만두기", danger: true });
@@ -523,10 +531,10 @@ export async function render(el, { call, query }) {
     }
     const ro = ev.target.closest("button[data-op]");
     if (!ro) return;
-    // 살아 있는 줄(data-sid) 또는 빠진 분 줄(data-eid — 「다시 넣기」만)
+    // 살아 있는 줄(data-sid) 또는 빠진 분 줄(data-eid — 「다시 넣기」와 이름(이력 창)만)
     const rowEl = ev.target.closest("[data-sid]"), endEl = ev.target.closest("[data-eid]");
     const e = rowEl ? (s.signups || []).find((x) => String(x.id) === rowEl.dataset.sid)
-      : endEl && ro.dataset.op === "restore" ? (s.ended || []).find((x) => String(x.id) === endEl.dataset.eid) : null;
+      : endEl && (ro.dataset.op === "restore" || ro.dataset.op === "person") ? (s.ended || []).find((x) => String(x.id) === endEl.dataset.eid) : null;
     if (e) await once("row" + e.id, () => rowOp(ro.dataset.op, ro, d, s, e));
   });
 }

@@ -131,6 +131,9 @@ const TARGET_B = {
   dutySignNote: { id: 200, note: "메모" },
   dutyAskClear: { id: 200 },
   dutyPeopleLookup: { board_id: B, name: "가상하나" },
+  dutyPeople: { board_id: B },
+  dutyPersonHistory: { signup_id: 200 },
+  dutyPeopleExport: { board_id: B },
 };
 
 test("당번 담당 — 맡지 않은 당번은 어느 길로 와도 not-assigned · 아무것도 쓰지 않고 부르지 않고 기록하지 않는다", async () => {
@@ -155,6 +158,7 @@ test("당번 담당 — 몸통의 board_id 를 맡은 당번(A)으로 속여도 
     dutySignNote: { board_id: A, id: 200, note: "메모" },
     dutyAskClear: { board_id: A, id: 200 },
     dutyLineRemove: { board_id: A, id: 2 },
+    dutyPersonHistory: { board_id: A, signup_id: 200 },
   };
   for (const [action, body] of Object.entries(lie)) {
     const { duty, log } = setup();
@@ -777,4 +781,130 @@ test("dutySignRestore — 빠진 줄을 그 줄 그대로 · 정원·겹침은 �
     assert.equal(r.error, err); assert.equal(e.log.audit.length, 0, err);
     if (err === "overlap") assert.deepEqual(r.with, { same: true, label: "2부 배식 11:30" });
   }
+});
+
+// ---------- 👥 봉사자(사람별 봉사 이력 · 2026-10-07) ----------
+// SQL duty_people 의 답 꼴(성경암송 supabase/duty.sql) — 신원 칸을 일부러 섞어 서버가 걸러 내는지 본다
+const SQL_PEOPLE = { ok: true, today: "2026-10-07", year: 2026, people: [
+  { id: 100, name: "가상하나", whoType: "교구", group: "기쁨", sub: "3", hasApp: true, directory: true, served: 3, inYear: 2, upcoming: 1,
+    last: "2026-10-04", next: "2026-10-11", user_id: "LEAK-UID", ident_key: "LEAK-KEY", person: "person|LEAK" },
+  { id: 0, name: "번호 없는 줄", served: 9 },
+  { id: 101, name: "가상둘", whoType: "", group: "", sub: "", hasApp: false, directory: false, served: 0, inYear: 0, upcoming: 0, last: null, next: null },
+] };
+const SQL_HISTORY = { ok: true, today: "2026-10-07", year: 2026,
+  person: { name: "가상하나", whoType: "교구", group: "기쁨", sub: "3", hasApp: true, directory: true, user_id: "LEAK-UID" },
+  served: 3, inYear: 2, upcoming: 1, total: 5, rows: [
+    { id: 105, date: "2026-10-11", board: "식당 봉사", boardStatus: "open", service: "1부", task: "설거지", start: "09:00", end: "10:00", kind: "upcoming", why: null,
+      off: false, asked: true, askWhy: "cant", moved: false, source: "app", ident_key: "LEAK-KEY" },
+    { id: 104, date: "2026-10-04", board: "식당 봉사", boardStatus: "open", service: "1부", task: "설거지", start: "09:00", end: "10:00", kind: "served", why: null,
+      off: false, asked: false, askWhy: null, moved: true, source: "staff" },
+    { id: 103, date: "2026-09-27", board: "옛 당번", boardStatus: "archived", service: "주차", task: "", start: "08:00", end: "09:00", kind: "missed", why: "self",
+      off: false, asked: false, askWhy: null, moved: false, source: "app", staff_note: "LEAK-NOTE" },
+  ] };
+const peopleRpc = (x) => (x.p_signup == null ? SQL_PEOPLE : SQL_HISTORY);
+const NOBODY = { member: { id: "44444444-4444-4444-8444-444444444444" }, roles: ["dutylead"] };   // 맡은 당번이 없는 담당
+
+test("dutyPeople — 총괄은 모든 당번 · 담당은 맡은 당번(SQL 에 그 목록만 넘긴다) · board_id 로 하나 · 해 · 칸 고르기 · 기록 없음", async () => {
+  const c = setup({ rpcs: { duty_people: peopleRpc } });
+  const r = await c.duty.dutyPeople(CHIEF, {});
+  assert.deepEqual(c.log.rpc[0], ["duty_people", { p_boards: [A, B, Z], p_year: null, p_signup: null }], "총괄 — 보관한 당번까지 모두");
+  assert.deepEqual([r.ok, r.today, r.year, r.people.length], [true, "2026-10-07", 2026, 2], "번호 없는 줄은 버린다");
+  assert.deepEqual([r.scope, r.narrowed, r.boards], ["all", false, 3], "어느 범위의 수인지 — 서버가 본 대로(총괄 · 좁히지 않음 · 당번 셋)");
+  assert.deepEqual(r.people[0], { id: 100, name: "가상하나", who: "기쁨 3목장", hasApp: true, directory: true, served: 3, inYear: 2, upcoming: 1, last: "2026-10-04", next: "2026-10-11" });
+  assert.deepEqual(r.people[1], { id: 101, name: "가상둘", who: "", hasApp: false, directory: false, served: 0, inYear: 0, upcoming: 0, last: null, next: null });
+  assert.equal(queried(c.log, "duty_board_staff").length, 0, "총괄은 담당 줄을 묻지 않는다");
+  const l = setup({ rpcs: { duty_people: peopleRpc } });
+  const lr = await l.duty.dutyPeople(LEAD, {});
+  assert.deepEqual([lr.scope, lr.narrowed, lr.boards], ["assigned", false, 2]);
+  assert.deepEqual(l.log.rpc[0][1].p_boards, [A, Z], "담당 — 맡은 당번만(맡지 않은 B 는 넘기지 않는다 — SQL 이 B 의 줄로 사람을 잇지도 못한다)");
+  assert.deepEqual(queried(l.log, "duty_board_staff")[0].filters, [["eq", "member_id", LEAD_M]]);
+  const one = setup({ rpcs: { duty_people: peopleRpc } });
+  const or1 = await one.duty.dutyPeople(LEAD, { board_id: A.toUpperCase(), year: 2025 });
+  assert.deepEqual([or1.scope, or1.narrowed, or1.boards], ["assigned", true, 1]);
+  assert.deepEqual(one.log.rpc[0][1], { p_boards: [A], p_year: 2025, p_signup: null }, "하나로 좁히기 · 그해");
+  for (const year of ["2025", 1999, 2101, 2025.5, null, true]) {
+    const y = setup({ rpcs: { duty_people: peopleRpc } });
+    await y.duty.dutyPeople(CHIEF, { year });
+    assert.equal(y.log.rpc[0][1].p_year, null, String(year) + " — 틀린 해는 올해(SQL)");
+  }
+  const nf = setup({ rpcs: { duty_people: peopleRpc } });
+  assert.deepEqual(await nf.duty.dutyPeople(CHIEF, { board_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" }), { ok: false, error: "not-found" });
+  assert.deepEqual(await nf.duty.dutyPeople(CHIEF, { board_id: "식당" }), { ok: false, error: "bad-id" });
+  assert.equal(nf.log.rpc.length, 0);
+  // 맡은 당번이 없는 담당 — SQL 을 부르지 않고 빈 목록 · board_id 를 주면 not-assigned
+  const no = setup({ rpcs: { duty_people: peopleRpc } });
+  const nr = await no.duty.dutyPeople(NOBODY, {});
+  assert.deepEqual([nr.ok, nr.people, nr.scope, nr.narrowed, nr.boards], [true, [], "assigned", false, 0]);
+  assert.match(nr.today, /^\d{4}-\d{2}-\d{2}$/);
+  assert.deepEqual(await no.duty.dutyPeople(NOBODY, { board_id: A }), NOT_ASSIGNED);
+  assert.deepEqual(await no.duty.dutyPeople({ roles: ["dutylead"] }, {}), { ok: true, today: nr.today, year: null, people: [], scope: "assigned", narrowed: false, boards: 0 },
+    "담당자 id 가 없으면 아무 당번도 아니다");
+  assert.equal(no.log.rpc.length, 0);
+  const txt = JSON.stringify([r, nr]);
+  for (const w of ["LEAK", "user_id", "ident_key", "person|"]) assert.equal(txt.includes(w), false, w);
+  assert.equal(c.log.audit.length + l.log.audit.length + one.log.audit.length, 0, "읽기는 기록하지 않는다");
+  const e = setup({ rpcs: { duty_people: { ok: false, error: "x" } } });
+  assert.deepEqual(await e.duty.dutyPeople(CHIEF, {}), { ok: false, error: "x" });
+});
+
+test("dutyPersonHistory — 지원 번호의 당번을 서버가 읽어 맡았는지 · 볼 수 있는 당번 안에서 잇는다 · 좁힌 당번 밖이면 not-found · 칸 고르기", async () => {
+  const a = setup({ rpcs: { duty_people: peopleRpc } });
+  const r = await a.duty.dutyPersonHistory(LEAD, { signup_id: 100 });
+  assert.deepEqual(a.log.rpc[0], ["duty_people", { p_boards: [A, Z], p_year: null, p_signup: 100 }]);
+  assert.deepEqual([r.ok, r.served, r.inYear, r.upcoming, r.total, r.rows.length], [true, 3, 2, 1, 5, 3]);
+  assert.deepEqual(r.person, { name: "가상하나", who: "기쁨 3목장", hasApp: true, directory: true });
+  assert.deepEqual([r.scope, r.narrowed, r.boards], ["assigned", false, 2], "담당의 「지금까지 N번」은 맡은 당번 안의 수 — 화면이 그렇게 말할 수 있게");
+  assert.deepEqual(r.rows[0], { id: 105, date: "2026-10-11", board: "식당 봉사", boardStatus: "open", service: "1부", task: "설거지", start: "09:00", end: "10:00",
+    kind: "upcoming", why: null, off: false, asked: true, askWhy: "cant", moved: false, source: "app" });
+  assert.deepEqual([r.rows[1].kind, r.rows[1].moved, r.rows[1].source, r.rows[2].kind, r.rows[2].why, r.rows[2].boardStatus], ["served", true, "staff", "missed", "self", "archived"]);
+  const txt = JSON.stringify(r);
+  for (const w of ["LEAK", "user_id", "ident_key", "staff_note"]) assert.equal(txt.includes(w), false, w);
+  assert.equal(a.log.audit.length, 0);
+  // 보관한 당번(Z · 맡음)의 줄도 연다 · 하나로 좁히면 그 당번만 넘긴다
+  const z = setup({ rpcs: { duty_people: peopleRpc } });
+  const zr = await z.duty.dutyPersonHistory(LEAD, { signup_id: 300, board_id: Z, year: 2025 });
+  assert.deepEqual([zr.ok, zr.scope, zr.narrowed, zr.boards], [true, "assigned", true, 1]);
+  assert.deepEqual(z.log.rpc[0][1], { p_boards: [Z], p_year: 2025, p_signup: 300 });
+  // 좁힌 당번(Z) 밖의 줄(A 의 100) — not-found · 맡지 않은 당번(B)의 줄 — not-assigned(몸통의 board_id 로 속여도)
+  const o = setup({ rpcs: { duty_people: peopleRpc } });
+  assert.deepEqual(await o.duty.dutyPersonHistory(LEAD, { signup_id: 100, board_id: Z }), { ok: false, error: "not-found" });
+  assert.deepEqual(await o.duty.dutyPersonHistory(LEAD, { signup_id: 200, board_id: A }), NOT_ASSIGNED);
+  assert.deepEqual(await o.duty.dutyPersonHistory(CHIEF, { signup_id: 999 }), { ok: false, error: "not-found" });
+  for (const signup_id of ["100", 0, -1, 1.5, null, undefined, {}]) assert.deepEqual(await o.duty.dutyPersonHistory(CHIEF, { signup_id }), { ok: false, error: "bad-id" }, String(signup_id));
+  assert.deepEqual(await o.duty.dutyPersonHistory(CHIEF, { signup_id: 100, board_id: "식당" }), { ok: false, error: "bad-id" });
+  assert.equal(o.log.rpc.length, 0, "거절은 SQL 을 부르지 않는다");
+  const c = setup({ rpcs: { duty_people: peopleRpc } });
+  await c.duty.dutyPersonHistory(CHIEF, { signup_id: 200 });
+  assert.deepEqual(c.log.rpc[0][1].p_boards, [A, B, Z], "총괄은 모든 당번 안에서 잇는다");
+  const nf = setup({ rpcs: { duty_people: { ok: false, error: "not-found" } } });
+  assert.deepEqual(await nf.duty.dutyPersonHistory(CHIEF, { signup_id: 100 }), { ok: false, error: "not-found" });
+});
+
+test("dutyPeopleExport — 목록과 같은 범위 · 시트(이름·소속·그해·지금까지·마지막·앞으로 — 수는 수로) · 기록은 해·줄 수(이름 없이)", async () => {
+  const a = setup({ rpcs: { duty_people: peopleRpc } });
+  const r = await a.duty.dutyPeopleExport(LEAD, {});
+  assert.deepEqual(a.log.rpc[0][1], { p_boards: [A, Z], p_year: null, p_signup: null });
+  assert.deepEqual([r.ok, r.today, r.year, r.count, r.hidden, r.scope, r.narrowed, r.boards], [true, "2026-10-07", 2026, 1, 1, "assigned", false, 2]);
+  assert.deepEqual(r.sheet, [["이름", "소속", "2026년", "지금까지", "마지막으로 선 날", "앞으로"],
+    ["가상하나", "기쁨 3목장", 2, 3, "2026-10-04", 1]], "선 날도 앞날도 없는 분(가상둘)은 싣지 않는다");
+  assert.deepEqual(r.info.slice(0, 3), [["범위", "맡은 당번 2개"], ["기준일", "2026-10-07"], ["횟수의 해", "2026년(그 밖의 칸은 해와 상관없어요)"]]);
+  assert.match(r.info.find((x) => x[0] === "이 파일에 없는 분")[1], /^선 날도 앞으로 설 날도 없는 1분/);
+  assert.deepEqual(a.log.audit, [["duty.people.export", "", { year: 2026, count: 1, boards: 2 }]], "볼 수 있는 당번 모두 = target 빈 글 · 당번 수");
+  const txt = JSON.stringify(r);
+  for (const w of ["LEAK", "user_id", "ident_key", "person|"]) assert.equal(txt.includes(w), false, w);
+  const one = setup({ rpcs: { duty_people: { ...SQL_PEOPLE, year: 2025 } } });
+  const o = await one.duty.dutyPeopleExport(LEAD, { board_id: A, year: 2025 });
+  assert.deepEqual([o.year, o.sheet[0][2], o.narrowed, o.boards], [2025, "2025년", true, 1]);
+  assert.deepEqual(o.info[0], ["범위", "「식당 봉사」 당번"], "좁힌 엑셀의 안내에는 그 당번의 이름");
+  assert.deepEqual(one.log.audit[0], ["duty.people.export", A, { year: 2025, count: 1, boards: 1 }], "하나로 좁히면 그 당번으로 기록");
+  const e = setup({ rpcs: { duty_people: { ok: false, error: "x" } } });
+  assert.deepEqual(await e.duty.dutyPeopleExport(CHIEF, {}), { ok: false, error: "x" });
+  assert.equal(e.log.audit.length, 0, "실패는 기록하지 않는다");
+  const no = setup({ rpcs: { duty_people: peopleRpc } });
+  const nr = await no.duty.dutyPeopleExport(NOBODY, {});
+  assert.deepEqual([nr.ok, nr.sheet.length, nr.info[0][1], nr.info.find((x) => x[0] === "이 파일에 없는 분")[1]], [true, 1, "맡은 당번 0개", "없음"], "맡은 당번이 없으면 머리줄만");
+  const ch = setup({ rpcs: { duty_people: peopleRpc } });
+  assert.equal((await ch.duty.dutyPeopleExport(CHIEF, {})).info[0][1], "모든 당번 3개");
+  assert.equal(JSON.stringify((await ch.duty.dutyPeopleExport(CHIEF, {})).info).includes("가상"), false, "안내 시트에 이름 없음");
+  assert.equal(no.log.rpc.length, 0);
 });

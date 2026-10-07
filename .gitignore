@@ -3,6 +3,9 @@
 supabase/.temp/
 supabase/.branches/
 node_modules/
+# 파이썬 도구(tools/*.py)를 다른 스크립트가 불러 쓰면 생기는 것 — .pyc 에는 만든 PC 의 경로가 든다(독립 검토 2026-10-08)
+__pycache__/
+*.pyc
 
 # 교인명부(2026-09-29) — 명단·사진·작업 폴더는 저장소 밖(C:\Projects\교인명부_작업\)에 둔다. 혹시 안으로 들어와도 커밋되지 않게.
 교인*

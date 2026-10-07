@@ -51,6 +51,10 @@ export const MENUS = [
     role: "duty", load: () => import("./duty/boards.js") },
   { id: "duty-roster", group: "봉사 당번", icon: "📅", label: "당번 명단", desc: "날짜마다 선 분 · 넣기·빼기·옮기기 · 확정 · 쉬는 날 · 자리 틀 · 엑셀",
     roles: ["duty", "dutylead"], load: () => import("./duty/roster.js") },
+  // 👥 봉사자(2026-10-07 친구 요청 — 담당자 쪽 「이분의 봉사 이력」을 사람별로) — 당번 총괄 = 모든 당번 · 당번 담당 = 맡은 당번 안에서만
+  //   (서버 duty-db.ts peopleBoards — 사람을 잇는 것도 그 안의 줄만으로). 📅 당번 명단의 이름을 눌러도 같은 이력 창(person-window.js)이 열린다.
+  { id: "duty-people", group: "봉사 당번", icon: "👥", label: "봉사자", desc: "사람마다 선 날 · 그해·지금까지 몇 번 · 앞으로 · 빠진 기록 · 엑셀",
+    roles: ["duty", "dutylead"], load: () => import("./duty/people.js") },
   // 🌱 새가족(2026-10-07 · 1단계) — 종이 등록카드 → 섬김이 배정 → 교육 → 교구 배정 → 등록식. 성도님 앱에는 없다(내부 담당자만).
   //   새가족 운영팀(newfamily) = 전부 · 새가족 섬김(nfteam) = 영접팀·정착팀 총무·섬김이·목사님 — 하는 일과 자기 줄은 서버 nf-db.ts 가 본다(not-assigned).
   { id: "nf-card", group: "새가족", icon: "🌱", label: "새가족 카드", desc: "등록카드 넣기·고치기 · 카드 사진 · 환영 사진",

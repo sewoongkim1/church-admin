@@ -84,20 +84,21 @@ test("교육 묶음 — 강좌 관리(교육 총괄만) 다음에 신청 현황(
   assert.equal(GROUP_ICON["교육"], "🎓");
 });
 
-test("봉사 당번 묶음 — 당번 관리(당번 총괄만) 다음에 당번 명단(당번 총괄·당번 담당) · 다른 역할에는 안 보인다", () => {
+test("봉사 당번 묶음 — 당번 관리(당번 총괄만) 다음에 당번 명단 · 봉사자(당번 총괄·당번 담당) · 다른 역할에는 안 보인다", () => {
   const duty = MENUS.filter((m) => m.group === "봉사 당번");
-  assert.deepEqual(duty.map((m) => m.id), ["duty-boards", "duty-roster"]);
-  assert.deepEqual(duty.map((m) => m.label), ["당번 관리", "당번 명단"]);
+  assert.deepEqual(duty.map((m) => m.id), ["duty-boards", "duty-roster", "duty-people"]);
+  assert.deepEqual(duty.map((m) => m.label), ["당번 관리", "당번 명단", "봉사자"]);
+  assert.deepEqual(menuRoles(duty[2]), ["duty", "dutylead"], "👥 봉사자 — 당번 담당은 맡은 당번 안에서만(서버 peopleBoards)");
   assert.deepEqual(menuRoles(duty[0]), ["duty"]);
   assert.deepEqual(menuRoles(duty[1]), ["duty", "dutylead"]);
-  assert.deepEqual(menusFor(["duty"]).map((m) => m.id), ["duty-boards", "duty-roster"]);
+  assert.deepEqual(menusFor(["duty"]).map((m) => m.id), ["duty-boards", "duty-roster", "duty-people"]);
   // 당번 담당(맡은 당번)은 명단만 — 당번 관리는 안 보인다(서버도 dutyStaff* 를 forbidden · 만들기·이름은 chief-only 로 막는다)
-  assert.deepEqual(menusFor(["dutylead"]).map((m) => m.id), ["duty-roster"]);
+  assert.deepEqual(menusFor(["dutylead"]).map((m) => m.id), ["duty-roster", "duty-people"]);
   assert.deepEqual(menuGroups(menusFor(["dutylead"])).map((g) => g.group), ["봉사 당번"]);
   for (const r of ["ministry", "directory", "bibleevent", "education", "educourse", "teacher"]) {
     assert.deepEqual(menusFor([r]).filter((m) => m.group === "봉사 당번"), [], r);
   }
-  assert.equal(menusFor(["super"]).filter((m) => m.group === "봉사 당번").length, 2);
+  assert.equal(menusFor(["super"]).filter((m) => m.group === "봉사 당번").length, 3);
   assert.equal(GROUP_ICON["봉사 당번"], "🙋");
 });
 

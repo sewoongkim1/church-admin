@@ -217,6 +217,11 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   nfStats: NF_BOTH,
   // 대신 넣기의 명부 찾기 — 맡은 당번의 창에서만(board_id 필수 · 총괄도) · 기록 people.lookup from:"duty"
   dutyPeopleLookup: DUTY_BOTH,
+  // 👥 봉사자(사람별 봉사 이력 · 2026-10-07) — 총괄은 모든 당번 · 담당은 맡은 당번 안에서만(duty-db.ts peopleBoards — 사람을 잇는 것도 그 안의 줄만으로).
+  //   읽기 둘은 기록 없음(명단 읽기와 같다) · 엑셀은 기록 duty.people.export(이름 없이 해·줄 수·당번 수만). 응답에 user_id·ident_key·교인ID 없음(duty-rules.ts peopleOut·historyOut).
+  dutyPeople: DUTY_BOTH,
+  dutyPersonHistory: DUTY_BOTH,
+  dutyPeopleExport: DUTY_BOTH,
 };
 
 export type MemberStatus = "pending" | "active" | "disabled";

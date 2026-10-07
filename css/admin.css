@@ -1812,6 +1812,20 @@ body.ec-cert-on{overflow:hidden}
 .dty-row.ask{margin:0 -8px;padding:8px;border:1px solid var(--danger-bd);border-radius:10px;background:var(--danger-bg)}
 .dty-who{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0}
 .dty-who b{font-size:15px;color:var(--ink)}
+/* 이름 — 누르면 그분의 봉사 이력 창(person-window.js · 2026-10-07). 글처럼 보이되 밑줄로 누를 수 있음을 알린다.
+   ⚠️ 줄 높이는 예전 <b> 그대로 둔다(min-height·위아래 여백 없음) — 단추를 32px 로 키웠더니 명단 줄이 길어져 「같은 자리의 다음 주일로 옮기면 화면 자리 그대로」가
+   16~21px 어긋났다(tools/duty-view-probe.py same). 누를 자리는 ::after 로 위아래 4px 씩 넓힌다(줄 높이를 바꾸지 않는다 · 아래 「메모·옮기기·빼기」 줄과는 6px 떨어져 있다) */
+.dty-name{position:relative;display:inline;padding:0;border:0;background:none;font:inherit;font-size:15px;font-weight:700;
+  color:var(--navy-dark);text-align:left;text-decoration:underline;text-decoration-color:var(--ghost-bd);text-underline-offset:3px;cursor:pointer;touch-action:manipulation;
+  overflow-wrap:anywhere}
+/* 옆으로는 넓히지 않는다 — 옆으로 나온 ::after 는 단추의 「안이 넘친 폭」(scrollWidth)이 된다(tools/duty-people-probe.py 가 PC 폭에서 2px 넘침으로 잡았다) */
+.dty-name::after{content:"";position:absolute;inset:-4px 0}
+/* 단추의 글은 파이어폭스에서 끌어 고를 수 없다(user-select:none 이 기본) — 명단을 끌어 복사하면 이름만 빠졌다(독립 검토 반영). 글처럼 고를 수 있게 */
+.dty-name{-moz-user-select:text;-webkit-user-select:text;user-select:text}
+.dty-name:hover{text-decoration-color:currentColor}
+.dty-name:disabled{cursor:default;opacity:.6}
+.dty-name:focus-visible{outline:3px solid var(--navy);outline-offset:1px;border-radius:4px}
+.dty-ended .dty-name{font-size:14px}
 .dty-ask{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;margin-top:4px;font-size:14px;font-weight:700;color:var(--error)}
 .dty-ask .btn{min-height:40px;padding:0 12px;font-size:13px}
 .dty-memo{margin-top:2px;font-size:13px;color:var(--gray);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -1854,6 +1868,63 @@ body.ec-cert-on{overflow:hidden}
    붙은 채 날짜·달을 바꾸면 그날 판을 맨 위부터 보이게 올린다 — 달력의 자리는 그대로(roster.js settleView · duty-logic.js calSettle) */
 @media (min-width:1024px) and (min-height:760px){
   .dty-split > .dty-cal{position:sticky;top:calc(var(--head-h) + 8px)}
+}
+
+/* ── dpp- 👥 봉사자(2026-10-07 친구 요청 · js/menus/duty/people.js · person-window.js) — 폰 세로가 기준 ── */
+.dpp-top{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+/* 단추 바탕 폭 110px — 폰(280~360px)에서도 당번·차례 둘이 한 줄에 서고 엑셀이 아래로 · 390px 부터는 셋이 한 줄 */
+.dpp-top .btn{flex:1 1 110px;min-width:0;padding:0 10px;font-size:14px}
+.dpp-pick{font-weight:700}
+.dpp-pick-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dpp-q{margin-bottom:6px}
+.dpp-sum{margin:0 0 6px}
+.dpp-list{margin-bottom:12px;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.dpp-row{display:flex;flex-direction:column;align-items:stretch;gap:2px;width:100%;min-height:56px;padding:9px 12px;border:0;border-top:1px solid var(--border);
+  background:#fff;font:inherit;text-align:left;color:var(--ink);cursor:pointer;touch-action:manipulation}
+.dpp-row:first-child{border-top:0}
+.dpp-row:hover{background:var(--light)}
+.dpp-row:focus-visible{outline:3px solid var(--navy);outline-offset:-3px}
+.dpp-row:disabled{cursor:default;opacity:.6}
+.dpp-who{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0}
+.dpp-who b{font-size:15px;color:var(--navy-dark);overflow-wrap:anywhere}
+.dpp-cnt{font-size:13px;line-height:1.45;color:var(--ink-2);word-break:keep-all;overflow-wrap:anywhere}
+.dpp-split{margin:0 0 12px;line-height:1.5;word-break:keep-all}
+/* 숨긴 분(선 날도 앞날도 없는 분) 안내 + 「함께 보기」 · 못 불러온 화면의 「다시 불러오기」 */
+.dpp-idle{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;margin:0 0 12px;line-height:1.5;word-break:keep-all}
+.dpp-idle > span{min-width:0;flex:1 1 200px}
+.dpp-idleb{flex:none;min-height:40px;padding:0 12px;font-size:13px}
+.dpp-retry{justify-content:center}
+/* 이력 창 */
+.dpp-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin:0 0 4px}
+.dpp-tot{margin:0 0 10px;font-size:15px;font-weight:700;color:var(--navy-dark);word-break:keep-all}
+/* 범위 한 줄(늘 보인다 — 「지금까지 N번」이 어느 당번 안의 수인가) · 좁혔으면 넓혀 보는 단추가 붙는다 */
+.dpp-scope{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.dpp-scope > span{min-width:0;flex:1 1 180px;word-break:keep-all}
+.dpp-all{flex:none;min-height:40px;padding:0 12px;font-size:13px}
+.dpp-sec{margin:14px 0 4px;font-size:15px;color:var(--navy-dark)}
+.dpp-sec em,.dpp-foldb em{font-style:normal;color:var(--gray);font-weight:400}
+.dpp-none{margin:2px 0 8px;font-size:14px;color:var(--gray)}
+.dpp-hr{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-top:1px dashed var(--border);font-size:14px;line-height:1.45}
+.dpp-d{font-weight:700;color:var(--ink)}
+.dpp-w{color:var(--ink-2);overflow-wrap:anywhere}
+.dpp-why{font-size:13px;color:var(--gray);word-break:keep-all}
+.dpp-bd{display:flex;flex-wrap:wrap;gap:4px}
+.dpp-bd .badge.warn{background:#fff3d6;color:#7a5200}
+.dpp-hr.missed .dpp-d,.dpp-hr.missed .dpp-w{color:var(--gray)}
+/* 「빠진 기록 N」 — 세모가 붙은 단추로 펼친다(묶음 머리글과 똑같이 생겨 눌러 펼치는 줄인지 알 수 없었다 · <details> 는 창의 Tab 가두기 목록에 없다 — 독립 검토 반영) */
+.dpp-foldb{display:flex;align-items:center;gap:6px;width:100%;min-height:44px;margin-top:12px;padding:0 10px;border:1px solid var(--border);border-radius:10px;
+  background:var(--light);font:inherit;font-size:15px;font-weight:700;color:var(--navy-dark);text-align:left;cursor:pointer;touch-action:manipulation}
+.dpp-foldb:focus-visible{outline:3px solid var(--navy);outline-offset:1px}
+.dpp-tri{flex:none;width:1em;text-align:center}
+.dpp-foldc{margin-top:4px}
+/* 창 본문에 초점(자판으로 굴리려고) — 테는 자판으로 왔을 때만 */
+.be-body[role="group"]:focus{outline:none}
+.be-body[role="group"]:focus-visible{outline:3px solid var(--navy);outline-offset:-3px;border-radius:8px}
+.dpp-cut{margin:10px 0 0}
+@media (min-width:1024px){
+  .dpp-top{max-width:760px}
+  .dpp-top .btn{flex:0 1 auto;min-width:160px}
+  .dpp-q,.dpp-list,.dpp-split{max-width:760px}
 }
 
 /* ── nf- 새가족(2026-10-07 · 1단계) — 폰 세로가 기준. PC 배치는 맨 아래 @media 안에만 ── */

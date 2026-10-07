@@ -183,8 +183,17 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 
 ## 봉사 당번 (2026-10-06 운영 반영 · 1단계 담당자 화면 · 2단계 성도님 앱 — 문은 닫힘)
 
-- 묶음 「봉사 당번」: 🧰 **당번 관리**(역할 `duty` = 당번 총괄) · 📅 **당번 명단**(`duty` · `dutylead` = 당번 담당 — 맡은 당번만) — SQL 015.
-  액션 `duty-db.ts`(20개) · 순수 규칙 `duty-rules.ts` · 화면 `js/menus/duty/`(`duty-logic.js` 시험 · `board-form.js` · `boards.js` · `roster.js` · `roster-forms.js`) · CSS 접두사 `dty-`.
+- 묶음 「봉사 당번」: 🧰 **당번 관리**(역할 `duty` = 당번 총괄) · 📅 **당번 명단**(`duty` · `dutylead` = 당번 담당 — 맡은 당번만) · 👥 **봉사자**(같은 두 역할 — 사람별 봉사 이력 · 2026-10-07) — SQL 015.
+  액션 `duty-db.ts`(23개) · 순수 규칙 `duty-rules.ts` · 화면 `js/menus/duty/`(`duty-logic.js` 시험 · `board-form.js` · `boards.js` · `roster.js` · `roster-forms.js` · `people.js` · `person-window.js` · `people-logic.js` 시험) · CSS 접두사 `dty-` · `dpp-`.
+- 👥 **봉사자**(`dutyPeople`·`dutyPersonHistory`·`dutyPeopleExport`) — 볼 수 있는 당번은 `peopleBoards`(총괄 = 모든 당번 · 담당 = 맡은 당번 · `board_id` 로 하나) · 셈·잇기는 성경암송 SQL `duty_people` 한 곳 —
+  ⚠️ **사람을 잇는 것도 볼 수 있는 당번 안의 줄만으로**(맡지 않은 당번의 줄이 두 기록을 잇지 않게) · 성도님 앱 「지난 봉사」와 **일부러 다르게 센다**(준비 중 당번·명부 줄도 · 오늘 끝난 자리는 끝나자마자 ·
+  보관한 당번은 보관한 때까지) — 성경암송 `docs/notes/duty-roster.md` 「👥 봉사자」.
+  응답의 `scope`·`narrowed`·`boards` 로 화면이 **어느 당번 안의 수인지** 말한다(짐작하지 않는다 — 담당의 수는 맡은 당번 안의 수) · 고른 당번·해(`memo`)는 **불러오기에 성공한 뒤에만** 바꾼다 ·
+  못 불러오면 「다시 불러오기」 단추 · `not-assigned` 면 말한 대로 목록부터 다시(`boot`) · 선 날도 앞날도 없는 분은 목록에서 기본으로 숨기고 엑셀에서 뺀다(`isIdle`·서버 `peopleIdle`) ·
+  이력 창은 불러오는 동안 부른 화면을 잠그고(`host`) 닫히면 누른 단추로 초점(`anchor`) · 본문에 초점(자판) · 「빠진 기록」은 세모 붙은 단추(`<details>` 금지 — 창의 Tab 가두기 목록에 없다).
+  📅 당번 명단의 이름(`.dty-name` · `data-op="person"`)을 누르면 같은 이력 창(`person-window.js`). 화면을 고치면 `python tools/duty-people-probe.py`(세 엔진).
+  ⚠️ **이름 단추의 줄 높이를 키우지 말 것**(min-height·위아래 여백) — 32px 로 키웠더니 명단 줄이 길어져 `duty-view-probe.py` 의 「같은 자리의 다음 주일로 옮기면 화면 자리 그대로」가 어긋났다. 누를 자리는 `::after` 로 위아래만 넓힌다.
+  이력 창의 묶음 수(앞으로·섰던 날)는 **서버가 센 수**를 적는다(줄 수가 아니다 — 쉼 줄·같은 자리의 두 줄이 끼면 위의 합계와 어긋난다) · 올해가 아닌 날짜에는 해를 붙인다(`dateWord`).
 - ⚠️ **표·SQL 함수는 성경암송 저장소 `supabase/duty.sql` 의 것**(여기 015 는 역할 둘과 `duty_board_staff` 뿐) — 칸·제약·RLS 를 여기서 바꾸지 않는다.
   **상태는 SQL 함수로만 바꾼다**(`duty_apply(p_staff)`·`duty_cancel(p_staff)`·`duty_restore`·`duty_move`·`duty_note_set`·`duty_day_set`·`duty_days_off`·`duty_slot_set`·`duty_slot_delete`·`duty_line_save`·`duty_line_remove`·`duty_date_add`·`duty_ask_clear`).
   이 함수가 표에 직접 쓰는 것은 둘뿐: 당번 설정(`duty_boards`) · 담당자 줄(`duty_board_staff`).
