@@ -1,4 +1,4 @@
-// 📅 당번 명단 — 당번 고르기 · 날짜 칩 · 그날 판(확정·쉬는 날·메모) · 자리마다 선 분(넣기·빼기·옮기기·메모) · 자리 틀 · 날짜 더하기 · 쉬는 기간 · 엑셀
+// 📅 당번 명단 — 당번 고르기 · 날짜 칩(날짜가 넷 이상이면 달력 — roster-cal.js) · 그날 판(확정·쉬는 날·메모) · 자리마다 선 분(넣기·빼기·옮기기·메모) · 자리 틀 · 날짜 더하기 · 쉬는 기간 · 엑셀
 //   (봉사 당번 1단계 · 2026-10-06 · 설계 v2 docs/superpowers/specs/2026-10-06-duty-roster-design.md §6)
 //   서버: dutyBoardList·dutyRoster·dutyBoardSave·dutyLineSave·dutyLineRemove·dutyDateAdd·dutyDaySet·dutyDaysOff·dutySlotSet·dutySlotDelete·
 //         dutySignAdd·dutySignRemove·dutySignMove·dutySignNote·dutyAskClear·dutyPeopleLookup·dutyExport
@@ -11,7 +11,8 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { openBoardForm } from "./board-form.js";
-import { emptyWhy, seenOfRoster } from "./duty-logic.js";
+import { emptyWhy, seenOfRoster, calUse, calStep, olderPick, olderText, revealBy } from "./duty-logic.js";
+import { calHtml } from "./roster-cal.js";
 import { openLineForm, openDateAddForm, openOffForm, offFlow, openAddForm, openNoteForm, openDayNoteForm, openCapacityForm, failText, sayDone } from "./roster-forms.js";
 import {
   boardRest, contactHtml, maxBack, lineText, lineSavedText, lineRemovedText, boardSavedText, initialDay, dayChip, dayStateText, dayActions, dayLabel, addDays, slotName, timeRange,
@@ -82,6 +83,7 @@ export async function render(el, { call, query }) {
   let back = 14;         // 지난 며칠까지 불러왔나
   const pending = new Set();
   const folds = new Set();   // 「빠진 분」을 펼쳐 둔 자리
+  let calFocus = "";         // 달력을 눌러 다시 그리면 눌렀던 단추가 사라진다 — 그린 뒤 초점을 돌려줄 곳("day" · "prev" · "next")
 
   const loadBoards = async () => {
     const r = await call("dutyBoardList", {});
@@ -112,12 +114,14 @@ export async function render(el, { call, query }) {
     if (!r.ok) drop();
   };
   // 명단만 다시(저장 뒤 · 서버가 거절한 뒤) — 당번이 없어졌거나 맡은 당번에서 빠졌으면 목록부터
+  //   → 새 명단을 그렸으면 true(못 불러왔거나 당번이 풀렸으면 false — 그 까닭은 여기서 말한다)
   const reload = async (wantDay = day) => {
-    if (!cur) return;
+    if (!cur) return false;
     const r = await loadRoster(cur, wantDay);
-    if (r.gone) { toast(r.gone); drop(); if (await loadBoards()) { await openOnly(); draw(); } return; }
-    if (!r.ok) { toast(failText(r.error)); return; }
+    if (r.gone) { toast(r.gone); drop(); if (await loadBoards()) { await openOnly(); draw(); } return false; }
+    if (!r.ok) { toast(failText(r.error)); return false; }
     draw();
+    return true;
   };
   // 당번 목록까지 다시(당번 설정을 바꾼 뒤 — 이름·상태가 고르기 단추에 보인다)
   const reloadAll = async () => {
@@ -170,16 +174,32 @@ export async function render(el, { call, query }) {
         <button type="button" class="btn" data-act="off-range">😴 쉬는 기간</button>`}
       <button type="button" class="btn" data-act="export">⬇ 엑셀</button>
       ${ro ? "" : `<button type="button" class="btn" data-act="settings">⚙️ 당번 설정</button>`}</div>`;
-    const chips = `<div class="dty-chips-d" role="group" aria-label="날짜">${back < maxBack() ? `<button type="button" class="dty-chipd more" data-act="older"><b>◀ 지난 날</b><i>더 보기</i></button>` : ""}${
-      days.map((x) => chipHtml(x, x.date === day, today)).join("")}</div>`;
+    const older = back < maxBack();   // 지난 날을 더 불러올 수 있나(52주까지)
     if (!days.length) {
+      // 날짜가 하나도 없어도 지난 날은 더 불러올 수 있다 — 끝난 한 번짜리 모집(김장 등)의 명단을 여기서 다시 본다
       const live = ros.lines.some((l) => l.active);
-      return tools + `<p class="empty">${live ? "이 기간에는 자리가 없어요 — 「날짜 더하기」로 자리를 만들어 주세요" : "자리 틀이 아직 없어요 — 위 「자리 틀」에서 먼저 넣어 주세요"}</p>`;
+      return tools + `<p class="empty">${live ? "이 기간에는 자리가 없어요 — 「날짜 더하기」로 자리를 만들어 주세요" : "자리 틀이 아직 없어요 — 위 「자리 틀」에서 먼저 넣어 주세요"}</p>` +
+        (older ? `<button type="button" class="btn wide" data-act="older">◀ 지난 날 더 보기</button>` : "");
     }
-    return tools + chips + (d ? dayHtml(d, ro) : `<p class="empty">날짜를 골라 주세요</p>`);
+    const panel = d ? dayHtml(d, ro) : `<p class="empty">날짜를 골라 주세요</p>`;
+    // 날짜가 넷 이상이면 달력으로 고른다(친구 요청 2026-10-07 — 성도님 앱과 같은 꼴 · PC 는 달력 옆에 그날 판) · 적으면 칩 줄 그대로(한두 번짜리 모집)
+    if (calUse(days)) return tools + `<div class="dty-split">${calHtml(days, day, today, { older })}<div class="dty-day">${panel}</div></div>`;
+    const chips = `<div class="dty-chips-d" role="group" aria-label="날짜">${older ? `<button type="button" class="dty-chipd more" data-act="older"><b>◀ 지난 날</b><i>더 보기</i></button>` : ""}${
+      days.map((x) => chipHtml(x, x.date === day, today)).join("")}</div>`;
+    return tools + chips + panel;
+  };
+  // 달력에서 날짜를 누른 뒤 — 그날 판(.dty-day)이 화면 아래에 가려 있으면 보일 만큼만 굴린다(얼마나는 duty-logic.js revealBy · PC 는 달력 옆이라 0)
+  const revealDay = () => {
+    const p = el.querySelector(".dty-day");
+    if (!p || !p.getBoundingClientRect) return;
+    const by = revealBy(p.getBoundingClientRect().top, window.innerHeight);
+    if (!by) return;
+    const calm = !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    try { window.scrollBy({ top: by, behavior: calm ? "auto" : "smooth" }); } catch { window.scrollBy(0, by); }   // 옛 브라우저는 숫자 둘만 받는다
   };
 
   const draw = () => {
+    const want = calFocus; calFocus = "";   // 어느 길로 끝나든 한 번만 쓴다(다음 그리기로 넘어가 엉뚱한 때 초점이 튀지 않게)
     if (!boards.length) { el.innerHTML = TITLE + `<p class="empty">${esc(scope === "assigned" ? EMPTY_ASSIGNED : EMPTY_ALL)}</p>`; return; }
     if (!cur || !ros) { el.innerHTML = TITLE + boardBtn() + `<p class="empty">당번을 골라 주세요</p>`; return; }
     const b = ros.board, ro = b.status === "archived";
@@ -197,6 +217,10 @@ export async function render(el, { call, query }) {
     if (on && rowEl && on.getBoundingClientRect) {
       rowEl.scrollLeft += on.getBoundingClientRect().left - rowEl.getBoundingClientRect().left - (rowEl.clientWidth - on.offsetWidth) / 2;
     }
+    // 달력을 눌러 다시 그렸으면 초점을 돌려준다 — 눌렀던 단추는 innerHTML 과 함께 사라졌다(자판·화면 낭독으로 쓰는 분의 자리가 맨 위로 튕기지 않게).
+    //   앞뒤 달 단추는 같은 쪽 단추로(그쪽에 더 갈 달이 없어 단추가 사라졌으면 고른 날로) · 날짜는 고른 날로. 화면은 굴리지 않는다(preventScroll).
+    const f = !want ? null : (want === "day" ? null : el.querySelector(`.dty-cal-nav.${want === "next" ? "r" : "l"}`)) || el.querySelector(".dty-cal-c.on");
+    if (f && f.focus) f.focus({ preventScroll: true });
   };
 
   // ---------- 처음 ----------
@@ -345,8 +369,20 @@ export async function render(el, { call, query }) {
   el.addEventListener("click", async (ev) => {
     const t = ev.target.closest("[data-tab]");
     if (t) { if (tab !== t.dataset.tab) { tab = t.dataset.tab; draw(); } return; }
+    // 달력의 앞뒤 달 단추 — 그 달에서 고를 날(오늘 이후 첫 날 → 마지막 날)로 간다. 서버를 부르지 않는다(가진 명단으로 다시 그린다).
+    const mon = ev.target.closest("button[data-cal]");
+    if (mon) {
+      const to = ros ? calStep(ros.days, day, mon.dataset.cal, today) : "";
+      if (to) { day = to; lastDay = day; calFocus = mon.dataset.cal === "next" ? "next" : "prev"; draw(); }
+      return;
+    }
     const chip = ev.target.closest("[data-day]");
-    if (chip) { if (day !== chip.dataset.day) { day = chip.dataset.day; lastDay = day; draw(); } return; }
+    if (chip) {
+      const inCal = !!chip.classList && chip.classList.contains("dty-cal-c");
+      if (day !== chip.dataset.day) { day = chip.dataset.day; lastDay = day; if (inCal) calFocus = "day"; draw(); }
+      if (inCal) revealDay();   // 폰: 그날 판이 달력 아래에 가려 있으면 보일 만큼만 굴린다(이미 고른 날을 다시 눌러도)
+      return;
+    }
 
     const a = ev.target.closest("button[data-act]");
     if (a) {
@@ -366,7 +402,18 @@ export async function render(el, { call, query }) {
       }
       if (!cur || !ros) return;
       await once(act, async () => {
-        if (act === "older") { back = Math.min(maxBack(), back + BACK_STEP); await busy(el, () => reload()); }
+        if (act === "older") {
+          // 지난 날을 4주 더 — 달력에서 눌렀으면 보던 달에 새 날짜가 없을 때 새로 생긴 앞 달로 간다(olderPick) · 새 날짜가 없으면 그렇다고 말한다(olderText).
+          const before = (ros.days || []).map((x) => x.date), was = back, inCal = !!a.classList && a.classList.contains("dty-cal-nav");
+          back = Math.min(maxBack(), back + BACK_STEP);
+          if (inCal) calFocus = "prev";
+          const ok = await busy(el, () => reload());
+          calFocus = "";
+          if (!ok || !ros) { back = was; return; }   // 못 불러왔다(까닭은 reload 가 말했다) — 「더 지난 날짜가 없어요」라고 하지 않는다 · 다음에 같은 만큼 다시
+          const to = inCal ? olderPick(before, ros.days, day, today) : day;
+          if (to !== day) { day = to; lastDay = day; calFocus = "prev"; draw(); }
+          toast(olderText(before, ros.days, back, today));
+        }
         else if (act === "export") await exportXlsx(a);
         else if (act === "date-add") {
           const live = ros.lines.filter((l) => l.active);

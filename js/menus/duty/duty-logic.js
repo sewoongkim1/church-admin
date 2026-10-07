@@ -2,6 +2,7 @@
 //   설계 v2 docs/superpowers/specs/2026-10-06-duty-roster-design.md §6. 판정(잠김·빈 자리·겹침)은 서버가 준 값 그대로 — 여기는 말과 차례만 고른다.
 // ⚠️ 이 파일은 Node 시험이 읽는다 — document·window 를 만지지 않는다.
 import { esc } from "../../core/ui.js";
+import { monthGrid } from "../../core/picker.js";
 
 export const STATUS_OPTIONS = [
   { value: "draft", label: "준비 중", hint: "앱에 안 보여요" },
@@ -220,6 +221,80 @@ export function dayActions(d, { archived = false, now = Date.now() } = {}) {
 export function slotCount(s) {
   const n = ((s && s.signups) || []).length, cap = (s && s.capacity) || 0;
   return { n, cap, need: Math.max(0, cap - n), over: n > cap, text: `${n}/${cap}명` };
+}
+// ---------- 달력(2026-10-07 친구 요청 — 「어드민에서도 달력으로 확인」 · 그리기는 roster-cal.js) ----------
+// 날짜가 이 수 이상이면 날짜 칩 줄 대신 달력으로 고른다 — 성경암송 앱 달력(js/duty.js DUTY_CAL_MIN)과 같은 수. 한두 번짜리 모집(김장 등)은 칩 그대로.
+export const CAL_MIN = 4;
+export const calUse = (days) => (days || []).filter((d) => d && d.date).length >= CAL_MIN;
+const YM_RE = /^\d{4}-\d{2}$/;
+const ymOf = (ds) => String(ds || "").slice(0, 7);
+// 날짜들이 걸친 달 — ["2026-10", "2026-11"] (이른 달부터 · 날짜가 없는 달은 건너뛴다)
+export function calMonths(days) {
+  const out = [];
+  for (const d of days || []) { const ym = ymOf(d && d.date); if (YM_RE.test(ym) && !out.includes(ym)) out.push(ym); }
+  return out.sort();
+}
+export const calTitle = (ym) => (YM_RE.test(String(ym || "")) ? `${Number(ym.slice(0, 4))}년 ${Number(ym.slice(5, 7))}월` : "");   // 2026년 10월
+export const calMonthWord = (ym) => (YM_RE.test(String(ym || "")) ? `${Number(ym.slice(5, 7))}월` : "");                          // 10월 — 앞뒤 달 단추에
+// 그 달의 칸들(일요일부터 · 주를 채운다) — 빈칸은 { date: "", n: 0 } · 날짜 칸은 { date: "YYYY-MM-DD", n: 날 }. 달의 꼴은 고르개 달력과 같은 함수(picker.js monthGrid).
+export function calMonth(ym) {
+  const s = String(ym || "");
+  if (!YM_RE.test(s)) return [];
+  const y = Number(s.slice(0, 4)), m = Number(s.slice(5, 7));
+  if (!(m >= 1 && m <= 12)) return [];
+  return monthGrid(y, m).flat().map((n) => (n ? { date: `${s}-${String(n).padStart(2, "0")}`, n } : { date: "", n: 0 }));
+}
+// 달력의 그날 한 칸 — 칩의 판정(dayChip: kind·tag·lock·today)에 「채워진 인원 n / 필요 인원 cap」을 더한다.
+//   쉬는 자리는 세지 않는다 · 남은 자리(뺀 틀·요일을 바꾼 틀)는 서 있는 분만 센다(빈 칸은 필요 인원이 아니다 — 새 지원을 받지 않는다) ·
+//   정원을 넘겨 넣은 자리는 정원까지만 센다(한 자리에 셋을 넣었다고 다른 빈 자리가 찬 것처럼 보이지 않게 — 자리 머리의 「3/2명」은 그대로 보인다).
+//   → cap − n = 서버가 준 그날의 「빈 자리」(d.need — 성경암송 duty_roster 가 같은 규칙으로 센다). 받는 중 당번에서는 성도님 앱 달력(dutyCalCell)과 같은 수다
+//     (지원 멈춤 당번의 남은 자리만 다르다 — 앱은 그 자리를 가릴 수 없어 정원을 모두 센다).
+export function calCell(d, today = "") {
+  let n = 0, cap = 0;
+  for (const s of (d && d.slots) || []) {
+    if (!s || s.off) continue;
+    const k = (s.signups || []).length, c = Math.max(0, Number(s.capacity) || 0), use = s.leftover ? Math.min(k, c) : c;
+    cap += use; n += Math.min(k, use);
+  }
+  return { ...dayChip(d, today), n, cap };
+}
+// 칸에 적는 글 — 「1/2」 · 쉬는 날은 「쉼」 · 셀 것이 없는 날(자리가 없다 · 아무도 없는 남은 자리뿐)은 「–」
+export const calMark = (c) => (c && c.kind === "off" ? "쉼" : c && c.cap > 0 ? `${c.n}/${c.cap}` : "–");
+// 그 칸을 읽어 주는 말(단추의 이름 — 화면 낭독) — 「10월 18일(일) — 빈 자리 1 · 필요 3명 가운데 2명 채워졌어요 · 확정된 날 · 공휴일(개천절) · 오늘」
+export function calLabel(d, c, hol = "") {
+  const x = c || {};
+  return [`${dayLabel(d && d.date)} — ${x.tag || ""}`, x.kind !== "off" && x.cap > 0 ? `필요 ${x.cap}명 가운데 ${x.n}명 채워졌어요` : "",
+    x.lock ? "확정된 날" : "", hol ? `공휴일(${hol})` : "", x.today ? "오늘" : ""].filter(Boolean).join(" · ");
+}
+// 그 달(ym)에서 고를 날 — 칩과 같은 차례(initialDay: 오늘 이후 첫 날 → 마지막 날). 그 달에 날짜가 없으면 "".
+export const calPick = (days, ym, today) => initialDay((days || []).filter((d) => d && ymOf(d.date) === ym), today);
+// 앞뒤 달로 — 고른 날(day)의 달에서 날짜가 있는 앞(prev)·다음(next) 달로 가 그 달에서 고를 날을 준다. 그쪽에 달이 없으면 "".
+export function calStep(days, day, dir, today) {
+  const months = calMonths(days), at = months.indexOf(ymOf(day));
+  const to = at < 0 ? "" : months[at + (dir === "next" ? 1 : -1)];
+  return to ? calPick(days, to, today) : "";
+}
+// 「지난 날」을 더 불러와 새로 생긴 지난 날짜들 — before = 불러오기 전의 날짜 글자들 · after = 불러온 뒤의 days(그사이 저절로 생긴 앞날 자리는 세지 않는다)
+const olderFresh = (before, after, today) => { const had = new Set(before || []); return (after || []).filter((d) => d && d.date && !had.has(d.date) && (!today || d.date < today)); };
+// 달력에서 「◀ 지난 날」을 누른 뒤 고를 날 — 보던 달에 지난 날짜가 새로 생겼으면 그대로, 아니면 새로 생긴 앞 달의 마지막 날로 간다(새 날짜가 없으면 그대로).
+export function olderPick(before, after, day, today) {
+  const fresh = olderFresh(before, after, today);
+  if (!fresh.length || fresh.some((d) => ymOf(d.date) === ymOf(day))) return day;
+  return calStep(after, day, "prev", today) || day;
+}
+// 더 불러온 뒤의 한 줄 — 달력에서는 칸 하나가 더 생기는 것이라 눈에 잘 안 띈다. 새 날짜가 없으면 그렇다고 말한다(단추를 눌러도 아무 일이 없는 것처럼 보이지 않게).
+export function olderText(before, after, back, today) {
+  const n = olderFresh(before, after, today).length;
+  return n ? `지난 날짜 ${n}개를 더 불러왔어요` : `지난 ${Math.round((Number(back) || 0) / 7)}주 안에는 더 지난 날짜가 없어요`;
+}
+// 달력에서 날짜를 누른 뒤, 그날 판이 화면 아래에 가려 있으면 얼마나 굴릴까(px · 0 = 그대로).
+//   top = 그날 판의 위(화면 위에서부터) · viewH = 화면 높이 · keep = 적어도 이만큼은 보이게 · head = 머리줄 높이(판을 그 아래로는 올리지 않는다).
+//   PC 는 달력 옆에 그날 판이 있어 늘 0 이다.
+export function revealBy(top, viewH, { head = 56, keep = 220 } = {}) {
+  const t = Number(top), h = Number(viewH);
+  if (!(h > 0) || !Number.isFinite(t)) return 0;
+  const short = keep - (h - t);
+  return short <= 0 ? 0 : Math.max(0, Math.round(Math.min(short, t - head - 8)));
 }
 // 앱 알림(확정·전날·담당자가 바꾼 것)이 실제로 나가는가 — 2026-10-06 3단계(성경암송 api internalDutyNotify)를 운영에 올려 true 로 바꿨다.
 //   false 인 동안에는 「알림 꺼짐」 딱지를 그리지 않는다(딱지 없는 분께는 알림이 간다는 뜻으로 읽힌다 — 검토 반영 2026-10-06).
