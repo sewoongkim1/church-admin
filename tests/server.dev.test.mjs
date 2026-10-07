@@ -128,6 +128,20 @@ async function call(token, action, extra = {}) {
 
 // super 액션마다 「통과하면 아무것도 안 바뀌는」 입력 — 없는 사람(ZERO)을 가리킨다
 const PROBE = {
+  // 새가족(1단계 · 2026-10-07) — 읽기거나, 없는 줄(not-found)·틀린 입력(no-consent·no-name·bad-which)이라 아무것도 쓰지도 기록하지도 않는다
+  nfMe: {},
+  nfStaffList: {},
+  nfStaffApprove: { member_id: ZERO, kinds: ["greeter"] },         // 없는 분 → not-found
+  nfStaffSet: { member_id: ZERO, kinds: [] },
+  nfHelperSave: { name: "" },                                      // no-name
+  nfPeopleFind: { name: "" },                                      // no-name(찾기 전에 멈춘다 — 열람 기록 없음)
+  nfCardGet: { card_id: ZERO },
+  nfCardSave: {},                                                  // no-consent
+  nfPhotoPut: { card_id: ZERO, which: "x" },                       // bad-which
+  nfPhotoUrl: { card_id: ZERO, which: "card" },                    // 없는 카드 → not-found(기록 없음)
+  nfList: {},
+  nfPersonSet: { person_id: ZERO },
+  nfAssign: { person_id: ZERO },
   membersList: {},
   membersApprove: { member_id: ZERO, roles: ["ministry"] },
   membersSetRoles: { member_id: ZERO, roles: ["ministry"] },

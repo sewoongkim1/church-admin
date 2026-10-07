@@ -56,7 +56,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
     "ministryPerson", "ministryPhoneClear", "ministrySetStatus", "ministryStats"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
-  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "duty", "dutylead", "education", "educourse", "ministry", "super", "teacher"]);
+  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "duty", "dutylead", "education", "educourse", "ministry", "newfamily", "nfteam", "super", "teacher"]);
 });
 
 test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄만 통과, 사역 담당은 막힘", () => {
@@ -311,4 +311,24 @@ test("봉사 당번 — 그 밖의 액션(역할 배열)은 당번 총괄·당�
     assert.equal(canCall(a, { status: "active", roles: ["duty", "dutylead"] }), "forbidden", a);
   }
   assert.ok(knownRoles().includes("duty") && knownRoles().includes("dutylead"));
+});
+
+// 새가족(2026-10-07 · SQL 016) — 운영팀만 되는 일과, 운영팀·섬김 둘 다 부르는 일(하는 일·자기 줄은 nf-db.ts 가 본다)
+test("새가족 — 함께 쓰는 분·수료 대상 바꾸기는 운영팀만 · 나머지는 운영팀과 섬김 둘 다", () => {
+  const chiefOnly = ["nfStaffList", "nfStaffApprove", "nfStaffSet", "nfHelperSave", "nfPersonSet"];
+  const both = ["nfMe", "nfPeopleFind", "nfCardGet", "nfCardSave", "nfPhotoPut", "nfPhotoUrl", "nfList", "nfAssign"];
+  for (const a of chiefOnly) {
+    assert.equal(ACTION_ROLES[a], "newfamily", a);
+    assert.equal(canCall(a, { status: "active", roles: ["nfteam"] }), "forbidden", a);
+    assert.equal(canCall(a, { status: "active", roles: ["newfamily"] }), "ok", a);
+  }
+  for (const a of both) {
+    assert.deepEqual([...ACTION_ROLES[a]].sort(), ["newfamily", "nfteam"], a);
+    assert.equal(canCall(a, { status: "active", roles: ["nfteam"] }), "ok", a);
+    assert.equal(canCall(a, { status: "active", roles: ["ministry", "directory", "education", "duty"] }), "forbidden", a);
+    assert.equal(canCall(a, { status: "pending", roles: ["nfteam"] }), "pending", a);
+  }
+  // 새가족 액션은 이 둘에 모두 들어 있다 — 새 액션을 더하면 여기에도
+  const all = Object.keys(ACTION_ROLES).filter((a) => a.startsWith("nf"));
+  assert.deepEqual(all.sort(), [...chiefOnly, ...both].sort());
 });

@@ -73,6 +73,7 @@ import { makeHistory } from "./history-db.ts";
 import { buildStats as buildMinistryStats } from "./ministry-stats.ts";
 import { makeEdu } from "./edu-db.ts";
 import { makeDuty } from "./duty-db.ts";
+import { makeNf } from "./nf-db.ts";
 import { dutyNotifyOut } from "./duty-rules.ts";
 import { rosterIdent, rosterIdentity } from "./edu-rules.ts";
 // 「빠진 사역」 정정 신청을 「반영」하면 그 해 사역 이력에 한 줄(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
@@ -2097,6 +2098,8 @@ const edu = makeEdu(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b
 //   찾기 기록은 people.lookup from:"duty". 알림(dutyNotify · 3단계 2026-10-06)은 저장 뒤 성경암송 api internalDutyNotify 로 부탁한다.
 const duty = makeDuty(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "duty"), personPick: eduPersonPick, allRows,
   dutyNotify: notifyDuty });
+// 새가족(2026-10-07 · nf-db.ts) — 인도자·섬김이 고르기의 명부 찾기는 성경필사·교육과 같은 함수(교인ID 없음 · 기록 people.lookup from:"newfamily").
+const nf = makeNf(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "newfamily"), allRows });
 
 // ---------- 성경필사(암송) — 이름을 누르면 교적 창 (Task 16 · 2026-09-30) ----------
 // 설계 §0 「이름을 누르면 교적 창」·§2 evPerson·§3 · 친구 결정 §8-8. 고르는 규칙·응답 모양은 events-person.ts(순수 함수)에 있다.
@@ -2572,6 +2575,20 @@ Deno.serve(async (req) => {
       case "dutySignMove":        return json(await duty.dutySignMove(ctx, b));
       case "dutySignNote":        return json(await duty.dutySignNote(ctx, b));
       case "dutyAskClear":        return json(await duty.dutyAskClear(ctx, b));
+      // 새가족(1단계 · 2026-10-07 · nf-db.ts) — 하는 일(kind)·자기 줄 확인은 그쪽(viewOf)
+      case "nfMe":                return json(await nf.nfMe(ctx));
+      case "nfStaffList":         return json(await nf.nfStaffList(ctx));
+      case "nfStaffApprove":      return json(await nf.nfStaffApprove(ctx, b));
+      case "nfStaffSet":          return json(await nf.nfStaffSet(ctx, b));
+      case "nfHelperSave":        return json(await nf.nfHelperSave(ctx, b));
+      case "nfPeopleFind":        return json(await nf.nfPeopleFind(ctx, b));
+      case "nfCardGet":           return json(await nf.nfCardGet(ctx, b));
+      case "nfCardSave":          return json(await nf.nfCardSave(ctx, b));
+      case "nfPhotoPut":          return json(await nf.nfPhotoPut(ctx, b));
+      case "nfPhotoUrl":          return json(await nf.nfPhotoUrl(ctx, b));
+      case "nfList":              return json(await nf.nfList(ctx));
+      case "nfPersonSet":         return json(await nf.nfPersonSet(ctx, b));
+      case "nfAssign":            return json(await nf.nfAssign(ctx, b));
       case "dutyPeopleLookup":    return json(await duty.dutyPeopleLookup(ctx, b));
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));

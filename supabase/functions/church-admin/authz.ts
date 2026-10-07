@@ -13,6 +13,9 @@ const EDU_BOTH = ["education", "educourse"];
 const EDU_ATTEND = ["education", "educourse", "teacher"];
 // 봉사 당번(2026-10-06 · SQL 015) — 당번 총괄(duty)과 당번 담당(dutylead) 둘 다. 담당은 **맡은 당번만**이고 그것은 duty-db.ts 가 당번마다 본다(not-assigned).
 const DUTY_BOTH = ["duty", "dutylead"];
+// 새가족(2026-10-07 · SQL 016) — 새가족 운영팀(newfamily)과 새가족 섬김(nfteam · 영접팀·정착팀 총무·섬김이·목사님) 둘 다.
+//   섬김은 **하는 일(nf_staff.kind)과 자기 줄만**이고 그것은 nf-db.ts 가 액션마다 본다(not-assigned · 운영팀만 되는 일은 chief-only).
+const NF_BOTH = ["newfamily", "nfteam"];
 export const ACTION_ROLES: Record<string, string | string[] | null> = {
   me: null,
   register: null,
@@ -177,6 +180,22 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   dutySignMove: DUTY_BOTH,
   dutySignNote: DUTY_BOTH,
   dutyAskClear: DUTY_BOTH,
+  // 새가족 1단계(2026-10-07 · 설계 v2 성경암송 docs/superpowers/specs/2026-10-07-newfamily-design.md §5) — 카드·사진·명단·섬김이 배정.
+  //   함께 쓰는 분(nfStaff*·nfHelperSave)은 운영팀만 — nfStaffApprove 는 대기 중인 분을 승인하며 nfteam **하나만** 준다(친구 2026-10-07).
+  //   응답은 nf-rules.ts personOut 이 하는 일에 따라 칸을 고른다(섬김이에게는 주소·생일·가족·사진 없음) · 기록 nf.*(새가족 이름·전화 없음).
+  nfMe: NF_BOTH,
+  nfStaffList: "newfamily",
+  nfStaffApprove: "newfamily",
+  nfStaffSet: "newfamily",
+  nfHelperSave: "newfamily",
+  nfPeopleFind: NF_BOTH,
+  nfCardGet: NF_BOTH,
+  nfCardSave: NF_BOTH,
+  nfPhotoPut: NF_BOTH,
+  nfPhotoUrl: NF_BOTH,
+  nfList: NF_BOTH,
+  nfPersonSet: "newfamily",
+  nfAssign: NF_BOTH,
   // 대신 넣기의 명부 찾기 — 맡은 당번의 창에서만(board_id 필수 · 총괄도) · 기록 people.lookup from:"duty"
   dutyPeopleLookup: DUTY_BOTH,
 };
