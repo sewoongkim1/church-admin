@@ -53,7 +53,7 @@ async function call(token, action, extra = {}) {
 }
 const kst = (d = 0) => new Date(Date.now() + 9 * 3600000 + d * 86400000).toISOString().slice(0, 10);
 
-const made = { users: [], members: [], cards: [], helpers: [] };
+const made = { users: [], members: [], cards: [], helpers: [], ceremonies: [] };
 const chief = {}, G = {}, L = {}, H = {}, O = {};   // O = 다른 역할만 가진 분(교육 담당)
 const W = {};
 const seen = [];
@@ -82,6 +82,9 @@ async function sweep() {
     await rest(`nf_staff?member_id=in.(${ms})`, "DELETE");
   }
   await rest(`nf_helpers?id=in.(${[...made.helpers, ZERO].join(",")})`, "DELETE");
+  await rest(`nf_ceremonies?id=in.(${[...made.ceremonies, ZERO].join(",")})`, "DELETE");
+  // 확정 시험이 올린 그해 다음 번호를 되돌린다 — 그사이 다른 확정이 없었을 때만(값이 우리가 올린 그대로일 때)
+  if (W.restoreNo) await rest(`nf_settings?year=eq.${W.restoreNo.y}&next_no=eq.${W.restoreNo.before + 1}`, "PATCH", { next_no: W.restoreNo.before });
 }
 
 before(async () => {
@@ -381,6 +384,76 @@ test("2단계 — 교육 줄 네 번 → 목사님 교육 → 보고서 보내�
   for (const k of ["nf.lesson", "nf.class", "nf.report", "nf.parish"]) assert.ok(audit.includes(k), k);
   assert.equal(audit.includes(MEMO), false);
   assert.equal(audit.includes("한 줄만 더"), false);
+});
+
+test("3단계 — 등록식: 후보에서 담기 → 참석 표시 → 확정(수료번호) → 엑셀 · 지우기", async () => {
+  // 섬김(nfteam)은 등록식을 못 본다 — 문에서 막힌다
+  assert.equal((await call(H.token, "nfCeremonyList")).body.error, "forbidden");
+  assert.equal((await call(chief.token, "nfCeremonySave", { held_on: "2026-13-01" })).body.error, "bad-date");
+  let r = got(await call(chief.token, "nfCeremonySave", { held_on: kst(7), note: "시험 등록식" }));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  W.cer = r.body.id; made.ceremonies.push(W.cer);
+
+  r = got(await call(chief.token, "nfCeremonyList"));
+  assert.ok(r.body.candidates.some((p) => p.id === W.p1), "교구 배정이 끝난 분이 후보에");
+  assert.ok(!r.body.candidates.some((p) => p.id === W.p2));
+  const mine = r.body.ceremonies.find((c) => c.id === W.cer);
+  assert.equal(mine.confirmed, false);
+  assert.match(mine.nextNo, /^\d\d-\d{3,}$/);
+
+  // 담기 — 수료 대상이 아닌 분(교구 없음)은 건너뛴다
+  r = got(await call(chief.token, "nfCeremonyPeople", { ceremony_id: W.cer, add: [W.p1, W.p2] }));
+  assert.equal(r.body.added, 1);
+  assert.equal(r.body.skipped, 1);
+  // 못 오심으로 두면 확정할 분이 없다 → empty · 화면이 본 수와 다르면 changed
+  assert.equal((await call(chief.token, "nfCeremonyPeople", { ceremony_id: W.cer, attend: [{ id: W.p1, on: false }] })).body.ok, true);
+  assert.equal((await call(chief.token, "nfCeremonyConfirm", { ceremony_id: W.cer, expect: 1 })).body.error, "changed");
+  assert.equal((await call(chief.token, "nfCeremonyPeople", { ceremony_id: W.cer, attend: [{ id: W.p1, on: true }] })).body.ok, true);
+  // 빼면 다시 후보로
+  assert.equal((await call(chief.token, "nfCeremonyPeople", { ceremony_id: W.cer, remove: [W.p1] })).body.ok, true);
+  assert.ok((await call(chief.token, "nfCeremonyList")).body.candidates.some((p) => p.id === W.p1));
+  assert.equal((await call(chief.token, "nfCeremonyPeople", { ceremony_id: W.cer, add: [W.p1] })).body.added, 1);
+
+  // 확정 — 수료번호가 붙고, 그해 다음 번호가 하나 늘어난다
+  const y = Number(kst(7).slice(0, 4));
+  const before = (await rest(`nf_settings?select=next_no&year=eq.${y}`))[0]?.next_no ?? 1;
+  r = got(await call(chief.token, "nfCeremonyConfirm", { ceremony_id: W.cer, expect: 1 }));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.equal(r.body.count, 1);
+  const want = `${String(y % 100).padStart(2, "0")}-${String(before).padStart(3, "0")}`;
+  assert.equal(r.body.first, want);
+  assert.equal((await rest(`nf_settings?select=next_no&year=eq.${y}`))[0].next_no, before + 1);
+  W.restoreNo = { y, before };
+  const p = (await call(chief.token, "nfCardGet", { card_id: W.card })).body.people[0];
+  assert.equal(p.stage, "done");
+  assert.equal(p.certNo, want);
+  // 확정 뒤에는 아무것도 못 바꾼다
+  assert.equal((await call(chief.token, "nfCeremonyConfirm", { ceremony_id: W.cer, expect: 1 })).body.error, "already");
+  assert.equal((await call(chief.token, "nfCeremonyPeople", { ceremony_id: W.cer, remove: [W.p1] })).body.error, "confirmed");
+  assert.equal((await call(chief.token, "nfCeremonySave", { id: W.cer, delete: true })).body.error, "confirmed");
+  assert.equal((await call(chief.token, "nfParishSet", { person_id: W.p1, parish: p.parish })).body.error, "confirmed");
+  assert.equal((await call(chief.token, "nfPersonDelete", { person_id: W.p1, base: p.updatedAt })).body.error, "confirmed");
+
+  // 엑셀 — 머리줄 + 한 줄 · 수료번호가 들어 있다
+  r = await call(chief.token, "nfExport", { ceremony_id: W.cer });
+  assert.equal(r.body.table.length, 2);
+  assert.equal(r.body.table[0][1], "수료번호");
+  assert.equal(r.body.table[1][1], want);
+  assert.equal(r.body.table[1][10], p.parish);
+
+  // 지우기 — 수료 대상이 아닌 분(p2)은 지워진다 · 카드에는 p1 이 남아 카드는 그대로
+  const p2 = (await call(chief.token, "nfCardGet", { card_id: W.card })).body.people[1];
+  assert.equal((await call(L.token, "nfPersonDelete", { person_id: W.p2, base: p2.updatedAt })).body.error, "forbidden");
+  assert.equal((await call(chief.token, "nfPersonDelete", { person_id: W.p2, base: "x" })).body.error, "changed");
+  r = await call(chief.token, "nfPersonDelete", { person_id: W.p2, base: p2.updatedAt });
+  assert.equal(r.body.ok, true);
+  assert.equal(r.body.cardGone, false);
+  assert.equal((await call(chief.token, "nfCardGet", { card_id: W.card })).body.people.length, 1);
+  // 혼자인 카드(card2)의 한 분을 지우면 카드도 사라진다
+  const solo = (await call(chief.token, "nfCardGet", { card_id: W.card2 })).body.people[0];
+  r = await call(chief.token, "nfPersonDelete", { person_id: solo.id, base: solo.updatedAt });
+  assert.equal(r.body.cardGone, true);
+  assert.equal((await call(chief.token, "nfCardGet", { card_id: W.card2 })).body.error, "not-found");
 });
 
 test("하는 일을 빼면 — nfteam 역할과 줄만 빠지고, 그 뒤로는 아무것도 못 한다", async () => {

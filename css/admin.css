@@ -1886,6 +1886,16 @@ body.ec-cert-on{overflow:hidden}
 .nf-line-a .btn{min-height:var(--chip);font-size:13px}
 .nf-rec-a{flex-direction:column}
 .nf-rec-a .btn{flex:none;width:100%}
+/* 등록식 */
+.nf-cer > summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:var(--tap);cursor:pointer}
+.nf-cer-list{margin:8px 0 12px}
+.nf-cer-p{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--light)}
+.nf-cer-p:last-child{border-bottom:0}
+.nf-cer-p.off .nf-cer-n{opacity:.55}
+.nf-cer-n{flex:1;min-width:0}
+.nf-mini{flex:none;min-height:var(--chip);padding:0 12px;font-size:13px}
+.nf-mini.on{background:var(--navy);border-color:var(--navy);color:#fff;font-weight:700}
+.nf-cer-b{margin-top:8px}
 /* 사진·카드 보기 창 */
 .nf-photo-dlg{width:min(96vw,720px)}
 .nf-photo{display:block;max-width:100%;max-height:70vh;margin:0 auto;border-radius:8px}

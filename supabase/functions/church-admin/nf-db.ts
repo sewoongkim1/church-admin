@@ -8,7 +8,7 @@
 //    새가족 칸은 personOut 이 하는 일에 따라 고른다 — 여기서 줄을 통째로 돌려주지 않는다.
 // ⚠️ 기록(audit) detail 에 새가족의 이름·전화를 싣지 않는다(줄 id·수만). 담당자 이름은 다른 메뉴와 같이 실린다(nf.staff).
 // ⚠️ 승인(nfStaffApprove): 대기 중인 분을 active 로 만들며 **nfteam 하나만** 준다 — 역할 이름을 몸통에서 받지 않는다(친구 2026-10-07 판단 A).
-import { canAssign, canCardRead, canCardWrite, canLessonRead, canLessonWrite, canPastor, checkCard, checkKinds, checkLesson, classGate, dupKey, isDate,
+import { canAssign, canCardRead, canCardWrite, canLessonRead, canLessonWrite, canPastor, certNo, checkCard, checkKinds, checkLesson, classGate, dupKey, isDate, NF_LESSONS,
   kstDate, lessonGate, lessonKindFor, lessonOut, listScope, NF_BAD, NF_KINDS, parishGate, personOut, reportGate, stageOf, type NfView } from "./nf-rules.ts";
 import { norm } from "./authz.ts";
 
@@ -775,7 +775,205 @@ export function makeNf(db: Db, audit: Audit, deps: {
     return r;
   }
 
+
+  // ══════════ 3단계 — 등록식(§4) · 운영팀만 ══════════
+  // 명단은 운영팀이 만든다(저절로 채우지 않는다 — 교육이 끝나도 바로 등록식에 서지 않는 분이 있다). 후보 = 교구 배정까지 끝났고 아직 수료번호가 없는 분.
+  // 수료번호는 확정할 때 SQL 함수 nf_ceremony_confirm 이 매긴다(참석으로 표시한 분 · 이름순 · 2026년은 201부터).
+  const idList = (x: unknown): string[] | null => {
+    if (x === undefined || x === null) return [];
+    if (!Array.isArray(x) || x.length > 200) return null;
+    const out = x.map((v) => uuidOf(v));
+    return out.some((v) => !v) ? null : [...new Set(out)];
+  };
+  async function ceremonyRow(id: string): Promise<any | null> {
+    const { data, error } = await db.from("nf_ceremonies").select("id,held_on,note,confirmed_at,first_no,last_no").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  }
+
+  async function nfCeremonyList(ctx: any) {
+    if (!isChief(ctx)) return CHIEF_ONLY;
+    const [cs, people, names, settings] = await Promise.all([
+      deps.allRows(() => db.from("nf_ceremonies").select("id,held_on,note,confirmed_at,first_no,last_no").order("held_on", { ascending: false })),
+      deps.allRows(() => db.from("nf_people").select(PERSON_COLS).eq("target", true).not("report_sent_at", "is", null).order("name")),
+      helperNames(),
+      deps.allRows(() => db.from("nf_settings").select("year,next_no")),
+    ]);
+    const row = (p: any) => ({ id: String(p.id), name: p.name, gender: p.gender || "", parish: p.parish || "",
+      helperName: p.helper_id ? (names.get(String(p.helper_id)) ?? "") : "" });
+    const by = new Map<string, any[]>();
+    for (const p of people) if (p.ceremony_id) by.set(String(p.ceremony_id), [...(by.get(String(p.ceremony_id)) ?? []), p]);
+    const nextOf = new Map(settings.map((s: any) => [Number(s.year), Number(s.next_no)]));
+    return {
+      ok: true, today: today(),
+      ceremonies: cs.map((c: any) => {
+        const y = Number(String(c.held_on).slice(0, 4));
+        return {
+          id: String(c.id), heldOn: c.held_on, note: c.note || "", confirmed: !!c.confirmed_at,
+          first: c.first_no ? certNo(y, c.first_no) : "", last: c.last_no ? certNo(y, c.last_no) : "",
+          nextNo: c.confirmed_at ? "" : certNo(y, nextOf.get(y) ?? 1),   // 지금 확정하면 붙을 첫 번호
+          people: (by.get(String(c.id)) ?? []).map((p: any) => ({ ...row(p), attended: p.attended === true, certNo: p.cert_no || "" })),
+        };
+      }),
+      // 후보 — 교구 배정까지 끝났고 아직 어느 등록식에도 담기지 않은 분(기다린 날 수 = 교구를 정한 날부터)
+      candidates: people.filter((p: any) => stageOf(p, NF_LESSONS) === "registered" && !p.ceremony_id)
+        .map((p: any) => ({ ...row(p), parishAt: p.parish_at, waitNote: p.wait_note || "", updatedAt: p.updated_at })),
+      // 교구 배정을 기다리는 분 — 담을 수 없다(보이기만 · 등록식 전에 목사님께 여쭐 수 있게)
+      waiting: people.filter((p: any) => stageOf(p, NF_LESSONS) === "wait_parish").map(row),
+    };
+  }
+
+  // 등록식 만들기·날짜 고치기·지우기(확정 전까지). 지우면 담아 둔 분은 다시 후보로.
+  async function nfCeremonySave(ctx: any, b: any) {
+    if (!isChief(ctx)) return CHIEF_ONLY;
+    const raw = norm(b?.id);
+    const id = raw ? uuidOf(raw) : "";
+    if (raw && !id) return BAD_ID;
+    let cur: any = null;
+    if (id) {
+      cur = await ceremonyRow(id);
+      if (!cur) return NOT_FOUND;
+      if (cur.confirmed_at) return { ok: false, error: "confirmed" };
+    }
+    if (b?.delete === true) {
+      if (!id) return BAD_ID;
+      const { error: e1 } = await db.from("nf_people").update({ ceremony_id: null, attended: null }).eq("ceremony_id", id).is("cert_no", null);
+      if (e1) throw e1;
+      const { error: e2 } = await db.from("nf_ceremonies").delete().eq("id", id).is("confirmed_at", null);
+      if (e2) throw e2;
+      await audit(ctx, "nf.ceremony", id, { op: "delete" });
+      return { ok: true };
+    }
+    const on = norm(b?.held_on), note = norm(b?.note);
+    if (!isDate(on)) return { ok: false, error: "bad-date" };
+    if (note.length > 120) return { ok: false, error: "too-long" };
+    if (id) {
+      const { error } = await db.from("nf_ceremonies").update({ held_on: on, note }).eq("id", id).is("confirmed_at", null);
+      if (error) throw error;
+      await audit(ctx, "nf.ceremony", id, { op: "edit", on });
+      return { ok: true, id };
+    }
+    const { data, error } = await db.from("nf_ceremonies").insert({ held_on: on, note }).select("id").single();
+    if (error) throw error;
+    await audit(ctx, "nf.ceremony", String(data.id), { op: "new", on });
+    return { ok: true, id: String(data.id) };
+  }
+
+  // 명단에 담기(add) · 빼기(remove) · 참석 표시(attend: [{id, on}]) — 확정 전까지.
+  //   담을 수 있는 분은 교구 배정까지 끝났고 멈추지 않았고 수료번호가 없고 다른 등록식에 담기지 않은 분뿐(아니면 조용히 건너뛰고 skipped 로 알린다).
+  async function nfCeremonyPeople(ctx: any, b: any) {
+    if (!isChief(ctx)) return CHIEF_ONLY;
+    const id = uuidOf(b?.ceremony_id);
+    if (!id) return BAD_ID;
+    const add = idList(b?.add), remove = idList(b?.remove);
+    const att = Array.isArray(b?.attend) && b.attend.length <= 200 ? b.attend : b?.attend === undefined ? [] : null;
+    if (!add || !remove || !att) return BAD_ID;
+    for (const a of att) if (!uuidOf(a?.id) || typeof a?.on !== "boolean") return BAD_ID;
+    const c = await ceremonyRow(id);
+    if (!c) return NOT_FOUND;
+    if (c.confirmed_at) return { ok: false, error: "confirmed" };
+    const stamp = nowIso();
+    let added = 0;
+    if (add.length) {
+      const { data, error } = await db.from("nf_people").update({ ceremony_id: id, attended: true, updated_at: stamp })
+        .in("id", add).is("ceremony_id", null).is("cert_no", null).is("stopped_at", null).eq("target", true).neq("parish", "").select("id");
+      if (error) throw error;
+      added = (data ?? []).length;
+    }
+    if (remove.length) {
+      const { error } = await db.from("nf_people").update({ ceremony_id: null, attended: null, updated_at: stamp }).in("id", remove).eq("ceremony_id", id).is("cert_no", null);
+      if (error) throw error;
+    }
+    for (const on of [true, false]) {
+      const ids = att.filter((a: any) => a.on === on).map((a: any) => uuidOf(a.id));
+      if (!ids.length) continue;
+      const { error } = await db.from("nf_people").update({ attended: on, updated_at: stamp }).in("id", ids).eq("ceremony_id", id).is("cert_no", null);
+      if (error) throw error;
+    }
+    await audit(ctx, "nf.ceremony", id, { op: "people", added, removed: remove.length, attend: att.length });
+    return { ok: true, added, skipped: add.length - added };
+  }
+
+  // 확정 — 참석으로 표시한 분에게 수료번호를 매긴다(되돌릴 수 없다). 화면이 본 참석 수(expect)가 지금과 다르면 changed.
+  async function nfCeremonyConfirm(ctx: any, b: any) {
+    if (!isChief(ctx)) return CHIEF_ONLY;
+    const id = uuidOf(b?.ceremony_id);
+    if (!id) return BAD_ID;
+    if (typeof b?.expect !== "number" || !Number.isSafeInteger(b.expect) || b.expect < 1) return { ok: false, error: "bad-input" };
+    const c = await ceremonyRow(id);
+    if (!c) return NOT_FOUND;
+    const { count, error: e0 } = await db.from("nf_people").select("id", { count: "exact", head: true }).eq("ceremony_id", id).eq("attended", true);
+    if (e0) throw e0;
+    if ((count ?? 0) !== b.expect) return { ok: false, error: "changed" };
+    const { data, error } = await db.rpc("nf_ceremony_confirm", { p_ceremony: id });
+    if (error) throw error;
+    if (!data?.ok) return { ok: false, error: String(data?.error || "server") };
+    await audit(ctx, "nf.ceremony", id, { op: "confirm", count: data.count, first: data.first, last: data.last });
+    return { ok: true, count: Number(data.count), first: String(data.first), last: String(data.last) };
+  }
+
+  // 등록식 명단 내려받기(엑셀 한 장) — 지금 쓰시는 「당월등록식명단」 시트의 칸 차례. 열람 기록 nf.export(수만).
+  async function nfExport(ctx: any, b: any) {
+    if (!isChief(ctx)) return CHIEF_ONLY;
+    const id = uuidOf(b?.ceremony_id);
+    if (!id) return BAD_ID;
+    const c = await ceremonyRow(id);
+    if (!c) return NOT_FOUND;
+    const [people, names] = await Promise.all([
+      deps.allRows(() => db.from("nf_people").select(PERSON_COLS).eq("ceremony_id", id).order("cert_no", { nullsFirst: false }).order("name")),
+      helperNames(),
+    ]);
+    const cardIds = [...new Set(people.map((p: any) => String(p.card_id)))];
+    const cards = new Map<string, any>(), guides = new Map<string, any[]>();
+    if (cardIds.length) {
+      const [cs, gs] = await Promise.all([
+        deps.allRows(() => db.from("nf_cards").select("id,reg_date,self_come").in("id", cardIds)),
+        deps.allRows(() => db.from("nf_guides").select("card_id,seq,name,mok").in("card_id", cardIds).order("seq")),
+      ]);
+      for (const x of cs) cards.set(String(x.id), x);
+      for (const g of gs) guides.set(String(g.card_id), [...(guides.get(String(g.card_id)) ?? []), g]);
+    }
+    const BAP: Record<string, string> = { yes: "O", no: "X", unknown: "" };
+    const table: unknown[][] = [["No", "수료번호", "성명", "성별", "생일", "연락처", "인도자", "등록일", "섬김이", "전도 교구", "편성 교구", "참석", "세례"]];
+    people.forEach((p: any, i: number) => {
+      const card = cards.get(String(p.card_id)), gs = guides.get(String(p.card_id)) ?? [];
+      table.push([i + 1, p.cert_no || "", p.name, p.gender || "", p.birth ? p.birth + (p.birth_lunar ? " (음)" : "") : "", p.phone || "",
+        card?.self_come ? "스스로" : gs.map((g: any) => g.name).join(", "), card?.reg_date || "", p.helper_id ? (names.get(String(p.helper_id)) ?? "") : "",
+        card?.self_come ? "스스로" : gs.map((g: any) => g.mok).filter(Boolean).join(", "), p.parish || "",
+        p.cert_no ? "O" : p.attended === true ? "O" : p.attended === false ? "X" : "", BAP[p.baptized] ?? ""]);
+    });
+    await audit(ctx, "nf.export", id, { count: people.length });
+    return { ok: true, heldOn: c.held_on, confirmed: !!c.confirmed_at, table };
+  }
+
+  // 한 분 지우기 — 본인이 지워 달라고 하셨을 때(§7). 교육 줄은 함께 지워진다. 카드에 아무도 남지 않으면 카드와 사진도 지운다.
+  //   수료번호를 드린 분은 지우지 않는다(confirmed — 번호가 비면 안 된다). 화면이 본 때(base)가 다르면 changed.
+  async function nfPersonDelete(ctx: any, b: any) {
+    if (!isChief(ctx)) return CHIEF_ONLY;
+    const id = uuidOf(b?.person_id);
+    if (!id) return BAD_ID;
+    const p = await personRow(id);
+    if (!p) return NOT_FOUND;
+    if (!sameTime(b?.base, p.updated_at)) return { ok: false, error: "changed" };
+    if (p.cert_no) return { ok: false, error: "confirmed" };
+    const { data, error } = await db.from("nf_people").delete().eq("id", id).eq("updated_at", p.updated_at).select("id");
+    if (error) throw error;
+    if (!data?.length) return { ok: false, error: "changed" };
+    const { count, error: e1 } = await db.from("nf_people").select("id", { count: "exact", head: true }).eq("card_id", p.card_id);
+    if (e1) throw e1;
+    let cardGone = false;
+    if (!count) {
+      await db.storage.from(NF_BUCKET).remove([`cards/${p.card_id}/card.jpg`, `cards/${p.card_id}/welcome.jpg`]);
+      const { error: e2 } = await db.from("nf_cards").delete().eq("id", p.card_id);
+      if (e2) throw e2;
+      cardGone = true;
+    }
+    await audit(ctx, "nf.person", id, { op: "delete", cardGone });
+    return { ok: true, cardGone };
+  }
+
   return { viewOf, nfMe, nfStaffList, nfStaffApprove, nfStaffSet, nfHelperSave, nfPeopleFind,
     nfCardGet, nfCardSave, nfPhotoPut, nfPhotoUrl, nfList, nfPersonSet, nfAssign,
-    nfLessons, nfLessonSave, nfLessonDelete, nfPastorClass, nfReportSend, nfReportReturn, nfParishList, nfParishSet };
+    nfLessons, nfLessonSave, nfLessonDelete, nfPastorClass, nfReportSend, nfReportReturn, nfParishList, nfParishSet,
+    nfCeremonyList, nfCeremonySave, nfCeremonyPeople, nfCeremonyConfirm, nfExport, nfPersonDelete };
 }

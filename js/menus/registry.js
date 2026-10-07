@@ -57,6 +57,8 @@ export const MENUS = [
     roles: ["newfamily", "nfteam"], load: () => import("./newfamily/cards.js") },
   { id: "nf-board", group: "새가족", icon: "👣", label: "새가족 현황", desc: "한 분마다 지금 몇째 걸음인지 · 섬김이 배정 · 교육 기록 · 목사님 교육 · 교구 배정",
     roles: ["newfamily", "nfteam"], load: () => import("./newfamily/board.js") },
+  { id: "nf-ceremony", group: "새가족", icon: "🎉", label: "등록식", desc: "후보에서 골라 명단 만들기 · 확정하면 수료번호 · 엑셀",
+    role: "newfamily", load: () => import("./newfamily/ceremony.js") },
   { id: "nf-staff", group: "새가족", icon: "🧑‍🤝‍🧑", label: "함께 쓰는 분", desc: "영접팀 · 정착팀 총무 · 섬김이 · 새가족 목사님 넣기·빼기",
     role: "newfamily", load: () => import("./newfamily/staff.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",

@@ -315,7 +315,8 @@ test("봉사 당번 — 그 밖의 액션(역할 배열)은 당번 총괄·당�
 
 // 새가족(2026-10-07 · SQL 016) — 운영팀만 되는 일과, 운영팀·섬김 둘 다 부르는 일(하는 일·자기 줄은 nf-db.ts 가 본다)
 test("새가족 — 함께 쓰는 분·수료 대상 바꾸기는 운영팀만 · 나머지는 운영팀과 섬김 둘 다", () => {
-  const chiefOnly = ["nfStaffList", "nfStaffApprove", "nfStaffSet", "nfHelperSave", "nfPersonSet"];
+  const chiefOnly = ["nfStaffList", "nfStaffApprove", "nfStaffSet", "nfHelperSave", "nfPersonSet",
+    "nfCeremonyList", "nfCeremonySave", "nfCeremonyPeople", "nfCeremonyConfirm", "nfExport", "nfPersonDelete"];
   const both = ["nfMe", "nfPeopleFind", "nfCardGet", "nfCardSave", "nfPhotoPut", "nfPhotoUrl", "nfList", "nfAssign",
     "nfLessons", "nfLessonSave", "nfLessonDelete", "nfPastorClass", "nfReportSend", "nfReportReturn", "nfParishList", "nfParishSet"];
   for (const a of chiefOnly) {

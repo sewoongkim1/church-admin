@@ -114,10 +114,18 @@ export async function render(el, { call }) {
         if (p.stage === "stopped") opts.push({ value: "resume", label: "멈춤 풀기", hint: "다시 오셨어요" });
         else if (p.target) opts.push({ value: "stop", label: "멈춤으로 두기", hint: "이사 · 연락 안 됨 · 다른 교회 등" });
         opts.push(p.target ? { value: "untarget", label: "수료 대상 아님으로", hint: "정보만 남겨요" } : { value: "target", label: "수료 대상으로", hint: "교육을 받고 등록식에 서실 분" });
+        opts.push({ value: "delete", label: "이분의 기록 지우기", hint: "본인이 지워 달라고 하셨을 때" });
         const pick = await pickOne({ anchor: b, title: p.name + " 님", options: opts, value: "", wrap: true });
         if (!pick) return;
         const send = async (body) => call("nfPersonSet", { person_id: id, base: p.updatedAt, ...body });
         let r = null;
+        if (pick === "delete") {
+          if (!(await dialog({ title: `${p.name} 님의 기록을 지울까요?`, text: "카드에 적은 것과 교육 기록이 모두 지워지고 되돌릴 수 없어요. 카드에 이분만 계시면 카드와 사진도 함께 지워져요.", ok: "지우기", danger: true }))) return;
+          r = await call("nfPersonDelete", { person_id: id, base: p.updatedAt });
+          done = true;
+          toast(r.ok ? "지웠어요" : failText(r));
+          return;
+        }
         if (pick === "resume") r = await send({ stopped: false });
         else if (pick === "target") r = await send({ target: true });
         else if (pick === "untarget") {

@@ -206,6 +206,13 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   nfReportReturn: NF_BOTH,
   nfParishList: NF_BOTH,
   nfParishSet: NF_BOTH,
+  // 새가족 3단계(2026-10-07 · 설계 §4) — 등록식 명단·확정(수료번호는 SQL nf_ceremony_confirm 한 곳)·엑셀 · 한 분 지우기. 운영팀만.
+  nfCeremonyList: "newfamily",
+  nfCeremonySave: "newfamily",
+  nfCeremonyPeople: "newfamily",
+  nfCeremonyConfirm: "newfamily",
+  nfExport: "newfamily",
+  nfPersonDelete: "newfamily",
   // 대신 넣기의 명부 찾기 — 맡은 당번의 창에서만(board_id 필수 · 총괄도) · 기록 people.lookup from:"duty"
   dutyPeopleLookup: DUTY_BOTH,
 };

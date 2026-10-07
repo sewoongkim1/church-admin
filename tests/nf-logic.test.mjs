@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { birthIn, birthText, cardToForm, formToCard, blankPerson, personLine, guideLine, stageText, groupByStage, groupByCard,
-  helperOptions, foundMok, foundOptions, shrinkSize, nfWord, KIND_OPTIONS, KIND_LABEL, STAGE_ORDER, STAGE_HINT, lessonTitle, recordHint }
+  helperOptions, foundMok, foundOptions, shrinkSize, nfWord, KIND_OPTIONS, KIND_LABEL, STAGE_ORDER, STAGE_HINT, lessonTitle, recordHint, waitDays, candOptions, exportName, confirmText }
   from "../js/menus/newfamily/nf-logic.js";
 import { NF_KINDS, NF_STAGES, NF_SERVICES, NF_LESSONS } from "../supabase/functions/church-admin/nf-rules.ts";
 import { SERVICES, LESSONS } from "../js/menus/newfamily/nf-logic.js";
@@ -151,4 +151,19 @@ test("recordHint — 누가 무엇을 할 차례인지", () => {
 
 test("서버가 돌려주는 2단계 오류마다 한국말이 있다", () => {
   for (const c of ["same-day", "no-helper", "class-done", "not-ready", "no-note", "has-parish", "bad-parish", "sent", "stopped", "not-target"]) assert.ok(nfWord(c), c);
+});
+
+test("등록식 — 기다린 날 수 · 후보 줄 · 파일 이름 · 확정 글", () => {
+  assert.equal(waitDays("2026-10-01T03:00:00Z", "2026-10-11"), "교구 배정 뒤 10일");
+  assert.equal(waitDays("2026-10-10T16:00:00Z", "2026-10-11"), "오늘 교구 배정");   // 한국 날짜로는 11일
+  assert.equal(waitDays(null, "2026-10-11"), "");
+  assert.deepEqual(candOptions([{ id: "a", name: "김하늘", parish: "믿음-35", helperName: "이섬김", waitNote: "출장" }, { id: "b", name: "박바다", parish: "소망-07", helperName: "" }]),
+    [{ value: "a", label: "김하늘 · 믿음-35 · 섬김이 이섬김", hint: "사정 있음" }, { value: "b", label: "박바다 · 소망-07", hint: "" }]);
+  assert.equal(exportName("2026-10-25"), "새가족_등록식_명단_20261025.xlsx");
+  const t = confirmText({ count: 3, away: 1, nextNo: "26-201" });
+  assert.equal(t.length, 3);
+  assert.match(t[0], /3분.*26-201/);
+  assert.match(t[1], /못 오심.*1분/);
+  assert.equal(confirmText({ count: 2, away: 0, nextNo: "27-001" }).length, 2);
+  for (const c of ["already", "empty", "confirmed", "changed"]) assert.ok(nfWord(c), c);
 });

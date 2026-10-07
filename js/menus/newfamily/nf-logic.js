@@ -53,6 +53,9 @@ const WORDS = {
   "has-lessons": "교육 기록이 있는 분이에요",
   confirmed: "수료번호를 드린 분은 바꿀 수 없어요",
   "bad-id": "잘못된 요청이에요 — 새로 불러와 주세요",
+  already: "이미 확정한 등록식이에요 — 새로 불러와 주세요",
+  empty: "참석으로 표시한 분이 없어요",
+  "bad-input": "잘못된 요청이에요 — 새로 불러와 주세요",
   "same-day": "그날은 이미 적었어요 — 한 날에 교육은 한 번이에요",
   "no-helper": "섬김이가 아직 정해지지 않았어요",
   "class-done": "목사님 교육을 마친 뒤에는 줄을 지울 수 없어요 (고치기는 돼요)",
@@ -196,4 +199,24 @@ export function recordHint(r) {
   if (p.stage === "wait_parish") return r.canPastor ? "보고서가 왔어요 — 읽어 보시고 교구를 정해 주세요" : "목사님께 보냈어요 — 줄은 이제 고칠 수 없어요";
   if (p.stage === "registered") return "교구 배정까지 끝났어요 — 등록식을 기다려요";
   return "";
+}
+
+// ── 등록식 ───────────────────────────────────────────────────────────────
+// 「교구 배정 뒤 12일째」 — 후보가 얼마나 기다리셨는지(교구를 정한 날부터 · 한국 날짜)
+export function waitDays(parishAt, today) {
+  if (!parishAt || !today) return "";
+  const from = new Date(new Date(parishAt).getTime() + 9 * 3600000).toISOString().slice(0, 10);
+  const n = Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 86400000);
+  return n <= 0 ? "오늘 교구 배정" : `교구 배정 뒤 ${n}일`;
+}
+// 후보 고르기 줄 — 「김하늘 · 믿음-35 · 섬김이 이섬김」 · 사정을 적어 둔 분은 오른쪽에
+export const candOptions = (cands) => (cands || []).map((p) => ({ value: p.id,
+  label: [p.name, p.parish, p.helperName ? "섬김이 " + p.helperName : ""].filter(Boolean).join(" · "), hint: p.waitNote ? "사정 있음" : "" }));
+export const exportName = (heldOn) => `새가족_등록식_명단_${String(heldOn || "").replace(/-/g, "")}.xlsx`;
+// 확정 확인 창의 글 — 몇 분께 몇 번부터 · 못 오시는 분은 후보로 · 되돌릴 수 없음
+export function confirmText({ count, away, nextNo }) {
+  const out = [`참석으로 표시한 ${count}분께 수료번호를 ${nextNo}번부터 이름순으로 드려요.`];
+  if (away > 0) out.push(`「못 오심」 ${away}분은 번호 없이 후보로 돌아가요.`);
+  out.push("확정한 뒤에는 되돌릴 수 없어요 — 번호를 이미 드린 것이 되기 때문이에요.");
+  return out;
 }

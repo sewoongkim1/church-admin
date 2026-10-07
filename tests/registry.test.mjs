@@ -104,9 +104,9 @@ test("봉사 당번 묶음 — 당번 관리(당번 총괄만) 다음에 당번 
 // 🌱 새가족(2026-10-07 · 1단계)
 test("새가족 — 카드·현황은 운영팀과 섬김 둘 다 · 함께 쓰는 분은 운영팀만", () => {
   const nf = MENUS.filter((m) => m.group === "새가족");
-  assert.deepEqual(nf.map((m) => m.id), ["nf-card", "nf-board", "nf-staff"]);
+  assert.deepEqual(nf.map((m) => m.id), ["nf-card", "nf-board", "nf-ceremony", "nf-staff"]);
   assert.deepEqual(menusFor(["nfteam"]).map((m) => m.id), ["nf-card", "nf-board"]);
-  assert.deepEqual(menusFor(["newfamily"]).map((m) => m.id), ["nf-card", "nf-board", "nf-staff"]);
+  assert.deepEqual(menusFor(["newfamily"]).map((m) => m.id), ["nf-card", "nf-board", "nf-ceremony", "nf-staff"]);
   for (const r of ["ministry", "directory", "bibleevent", "education", "educourse", "teacher", "duty", "dutylead"]) {
     assert.deepEqual(menusFor([r]).filter((m) => m.group === "새가족"), [], r);
   }

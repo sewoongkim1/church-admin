@@ -151,6 +151,13 @@ const PROBE = {
   nfReportReturn: { person_id: ZERO, note: "x" },
   nfParishList: {},
   nfParishSet: { person_id: ZERO, parish: "x" },                   // bad-parish
+  // 새가족(3단계) — 읽기거나, 없는 등록식·없는 분(not-found)·틀린 입력이라 아무것도 쓰지도 기록하지도 않는다
+  nfCeremonyList: {},
+  nfCeremonySave: { held_on: "x" },                                // bad-date
+  nfCeremonyPeople: { ceremony_id: ZERO },
+  nfCeremonyConfirm: { ceremony_id: ZERO, expect: 1 },
+  nfExport: { ceremony_id: ZERO },
+  nfPersonDelete: { person_id: ZERO },
   membersList: {},
   membersApprove: { member_id: ZERO, roles: ["ministry"] },
   membersSetRoles: { member_id: ZERO, roles: ["ministry"] },
