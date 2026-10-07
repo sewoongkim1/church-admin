@@ -1873,6 +1873,19 @@ body.ec-cert-on{overflow:hidden}
 .nf-guide-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
 .nf-find{min-height:var(--chip);font-size:13px}
 .be-body textarea[data-f="note"]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font:inherit}
+/* 교육 기록(= 섬김이 보고서) 창 */
+.nf-ta{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font:inherit;line-height:1.55}
+.nf-rec-h{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 6px}
+.nf-return{background:var(--cream);color:var(--navy-dark)}
+.nf-lines{margin:10px 0}
+.nf-line{margin-bottom:8px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--paper)}
+.nf-line-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin-bottom:4px}
+.nf-line-c{margin:0;white-space:pre-wrap;line-height:1.6;word-break:break-word}
+.nf-line-n{margin:4px 0 0;color:var(--ink-2);font-size:14px}
+.nf-line-a{margin-top:8px}
+.nf-line-a .btn{min-height:var(--chip);font-size:13px}
+.nf-rec-a{flex-direction:column}
+.nf-rec-a .btn{flex:none;width:100%}
 /* 사진·카드 보기 창 */
 .nf-photo-dlg{width:min(96vw,720px)}
 .nf-photo{display:block;max-width:100%;max-height:70vh;margin:0 auto;border-radius:8px}

@@ -8,8 +8,8 @@
 //    새가족 칸은 personOut 이 하는 일에 따라 고른다 — 여기서 줄을 통째로 돌려주지 않는다.
 // ⚠️ 기록(audit) detail 에 새가족의 이름·전화를 싣지 않는다(줄 id·수만). 담당자 이름은 다른 메뉴와 같이 실린다(nf.staff).
 // ⚠️ 승인(nfStaffApprove): 대기 중인 분을 active 로 만들며 **nfteam 하나만** 준다 — 역할 이름을 몸통에서 받지 않는다(친구 2026-10-07 판단 A).
-import { canAssign, canCardRead, canCardWrite, checkCard, checkKinds, dupKey, kstDate, listScope, NF_BAD, NF_KINDS, personOut, stageOf,
-  type NfView } from "./nf-rules.ts";
+import { canAssign, canCardRead, canCardWrite, canLessonRead, canLessonWrite, canPastor, checkCard, checkKinds, checkLesson, classGate, dupKey, isDate,
+  kstDate, lessonGate, lessonKindFor, lessonOut, listScope, NF_BAD, NF_KINDS, parishGate, personOut, reportGate, stageOf, type NfView } from "./nf-rules.ts";
 import { norm } from "./authz.ts";
 
 type Db = any;
@@ -28,6 +28,8 @@ const HELPER_COLS = "id,name,services,member_id,resting";
 export const NF_BUCKET = "newfamily";
 export const NF_PHOTO_MAX = 1500000;   // 1.5MB — 화면이 긴 변 1600px JPEG 로 줄여 보낸다
 export const NF_PHOTO_TTL = 300;       // 서명 주소 5분
+// 편성 교구 글자 — 「교구-목장」(예: 믿음-35 · 소망-남성1)
+const PARISH_RE = /^[가-힣]{1,6}-[0-9가-힣]{1,8}$/;
 const PHOTO_COL: Record<string, string> = { card: "card_photo", welcome: "welcome_photo" };
 
 // deps — peopleLookup: 교인명부에서 이름으로 찾기(후보 모양 · 교인ID 없음 · 기록 people.lookup from:"newfamily")
@@ -453,7 +455,7 @@ export function makeNf(db: Db, audit: Audit, deps: {
   async function nfList(ctx: any) {
     const v = await viewOf(ctx);
     const scope = listScope(v);
-    if (scope === "none") return { ok: true, scope, today: today(), people: [], helpers: [], cards: [], canWrite: false, canAssign: false, chief: false };
+    if (scope === "none") return { ok: true, scope, today: today(), people: [], helpers: [], cards: [], canWrite: false, canAssign: false, chief: false, canPastor: false, myHelperId: null };
     const people = scope === "mine"
       ? await deps.allRows(() => db.from("nf_people").select(PERSON_COLS).eq("helper_id", v.helperId).order("created_at", { ascending: false }))
       : await deps.allRows(() => db.from("nf_people").select(PERSON_COLS).order("created_at", { ascending: false }));
@@ -488,7 +490,8 @@ export function makeNf(db: Db, audit: Audit, deps: {
       id: String(c.id), regDate: c.reg_date, service: c.service || "", draft: c.draft === true,
       hasCardPhoto: !!c.card_photo, hasWelcomePhoto: !!c.welcome_photo,
     })) : [];
-    return { ok: true, scope, today: t, people: out, helpers, cards: cardList, canWrite: canCardWrite(v), canAssign: canAssign(v), chief: v.chief };
+    return { ok: true, scope, today: t, people: out, helpers, cards: cardList, canWrite: canCardWrite(v), canAssign: canAssign(v), chief: v.chief,
+      canPastor: canPastor(v), myHelperId: v.helperId };
   }
 
   // 한 분 줄 읽기(쓰기 액션이 먼저 부른다)
@@ -574,6 +577,205 @@ export function makeNf(db: Db, audit: Audit, deps: {
     return { ok: true, updatedAt: stamp };
   }
 
+
+  // ══════════ 2단계 — 교육 줄 · 목사님 교육 · 보고서 · 교구 배정(§3) ══════════
+  // 교육 줄 = 섬김이 보고서의 한 줄(일자 · 내용 · 비고). 따로 쓰는 보고서는 없다 — 네 줄이 차고 목사님 교육을 마치면 「목사님께 보내기」.
+  const LESSON_COLS = "id,person_id,kind,met_on,content,note,written_by,updated_at";
+  async function lessonRows(id: string): Promise<any[]> {
+    const { data, error } = await db.from("nf_lessons").select(LESSON_COLS).eq("person_id", id).order("met_on").order("created_at");
+    if (error) throw error;
+    return data ?? [];
+  }
+  // 한 분의 줄(이름표용) — 카드 두 칸과 인도자
+  async function personExtra(p: any, lessons: any[], names: Map<string, string>) {
+    const [{ data: c, error: e1 }, { data: gs, error: e2 }] = await Promise.all([
+      db.from("nf_cards").select("id,reg_date,service,address").eq("id", p.card_id).maybeSingle(),
+      db.from("nf_guides").select("seq,name,mok").eq("card_id", p.card_id).order("seq"),
+    ]);
+    if (e1) throw e1;
+    if (e2) throw e2;
+    const ls = lessons.filter((l) => l.kind === "lesson");
+    return { lessons: ls.length, lastOn: ls.length ? ls[ls.length - 1].met_on : null,
+      helperName: p.helper_id ? (names.get(String(p.helper_id)) ?? "") : "", guides: gs ?? [], card: c };
+  }
+
+  // 한 분의 교육 기록(= 보고서) 읽기. 내용은 운영팀·목사님·그분의 섬김이에게만 — 영접팀·총무는 not-assigned(몇 번째인지는 명단에 있다).
+  async function nfLessons(ctx: any, b: any) {
+    const v = await viewOf(ctx);
+    const id = uuidOf(b?.person_id);
+    if (!id) return BAD_ID;
+    const p = await personRow(id);
+    if (!p) return NOT_FOUND;
+    if (!canLessonRead(v, p)) return NOT_ASSIGNED;
+    const [rows, names] = await Promise.all([lessonRows(id), helperNames()]);
+    const extra = await personExtra(p, rows, names);
+    const mine = canLessonWrite(v, p);
+    if (!mine || v.chief) await audit(ctx, "nf.view", id, { what: "report", lines: rows.length });   // 섬김이 본인이 제 줄을 여는 것은 남기지 않는다
+    return {
+      ok: true, person: personOut(p, v, extra, today()),
+      lessons: rows.map((l: any) => lessonOut(l, l.written_by ? (names.get(String(l.written_by)) ?? "") : "")),
+      reportReturn: p.report_return || "", sent: !!p.report_sent_at, classOn: p.pastor_class_on || null, parish: p.parish || "",
+      canWrite: mine && !lessonGate(p) && !p.stopped_at, canSend: mine && !reportGate(p) && !p.stopped_at, canPastor: canPastor(v),
+    };
+  }
+
+  // 줄 넣기·고치기 — 그분의 섬김이(또는 운영팀)만. 네 번까지는 교육(lesson), 그 뒤는 덧붙인 줄(extra).
+  //   같은 날 교육 두 번은 same-day · 보고서를 보낸 뒤에는 sent · 섬김이가 없으면 no-helper.
+  async function nfLessonSave(ctx: any, b: any) {
+    const v = await viewOf(ctx);
+    const id = uuidOf(b?.person_id);
+    if (!id) return BAD_ID;
+    const p = await personRow(id);
+    if (!p) return NOT_FOUND;
+    if (!canLessonWrite(v, p)) return NOT_ASSIGNED;
+    const gate = lessonGate(p);
+    if (gate) return { ok: false, error: gate };
+    if (p.stopped_at) return { ok: false, error: "stopped" };
+    const chk = checkLesson(b, today());
+    if (!chk.ok) return chk;
+    const raw = norm(b?.id);
+    const lid = raw ? uuidOf(raw) : "";
+    if (raw && !lid) return BAD_ID;
+    const stamp = nowIso();
+    const dupDay = (e: any) => String(e?.code) === "23505";
+    if (lid) {
+      const { data, error } = await db.from("nf_lessons").update({ ...chk.row, updated_at: stamp }).eq("id", lid).eq("person_id", id).select("id");
+      if (error) { if (dupDay(error)) return { ok: false, error: "same-day" }; throw error; }
+      if (!data?.length) return NOT_FOUND;
+      await audit(ctx, "nf.lesson", id, { op: "edit", on: chk.row.met_on });
+      return { ok: true, id: lid };
+    }
+    const kind = lessonKindFor(await lessonCount(id));
+    // 쓴 분 — 섬김이 본인이면 그분, 운영팀이 대신 적으면 그분의 섬김이
+    const writer = v.helperId && String(p.helper_id) === v.helperId ? v.helperId : String(p.helper_id);
+    const { data, error } = await db.from("nf_lessons").insert({ person_id: id, kind, ...chk.row, written_by: writer, updated_at: stamp }).select("id").single();
+    if (error) { if (dupDay(error)) return { ok: false, error: "same-day" }; throw error; }
+    await audit(ctx, "nf.lesson", id, { op: "new", kind, on: chk.row.met_on });
+    return { ok: true, id: String(data.id), kind };
+  }
+
+  async function nfLessonDelete(ctx: any, b: any) {
+    const v = await viewOf(ctx);
+    const id = uuidOf(b?.person_id), lid = uuidOf(b?.id);
+    if (!id || !lid) return BAD_ID;
+    const p = await personRow(id);
+    if (!p) return NOT_FOUND;
+    if (!canLessonWrite(v, p)) return NOT_ASSIGNED;
+    const gate = lessonGate(p);
+    if (gate) return { ok: false, error: gate };
+    if (p.pastor_class_on) return { ok: false, error: "class-done" };   // 목사님 교육을 마친 뒤에는 줄을 지워 네 번 아래로 내리지 못한다(고치기는 된다)
+    const { data, error } = await db.from("nf_lessons").delete().eq("id", lid).eq("person_id", id).select("id");
+    if (error) throw error;
+    if (!data?.length) return NOT_FOUND;
+    await audit(ctx, "nf.lesson", id, { op: "delete" });
+    return { ok: true };
+  }
+
+  // 한 분 줄을 고친다 — 읽은 때(updated_at)가 그대로일 때만(그사이 다른 분이 바꿨으면 changed)
+  async function patchPerson(p: any, patch: Record<string, unknown>): Promise<Fail | { ok: true; updatedAt: string }> {
+    const stamp = nowIso();
+    const { data, error } = await db.from("nf_people").update({ ...patch, updated_at: stamp }).eq("id", p.id).eq("updated_at", p.updated_at).select("id");
+    if (error) throw error;
+    return data?.length ? { ok: true, updatedAt: stamp } : { ok: false, error: "changed" };
+  }
+
+  // 새가족 목사님 교육 — 한 번 · 참석 여부만(친구 2026-10-07). on:true 참석(날짜는 오늘 · date 로 지난 날) · on:false 풀기(보고서를 보내기 전까지).
+  async function nfPastorClass(ctx: any, b: any) {
+    const v = await viewOf(ctx);
+    if (!canPastor(v)) return NOT_ASSIGNED;
+    const id = uuidOf(b?.person_id);
+    if (!id) return BAD_ID;
+    if (typeof b?.on !== "boolean") return { ok: false, error: "bad-input" };
+    const p = await personRow(id);
+    if (!p) return NOT_FOUND;
+    if (p.stopped_at) return { ok: false, error: "stopped" };
+    const gate = classGate(p, await lessonCount(id), b.on);
+    if (gate) return { ok: false, error: gate };
+    let on: string | null = null;
+    if (b.on) {
+      on = norm(b?.date) || today();
+      if (!isDate(on) || on > today()) return { ok: false, error: "bad-date" };
+    }
+    const r = await patchPerson(p, { pastor_class_on: on });
+    if (r.ok) await audit(ctx, "nf.class", id, { on: b.on });
+    return r;
+  }
+
+  // 섬김이가 보고서(교육 줄들)를 목사님께 보낸다 — 목사님 교육을 마친 분만. 보낸 뒤에는 줄을 못 고친다.
+  async function nfReportSend(ctx: any, b: any) {
+    const v = await viewOf(ctx);
+    const id = uuidOf(b?.person_id);
+    if (!id) return BAD_ID;
+    const p = await personRow(id);
+    if (!p) return NOT_FOUND;
+    if (!canLessonWrite(v, p)) return NOT_ASSIGNED;
+    if (p.stopped_at) return { ok: false, error: "stopped" };
+    const gate = reportGate(p);
+    if (gate) return { ok: false, error: gate };
+    const r = await patchPerson(p, { report_sent_at: nowIso(), report_return: "" });
+    if (r.ok) await audit(ctx, "nf.report", id, { op: "send" });
+    return r;
+  }
+
+  // 목사님이 보고서를 섬김이께 돌려보낸다(한마디와 함께) — 교구를 정하기 전까지. 돌려보내면 섬김이가 다시 고칠 수 있다.
+  async function nfReportReturn(ctx: any, b: any) {
+    const v = await viewOf(ctx);
+    if (!canPastor(v)) return NOT_ASSIGNED;
+    const id = uuidOf(b?.person_id);
+    if (!id) return BAD_ID;
+    const note = norm(b?.note);
+    if (!note) return { ok: false, error: "no-note" };
+    if (note.length > 300) return { ok: false, error: "too-long" };
+    const p = await personRow(id);
+    if (!p) return NOT_FOUND;
+    if (!p.report_sent_at) return { ok: false, error: "not-ready" };
+    if (p.parish) return { ok: false, error: "has-parish" };
+    const r = await patchPerson(p, { report_sent_at: null, report_return: note });
+    if (r.ok) await audit(ctx, "nf.report", id, { op: "return" });
+    return r;
+  }
+
+  // 편성 교구 고르기 목록 — 교인명부의 목장 값(예: 믿음-35 · 목장까지 — 친구 2026-10-07). 10분 동안 기억해 둔다.
+  let mokCache: { at: number; list: string[] } | null = null;
+  async function mokList(): Promise<string[]> {
+    const t = deps.now ? deps.now() : Date.now();
+    if (mokCache && t - mokCache.at < 600000) return mokCache.list;
+    const rows = await deps.allRows(() => db.from("church_people").select("mok3").neq("mok3", "").order("person_id"));
+    const set = new Set<string>();
+    // 교적의 목장 칸은 「기쁨-02목장」 꼴이다 — 끝의 「목장」을 떼어 「기쁨-02」로(등록식 교구 편성표에 적던 꼴)
+    for (const r of rows) { const m = norm(r.mok3).replace(/\s*목장$/, ""); if (PARISH_RE.test(m)) set.add(m); }
+    const list = [...set].sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
+    mokCache = { at: t, list };
+    return list;
+  }
+  async function nfParishList(ctx: any) {
+    const v = await viewOf(ctx);
+    if (!canPastor(v)) return NOT_ASSIGNED;
+    return { ok: true, list: await mokList() };
+  }
+
+  // 교구 배정 — 보고서가 온 분만 · 등록식에서 수료번호를 드리기 전까지 바꿀 수 있다. 여기까지가 등록 절차다.
+  //   목록(교인명부의 목장)에 있는 글자만 받는다. 명부가 없는 DB(목록이 빔)에서는 「교구-목장」 꼴이면 받는다.
+  async function nfParishSet(ctx: any, b: any) {
+    const v = await viewOf(ctx);
+    if (!canPastor(v)) return NOT_ASSIGNED;
+    const id = uuidOf(b?.person_id);
+    if (!id) return BAD_ID;
+    const parish = norm(b?.parish);
+    if (!parish || parish.length > 20 || !PARISH_RE.test(parish)) return { ok: false, error: "bad-parish" };
+    const list = await mokList();
+    if (list.length && !list.includes(parish)) return { ok: false, error: "bad-parish" };
+    const p = await personRow(id);
+    if (!p) return NOT_FOUND;
+    if (p.stopped_at) return { ok: false, error: "stopped" };
+    const gate = parishGate(p);
+    if (gate) return { ok: false, error: gate };
+    const r = await patchPerson(p, { parish, parish_at: nowIso() });
+    if (r.ok) await audit(ctx, "nf.parish", id, { op: p.parish ? "change" : "set", parish });
+    return r;
+  }
+
   return { viewOf, nfMe, nfStaffList, nfStaffApprove, nfStaffSet, nfHelperSave, nfPeopleFind,
-    nfCardGet, nfCardSave, nfPhotoPut, nfPhotoUrl, nfList, nfPersonSet, nfAssign };
+    nfCardGet, nfCardSave, nfPhotoPut, nfPhotoUrl, nfList, nfPersonSet, nfAssign,
+    nfLessons, nfLessonSave, nfLessonDelete, nfPastorClass, nfReportSend, nfReportReturn, nfParishList, nfParishSet };
 }

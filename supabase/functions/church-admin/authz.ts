@@ -196,6 +196,16 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   nfList: NF_BOTH,
   nfPersonSet: "newfamily",
   nfAssign: NF_BOTH,
+  // 새가족 2단계(2026-10-07 · 설계 §3) — 교육 줄(= 섬김이 보고서의 한 줄) · 목사님 교육 참석 · 보고서 보내기·돌려보내기 · 교구 배정.
+  //   줄의 내용은 운영팀·목사님·그분의 섬김이만 읽는다(nf-db.ts canLessonRead) · 목사님 일(참석·돌려보내기·교구)은 kind pastor 와 운영팀만.
+  nfLessons: NF_BOTH,
+  nfLessonSave: NF_BOTH,
+  nfLessonDelete: NF_BOTH,
+  nfPastorClass: NF_BOTH,
+  nfReportSend: NF_BOTH,
+  nfReportReturn: NF_BOTH,
+  nfParishList: NF_BOTH,
+  nfParishSet: NF_BOTH,
   // 대신 넣기의 명부 찾기 — 맡은 당번의 창에서만(board_id 필수 · 총괄도) · 기록 people.lookup from:"duty"
   dutyPeopleLookup: DUTY_BOTH,
 };

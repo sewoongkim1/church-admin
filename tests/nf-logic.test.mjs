@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { birthIn, birthText, cardToForm, formToCard, blankPerson, personLine, guideLine, stageText, groupByStage, groupByCard,
-  helperOptions, foundMok, foundOptions, shrinkSize, nfWord, KIND_OPTIONS, KIND_LABEL, STAGE_ORDER, STAGE_HINT }
+  helperOptions, foundMok, foundOptions, shrinkSize, nfWord, KIND_OPTIONS, KIND_LABEL, STAGE_ORDER, STAGE_HINT, lessonTitle, recordHint }
   from "../js/menus/newfamily/nf-logic.js";
 import { NF_KINDS, NF_STAGES, NF_SERVICES, NF_LESSONS } from "../supabase/functions/church-admin/nf-rules.ts";
 import { SERVICES, LESSONS } from "../js/menus/newfamily/nf-logic.js";
@@ -130,4 +130,25 @@ test("shrinkSize — 긴 변 1600", () => {
   assert.deepEqual(shrinkSize(4000, 3000), { w: 1600, h: 1200 });
   assert.deepEqual(shrinkSize(3000, 4000), { w: 1200, h: 1600 });
   assert.deepEqual(shrinkSize(800, 600), { w: 800, h: 600 });
+});
+
+test("lessonTitle — 교육 줄은 차례대로, 덧붙인 줄은 「덧붙임」", () => {
+  const all = [{ kind: "lesson" }, { kind: "lesson" }, { kind: "extra" }, { kind: "lesson" }, { kind: "lesson" }, { kind: "extra" }];
+  assert.deepEqual(all.map((l, i) => lessonTitle(l, all, i)), ["첫째 만남", "둘째 만남", "덧붙임", "셋째 만남", "넷째 만남", "덧붙임"]);
+});
+
+test("recordHint — 누가 무엇을 할 차례인지", () => {
+  const p = (stage, lessons = 0) => ({ stage, lessons });
+  assert.match(recordHint({ person: p("learning", 2), canWrite: true }), /한 줄씩.*2\/4/);
+  assert.match(recordHint({ person: p("learning", 2), canWrite: false }), /교육 중/);
+  assert.match(recordHint({ person: p("wait_class", 4), canPastor: true }), /참석으로 표시/);
+  assert.match(recordHint({ person: p("wait_class", 4), canPastor: false }), /기다려요/);
+  assert.match(recordHint({ person: p("wait_report", 4), canSend: true }), /보내 주세요/);
+  assert.match(recordHint({ person: p("wait_parish", 4), canPastor: true }), /교구를 정해/);
+  assert.match(recordHint({ person: p("wait_parish", 4), canPastor: false }), /고칠 수 없어요/);
+  assert.equal(recordHint({ person: p("info") }), "");
+});
+
+test("서버가 돌려주는 2단계 오류마다 한국말이 있다", () => {
+  for (const c of ["same-day", "no-helper", "class-done", "not-ready", "no-note", "has-parish", "bad-parish", "sent", "stopped", "not-target"]) assert.ok(nfWord(c), c);
 });

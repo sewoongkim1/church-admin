@@ -53,6 +53,13 @@ const WORDS = {
   "has-lessons": "교육 기록이 있는 분이에요",
   confirmed: "수료번호를 드린 분은 바꿀 수 없어요",
   "bad-id": "잘못된 요청이에요 — 새로 불러와 주세요",
+  "same-day": "그날은 이미 적었어요 — 한 날에 교육은 한 번이에요",
+  "no-helper": "섬김이가 아직 정해지지 않았어요",
+  "class-done": "목사님 교육을 마친 뒤에는 줄을 지울 수 없어요 (고치기는 돼요)",
+  "not-ready": "아직 그 차례가 아니에요 — 새로 불러와 주세요",
+  "no-note": "섬김이께 전할 한마디를 적어 주세요",
+  "has-parish": "교구를 정한 뒤에는 돌려보낼 수 없어요",
+  "bad-parish": "교구를 목록에서 골라 주세요 (예: 믿음-35)",
 };
 export const nfWord = (code) => WORDS[code] || "";
 
@@ -170,4 +177,23 @@ export function shrinkSize(w, h, max = 1600) {
   if (!(long > max)) return { w, h };
   const k = max / long;
   return { w: Math.round(w * k), h: Math.round(h * k) };
+}
+
+// ── 교육 기록(= 섬김이 보고서) ───────────────────────────────────────────
+// 줄 이름 — 교육 줄은 「첫째 만남」…「넷째 만남」(날짜 차례), 덧붙인 줄은 「덧붙임」
+const NTH = ["첫째", "둘째", "셋째", "넷째"];
+export function lessonTitle(l, all, i) {
+  if (l.kind !== "lesson") return "덧붙임";
+  const n = all.slice(0, i + 1).filter((x) => x.kind === "lesson").length;
+  return `${NTH[n - 1] || n + "째"} 만남`;
+}
+// 창 위의 한 줄 안내 — 지금 누가 무엇을 할 차례인지(서버가 준 canWrite·canSend·canPastor 와 단계로)
+export function recordHint(r) {
+  const p = r.person || {};
+  if (p.stage === "learning") return r.canWrite ? `교육한 날마다 한 줄씩 적어 주세요 (${p.lessons}/${LESSONS})` : `섬김이 교육 중이에요 (${p.lessons}/${LESSONS})`;
+  if (p.stage === "wait_class") return r.canPastor ? "섬김이 교육 네 번을 마쳤어요 — 목사님 교육에 오시면 참석으로 표시해 주세요" : "네 번을 다 채웠어요 — 새가족 목사님 교육을 기다려요";
+  if (p.stage === "wait_report") return r.canSend ? "목사님 교육까지 마쳤어요 — 줄을 한 번 훑어보고 목사님께 보내 주세요" : "섬김이가 보고서를 보낼 차례예요";
+  if (p.stage === "wait_parish") return r.canPastor ? "보고서가 왔어요 — 읽어 보시고 교구를 정해 주세요" : "목사님께 보냈어요 — 줄은 이제 고칠 수 없어요";
+  if (p.stage === "registered") return "교구 배정까지 끝났어요 — 등록식을 기다려요";
+  return "";
 }

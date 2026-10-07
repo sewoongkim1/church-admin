@@ -295,6 +295,94 @@ test("수료 대상·멈춤 — 운영팀만", async () => {
   assert.equal(now.stage, "learning");
 });
 
+test("2단계 — 교육 줄 네 번 → 목사님 교육 → 보고서 보내기·돌려보내기 → 교구 배정", async () => {
+  const stage = async () => (await call(chief.token, "nfCardGet", { card_id: W.card })).body.people[0].stage;
+  const MEMO = "시험기록-" + STAMP;
+  // 섬김이만 적는다 · 남의 분·수료 대상이 아닌 분에게는 못 적는다
+  assert.equal((await call(L.token, "nfLessonSave", { person_id: W.p1, content: MEMO })).body.error, "not-assigned");
+  assert.equal((await call(G.token, "nfLessonSave", { person_id: W.p1, content: MEMO })).body.error, "not-assigned");
+  assert.equal((await call(H.token, "nfLessonSave", { person_id: W.p2, content: MEMO })).body.error, "not-assigned");
+  assert.equal((await call(H.token, "nfLessonSave", { person_id: W.p1, met_on: kst(1) })).body.error, "bad-date");
+  let r = got(await call(H.token, "nfLessonSave", { person_id: W.p1, content: MEMO, note: "비고" }));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.equal(r.body.kind, "lesson");
+  W.l1 = r.body.id;
+  assert.equal((await call(H.token, "nfLessonSave", { person_id: W.p1 })).body.error, "same-day");   // 같은 날 두 번
+  // 아직 네 번이 안 됐다 — 목사님 교육·보고서는 안 된다
+  assert.equal((await call(chief.token, "nfPastorClass", { person_id: W.p1, on: true })).body.error, "not-ready");
+  assert.equal((await call(H.token, "nfReportSend", { person_id: W.p1 })).body.error, "not-ready");
+  for (const d of [-1, -2, -3]) assert.equal((await call(H.token, "nfLessonSave", { person_id: W.p1, met_on: kst(d), content: MEMO })).body.ok, true);
+  assert.equal(await stage(), "wait_class");
+  // 줄 고치기 — 같은 날로 옮기면 same-day
+  assert.equal((await call(H.token, "nfLessonSave", { person_id: W.p1, id: W.l1, met_on: kst(-1) })).body.error, "same-day");
+  assert.equal((await call(H.token, "nfLessonSave", { person_id: W.p1, id: W.l1, content: MEMO + " 고침" })).body.ok, true);
+
+  // 줄의 내용은 그분의 섬김이·운영팀만(목사님 역할은 운영팀이 겸한다) — 총무·영접팀은 못 읽는다
+  assert.equal((await call(L.token, "nfLessons", { person_id: W.p1 })).body.error, "not-assigned");
+  assert.equal((await call(G.token, "nfLessons", { person_id: W.p1 })).body.error, "not-assigned");
+  r = got(await call(H.token, "nfLessons", { person_id: W.p1 }));
+  assert.equal(r.body.lessons.length, 4);
+  assert.deepEqual(r.body.lessons.map((l) => l.metOn), [kst(-3), kst(-2), kst(-1), kst(0)]);
+  assert.equal(r.body.lessons[3].writtenBy, "시험-섬김이");
+  assert.equal(r.body.canWrite, true);
+  assert.equal(r.body.canSend, false);
+  assert.equal(r.body.canPastor, false);
+  // 명단의 영접팀·총무 줄에는 몇 번째인지만
+  const forLead = (await call(L.token, "nfList")).body.people.find((x) => x.id === W.p1);
+  assert.equal(forLead.lessons, 4);
+  assert.equal(JSON.stringify(forLead).includes(MEMO), false);
+
+  // 목사님 교육 — 섬김이는 못 한다 · 참석 표시 뒤에는 줄을 지워 네 번 아래로 내리지 못한다
+  assert.equal((await call(H.token, "nfPastorClass", { person_id: W.p1, on: true })).body.error, "not-assigned");
+  assert.equal((await call(chief.token, "nfPastorClass", { person_id: W.p1, on: true, date: kst(1) })).body.error, "bad-date");
+  assert.equal(got(await call(chief.token, "nfPastorClass", { person_id: W.p1, on: true })).body.ok, true);
+  assert.equal(await stage(), "wait_report");
+  assert.equal((await call(H.token, "nfLessonDelete", { person_id: W.p1, id: W.l1 })).body.error, "class-done");
+  // 덧붙인 줄(다섯째)은 extra — 같은 날이어도 된다
+  r = await call(H.token, "nfLessonSave", { person_id: W.p1, content: "덧붙임" });
+  assert.equal(r.body.kind, "extra");
+
+  // 보고서 보내기 → 잠김
+  assert.equal((await call(L.token, "nfReportSend", { person_id: W.p1 })).body.error, "not-assigned");
+  assert.equal(got(await call(H.token, "nfReportSend", { person_id: W.p1 })).body.ok, true);
+  assert.equal(await stage(), "wait_parish");
+  assert.equal((await call(H.token, "nfLessonSave", { person_id: W.p1, id: W.l1, content: "x" })).body.error, "sent");
+  assert.equal((await call(H.token, "nfReportSend", { person_id: W.p1 })).body.error, "sent");
+  assert.equal((await call(L.token, "nfAssign", { person_id: W.p1, helper_id: "" })).body.error, "sent");
+  assert.equal((await call(chief.token, "nfPastorClass", { person_id: W.p1, on: false })).body.error, "sent");
+
+  // 돌려보내기 — 한마디가 있어야 · 돌려보내면 섬김이가 다시 고친다
+  assert.equal((await call(H.token, "nfReportReturn", { person_id: W.p1, note: "x" })).body.error, "not-assigned");
+  assert.equal((await call(chief.token, "nfReportReturn", { person_id: W.p1, note: " " })).body.error, "no-note");
+  assert.equal(got(await call(chief.token, "nfReportReturn", { person_id: W.p1, note: "한 줄만 더 적어 주세요" })).body.ok, true);
+  assert.equal(await stage(), "wait_report");
+  r = await call(H.token, "nfLessons", { person_id: W.p1 });
+  assert.equal(r.body.reportReturn, "한 줄만 더 적어 주세요");
+  assert.equal(r.body.canSend, true);
+  assert.equal((await call(H.token, "nfLessonSave", { person_id: W.p1, id: W.l1, content: MEMO })).body.ok, true);
+  assert.equal((await call(H.token, "nfReportSend", { person_id: W.p1 })).body.ok, true);
+
+  // 교구 배정 — 목사님 일 · 목록(교인명부의 목장)에 있는 글자만
+  assert.equal((await call(H.token, "nfParishSet", { person_id: W.p1, parish: "믿음-35" })).body.error, "not-assigned");
+  assert.equal((await call(H.token, "nfParishList")).body.error, "not-assigned");
+  assert.equal((await call(chief.token, "nfParishSet", { person_id: W.p1, parish: "아무데나" })).body.error, "bad-parish");
+  assert.equal((await call(chief.token, "nfParishSet", { person_id: W.p2, parish: "믿음-35" })).body.ok, false);   // 수료 대상이 아닌 분(보고서가 없다)
+  const list = got(await call(chief.token, "nfParishList")).body.list;
+  assert.ok(Array.isArray(list));
+  const parish = list[0] || "믿음-35";
+  assert.equal(got(await call(chief.token, "nfParishSet", { person_id: W.p1, parish })).body.ok, true);
+  const done = (await call(chief.token, "nfCardGet", { card_id: W.card })).body.people[0];
+  assert.equal(done.stage, "registered");
+  assert.equal(done.parish, parish);
+  assert.equal((await call(chief.token, "nfReportReturn", { person_id: W.p1, note: "x" })).body.error, "has-parish");
+
+  // 기록에는 교육 내용이 남지 않는다
+  const audit = JSON.stringify(await rest(`admin_audit?select=action,detail&member_id=in.(${made.members.join(",")})&action=like.nf.*`));
+  for (const k of ["nf.lesson", "nf.class", "nf.report", "nf.parish"]) assert.ok(audit.includes(k), k);
+  assert.equal(audit.includes(MEMO), false);
+  assert.equal(audit.includes("한 줄만 더"), false);
+});
+
 test("하는 일을 빼면 — nfteam 역할과 줄만 빠지고, 그 뒤로는 아무것도 못 한다", async () => {
   assert.equal(got(await call(chief.token, "nfStaffSet", { member_id: L.memberId, kinds: [] })).body.ok, true);
   assert.deepEqual(await rest(`admin_role_grants?select=role_id&member_id=eq.${L.memberId}`), []);

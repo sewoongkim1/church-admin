@@ -142,6 +142,15 @@ const PROBE = {
   nfList: {},
   nfPersonSet: { person_id: ZERO },
   nfAssign: { person_id: ZERO },
+  // 새가족(2단계) — 없는 분(not-found)·틀린 입력이라 아무것도 쓰지도 기록하지도 않는다
+  nfLessons: { person_id: ZERO },
+  nfLessonSave: { person_id: ZERO },
+  nfLessonDelete: { person_id: ZERO, id: ZERO },
+  nfPastorClass: { person_id: ZERO, on: true },
+  nfReportSend: { person_id: ZERO },
+  nfReportReturn: { person_id: ZERO, note: "x" },
+  nfParishList: {},
+  nfParishSet: { person_id: ZERO, parish: "x" },                   // bad-parish
   membersList: {},
   membersApprove: { member_id: ZERO, roles: ["ministry"] },
   membersSetRoles: { member_id: ZERO, roles: ["ministry"] },

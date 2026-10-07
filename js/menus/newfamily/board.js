@@ -1,12 +1,13 @@
 // 👣 새가족 현황 — 한 분마다 지금 몇째 걸음인지 · 섬김이 배정(새가족 1단계 · 2026-10-07 · 설계 v2 §3·§6)
 //   서버: nfList(하는 일에 따라 칸이 다르다) · nfAssign(운영팀·정착팀 총무) · nfPersonSet(운영팀 — 수료 대상·멈춤).
 //   섬김이에게는 자기에게 배정된 분만 온다(이름·전화·인도자·몇 번째인지). 규칙·말은 nf-logic.js(시험).
-//   교육 기록·목사님 교육·보고서·교구 배정은 2단계에서 이 화면에 더한다.
+//   2단계(2026-10-07): 섬김이 「✍️ 오늘 만났어요」 · 「📒 교육 기록」(= 보고서 · record.js) · 목사님 「✅ 목사님 교육 참석」·교구 배정.
 // ⚠️ 서버 글자는 모두 esc. 전화는 눌러서 걸리게(숫자만 tel: 로).
 import { esc, toast, busy, dialog, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne } from "../../core/picker.js";
-import { groupByStage, guideLine, helperOptions, nfWord, personLine, stageText } from "./nf-logic.js";
+import { groupByStage, guideLine, helperOptions, nfWord, personLine, stageText, LESSONS } from "./nf-logic.js";
+import { openRecord, openLessonForm } from "./record.js";
 
 const TITLE = `<h2 class="page-title">👣 새가족 현황</h2>`;
 const failText = (r) => nfWord(r?.error) || errorText(r);
@@ -17,6 +18,14 @@ const ASSIGNABLE = new Set(["wait_helper", "learning", "wait_class", "wait_repor
 function personHtml(p, d) {
   const sub = [personLine(p), guideLine(p)].filter(Boolean).join(" · ");
   const acts = [];
+  // 교육 줄을 적는 분(그분의 섬김이·운영팀)과 읽는 분(+ 목사님) — 막는 것은 서버다
+  const mine = d.chief || (!!d.myHelperId && p.helperId === d.myHelperId);
+  const reads = mine || d.canPastor;
+  if (mine && p.stage === "learning" && p.lessons < LESSONS) acts.push(`<button type="button" class="btn primary" data-act="met">✍️ 오늘 만났어요</button>`);
+  if (d.canPastor && p.stage === "wait_class") acts.push(`<button type="button" class="btn primary" data-act="class">✅ 목사님 교육 참석</button>`);
+  if (reads && p.helperId && p.target) acts.push(`<button type="button" class="btn${
+    (mine && p.stage === "wait_report") || (d.canPastor && p.stage === "wait_parish") ? " primary" : ""}" data-act="record">${
+    d.canPastor && p.stage === "wait_parish" ? "📒 보고서 보고 교구 정하기" : mine && p.stage === "wait_report" ? "📒 보고서 보내기" : "📒 교육 기록"}</button>`);
   if (d.canAssign && ASSIGNABLE.has(p.stage)) acts.push(`<button type="button" class="btn" data-act="assign">${p.helperId ? "섬김이 바꾸기" : "섬김이 정하기"}</button>`);
   if (d.chief && p.stage !== "done") acts.push(`<button type="button" class="btn" data-act="more">더 보기</button>`);
   return `<div class="card nf-row${p.quiet ? " quiet" : ""}" data-id="${esc(p.id)}">
@@ -25,6 +34,7 @@ function personHtml(p, d) {
     ${sub ? `<p class="nf-sub">${esc(sub)}</p>` : ""}
     ${p.phone ? `<p class="nf-sub">${tel(p.phone)}</p>` : ""}
     ${p.helperName ? `<p class="nf-sub">섬김이 <b>${esc(p.helperName)}</b></p>` : ""}
+    ${p.parish ? `<p class="nf-sub">편성 교구 <b>${esc(p.parish)}</b></p>` : ""}
     ${p.stage === "stopped" && p.stopReason ? `<p class="nf-sub">멈춘 까닭: ${esc(p.stopReason)}</p>` : ""}
     ${acts.length ? `<div class="acts">${acts.join("")}</div>` : ""}
   </div>`;
@@ -54,7 +64,7 @@ export async function render(el, { call }) {
       return;
     }
     el.innerHTML = TITLE +
-      (data.scope === "mine" ? `<p class="be-note">내게 배정된 새가족이에요. 교육 기록은 곧 이 화면에서 적을 수 있어요.</p>` : "") +
+      (data.scope === "mine" ? `<p class="be-note">내게 배정된 새가족이에요. 교육한 날 「✍️ 오늘 만났어요」로 한 줄씩 적어 주세요 — 네 번이 모이면 그대로 목사님께 가는 보고서가 돼요.</p>` : "") +
       (data.people.length > 8 ? `<label class="field"><span>이름으로 찾기</span><input data-q value="${esc(q)}" autocomplete="off" placeholder="이름"></label>` : "") +
       `<div data-list>${listHtml()}</div>`;
   };
@@ -83,7 +93,15 @@ export async function render(el, { call }) {
     open.add(id);
     let done = false;
     try {
-      if (b.dataset.act === "assign") {
+      if (b.dataset.act === "met") {
+        if (await openLessonForm({ call, personId: id, name: p.name, today: data.today })) { done = true; toast("적었어요"); }
+      } else if (b.dataset.act === "record") {
+        done = await openRecord({ call, personId: id, today: data.today });
+      } else if (b.dataset.act === "class") {
+        const r = await call("nfPastorClass", { person_id: id, on: true });
+        done = true;
+        toast(r.ok ? `${p.name} 님을 참석으로 표시했어요` : failText(r));
+      } else if (b.dataset.act === "assign") {
         const opts = helperOptions(data.helpers, { withClear: !!p.helperId });
         if (!opts.length) { await dialog({ text: "배정할 섬김이가 없어요 — 새가족 운영팀이 「함께 쓰는 분」에서 섬김이를 먼저 넣어 주세요", cancel: null }); return; }
         const pick = await pickOne({ anchor: b, title: `${p.name} 님의 섬김이`, options: opts, value: p.helperId || "", wrap: true });
