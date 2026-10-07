@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { HOL_FROM, HOL_UNTIL, HOLIDAYS, holidayName, holItems, holOutside, holOutsideText } from "../js/menus/duty/holidays.js";
 import {
   CAL_MIN, calUse, calMonths, calTitle, calMonthWord, calMonth, calCell, calMark, calLabel, calPick, calStep, olderPick, olderText, revealBy, calSettle,
-  rosterFrom, olderBack, dayChip, initialDay, maxBack, addDays,
+  rosterFrom, olderBack, dayChip, initialDay, maxBack, addDays, isSunday,
 } from "../js/menus/duty/duty-logic.js";
 import { calHtml } from "../js/menus/duty/roster-cal.js";
 import { render } from "../js/menus/duty/roster.js";
@@ -109,9 +109,20 @@ test("공휴일 이름 · 풀이 조각 — 표에 있는 날짜만 · 틀린 �
   assert.equal(holOutside(HOL_FROM.slice(0, 7)), ""); assert.equal(holOutside(HOL_UNTIL.slice(0, 7)), ""); assert.equal(holOutside("2027-06"), "");
   assert.equal(holOutside(addDays(HOL_UNTIL, 1).slice(0, 7)), "after"); assert.equal(holOutside(addDays(HOL_FROM, -1).slice(0, 7)), "before"); assert.equal(holOutside("2031-03"), "after");
   for (const bad of ["", null, undefined, "x", "2029", "2029-1", "2029-01-01", 202901]) assert.equal(holOutside(bad), "", String(bad));
-  assert.equal(holOutsideText("after"), "이 달의 공휴일은 아직 표시되지 않아요(2028년 12월까지만 빨갛게 보여요).");
-  assert.equal(holOutsideText("before"), "이 달의 공휴일은 표시되지 않아요(2026년 10월부터 빨갛게 보여요).");
+  assert.equal(holOutsideText("after"), "이 달은 일요일만 빨갛게 보여요(다른 공휴일은 2028년 12월까지만 표시돼요).");
+  assert.equal(holOutsideText("before"), "이 달은 일요일만 빨갛게 보여요(다른 공휴일은 2026년 10월부터 표시돼요).");
   assert.equal(holOutsideText(""), ""); assert.equal(holOutsideText(undefined), "");
+});
+
+test("일요일인가(isSunday) — 날짜만 있는 값이라 UTC 로 읽는다(기기의 시간대에 밀리지 않는다) · 달력 칸의 첫 열과 같다 · 틀린 값은 거짓", () => {
+  for (const d of ["2026-10-04", "2026-10-11", "2027-02-07", "2028-12-31", "2029-01-07", "2024-02-25"]) assert.equal(isSunday(d), true, d);
+  for (const d of ["2026-10-03", "2026-10-05", "2026-10-10", "2026-12-25", "", null, undefined, "x", "2026-10-1", "2026-13-01", "2026-02-30", "2026-02-29", "2026-10-11T00:00:00+09:00", 20261011]) assert.equal(isSunday(d), false, String(d));   // 2026-02-29 는 없는 날 — 넘겨 읽으면 3월 1일(일요일)이 된다
+  let n = 0;
+  for (let i = 0; i < 800; i++) {   // 두 해 남짓을 하루씩 — 이레마다 꼭 한 번 · 달력 칸(calMonth)의 첫 열과 같다
+    const d = addDays("2026-10-01", i), col = calMonth(d.slice(0, 7)).findIndex((c) => c.date === d) % 7;
+    assert.equal(isSunday(d), col === 0, d); n += isSunday(d) ? 1 : 0;
+  }
+  assert.equal(n, 114, "800일 가운데 일요일 114번");
 });
 
 test("명단을 어디서부터 읽나 — 달을 통째로(그 날이 든 달의 1일) · 「지난 날」은 불러오는 달이 실제로 앞으로 갈 때까지 · 52주까지", () => {
@@ -275,30 +286,34 @@ test("달력 조각(calHtml) — 칸 = 단추(data-day) · 칩과 같은 뜻 · 
   const oct = calHtml(DAYS, "2026-10-11", TODAY, { older: true });
   assert.ok(oct.startsWith('<div class="dty-cal" role="group" aria-label="날짜 고르기">'));
   assert.ok(oct.includes("<b>2026년 10월</b>"));
-  assert.ok(oct.includes('<span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>'));
+  assert.ok(oct.includes('<div class="dty-cal-w" aria-hidden="true"><span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>'));
   assert.equal((oct.match(/<button type="button" class="dty-cal-c has /g) || []).length, 5, "10월의 당번 날짜 다섯(4·9·11·18·25일)");
   assert.equal((oct.match(/class="dty-cal-c[^"]*"/g) || []).length, 35, "칸은 서른다섯(빈칸 넷 + 31일)");
-  assert.ok(oct.includes('<button type="button" class="dty-cal-c has k-need on" data-day="2026-10-11" aria-pressed="true" aria-label="10월 11일(일) — 빈 자리 1 · 필요 3명 가운데 2명 채워졌어요"><span>11</span><i aria-hidden="true">2/<wbr>3</i></button>'), "고른 날");
+  assert.ok(oct.includes('<button type="button" class="dty-cal-c has k-need on sun" data-day="2026-10-11" aria-pressed="true" aria-label="10월 11일(일) — 빈 자리 1 · 필요 3명 가운데 2명 채워졌어요"><span>11</span><i aria-hidden="true">2/<wbr>3</i></button>'), "고른 날");
   assert.ok(oct.includes('<button type="button" class="dty-cal-c has k-need hol" data-day="2026-10-09" aria-pressed="false" aria-label="10월 9일(금) — 빈 자리 1 · 필요 2명 가운데 1명 채워졌어요 · 공휴일(한글날)"><span>9</span><i aria-hidden="true">1/<wbr>2</i></button>'),
     "당번이 있는 공휴일 — 칸의 뜻(k-need)은 그대로이고 hol 이 붙는다");
-  assert.ok(oct.includes('class="dty-cal-c has k-past" data-day="2026-10-04" aria-pressed="false" aria-label="10월 4일(일) — 지난 날 · 필요 2명 가운데 1명 채워졌어요"><span>4</span><i aria-hidden="true">1/<wbr>2</i></button>'), "지난 날");
-  assert.ok(oct.includes('class="dty-cal-c has k-off" data-day="2026-10-18" aria-pressed="false" aria-label="10월 18일(일) — 쉼"><span>18</span><i aria-hidden="true">쉼</i></button>'), "쉬는 날");
-  assert.ok(oct.includes('class="dty-cal-c has k-ask lock" data-day="2026-10-25" aria-pressed="false" aria-label="10월 25일(일) — 못 온다 1 · 필요 2명 가운데 2명 채워졌어요 · 확정된 날">' +
+  assert.ok(oct.includes('class="dty-cal-c has k-past sun" data-day="2026-10-04" aria-pressed="false" aria-label="10월 4일(일) — 지난 날 · 필요 2명 가운데 1명 채워졌어요"><span>4</span><i aria-hidden="true">1/<wbr>2</i></button>'), "지난 날");
+  assert.ok(oct.includes('class="dty-cal-c has k-off sun" data-day="2026-10-18" aria-pressed="false" aria-label="10월 18일(일) — 쉼"><span>18</span><i aria-hidden="true">쉼</i></button>'), "쉬는 날");
+  assert.ok(oct.includes('class="dty-cal-c has k-ask lock sun" data-day="2026-10-25" aria-pressed="false" aria-label="10월 25일(일) — 못 온다 1 · 필요 2명 가운데 2명 채워졌어요 · 확정된 날">' +
     '<span>25</span><i aria-hidden="true">2/<wbr>2</i><em class="wn" aria-hidden="true">⚠</em><em class="lk" aria-hidden="true">🔒</em></button>'), "못 온다는 분 + 확정");
   assert.ok(oct.includes('<span class="dty-cal-c today" aria-current="date"><span>7</span></span>'), "오늘(당번 없는 날)");
   assert.ok(oct.includes('<span class="dty-cal-c hol" title="개천절"><span>3</span></span>') && oct.includes('<span class="dty-cal-c hol" title="대체공휴일"><span>5</span></span>'), "당번이 없는 공휴일도 빨갛게");
   assert.ok(oct.includes('<span class="dty-cal-c"><span>10</span></span>') && oct.includes('<span class="dty-cal-c"><span>6</span></span>'), "토요일·평일은 그대로");
-  assert.equal((oct.match(/ hol"/g) || []).length, 3, "10월의 빨간 날짜는 셋(3·5·9일) — 일요일은 따로 칠하지 않는다");
+  assert.equal((oct.match(/ hol"/g) || []).length, 3, "10월의 공휴일은 셋(3·5·9일)");
+  // 일요일도 빨갛다(친구 결정 2026-10-07 「네 빨갛게」) — 공휴일 표식(hol · 이름)과는 따로인 표식(sun): 날짜 숫자만 빨갛고 칸의 뜻은 그대로다 · 당번이 없는 일요일도
+  assert.equal((oct.match(/ sun"/g) || []).length, 4, "10월의 일요일은 넷(4·11·18·25일 — 모두 당번 날)");
+  assert.equal(/class="dty-cal-c[^"]* sun[^"]*" title=/.test(oct), false, "일요일에는 이름(title)이 없다 — 이름은 공휴일에만");
   assert.ok(oct.includes('<button type="button" class="btn dty-cal-nav l" data-cal="prev" aria-label="2026년 9월 보기">◀ 9월</button>'));
   assert.ok(oct.includes('<button type="button" class="btn dty-cal-nav r" data-cal="next" aria-label="2026년 11월 보기">11월 ▶</button>'));
   assert.ok(oct.includes('<p class="dty-cal-k">숫자는 채워진 인원 / 필요 인원이에요.<br><span class="ki"><span class="k need" aria-hidden="true"></span>빈 자리가 있는 날</span> · ' +
     '<span class="ki"><span class="wn" aria-hidden="true">⚠</span> 못 온다는 분이 있는 날</span> · <span class="ki">🔒 확정된 날</span> · <span class="ki"><span class="k today" aria-hidden="true"></span>오늘</span><br>' +
-    '<span class="hd">빨간 날짜</span>는 공휴일이에요(<span class="ki">3일 개천절</span> · <span class="ki">5일 대체공휴일</span> · <span class="ki">9일 한글날</span>).<br>날짜를 누르면 그날의 명단이 보여요.</p>'), "풀이");
+    '<span class="hd">빨간 날짜</span>는 일요일과 공휴일이에요(<span class="ki">3일 개천절</span> · <span class="ki">5일 대체공휴일</span> · <span class="ki">9일 한글날</span>).<br>날짜를 누르면 그날의 명단이 보여요.</p>'), "풀이");
   // 오늘이 당번 날이면 단추에 today · aria-current · 「오늘」
   const onDuty = calHtml(DAYS, "2026-10-09", "2026-10-09");
   assert.ok(onDuty.includes('class="dty-cal-c has k-need on today hol" data-day="2026-10-09" aria-pressed="true" aria-current="date" aria-label="10월 9일(금) — 빈 자리 1 · 필요 2명 가운데 1명 채워졌어요 · 공휴일(한글날) · 오늘"'));
   // 첫 달 — 앞 달이 없으면 「◀ 지난 날」(더 불러올 수 있을 때만) · 마지막 달 — 오른쪽 단추 없음
   const sep = calHtml(DAYS, "2026-09-27", TODAY, { older: true });
+  assert.ok(sep.includes('<span class="dty-cal-c sun"><span>6</span></span>') && sep.includes('<span class="dty-cal-c sun"><span>20</span></span>') && sep.includes('class="dty-cal-c has k-past on sun" data-day="2026-09-27"'), "당번이 없는 일요일도 · 지난 날도");
   assert.ok(sep.includes('<button type="button" class="btn dty-cal-nav l" data-act="older" aria-label="지난 날 더 보기">◀ 지난 날</button>') && sep.includes('data-cal="next"') && !sep.includes('data-cal="prev"'));
   assert.ok(calHtml(DAYS, "2026-09-27", TODAY, { older: false }).includes('<div class="dty-cal-h"><span></span><b>2026년 9월</b>'), "52주를 다 불러왔으면 왼쪽 단추가 없다");
   assert.ok(calHtml(DAYS, "2026-09-27", TODAY).includes('<div class="dty-cal-h"><span></span>'), "older 를 안 주면 없다");
@@ -307,9 +322,14 @@ test("달력 조각(calHtml) — 칸 = 단추(data-day) · 칩과 같은 뜻 · 
   assert.ok(dec.includes('공휴일이에요(<span class="ki">25일 성탄절</span>).') && dec.includes('class="dty-cal-c has k-need on hol" data-day="2026-12-25"'));
   // 공휴일·오늘이 없는 달에는 그 말이 없다 · 풀이의 표시(빈 자리·⚠·🔒)는 이 당번 전체에서 본다(달마다 풀이가 들쭉날쭉하지 않게)
   const nov = calHtml(DAYS, "2026-11-01", TODAY);
-  assert.equal(nov.includes("빨간 날짜"), false); assert.equal(nov.includes(">오늘<"), false); assert.equal(/ hol"/.test(nov), false);
+  assert.equal(nov.includes("빨간 날짜"), false, "공휴일이 없는 달에는 그 말이 없다(일요일은 요일 줄의 빨간 「일」이 말한다)"); assert.equal(nov.includes(">오늘<"), false); assert.equal(/ hol"/.test(nov), false);
+  assert.equal((nov.match(/ sun"/g) || []).length, 5, "11월의 일요일은 다섯(1·8·15·22·29일) — 당번이 있든 없든");
+  // 일요일이면서 공휴일인 날(2027-02-07 설날) — sun 과 hol 이 함께(hol 이 뒤 · 이름은 그대로) · 토요일인 설날(6일)은 hol 만
+  const feb = calHtml([day("2027-02-07", [slot(1)], { off: true }), day("2027-02-14", [slot(2)]), day("2027-02-21"), day("2027-02-28")], "2027-02-14", TODAY);
+  assert.ok(feb.includes('class="dty-cal-c has k-off sun hol" data-day="2027-02-07" aria-pressed="false" aria-label="2월 7일(일) — 쉼 · 공휴일(설날)"') && feb.includes('<span class="dty-cal-c hol" title="설날"><span>6</span></span>'), "주일인 설날 · 토요일인 설날");
+  assert.ok(feb.includes('는 일요일과 공휴일이에요(<span class="ki">6~8일 설날</span> · <span class="ki">9일 대체공휴일</span>).'));
   assert.ok(nov.includes("빈 자리가 있는 날") && nov.includes("못 온다는 분이 있는 날") && nov.includes("🔒 확정된 날"));
-  assert.ok(nov.includes('class="dty-cal-c has k-full on" data-day="2026-11-01"') && nov.includes('class="dty-cal-c has k-none" data-day="2026-11-08" aria-pressed="false" aria-label="11월 8일(일) — 자리 없음"><span>8</span><i aria-hidden="true">–</i>'));
+  assert.ok(nov.includes('class="dty-cal-c has k-full on sun" data-day="2026-11-01"') && nov.includes('class="dty-cal-c has k-none sun" data-day="2026-11-08" aria-pressed="false" aria-label="11월 8일(일) — 자리 없음"><span>8</span><i aria-hidden="true">–</i>'));
   // 표시가 없는 당번 — 풀이는 누르는 법만
   const plain = calHtml([day("2026-11-08"), day("2026-11-15"), day("2026-11-22"), day("2026-11-29")], "2026-11-08", TODAY);
   assert.ok(plain.includes('<p class="dty-cal-k">날짜를 누르면 그날의 명단이 보여요.</p>'));
@@ -318,18 +338,19 @@ test("달력 조각(calHtml) — 칸 = 단추(data-day) · 칩과 같은 뜻 · 
   // 인원 글은 「/」 뒤에서 줄을 바꿀 수 있다(<wbr>) — 칸에 한 줄로 못 들 때만 두 줄(「100/120」 · 좁은 폰). 글자는 그대로(낭독의 수도) · 「쉼」·「–」에는 넣을 자리가 없다
   const crowd = (n) => Array.from({ length: n }, (_, i) => who(i + 1));
   const big = calHtml([day("2026-11-08", [slot(1, { capacity: 120, signups: crowd(100) })]), day("2026-11-15", [slot(2)], { off: true }), day("2026-11-22"), day("2026-11-29")], "2026-11-08", TODAY);
-  assert.ok(big.includes('class="dty-cal-c has k-need on" data-day="2026-11-08" aria-pressed="true" aria-label="11월 8일(일) — 빈 자리 20 · 필요 120명 가운데 100명 채워졌어요"><span>8</span><i aria-hidden="true">100/<wbr>120</i></button>'));
+  assert.ok(big.includes('class="dty-cal-c has k-need on sun" data-day="2026-11-08" aria-pressed="true" aria-label="11월 8일(일) — 빈 자리 20 · 필요 120명 가운데 100명 채워졌어요"><span>8</span><i aria-hidden="true">100/<wbr>120</i></button>'));
   assert.ok(big.includes('<i aria-hidden="true">쉼</i>') && big.includes('<i aria-hidden="true">–</i>'));
   assert.equal((oct.match(/<wbr>/g) || []).length, 4, "10월 — 수가 적힌 칸마다 하나(4·9·11·25일 · 쉬는 18일에는 없다)");
   // 공휴일 표가 덮지 않는 달 — 풀이가 그렇게 말한다(빨간 날짜가 없는 것이 「공휴일이 없다」로 읽히지 않게 · 1년짜리 당번은 표 끝의 한 해 전부터 그 뒤의 달을 보여 준다)
   const far = [day("2028-12-24", [slot(1)]), day("2028-12-31", [slot(2)]), day("2029-01-07", [slot(3)]), day("2029-01-14", [slot(4)])];
   const jan29 = calHtml(far, "2029-01-07", TODAY);
-  assert.ok(jan29.includes("<br>이 달의 공휴일은 아직 표시되지 않아요(2028년 12월까지만 빨갛게 보여요).<br>날짜를 누르면 그날의 명단이 보여요.</p>"), "표 끝 뒤의 달");
-  assert.equal(/ hol"/.test(jan29) || jan29.includes("빨간 날짜"), false);
+  assert.ok(jan29.includes("<br>이 달은 일요일만 빨갛게 보여요(다른 공휴일은 2028년 12월까지만 표시돼요).<br>날짜를 누르면 그날의 명단이 보여요.</p>"), "표 끝 뒤의 달");
+  assert.equal(/ hol"/.test(jan29) || jan29.includes("빨간 날짜"), false, "공휴일 표식은 없다(1월 1일도)");
+  assert.equal((jan29.match(/ sun"/g) || []).length, 4, "표 밖의 달에도 일요일은 빨갛다(7·14·21·28일 — 표가 아니라 요일로 본다)");
   const dec28 = calHtml(far, "2028-12-24", TODAY);
-  assert.ok(dec28.includes('공휴일이에요(<span class="ki">25일 성탄절</span>).') && !dec28.includes("표시되지 않아요"), "표 안의 마지막 달은 그대로");
-  assert.ok(calHtml(DAYS, "2026-09-27", TODAY).includes("<br>이 달의 공휴일은 표시되지 않아요(2026년 10월부터 빨갛게 보여요).<br>"), "표가 시작하기 전의 달(지난 날을 더 불러와 본 2026년 9월)");
-  assert.equal(nov.includes("표시되지 않아요") || oct.includes("표시되지 않아요"), false, "표 안의 달에는 그 말이 없다(공휴일이 없는 11월도)");
+  assert.ok(dec28.includes('는 일요일과 공휴일이에요(<span class="ki">25일 성탄절</span>).') && !dec28.includes("일요일만"), "표 안의 마지막 달은 그대로");
+  assert.ok(calHtml(DAYS, "2026-09-27", TODAY).includes("<br>이 달은 일요일만 빨갛게 보여요(다른 공휴일은 2026년 10월부터 표시돼요).<br>"), "표가 시작하기 전의 달(지난 날을 더 불러와 본 2026년 9월)");
+  assert.equal(nov.includes("일요일만") || oct.includes("일요일만") || nov.includes("표시돼요"), false, "표 안의 달에는 그 말이 없다(공휴일이 없는 11월도)");
 });
 
 // ── 명단 화면의 이음(roster.js) — 가짜 화면에 실제로 그리고 눌러 본다 ──
@@ -485,8 +506,8 @@ test("명단 화면 — 「◀ 지난 날」: 앞 달을 통째로 더 불러와
     await render(sc.el, { call: sv.call, query: {} });
     assert.deepEqual(sv.froms(), ["2026-10-01"], "오늘 − 14일(10/11)이 든 달의 1일");
     assert.deepEqual([title(sc.el), chosen(sc.el)], ["2026년 10월", "2026-10-25"]);
-    assert.ok(sc.el.innerHTML.includes('class="dty-cal-c has k-past" data-day="2026-10-04"') && sc.el.innerHTML.includes('<span>4</span><i aria-hidden="true">1/<wbr>2</i>'), "10월 4일은 처음부터 단추 칸이다(선 분의 수가 보인다)");
-    assert.equal(sc.el.innerHTML.includes('<span class="dty-cal-c"><span>4</span></span>'), false, "「당번 없는 날」 칸으로 그리지 않는다");
+    assert.ok(sc.el.innerHTML.includes('class="dty-cal-c has k-past sun" data-day="2026-10-04"') && sc.el.innerHTML.includes('<span>4</span><i aria-hidden="true">1/<wbr>2</i>'), "10월 4일은 처음부터 단추 칸이다(선 분의 수가 보인다)");
+    assert.equal(/<span class="dty-cal-c[^"]*"><span>4<\/span><\/span>/.test(sc.el.innerHTML), false, "「당번 없는 날」 칸(맨 숫자)으로 그리지 않는다 — 일요일 표식(sun)이 붙어도");
     for (const d of ["2026-10-11", "2026-10-18", "2026-10-25"]) assert.ok(sc.el.innerHTML.includes(`data-day="${d}"`), d);
     assert.ok(sc.el.innerHTML.includes('class="btn dty-cal-nav l" data-act="older"'), "9월은 아직 읽지 않았다 — 왼쪽 단추는 「◀ 지난 날」");
     await sc.older();
@@ -660,10 +681,13 @@ test("색 — 달력은 이미 쓰는 값만 쓴다(새 색 없음) · 공휴일
   const hex = [...new Set((block.replace(/\/\*[\s\S]*?\*\//g, "").match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((x) => x.toLowerCase()))].sort();
   assert.deepEqual(hex, ["#7a5200", "#fff", "#fff3d6"], "글자 값으로 적은 색은 이 셋뿐(모두 봉사 당번 칩이 이미 쓰는 값) — 나머지는 토큰");
   for (const h of hex) assert.ok(rest.toLowerCase().includes(h), `${h} — 다른 규칙이 이미 쓰는 값이어야 한다`);
-  for (const rule of [".dty-cal-c.hol > span{color:var(--error)}", ".dty-cal-c.on.hol > span{color:var(--danger-bd)}", ".dty-cal-k .hd{color:var(--error);font-weight:700}",
+  for (const rule of [".dty-cal-c.hol > span{color:var(--error)}", ".dty-cal-c.on.hol > span,.dty-cal-c.on.sun > span{color:var(--danger-bd)}", ".dty-cal-k .hd{color:var(--error);font-weight:700}",
+    ".dty-cal-c.sun > span,.dty-cal-w .sun{color:var(--error)}",   // 일요일은 공휴일과 같은 값 — 요일 줄의 「일」도
     ".dty-cal-c.k-need{background:#fff3d6;border-color:var(--gold)}", ".dty-cal-c.k-ask{background:var(--danger-bg);border-color:var(--danger-bd)}",
     ".dty-cal-c.on{background:var(--navy);border-color:var(--navy);color:#fff}", ".dty-cal-c.today{border-color:var(--navy);border-width:2px}"]) assert.ok(block.includes(rule), rule);
   assert.ok(block.indexOf(".dty-cal-c.on{") > block.indexOf(".dty-cal-c.k-ask{") && block.indexOf(".dty-cal-c.on{") > block.indexOf(".dty-cal-c.hol > span{"), "고른 날의 색이 뜻 색·공휴일 색 뒤에 온다(같은 무게라 뒤가 이긴다)");
+  assert.ok(block.indexOf(".dty-cal-c.sun > span,") > block.indexOf(".dty-cal-c.k-off > span,.dty-cal-c.k-past > span{") && block.indexOf(".dty-cal-c.on{") > block.indexOf(".dty-cal-c.sun > span,")
+    && block.indexOf(".dty-cal-c.sun > span,") > block.indexOf(".dty-cal-w span{"), "일요일 색은 지난 날·쉬는 날의 흐린 숫자와 요일 줄의 기본 색 뒤에, 고른 날의 색 앞에 온다");
   assert.ok(/min-height:4[4-9]px|min-height:5\dpx/.test(block.match(/\.dty-cal-c\{[^}]*\}/)[0]), "칸은 44px 이상(폰에서 누르는 크기)");
   assert.ok(css.includes(".dty-split{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr)"), "PC — 달력 옆에 그날 판");
 });

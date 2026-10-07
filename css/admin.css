@@ -1762,9 +1762,11 @@ body.ec-cert-on{overflow:hidden}
 .dty-cal-c.k-off > span,.dty-cal-c.k-past > span{color:var(--ink-2)}
 .dty-cal-c.today{border-color:var(--navy);border-width:2px}
 .dty-cal-c.hol > span{color:var(--error)}
+/* 일요일(2026-10-07 친구 결정 「네 빨갛게」) — 공휴일과 같은 색·같은 규칙: 날짜 숫자와 요일 줄의 「일」만 빨갛고 칸의 바탕·인원 글은 뜻 색 그대로(대비도 위와 같다) */
+.dty-cal-c.sun > span,.dty-cal-w .sun{color:var(--error)}
 .dty-cal-c.on{background:var(--navy);border-color:var(--navy);color:#fff}
 .dty-cal-c.on > span,.dty-cal-c.on > i,.dty-cal-c.on > em.wn{color:#fff}
-.dty-cal-c.on.hol > span{color:var(--danger-bd)}
+.dty-cal-c.on.hol > span,.dty-cal-c.on.sun > span{color:var(--danger-bd)}
 .dty-cal-c.on.today{box-shadow:inset 0 0 0 2px var(--gold)}
 .dty-cal-c.has:focus-visible,.dty-cal-nav:focus-visible{outline:3px solid var(--navy);outline-offset:1px}
 .dty-cal-k{margin:8px 2px 0;font-size:13px;line-height:1.6;color:var(--ink-2);word-break:keep-all}

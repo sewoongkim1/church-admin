@@ -38,6 +38,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const WD1 = "일월화수목금토";
 const utc = (ds) => new Date(ds + "T00:00:00Z");
 export const isDate = (s) => typeof s === "string" && DATE_RE.test(s) && !isNaN(utc(s).getTime());
+// 그 날짜가 일요일인가 — 날짜만 있는 값(한국 달력날)이라 UTC 자정으로 읽어 요일이 밀리지 않는다. 달력이 일요일의 날짜 숫자를 빨갛게 적는다(친구 결정 2026-10-07).
+export const isSunday = (s) => isDate(s) && utc(s).toISOString().slice(0, 10) === s && utc(s).getUTCDay() === 0;
 // 「10월 18일(일)」 — 요일 글자는 성경암송 앱·교육 화면과 같은 꼴
 export function dayLabel(ds) {
   if (!isDate(ds)) return "";
