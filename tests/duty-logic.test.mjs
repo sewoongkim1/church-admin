@@ -252,6 +252,15 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(removeAsk({ name: "가상하나", hasApp: true }, DAYS[1], DAYS[1].slots[0]).includes("스스로 다시 지원할 수 없어요"));
   assert.ok(!removeAsk({ name: "가상하나", hasApp: false }, DAYS[1], DAYS[1].slots[0]).includes("스스로 다시 지원"));
   assert.ok(removeAsk({ name: "가상하나", hasApp: false }, DAYS[1], DAYS[1].slots[0]).includes("「빠진 분」에서 다시 넣을 수 있어요"));
+  // 지난 날의 줄(성경암송 앱 「지난 봉사」 2026-10-07 — 지난 날짜의 당번표에 남아 있는 줄을 센다): 앱에 이어진 분의 줄을 빼면 그분의 이력에서도 빠진다고 말한다 ·
+  //   지난 날에는 「스스로 다시 지원할 수 없어요」를 말하지 않는다(누구도 지난 날에 지원하지 못한다) · 앱 없는 분의 줄에는 어느 쪽도 말하지 않는다
+  const pastDay = { ...DAYS[1], past: true };
+  const pastAsk = removeAsk({ name: "가상하나", hasApp: true }, pastDay, pastDay.slots[0]);
+  assert.ok(pastAsk.includes("지난 날짜의 줄을 빼면 그분 앱의 「지난 봉사」에 남지 않아요") && !pastAsk.includes("스스로 다시 지원") && pastAsk.includes("「빠진 분」에서 다시 넣을 수 있어요"), pastAsk);
+  assert.ok(!removeAsk({ name: "가상하나", hasApp: false }, pastDay, pastDay.slots[0]).includes("지난 봉사"), "앱에 안 이어진 줄은 그분의 앱에 없다");
+  assert.ok(!removeAsk({ name: "가상하나", hasApp: true }, DAYS[1], DAYS[1].slots[0]).includes("지난 봉사"), "앞날의 줄에는 말하지 않는다");
+  // 지난 날의 「넣기」 안내 — 「앱에는 보이지 않아요」라고만 하면 사실이 아니다(앱 당번표에는 없지만 그분의 「지난 봉사」에는 보인다)
+  assert.equal(addNote({ past: true }), "지난 날짜예요 — 앱 당번표에는 보이지 않아요(명단에 기록으로 남고, 앱을 쓰는 분께는 「지난 봉사」에 보여요 — 준비 중 당번은 빼고)");
   // 같은 이름의 줄이 또 있는 날 — 앱에 이어진 줄을 빼려 하면 어느 줄을 빼야 하는지 말한다(앱 없는 줄을 뺄 때는 말하지 않는다)
   // 고침 검토 반영(2026-10-07) — 겹친 줄 안내는 서버가 「빼 드렸어요」를 거르는 범위와 같다: **같은 자리**에 같은 이름의 살아 있는 줄이 또 있을 때만
   const twinSlot = (others) => ({ service: "1부", task: "설거지", signups: [{ id: 1, name: "가상하나", hasApp: true }, ...others] });

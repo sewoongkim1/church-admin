@@ -462,10 +462,13 @@ const DUP_REMOVE_HEAD = "⚠️ 이 자리에 같은 이름의 줄이 또 있어
 export const DUP_REMOVE_NOAPP = `${DUP_REMOVE_HEAD} 같은 분의 겹친 줄이면 이 줄(앱에 이어진 줄)은 두고 「앱 없음」 줄을 빼 주세요 — 그분을 아예 빼려면 「앱 없음」 줄을 먼저 빼 주세요(이 줄을 먼저 빼면 앱 알림을 보내지 않아요). 다른 분이면 따로 알려 주세요.`;
 // 남는 줄이 모두 앱에 이어진 줄이다(동명이인 · 한 분의 옛 계정과 새 계정) — 가리킬 「앱 없음」 줄이 없다
 export const DUP_REMOVE_APP = `${DUP_REMOVE_HEAD} 빼는 분께 따로 알려 주세요.`;
+// 지난 날의 줄(앱에 이어진 분)을 뺄 때 — 성경암송 앱의 「지난 봉사」(그분의 봉사 이력 · 2026-10-07)는 **지난 날짜의 당번표에 남아 있는 줄**을 센다:
+//   빼면 그분의 이력에서도 빠진다(안 오신 분을 바로잡는 길이 이것이다). 「스스로 다시 지원할 수 없어요」는 지난 날에는 할 말이 아니다(지난 날에는 누구도 지원하지 못한다).
+export const REMOVE_PAST_NOTE = " 지난 날짜의 줄을 빼면 그분 앱의 「지난 봉사」에 남지 않아요(안 오신 분을 바로잡을 때 이렇게 해요).";
 export const removeAsk = (e, d, s) => {
   const twins = e.hasApp ? slotTwins(e, s) : { any: false, noApp: false };
   return `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에서 뺄까요?` +
-    (e.hasApp ? " 뺀 분은 앱에서 이 자리에 스스로 다시 지원할 수 없어요." : "") + " 잘못 뺐으면 「빠진 분」에서 다시 넣을 수 있어요." +
+    (e.hasApp ? (d && d.past ? REMOVE_PAST_NOTE : " 뺀 분은 앱에서 이 자리에 스스로 다시 지원할 수 없어요.") : "") + " 잘못 뺐으면 「빠진 분」에서 다시 넣을 수 있어요." +
     (twins.any ? ` ${twins.noApp ? DUP_REMOVE_NOAPP : DUP_REMOVE_APP}` : "");
 };
 export const restoreAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에 다시 넣을까요? 빠지기 전 그 줄이 그대로 살아나요.`;
@@ -571,7 +574,8 @@ export const afterAsk = (active, until) => `새 끝 날짜${dayLabel(until) ? `(
 //      (「내 당번」은 오늘 이후 내 줄을 보이는 기간과 무관하게 싣는다 — 앱을 쓰는 분께는 거기에 보인다 · 검증 2026-10-06).
 const ADD_BASE = "담당자가 넣은 분은 앱에서 스스로 뺄 수 없어요 — 못 오시면 앱의 「못 가게 됐어요」로 이 명단에 표시해 와요(담당자께 따로 알림은 오지 않아요)";
 export function addNote(d) {
-  if (d && d.past) return "지난 날짜예요 — 앱에는 보이지 않아요(명단에 기록으로 남아요)";
+  // 지난 날 — 앱 당번표에는 실리지 않는다. 다만 앱에 이어진 분께는 「지난 봉사」(봉사 이력 · 2026-10-07)에 보인다(준비 중 당번은 빼고) — 「앱에는 보이지 않아요」라고만 하면 사실이 아니다
+  if (d && d.past) return "지난 날짜예요 — 앱 당번표에는 보이지 않아요(명단에 기록으로 남고, 앱을 쓰는 분께는 「지난 봉사」에 보여요 — 준비 중 당번은 빼고)";
   if (d && d.afterUntil) return `${ADD_BASE} · 끝 날짜 뒤라 이 날짜는 앱 당번표에 보이지 않아요(앱을 쓰는 분의 「내 당번」에는 보여요)`;
   if (d && d.notYet) return `${ADD_BASE} · 보이는 기간 밖이라 이 날짜는 앱 당번표에 아직 안 보여요(앱을 쓰는 분의 「내 당번」에는 보이고, 날이 가까워지면 당번표에도 이름이 보여요)`;
   return `${ADD_BASE} · 넣은 분의 이름은 받는 중·지원 멈춤 당번이면 성경암송 앱 당번표에 보여요(이름만)`;
