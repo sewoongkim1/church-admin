@@ -10,7 +10,7 @@ import { esc, dialog, errorText } from "../../core/ui.js";
 import { openForm } from "../../core/modal.js";
 import { pickOne, pickMany, pickDate } from "../../core/picker.js";
 import { staffOptions, staffFieldText, sameIds } from "../education/courses-logic.js";
-import { STATUS_OPTIONS, LEAD_STATUS_OPTIONS, STATUS_LABEL, leadCanSetStatus, openDaysOptions, openDaysText, formToBoard, boardToForm, hideAsk, afterAsk, openWarn, emptyKind,
+import { STATUS_OPTIONS, LEAD_STATUS_OPTIONS, STATUS_LABEL, STATUS_PAST_HINT, leadCanSetStatus, openDaysOptions, openDaysText, formToBoard, boardToForm, hideAsk, afterAsk, openWarn, emptyKind,
   dutyWord, dayLabel, staffFailText, STAFF_NO_CAND, STAFF_ROLE_HINTS } from "./duty-logic.js";
 
 const labelOf = (opts, v) => (opts.find((o) => o.value === v) || {}).label || v || "";
@@ -38,7 +38,7 @@ export function boardFormHtml(v, { isNew = false, chief = false, staff = null } 
     hid("untilDate", v.untilDate) + pickBtn(`data-date="untilDate"`, "끝 날짜", untilText(v.untilDate), !v.untilDate, "이 날 뒤로는 앱에 안 보여요 · 비우면 계속") +
     txt("maxAhead", "한 분이 미리 잡아 둘 수 있는 자리 수", v.maxAhead, `inputmode="numeric" maxlength="3" placeholder="비우면 제한 없음"`, "비우면 제한 없음") +
     hid("status", v.status) + (canStatus
-      ? pickBtn(`data-pick="status"`, "상태", labelOf(statusOpts, v.status) || STATUS_LABEL[v.status] || "고르기", false)
+      ? pickBtn(`data-pick="status"`, "상태", labelOf(statusOpts, v.status) || STATUS_LABEL[v.status] || "고르기", false, chief ? STATUS_PAST_HINT : "")
       : fixed("상태", STATUS_LABEL[v.status] || v.status, "준비 중·보관은 당번 총괄이 바꿔요")) +
     (staff ? hid("staff", JSON.stringify(staff.ids)) + `<div class="field"><span>담당자 <small>(📅 당번 명단에서 이 당번만 다뤄요)</small></span>
       <button type="button" class="pk-field${staff.ids.length ? "" : " empty"}" data-staff aria-haspopup="dialog" aria-expanded="false"

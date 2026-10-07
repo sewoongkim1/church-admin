@@ -30,7 +30,7 @@ const TABS = [["roster", "명단"], ["lines", "자리 틀"]];
 const BACK_STEP = 28;   // 「지난 날 더 보기」 한 번에 4주(52주까지 — duty-logic.js maxBack) · 불러오는 것은 그 날이 든 달의 1일부터(rosterFrom — 달을 통째로)
 const STATE_NOTE = {
   closed: "지원 멈춤 — 앱에 당번표와 내 당번은 보이지만 새 지원은 받지 않아요. 담당자가 「넣기」로 넣어요.",
-  archived: "보관한 당번이에요 — 볼 수만 있어요(당번 총괄이 🧰 당번 관리에서 상태를 바꾸면 다시 고칠 수 있어요).",
+  archived: "보관한 당번이에요 — 볼 수만 있어요(당번 총괄이 🧰 당번 관리에서 상태를 바꾸면 다시 고칠 수 있어요). 보관하기 전에 끝난 봉사는 선 분의 앱 「지난 봉사」에 남아 있어요 — 줄을 빼려면 상태를 먼저 바꿔 주세요.",
 };
 
 let lastBoardId = "", lastDay = "";   // 메뉴를 나갔다 와도 보던 당번·날짜를 기억(모듈 안)
@@ -159,7 +159,8 @@ export async function render(el, { call, query }) {
 
   const linesHtml = (ro) => {
     const live = ros.lines.filter((l) => l.active);
-    return `<p class="be-note">자리 틀 하나가 매주 같은 요일의 자리를 만들어요. 이름·시각을 고치면 그 틀의 모든 날짜에 바로 보이고, 정원은 「앞날 자리도 함께」를 켜면 앞날 자리까지 바뀌어요.</p>
+    return `<p class="be-note">자리 틀 하나가 매주 같은 요일의 자리를 만들어요. 이름·시각을 고치면 그 틀의 모든 날짜에 바로 보이고, 정원은 「앞날 자리도 함께」를 켜면 앞날 자리까지 바뀌어요.
+      지난 날의 명단과 성도님 앱의 「지난 봉사」에도 새 이름·시각으로 보여요 — 일이 아예 바뀐 것이면 고치지 말고 틀을 빼고 새로 만들어 주세요.</p>
       ${live.length ? live.map((l) => `<div class="card dty-line" data-line="${esc(l.id)}">
         <div class="dty-line-t"><b>${esc(slotName(l))}</b><span class="muted">${esc(lineText(l).replace(` · ${slotName(l)}`, ""))}</span></div>
         ${ro ? "" : `<div class="dty-acts"><button type="button" class="btn" data-lact="edit">고치기</button><button type="button" class="btn danger" data-lact="remove">빼기</button></div>`}
@@ -327,7 +328,7 @@ export async function render(el, { call, query }) {
       if (got) { await sayDone(offDoneText(got.r, got.off), got.r); await busy(el, () => reload()); }
     } else if (act === "reopen") {
       // 쉬는 까닭으로 적어 둔 메모는 다시 열 때 함께 지운다 — 지운다는 것을 확인 글에 적는다(메모가 없으면 건드리지 않는다)
-      const g = await offFlow({ call, boardId: cur.id, from: d.date, to: d.date, off: false, ...(d.note ? { note: "", tail: `적어 둔 메모(「${d.note}」)도 함께 지워요.` } : {}) });
+      const g = await offFlow({ call, boardId: cur.id, from: d.date, to: d.date, off: false, past: d.past === true, ...(d.note ? { note: "", tail: `적어 둔 메모(「${d.note}」)도 함께 지워요.` } : {}) });
       if (g.ok) { await sayDone(offDoneText(g.r, false), g.r); await busy(el, () => reload()); }
       else if (g.error) await settle(g.error, "");
     } else if (act === "note") {
@@ -347,7 +348,7 @@ export async function render(el, { call, query }) {
       if (v != null) { toast(`정원을 ${v}명으로 바꿨어요`); await busy(el, () => reload()); }
     } else if (got === "off" || got === "on") {
       const off = got === "off";
-      const yes = await dialog({ title: off ? "이 자리만 쉬기" : "이 자리 다시 열기", text: slotOffAsk(s, off), ok: off ? "쉬기" : "다시 열기", cancel: "그만두기", danger: off });
+      const yes = await dialog({ title: off ? "이 자리만 쉬기" : "이 자리 다시 열기", text: slotOffAsk(s, off, d), ok: off ? "쉬기" : "다시 열기", cancel: "그만두기", danger: off });
       if (!yes) return;
       const r = await busy(el, () => call("dutySlotSet", { slot_id: s.id, off, ...(off && n ? { expect: n } : {}) }));
       await settle(r, r.ok ? `${off ? "이 자리를 쉬게 했어요" : "이 자리를 다시 열었어요"}${notifyTail(r)}` : "");

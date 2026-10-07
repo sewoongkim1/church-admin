@@ -8,8 +8,12 @@ export const STATUS_OPTIONS = [
   { value: "draft", label: "준비 중", hint: "앱에 안 보여요" },
   { value: "open", label: "받는 중", hint: "앱에서 지원을 받아요" },
   { value: "closed", label: "지원 멈춤", hint: "앱에 명단은 보이고 지원만 멈춰요 · 담당자가 넣어요" },
-  { value: "archived", label: "보관", hint: "앱에 안 보이고 고칠 수 없어요" },
+  { value: "archived", label: "보관", hint: "앱 당번표에 안 보이고 고칠 수 없어요" },
 ];
+// 상태 칸의 풀이(당번 총괄의 설정 창) — 성경암송 앱의 「지난 봉사」(그분의 봉사 이력 · 2026-10-07)와 상태의 사이:
+//   보관한 당번도 **앱에 보이던 동안 끝난 봉사**는 선 분의 「지난 봉사」에 남는다(성경암송 duty_past — 숨긴 때 hidden_at 까지 끝난 자리만 · 숨긴 뒤 날짜는 세지 않는다) ·
+//   준비 중인 동안에는 그 당번의 지난 봉사도 보이지 않는다(다시 열거나 보관하면 보인다). 보관한 당번의 줄은 뺄 수 없으니, 지울 줄(시험 줄 · 잘못 넣은 줄)은 보관하기 전에 뺀다.
+export const STATUS_PAST_HINT = "보관해도 그때까지 끝난 봉사는 선 분의 앱 「지난 봉사」에 남아요(뺄 줄은 보관하기 전에) · 준비 중인 동안에는 안 보여요";
 export const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map((o) => [o.value, o.label]));
 // 당번 담당(맡은 당번)이 고를 수 있는 상태 — 받는 중 ↔ 지원 멈춤(준비·보관은 당번 총괄만)
 export const LEAD_STATUS_OPTIONS = STATUS_OPTIONS.filter((o) => o.value === "open" || o.value === "closed");
@@ -228,7 +232,9 @@ export function dayHiddenText(d) {
   if (d.notYet) return "보이는 기간 밖이라 앱에는 아직 안 보이는 날이에요(날이 가까워지면 저절로 보여요)";
   return "";
 }
-// 그날 판의 단추 — [{ act, label, danger? }] (보관한 당번은 없음 · 지난 날은 메모만)
+// 그날 판의 단추 — [{ act, label, danger? }] (보관한 당번은 없음 · 지난 날은 메모 + **쉬는 날이면 「다시 열기」**)
+//   지난 쉬는 날의 「다시 열기」(2026-10-07 「지난 봉사」 확인 반영): 쉬는 날의 줄은 성도님 앱의 「지난 봉사」에서 빠진다 — 잘못 걸었거나 계획이 바뀌어 실제로는 섬긴 날을
+//   지난 뒤에도 바로잡을 수 있어야 한다(성경암송 duty_days_off 가 다시 열기는 오늘 − 400일까지 받는다 · 지난 날을 쉬는 날로 **거는** 것은 여전히 못 한다).
 //   확정: 아직 안 잠긴 오늘 이후 날 · 확정 풀기: 담당자가 확정했고 전날 저녁 마감 전(locked 이고 confirmed 인데 마감이 안 지남 = canUnconfirm)
 //   서버가 늘 거절할 단추는 두지 않는다: 자리가 없는 날의 확정(no-slots).
 export function dayActions(d, { archived = false, now = Date.now() } = {}) {
@@ -241,6 +247,7 @@ export function dayActions(d, { archived = false, now = Date.now() } = {}) {
     else if (d.confirmed && beforeCut) out.push({ act: "unconfirm", label: "확정 풀기" });
   }
   if (!d.past) out.push(d.off ? { act: "reopen", label: "다시 열기" } : { act: "off", label: "쉬는 날로", danger: true });
+  else if (d.off) out.push({ act: "reopen", label: "다시 열기" });
   out.push({ act: "note", label: d.note ? "메모 고치기" : "메모" });
   return out;
 }
@@ -448,13 +455,15 @@ export const unconfirmAsk = (d) => `${dayLabel(d.date)}의 확정을 풀까요? 
 //   ⚠️ 그래서 「N분」이 아니라 「지원 N건」이라고 말한다 — 저장 뒤의 「N분께 앱 알림을 보냈어요」는 사람 수라, 줄 수를 「분」이라 하면 한 화면의 두 수가 어긋난다
 //      (확정·당번 숨기기·끝 날짜 당기기의 확인 글도 같다 — 고침 검토 반영 2026-10-07).
 //   tail = 덧붙일 한 마디(날 판의 「다시 열기」가 그날 메모를 함께 지울 때 그 글)
-export function offAsk({ from, to, off, active, days, tail = "" }) {
+//   past = 지난 날을 다시 여는가(날 판의 「다시 열기」) — 그때 살아나는 것은 앞날의 당번이 아니라 그분들 앱의 「지난 봉사」다(알림도 가지 않는다)
+export function offAsk({ from, to, off, active, days, tail = "", past = false }) {
   const span = from === to ? dayLabel(from) : `${dayLabel(from)} ~ ${dayLabel(to)}`;
   if (!days) return off ? `${span}에는 쉬게 할 날이 없어요(자리가 없거나 이미 쉬는 날이에요).` : `${span}에는 다시 열 날이 없어요.`;
   const dn = from === to ? "" : ` ${days}일`;
   if (off) {
     return `${span}${dn}을 쉬는 날로 바꿀까요?` + (active ? ` 이미 들어온 지원 ${active}건은 그분들 앱에 「이날은 쉬어요」로 보여요 — 지원은 지우지 않고 두었다가 다시 열면 그대로 살아나요.` : " 아직 지원한 분은 없어요.");
   }
+  if (past) return `${span}${dn}을 다시 열까요? 지난 날이에요` + (active ? ` — 그날 서 있던 지원 ${active}건이 그분들 앱의 「지난 봉사」에 다시 보여요(앱 알림은 가지 않아요).` : "(그날 서 있던 분은 없어요).") + (tail ? ` ${tail}` : "");
   return `${span}${dn}을 다시 열까요?` + (active ? ` 쉬기 전의 지원 ${active}건이 그대로 살아나요.` : "") + (tail ? ` ${tail}` : "");
 }
 // 빼기 확인 — 앱 계정이 이어진 분은 뺀 뒤 스스로 다시 지원하지 못한다(계정 없이 넣은 줄은 그 말이 맞지 않아 뺀다 — 검토 반영)
@@ -487,13 +496,23 @@ export const removeAsk = (e, d, s) => {
 };
 export const restoreAsk = (e, d, s) => `${e.name} 님을 ${dayLabel(d.date)} ${slotName(s)}에 다시 넣을까요? 빠지기 전 그 줄이 그대로 살아나요.`;
 export const restoredText = (r, name) => (r && r.already ? `${name} — 이미 서 계세요` : `${name} — 다시 넣었어요${notifyTail(r)}`);
-export function slotOffAsk(s, off) {
+//   d = 그날(지난 날이면 d.past) — 지난 자리에서는 앱 어디에도 「쉬어요」가 보이지 않는다. 바뀌는 것은 그분들 앱의 「지난 봉사」다(쉬는 자리의 줄은 세지 않는다).
+export function slotOffAsk(s, off, d) {
   const n = ((s && s.signups) || []).length;
+  if (d && d.past) {
+    return off ? `${slotName(s)} 자리만 쉬게 할까요? 지난 날의 자리예요${n ? ` — 쉬게 하면 여기 선 ${n}분의 앱 「지난 봉사」에서 이 자리가 빠져요(다시 열면 돌아와요).` : "."}`
+      : `${slotName(s)} 자리를 다시 열까요? 지난 날의 자리예요${n ? ` — 여기 선 ${n}분의 앱 「지난 봉사」에 이 자리가 다시 보여요.` : "."}`;
+  }
   return off ? `${slotName(s)} 자리만 쉬게 할까요?${n ? ` 지원한 ${n}분께는 「쉬어요」로 보여요(지원은 그대로 두었다가 다시 열면 살아나요).` : ""}`
     : `${slotName(s)} 자리를 다시 열까요?${n ? ` 지원한 ${n}분의 자리가 그대로 살아나요.` : ""}`;
 }
 // 당번을 앱에서 안 보이게 바꿀 때(받는 중·지원 멈춤 → 준비·보관) — 앞날에 선 분이 있으면
-export const hideAsk = (active, status) => `앞날에 지원 ${active}건이 있어요. 그래도 「${STATUS_LABEL[status] || status}」으로 바꿀까요? 그분들 앱에서 이 당번과 내 당번이 사라져요(지원 줄은 지우지 않아요).`;
+//   「지난 봉사」(성경암송 duty_past): 보관 — 지금까지 끝난 봉사는 남고, 앞날의 줄은 날짜가 지나도 세지 않는다(숨긴 때까지만 센다) · 준비 중 — 그동안에는 이 당번의 것이 모두 안 보인다
+export const HIDE_PAST = {
+  archived: " 앞날의 줄은 날짜가 지나도 그분들의 「지난 봉사」로 세지 않고, 이미 끝난 봉사는 「지난 봉사」에 그대로 남아요.",
+  draft: " 준비 중인 동안에는 이 당번에서 끝난 봉사도 그분들의 「지난 봉사」에 보이지 않아요(다시 열면 보여요).",
+};
+export const hideAsk = (active, status) => `앞날에 지원 ${active}건이 있어요. 그래도 「${STATUS_LABEL[status] || status}」으로 바꿀까요? 그분들 앱에서 이 당번과 내 당번이 사라져요(지원 줄은 지우지 않아요).${HIDE_PAST[status] || ""}`;
 // 성경암송 앱에 봉사 당번 화면이 있는가 — 2026-10-06 2단계(앱 화면 + api 성도님 액션)를 운영에 올려 true 로 바꿨다(시험 한 줄도 함께).
 //   false 인 동안에는 「시험 참여자에게 보여요」라고 말하지 않는다 — 앱에 화면이 아예 없다(검토 반영 2026-10-06).
 //   ⚠️ 앱 쪽 2단계를 되돌리면(성경암송 화면 revert) 이 값도 false 로 되돌린다.
@@ -608,9 +627,11 @@ export function addEndedNote(slot) {
 // 준비 중인 당번의 안내 — 총괄은 스스로 열 수 있고, 담당은 총괄께 부탁한다
 //   준비 중에는 앱 알림도 가지 않는다(넣기·확정·빼기 모두) — 그 말을 함께 한다(문이 닫힌 동안 진짜 명단을 넣어 두라고 권하는 자리가 여기다)
 const DRAFT_NO_NOTIFY = " 준비 중에는 넣기·확정을 해도 앱 알림이 가지 않아요.";
+// 준비 중인 동안에는 그 당번의 지난 봉사도 성도님 앱에 보이지 않는다(열려 있던 당번을 준비 중으로 되돌린 때에 뜻이 있다 — 앞날 지원이 없으면 확인 창 없이 저장된다)
+export const DRAFT_NO_PAST = " 준비 중인 동안에는 이 당번에서 끝난 봉사도 성도님 앱의 「지난 봉사」에 보이지 않아요.";
 export const draftNote = (chief) => (chief
   ? "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣고 「당번 설정」에서 상태를 「받는 중」으로 바꾸면 지원을 받아요."
-  : "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣은 뒤 당번 총괄께 「받는 중」으로 열어 달라고 말씀해 주세요.") + DRAFT_NO_NOTIFY;
+  : "아직 앱에 안 보이는 당번이에요(준비 중) — 자리 틀을 넣은 뒤 당번 총괄께 「받는 중」으로 열어 달라고 말씀해 주세요.") + DRAFT_NO_PAST + DRAFT_NO_NOTIFY;
 
 // ---------- 저장 뒤 한 줄 ----------
 // 알림(3단계) — notified(실제로 나간 분) · missed(가지 않은 분) · notifyError 가 있으면 덧붙인다

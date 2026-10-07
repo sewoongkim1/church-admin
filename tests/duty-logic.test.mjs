@@ -5,7 +5,7 @@ import {
   STATUS_OPTIONS, STATUS_LABEL, LEAD_STATUS_OPTIONS, leadCanSetStatus, WEEKDAY_OPTIONS, weekdayText, openDaysText, openDaysOptions,
   isDate, dayLabel, dayShort, addDays, cutoffText, slotName, timeRange, lineText, linesSummary, formToLine, lineToForm, lineSavedText, lineRemovedText,
   formToBoard, boardToForm, countsLine, boardRest, contactHtml, maxBack, boardSavedText, initialDay, dayActive, dayChip, dayStateText, dayActions, slotCount, signupBadges,
-  askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, offAsk, removeAsk, slotOffAsk, hideAsk, notifyTail, addDoneText,
+  askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, offAsk, removeAsk, slotOffAsk, hideAsk, HIDE_PAST, STATUS_PAST_HINT, DRAFT_NO_PAST, notifyTail, addDoneText,
   movedText, dateAddedText, offDoneText, hasWord, dutyWord, needsReload, lostBoard, fileTitle, exportFileName, exportRanges,
   dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, appNote, APP_LIVE, NOTIFY_LIVE, STALE_BOARD, TESTERS_SEE_NAMES, ADD_NOTE,
   emptyWhy, emptyChip, liveLineCount, emptyKind, seenOfCounts, seenOfRoster, addNote, PLAY_HIDDEN, PLAY_NOTE,
@@ -176,6 +176,12 @@ test("dayStateText · dayActions — 서버가 준 잠김·마감 그대로", ()
   assert.deepEqual(acts(DAYS[3], { now: Date.parse("2026-10-31T11:00:00Z") }), ["off", "note"], "마감이 지나면 풀기 단추가 없다");
   assert.deepEqual(acts({ ...DAYS[3], confirmed: false }, { now: before }), ["off", "note"], "저절로 잠긴 날은 풀 것이 없다");
   assert.deepEqual(acts(DAYS[0], { now: before }), ["note"], "지난 날은 메모만");
+  // 지난 **쉬는 날**에는 「다시 열기」가 있다(「지난 봉사」 확인 반영 — 쉬는 날의 줄은 성도님 앱의 지난 봉사에서 빠지므로, 잘못 걸린 날을 지난 뒤에도 바로잡는다) · 「쉬는 날로」는 없다
+  assert.deepEqual(acts({ ...DAYS[0], off: true }, { now: before }), ["reopen", "note"], "지난 쉬는 날");
+  assert.deepEqual(dayActions({ ...DAYS[0], off: true }, { now: before })[0], { act: "reopen", label: "다시 열기" });
+  assert.equal(acts({ ...DAYS[0], off: true }, { now: before }).includes("off") || acts(DAYS[0], { now: before }).includes("off"), false, "지난 날을 쉬는 날로 거는 단추는 없다(서버도 거절한다)");
+  assert.deepEqual(acts({ ...DAYS[0], off: true, confirmed: true, locked: true }, { now: before }), ["reopen", "note"], "지난 날에는 확정·풀기가 없다");
+  assert.deepEqual(acts({ ...DAYS[0], off: true }, { archived: true }), [], "보관한 당번은 단추가 없다");
   assert.deepEqual(acts(DAYS[1], { archived: true }), []);
   assert.equal(dayActions(DAYS[1], { now: before }).find((a) => a.act === "note").label, "메모 고치기");
   assert.equal(dayActions(DAYS[3], { now: before }).find((a) => a.act === "note").label, "메모");
@@ -247,6 +253,14 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.ok(offAsk({ from: "2026-08-03", to: "2026-08-04", off: false, active: 0, days: 0 }).includes("다시 열 날이 없어요"));
   assert.ok(offAsk({ from: "2026-10-25", to: "2026-10-25", off: false, active: 1, days: 1, tail: "적어 둔 메모(「교회 행사」)도 함께 지워요." }).endsWith("살아나요. 적어 둔 메모(「교회 행사」)도 함께 지워요."));
   assert.ok(!offAsk({ from: "2026-10-25", to: "2026-10-25", off: true, active: 1, days: 1, tail: "꼬리" }).includes("꼬리"), "쉬는 날로 바꿀 때는 덧붙이지 않는다");
+  // 지난 날을 다시 열 때(날 판의 「다시 열기」) — 살아나는 것은 앞날의 당번이 아니라 그분들 앱의 「지난 봉사」다 · 알림은 가지 않는다
+  assert.equal(offAsk({ from: "2026-10-04", to: "2026-10-04", off: false, active: 2, days: 1, past: true }),
+    "10월 4일(일)을 다시 열까요? 지난 날이에요 — 그날 서 있던 지원 2건이 그분들 앱의 「지난 봉사」에 다시 보여요(앱 알림은 가지 않아요).");
+  assert.equal(offAsk({ from: "2026-10-04", to: "2026-10-04", off: false, active: 0, days: 1, past: true }), "10월 4일(일)을 다시 열까요? 지난 날이에요(그날 서 있던 분은 없어요).");
+  assert.ok(offAsk({ from: "2026-10-04", to: "2026-10-04", off: false, active: 1, days: 1, past: true, tail: "적어 둔 메모(「행사」)도 함께 지워요." }).endsWith("(앱 알림은 가지 않아요). 적어 둔 메모(「행사」)도 함께 지워요."));
+  assert.ok(!offAsk({ from: "2026-10-04", to: "2026-10-04", off: false, active: 1, days: 1, past: true }).includes("살아나요"), "지난 날에는 「살아나요」(앞날의 당번)라고 하지 않는다");
+  assert.ok(offAsk({ from: "2026-10-04", to: "2026-10-04", off: false, active: 0, days: 0, past: true }).includes("다시 열 날이 없어요"), "바뀔 날이 없으면 그 말이 먼저");
+  assert.ok(offAsk({ from: "2026-10-25", to: "2026-10-25", off: true, active: 1, days: 1, past: true }).includes("쉬는 날로 바꿀까요"), "쉬는 날로 거는 글은 past 를 보지 않는다(지난 날에는 걸 수 없다)");
   assert.ok(removeAsk({ name: "가상하나" }, DAYS[1], DAYS[1].slots[0]).startsWith("가상하나 님을 10월 18일(일) 1부 설거지에서 뺄까요?"));
   // 「스스로 다시 지원할 수 없어요」는 앱 계정이 이어진 분께만 맞는 말이다 · 되돌릴 길(빠진 분 → 다시 넣기)은 늘 알린다
   assert.ok(removeAsk({ name: "가상하나", hasApp: true }, DAYS[1], DAYS[1].slots[0]).includes("스스로 다시 지원할 수 없어요"));
@@ -292,6 +306,22 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   assert.equal(slotOffAsk(DAYS[1].slots[2], true), "2부 배식 자리만 쉬게 할까요?");
   assert.ok(slotOffAsk(DAYS[1].slots[0], false).includes("다시 열까요"));
   assert.ok(hideAsk(3, "archived").startsWith("앞날에 지원 3건이 있어요.") && hideAsk(3, "archived").includes("「보관」"));
+  // 지난 날의 자리(「지난 봉사」 확인 반영) — 앱 어디에도 「쉬어요」가 보이지 않는다. 바뀌는 것은 그분들 앱의 「지난 봉사」다
+  const agoDay = { ...DAYS[0], past: true };
+  assert.equal(slotOffAsk(DAYS[1].slots[0], true, agoDay), "1부 설거지 자리만 쉬게 할까요? 지난 날의 자리예요 — 쉬게 하면 여기 선 1분의 앱 「지난 봉사」에서 이 자리가 빠져요(다시 열면 돌아와요).");
+  assert.equal(slotOffAsk(DAYS[1].slots[0], false, agoDay), "1부 설거지 자리를 다시 열까요? 지난 날의 자리예요 — 여기 선 1분의 앱 「지난 봉사」에 이 자리가 다시 보여요.");
+  assert.equal(slotOffAsk(DAYS[1].slots[2], true, agoDay), "2부 배식 자리만 쉬게 할까요? 지난 날의 자리예요.", "선 분이 없으면 지난 봉사 말이 없다");
+  assert.ok(!slotOffAsk(DAYS[1].slots[0], true, agoDay).includes("「쉬어요」로 보여요"), "지난 자리에는 「쉬어요로 보여요」라고 하지 않는다");
+  assert.equal(slotOffAsk(DAYS[1].slots[0], true, DAYS[1]), slotOffAsk(DAYS[1].slots[0], true), "앞날의 자리는 그대로");
+  assert.ok(slotOffAsk(DAYS[1].slots[0], true, DAYS[1]).includes("지원한 1분께는 「쉬어요」로 보여요"));
+  // 당번을 숨길 때 — 보관: 앞날의 줄은 날짜가 지나도 세지 않고 끝난 봉사는 남는다 · 준비 중: 그동안에는 모두 안 보인다
+  assert.ok(hideAsk(3, "archived").endsWith("사라져요(지원 줄은 지우지 않아요)." + HIDE_PAST.archived) && HIDE_PAST.archived.includes("날짜가 지나도 그분들의 「지난 봉사」로 세지 않고") && HIDE_PAST.archived.includes("이미 끝난 봉사는 「지난 봉사」에 그대로 남아요"));
+  assert.ok(hideAsk(2, "draft").endsWith(HIDE_PAST.draft) && HIDE_PAST.draft.includes("준비 중인 동안에는") && HIDE_PAST.draft.includes("보이지 않아요(다시 열면 보여요)"));
+  assert.ok(hideAsk(1, "closed").endsWith("(지원 줄은 지우지 않아요)."), "모르는 상태에는 덧붙이지 않는다");
+  // 상태 풀이 — 보관을 「앱에 안 보인다」고만 하지 않는다(끝난 봉사는 선 분의 지난 봉사에 남는다) · 설정 창의 상태 칸에 한 줄(당번 총괄만 — 준비 중·보관은 총괄의 선택지다)
+  assert.equal(STATUS_OPTIONS.find((o) => o.value === "archived").hint, "앱 당번표에 안 보이고 고칠 수 없어요");
+  assert.ok(STATUS_PAST_HINT.includes("보관해도 그때까지 끝난 봉사는 선 분의 앱 「지난 봉사」에 남아요") && STATUS_PAST_HINT.includes("뺄 줄은 보관하기 전에") && STATUS_PAST_HINT.includes("준비 중인 동안에는 안 보여요"));
+  assert.ok(draftNote(true).includes(DRAFT_NO_PAST) && draftNote(false).includes(DRAFT_NO_PAST) && DRAFT_NO_PAST.includes("「지난 봉사」에 보이지 않아요"), "준비 중 안내 — 그동안에는 지난 봉사도 안 보인다");
   // 끝 날짜 당기기 — 그 뒤에 선 분 수와 새 끝 날짜를 함께
   assert.ok(afterAsk(4, "2026-10-31").startsWith("새 끝 날짜(10월 31일(토)) 뒤에 지원 4건이 있어요."));
   assert.ok(afterAsk(4, "2026-10-31").includes("지원 줄은 지우지 않아요"));
@@ -509,6 +539,14 @@ test("고침 검토 반영(2026-10-07) — 배선: 화면·함수가 그 규칙�
   assert.ok(roster.includes("text: removeAsk(e, d, s)"), "빼기 확인 — 그 자리의 줄들을 본다");
   assert.equal((roster.match(/await sayDone\(offDoneText\(/g) || []).length, 3, "쉬는 날·다시 열기 세 곳");
   assert.ok(roster.includes("draftNote(ros.chief === true)"), "준비 중 안내");
+  // 「지난 봉사」 확인 반영의 잇기 — 자리 쉬기 글에 그날을 넘긴다 · 날 판의 「다시 열기」가 지난 날인지 넘긴다 · 보관 안내와 자리 틀 안내가 「지난 봉사」를 말한다
+  assert.ok(roster.includes("text: slotOffAsk(s, off, d), ok:"), "자리 쉬기 확인 — 그날(지난 날인가)을 넘긴다");
+  assert.ok(roster.includes("off: false, past: d.past === true, ...(d.note ?"), "날 판의 다시 열기 — 지난 날인가");
+  assert.ok(/archived: "보관한 당번이에요[^"]*보관하기 전에 끝난 봉사는 선 분의 앱 「지난 봉사」에 남아 있어요[^"]*상태를 먼저 바꿔 주세요\."/.test(roster), "명단의 보관 안내");
+  assert.ok(roster.includes("지난 날의 명단과 성도님 앱의 「지난 봉사」에도 새 이름·시각으로 보여요 — 일이 아예 바뀐 것이면 고치지 말고 틀을 빼고 새로 만들어 주세요."), "자리 틀 안내");
+  assert.ok(forms.includes("const text = offAsk({ from, to, off, active: d.active, days: d.days, tail, past: past && !off });"), "쉬는 날 흐름 — 다시 열 때만 past");
+  const bform = read("js/menus/duty/board-form.js");
+  assert.ok(bform.includes('"고르기", false, chief ? STATUS_PAST_HINT : "")'), "설정 창의 상태 칸 풀이는 당번 총괄에게만");
   for (const f of ["restoredText(r, e.name)", "movedText(r, e.name)", "`${e.name} — 뺐어요${notifyTail(r)}`"]) assert.ok(roster.includes(f), f);
   // 넣기 창: 실패는 창으로(세 곳) · 빠진 분의 앱 줄 안내
   assert.ok(forms.includes('if (notifyFailed(r)) await dialog({ title: "앱 알림을 보내지 못했어요", text, ok: "확인", cancel: null });') && forms.includes("else toast(text);"), "sayDone");

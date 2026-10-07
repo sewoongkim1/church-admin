@@ -124,12 +124,13 @@ export function openDateAddForm({ call, boardId, lines, today, untilDate = "" })
 // 먼저 세고 → 확인 → 쓴다. → { ok:true, r } · { cancelled:true } · { error: 서버 거절 }
 //   note: undefined 면 메모를 건드리지 않는다 · 다시 열기에는 "" 를 보내 쉬는 까닭을 지운다(서버가 이번에 연 날에만 지운다).
 //   tail: 확인 글 끝에 덧붙일 한 마디(날 판의 「다시 열기」가 그날 메모를 함께 지울 때)
-export async function offFlow({ call, boardId, from, to, off, note, tail = "" }) {
+//   past = 지난 날을 다시 여는가(날 판의 「다시 열기」 — 확인 글이 「지난 봉사에 다시 보여요」라고 말한다 · 서버에는 보내지 않는다: 날짜로 안다)
+export async function offFlow({ call, boardId, from, to, off, note, tail = "", past = false }) {
   const base = { board_id: boardId, from, to, off, ...(note === undefined ? {} : { note }) };
   for (let i = 0; i < 3; i++) {
     const d = await call("dutyDaysOff", base);                       // expect 없이 = 세기만
     if (!d.ok) return { error: d };
-    const text = offAsk({ from, to, off, active: d.active, days: d.days, tail });
+    const text = offAsk({ from, to, off, active: d.active, days: d.days, tail, past: past && !off });
     if (!d.days) { await dialog({ title: off ? "😴 쉬는 날로" : "다시 열기", text, ok: "확인", cancel: null }); return { cancelled: true }; }
     const yes = await dialog({ title: off ? "😴 쉬는 날로" : "다시 열기", text, ok: off ? "쉬는 날로" : "다시 열기", cancel: "그만두기", danger: off });
     if (!yes) return { cancelled: true };
