@@ -246,6 +246,32 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - 개발 시험 `tests/duty.dev.test.mjs`(16가지 — 맡은 당번만 · 줄 번호로도 · 다시 넣기 · 겹침 · 끝 날짜 · 낡은 창 · 기록에 이름 없음 · 공개 키·로그인 사용자로 안 열림). 규칙·동시성 시험은 성경암송 `supabase/tests/duty_rules.dev.sql` · `tests/duty-concurrency.dev.sh`.
 - 설계·노트(운영 반영 차례 · 되돌리기 포함): 성경암송 `docs/superpowers/specs/2026-10-06-duty-roster-design.md` · `docs/notes/duty-roster.md`.
 
+## 새가족 (2026-10-07 · 1~4단계 개발 반영 · 운영 전)
+
+종이 「새가족 등록카드」 → 섬김이 배정 → 섬김이 교육 네 번 → 새가족 목사님 교육 → 섬김이 보고서 → 교구 배정(여기까지 등록 절차) → 등록식(수료번호).
+**성도님 앱에는 아무것도 없다**(내부 담당자만). 설계 v2 `docs/superpowers/specs/2026-10-07-newfamily-design.md` · 담당자용 기획서 v2 `newfamily/`.
+- 묶음 「새가족」: 🌱 **새가족 카드** · 👣 **새가족 현황** · 🎉 **등록식** · 📊 **새가족 통계** · 🧑‍🤝‍🧑 **함께 쓰는 분** — SQL 016.
+  액션 `nf-db.ts`(29개) · 순수 규칙 `nf-rules.ts` · 화면 `js/menus/newfamily/`(`nf-logic.js` 시험 · `cards.js`·`card-form.js`·`photo.js`·`board.js`·`record.js`·`ceremony.js`·`stats.js`·`staff.js`) · CSS 접두사 `nf-`.
+- **역할 둘**: `newfamily` = 새가족 운영팀(전부) · `nfteam` = 새가족 섬김 — **하는 일은 `nf_staff.kind`**(greeter 영접팀 · lead 정착팀 총무 · helper 섬김이 · pastor 새가족 목사님 · 여럿 가능).
+  ⚠️ 「자기 것만」은 **서버가** 본다(`nf-db.ts` `viewOf` → `nf-rules.ts` `canCardRead`·`canAssign`·`canLessonRead`·`canLessonWrite`·`canPastor`) → 아니면 `not-assigned` · 운영팀만 되는 일은 `chief-only`(`forbidden` 을 돌려주면 화면이 통째로 다시 부팅한다).
+  새 액션을 `NF_BOTH` 로 열면 이 갈래를 꼭 지나게. `nfteam` 역할이 없으면 `nf_staff` 줄이 남아 있어도 아무것도 못 한다.
+- ⚠️ **새가족은 아직 교인이 아닌 분이다 — 하는 일마다 보는 칸이 다르다**(`nf-rules.ts` `personOut` 한 곳). 섬김이에게는 주소·생일·가족·사진이 가지 않고, 영접팀·총무에게는 교육 줄의 내용이 가지 않는다.
+  줄을 통째로 돌려주지 말 것 · 응답에 `auth_user_id`·교인ID 없음 · 「바꾼 기록」 `nf.*` 에 새가족의 이름·전화·교육 내용 없음(줄 id·수만).
+- ⚠️ **운영팀이 「승인」을 한다**(`nfStaffApprove` · 친구 2026-10-07): 대기 중인 분을 active 로 만들며 **`nfteam` 하나만** 준다 — 몸통의 역할 이름을 받지 않는다.
+  건드릴 수 있는 분은 대기 중인 분과 이미 `nfteam` 인 분뿐(`not-team`). 뺄 때는 `nf_staff` 줄과 `nfteam` 만(다른 역할·승인 상태는 그대로). 이 액션을 넓히지 말 것.
+- **단계는 저장하지 않는다** — `stageOf(person, 교육 줄 수)` 가 사실에서 읽는다(`helper_id`·줄 수·`pastor_class_on`·`report_sent_at`·`parish`·`cert_no`·`stopped_at`). 단계 칸을 만들지 말 것(어긋난다).
+- **교육 줄 = 섬김이 보고서의 한 줄**(일자·내용·비고 · `nf_lessons`). 따로 쓰는 보고서는 없다. 네 번까지 `lesson`, 그 뒤는 `extra`(횟수에 안 든다).
+  같은 날 교육 두 번은 `same-day`(부분 unique 색인) · 보고서를 보낸 뒤에는 줄이 잠긴다(`sent`) — 목사님이 돌려보내야(`nfReportReturn`) 풀린다 · 목사님 교육 뒤에는 줄을 지울 수 없다(`class-done`).
+- ⚠️ **수료번호는 SQL 함수 `nf_ceremony_confirm` 한 곳에서만 매긴다**(참석으로 표시한 분 · 이름순 · 그해 `nf_settings.next_no` — 2026년은 201부터, 다른 해는 1부터 저절로).
+  `cert_no`·`nf_settings` 를 손으로 고치지 말 것. 확정은 되돌리는 길이 없다 — 확정 뒤에는 빼기·등록식 지우기·교구 바꾸기·그분 지우기가 모두 `confirmed`.
+  등록식 명단은 저절로 채우지 않는다(운영팀이 후보에서 담는다) · 후보 = 교구 배정까지 끝난 분.
+- **편성 교구**는 교인명부 `church_people.mok3` 에서 끝의 「목장」을 뗀 글자(예 `믿음-35`) — 목록에 없는 글자는 `bad-parish`(명부가 빈 DB 에서는 꼴만 본다). 10분 기억.
+- **사진**(카드 사진·환영 사진): 비공개 칸 `newfamily` · 정책 없음(service role 만) · 볼 때마다 5분 서명 주소(`nfPhotoUrl` · 기록 `nf.view`). 화면이 캔버스에 다시 그려 줄인다(긴 변 1600 · 위치 정보 떨어짐) — 원본 파일을 그대로 보내지 말 것.
+- **통계**(`buildStats`): 「오신 분」·「수료 대상」은 늘 카드를 쓴 날 · 「등록」만 기준(card·parish·ceremony)을 따른다. 표 머리와 엑셀 맨 위에 기준을 적는다.
+- 화면이 본 때(`base`)는 **시각으로** 견준다(`sameTime` — 서버가 돌려준 「…Z」와 DB 의 「…+00:00」).
+- 개발 시험: `tests/nf.dev.test.mjs`(지어낸 이름 · 스스로 지우고 그해 다음 번호를 되돌린다). 진짜 카드·명단·사진은 저장소 밖(`C:\Projects\Data\새가족\`)에만 — 개발 DB 에는 지어낸 이름만.
+- **남은 것**: ① 카드 사진 판독(`nfCardRead` · Gemini — 실제 카드로 먼저 잰다 · 켜면 `privacy.html` 10번에 바깥 서비스로 보내는 것을 적을 것) ② 인쇄물 여섯 가지 ③ 수료번호를 드린 분의 지우기 ④ 운영 반영(SQL 016 → 함수 → 화면 · 친구 허락 뒤).
+
 ## 비상 절차
 ① **유일한 총괄 관리자가 카카오 계정을 잃었을 때** — 새 카카오로 로그인·등록 → 작업 폴더에서
 `select id,name,gu,mok,kakao_nickname from admin_members where status='pending'` 로 id 확인 →
