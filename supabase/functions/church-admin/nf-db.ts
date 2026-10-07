@@ -453,7 +453,7 @@ export function makeNf(db: Db, audit: Audit, deps: {
   async function nfList(ctx: any) {
     const v = await viewOf(ctx);
     const scope = listScope(v);
-    if (scope === "none") return { ok: true, scope, today: today(), people: [], helpers: [] };
+    if (scope === "none") return { ok: true, scope, today: today(), people: [], helpers: [], cards: [], canWrite: false, canAssign: false, chief: false };
     const people = scope === "mine"
       ? await deps.allRows(() => db.from("nf_people").select(PERSON_COLS).eq("helper_id", v.helperId).order("created_at", { ascending: false }))
       : await deps.allRows(() => db.from("nf_people").select(PERSON_COLS).order("created_at", { ascending: false }));
@@ -462,7 +462,7 @@ export function makeNf(db: Db, audit: Audit, deps: {
     for (let i = 0; i < cardIds.length; i += 200) {
       const part = cardIds.slice(i, i + 200);
       const [cs, gs] = await Promise.all([
-        deps.allRows(() => db.from("nf_cards").select("id,reg_date,service,address,draft").in("id", part)),
+        deps.allRows(() => db.from("nf_cards").select("id,reg_date,service,address,draft,card_photo,welcome_photo").in("id", part)),
         deps.allRows(() => db.from("nf_guides").select("card_id,seq,name,mok").in("card_id", part).order("seq")),
       ]);
       for (const c of cs) cards.set(String(c.id), c);
@@ -483,7 +483,12 @@ export function makeNf(db: Db, audit: Audit, deps: {
       for (const p of out) if (p.stage === "learning" && p.helperId) load.set(String(p.helperId), (load.get(String(p.helperId)) ?? 0) + 1);
       helpers = hs.map((h: any) => ({ id: String(h.id), name: h.name, services: h.services || "", resting: h.resting === true, load: load.get(String(h.id)) ?? 0 }));
     }
-    return { ok: true, scope, today: t, people: out, helpers };
+    // 카드 묶음(새가족 카드 메뉴) — 카드를 읽는 분에게만. 사진은 있는지만(주소는 nfPhotoUrl 이 볼 때마다 만든다)
+    const cardList = canCardRead(v) ? [...cards.values()].map((c: any) => ({
+      id: String(c.id), regDate: c.reg_date, service: c.service || "", draft: c.draft === true,
+      hasCardPhoto: !!c.card_photo, hasWelcomePhoto: !!c.welcome_photo,
+    })) : [];
+    return { ok: true, scope, today: t, people: out, helpers, cards: cardList, canWrite: canCardWrite(v), canAssign: canAssign(v), chief: v.chief };
   }
 
   // 한 분 줄 읽기(쓰기 액션이 먼저 부른다)

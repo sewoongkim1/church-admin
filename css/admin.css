@@ -1837,3 +1837,53 @@ body.ec-cert-on{overflow:hidden}
 @media (min-width:1024px) and (min-height:760px){
   .dty-split > .dty-cal{position:sticky;top:calc(var(--head-h) + 8px)}
 }
+
+/* ── nf- 새가족(2026-10-07 · 1단계) — 폰 세로가 기준. PC 배치는 맨 아래 @media 안에만 ── */
+.nf-top{margin-bottom:12px}
+.nf-h3{margin:20px 0 6px;font-size:1rem;color:var(--navy-dark)}
+.nf-hint{margin:0 0 10px;line-height:1.5}
+.nf-count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 7px;border-radius:999px;
+  background:var(--ghost-bg);color:var(--navy);font-size:13px;font-weight:700}
+.nf-card-h,.nf-row-h{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
+.nf-names{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.nf-nm{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-weight:700}
+.nf-nm small{font-weight:400;color:var(--gray)}
+.nf-re{margin-top:8px}
+.nf-re .btn{min-height:var(--chip);font-size:13px;color:var(--ink-2)}
+.nf-row.quiet{border-color:var(--gold)}
+.nf-sub{margin:2px 0;color:var(--ink-2);font-size:14px;line-height:1.5}
+.nf-row .acts{margin-top:10px}
+.nf-tel{color:var(--navy);font-weight:700;text-decoration:none}
+.nf-group{margin-bottom:14px}
+.nf-group > summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:var(--tap);cursor:pointer;color:var(--navy-dark)}
+.nf-group > summary small{flex-basis:100%;margin:-4px 0 6px}
+/* 카드 입력 창 */
+.nf-person{margin:0 0 12px;padding:12px 12px 2px;border:1px solid var(--border);border-radius:12px;min-width:0}
+.nf-person legend{padding:0 6px;font-weight:700;color:var(--navy)}
+.nf-x{margin-left:8px;min-height:28px;padding:0 10px;border:1px solid var(--danger-bd);border-radius:999px;background:var(--danger-bg);color:var(--error);font-size:13px}
+.nf-seg{margin-bottom:0}
+.nf-seg button{min-height:var(--tap);font-size:1rem}
+.nf-target{padding:10px;border-radius:10px;background:var(--cream)}
+.nf-target > span small{display:block;margin-top:2px;line-height:1.45}
+.nf-check{display:flex;align-items:flex-start;gap:8px;min-height:var(--tap);margin-bottom:10px;line-height:1.45}
+.nf-check input{flex:none;width:22px;height:22px;margin-top:1px}
+.nf-consent{padding:10px;border:1px solid var(--ghost-bd);border-radius:10px;background:var(--ghost-bg);font-weight:700}
+.nf-add{margin-bottom:14px}
+.nf-guide{margin-bottom:12px;padding:12px 12px 2px;border:1px dashed var(--border);border-radius:12px}
+.nf-guide-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.nf-find{min-height:var(--chip);font-size:13px}
+.be-body textarea[data-f="note"]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font:inherit}
+/* 사진·카드 보기 창 */
+.nf-photo-dlg{width:min(96vw,720px)}
+.nf-photo{display:block;max-width:100%;max-height:70vh;margin:0 auto;border-radius:8px}
+.nf-view-dlg{width:min(96vw,520px)}
+.nf-view{max-height:70vh;overflow:auto;text-align:left}
+.nf-kv{display:flex;gap:10px;padding:4px 0;font-size:14px}
+.nf-kv span{flex:none;width:76px;color:var(--gray)}
+.nf-kv b{min-width:0;font-weight:500;word-break:break-all}
+.nf-view-p{margin:8px 0;padding:8px 10px;border:1px solid var(--border);border-radius:10px}
+@media (min-width:1024px){
+  .nf-list,.nf-group[open]{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:var(--gap);align-items:start}
+  .nf-group[open] > summary{grid-column:1/-1}
+  .nf-list .card,.nf-group .card{margin-bottom:0}
+}

@@ -33,7 +33,7 @@ test("메뉴 모듈 파일이 있다", () => {
 });
 
 test("묶음 차례 — 교인명부가 맨 위(친구 2026-09-30) · 사역신청 · 성경필사(암송) · 교육 · 봉사 당번 · 시스템", () => {
-  assert.deepEqual([...new Set(MENUS.map((m) => m.group))], ["교인명부", "사역신청", "성경필사(암송)", "교육", "봉사 당번", "시스템"]);
+  assert.deepEqual([...new Set(MENUS.map((m) => m.group))], ["교인명부", "사역신청", "성경필사(암송)", "교육", "봉사 당번", "새가족", "시스템"]);
   // 한 묶음의 메뉴는 붙어 있다 — 왼쪽 메뉴·처음 화면이 묶음 머리 아래 모아 보인다
   const seen = [];
   for (const m of MENUS) { if (seen.at(-1) !== m.group) seen.push(m.group); }
@@ -46,7 +46,7 @@ test("묶음(대분류)마다 아이콘이 있다", () => {
 
 test("menuGroups — 받은 메뉴만 묶음 차례대로 · 빈 묶음은 없다", () => {
   const gs = menuGroups(menusFor(["super"]));
-  assert.deepEqual(gs.map((g) => g.group), ["교인명부", "사역신청", "성경필사(암송)", "교육", "봉사 당번", "시스템"]);
+  assert.deepEqual(gs.map((g) => g.group), ["교인명부", "사역신청", "성경필사(암송)", "교육", "봉사 당번", "새가족", "시스템"]);
   assert.equal(gs[0].icon, GROUP_ICON["교인명부"]);
   assert.deepEqual(gs[0].menus.map((m) => m.id), MENUS.filter((m) => m.group === "교인명부").map((m) => m.id));
   const be = menuGroups(menusFor(["bibleevent"]));
@@ -99,4 +99,16 @@ test("봉사 당번 묶음 — 당번 관리(당번 총괄만) 다음에 당번 
   }
   assert.equal(menusFor(["super"]).filter((m) => m.group === "봉사 당번").length, 2);
   assert.equal(GROUP_ICON["봉사 당번"], "🙋");
+});
+
+// 🌱 새가족(2026-10-07 · 1단계)
+test("새가족 — 카드·현황은 운영팀과 섬김 둘 다 · 함께 쓰는 분은 운영팀만", () => {
+  const nf = MENUS.filter((m) => m.group === "새가족");
+  assert.deepEqual(nf.map((m) => m.id), ["nf-card", "nf-board", "nf-staff"]);
+  assert.deepEqual(menusFor(["nfteam"]).map((m) => m.id), ["nf-card", "nf-board"]);
+  assert.deepEqual(menusFor(["newfamily"]).map((m) => m.id), ["nf-card", "nf-board", "nf-staff"]);
+  for (const r of ["ministry", "directory", "bibleevent", "education", "educourse", "teacher", "duty", "dutylead"]) {
+    assert.deepEqual(menusFor([r]).filter((m) => m.group === "새가족"), [], r);
+  }
+  assert.ok(GROUP_ICON["새가족"]);
 });

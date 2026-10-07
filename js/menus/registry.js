@@ -51,6 +51,14 @@ export const MENUS = [
     role: "duty", load: () => import("./duty/boards.js") },
   { id: "duty-roster", group: "봉사 당번", icon: "📅", label: "당번 명단", desc: "날짜마다 선 분 · 넣기·빼기·옮기기 · 확정 · 쉬는 날 · 자리 틀 · 엑셀",
     roles: ["duty", "dutylead"], load: () => import("./duty/roster.js") },
+  // 🌱 새가족(2026-10-07 · 1단계) — 종이 등록카드 → 섬김이 배정 → 교육 → 교구 배정 → 등록식. 성도님 앱에는 없다(내부 담당자만).
+  //   새가족 운영팀(newfamily) = 전부 · 새가족 섬김(nfteam) = 영접팀·정착팀 총무·섬김이·목사님 — 하는 일과 자기 줄은 서버 nf-db.ts 가 본다(not-assigned).
+  { id: "nf-card", group: "새가족", icon: "🌱", label: "새가족 카드", desc: "등록카드 넣기·고치기 · 카드 사진 · 환영 사진",
+    roles: ["newfamily", "nfteam"], load: () => import("./newfamily/cards.js") },
+  { id: "nf-board", group: "새가족", icon: "👣", label: "새가족 현황", desc: "한 분마다 지금 몇째 걸음인지 · 섬김이 배정",
+    roles: ["newfamily", "nfteam"], load: () => import("./newfamily/board.js") },
+  { id: "nf-staff", group: "새가족", icon: "🧑‍🤝‍🧑", label: "함께 쓰는 분", desc: "영접팀 · 정착팀 총무 · 섬김이 · 새가족 목사님 넣기·빼기",
+    role: "newfamily", load: () => import("./newfamily/staff.js") },
   { id: "members", group: "시스템", icon: "🔑", label: "담당자·역할", desc: "승인 대기 · 역할 주기 · 정지",
     role: "super", load: () => import("./system/members.js") },
   // 🧪 시험 참여자 — 시스템 묶음 · 총괄만(2026-10-02 친구 요청 · 그전에는 사역신청 묶음 · 역할 ministry).
@@ -62,7 +70,7 @@ export const MENUS = [
 ];
 
 // 묶음(대분류) 머리의 아이콘 — 메뉴 줄(중분류)의 아이콘과 겹치지 않게 고른다
-export const GROUP_ICON = { "교인명부": "👥", "사역신청": "🤝", "성경필사(암송)": "✍️", "교육": "🎓", "봉사 당번": "🙋", "시스템": "⚙️" };
+export const GROUP_ICON = { "교인명부": "👥", "사역신청": "🤝", "성경필사(암송)": "✍️", "교육": "🎓", "봉사 당번": "🙋", "새가족": "💐", "시스템": "⚙️" };
 
 // 메뉴 하나가 받는 역할들 — roles 배열 · role 배열 · role 글자 하나 모두 배열로
 export function menuRoles(m) {

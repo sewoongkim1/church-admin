@@ -231,7 +231,7 @@ test("메뉴 — 성경필사(암송) 세 메뉴가 사역신청 뒤·교육(시
   assert.equal(MENUS.filter((m) => m.group === "성경필사(암송)").length, 3);
   // 다른 세션이 사역신청·교인명부에 메뉴를 더해도 깨지지 않게 — 옆 메뉴의 id 가 아니라 묶음으로 본다
   assert.equal(MENUS[i - 1].group, "사역신청");
-  assert.deepEqual([...new Set(MENUS.slice(i + 3).map((x) => x.group))], ["교육", "봉사 당번", "시스템"]);   // 뒤는 교육 → 봉사 당번(2026-10-06) → 시스템
+  assert.deepEqual([...new Set(MENUS.slice(i + 3).map((x) => x.group))], ["교육", "봉사 당번", "새가족", "시스템"]);   // 뒤는 교육 → 봉사 당번(2026-10-06) → 새가족(2026-10-07) → 시스템
   const m = MENUS.find((x) => x.id === "be-history");
   assert.deepEqual([m.group, m.icon, m.label, m.desc, m.role],
     ["성경필사(암송)", "👤", "사람별 이력·통계", "이름으로 찾기 · 회차별·교구별 · 여러 번 참여", "bibleevent"]);

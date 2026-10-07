@@ -1,0 +1,133 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { birthIn, birthText, cardToForm, formToCard, blankPerson, personLine, guideLine, stageText, groupByStage, groupByCard,
+  helperOptions, foundMok, foundOptions, shrinkSize, nfWord, KIND_OPTIONS, KIND_LABEL, STAGE_ORDER, STAGE_HINT }
+  from "../js/menus/newfamily/nf-logic.js";
+import { NF_KINDS, NF_STAGES, NF_SERVICES, NF_LESSONS } from "../supabase/functions/church-admin/nf-rules.ts";
+import { SERVICES, LESSONS } from "../js/menus/newfamily/nf-logic.js";
+
+test("화면과 서버의 목록이 같다 — 하는 일·단계·예배·교육 횟수", () => {
+  assert.deepEqual(KIND_OPTIONS.map((o) => o.value), [...NF_KINDS]);
+  assert.deepEqual(Object.keys(KIND_LABEL).sort(), [...NF_KINDS].sort());
+  assert.deepEqual([...STAGE_ORDER].sort(), [...NF_STAGES].sort());
+  for (const s of NF_STAGES) assert.ok(STAGE_HINT[s], s);
+  assert.deepEqual(SERVICES, [...NF_SERVICES]);
+  assert.equal(LESSONS, NF_LESSONS);
+});
+
+test("birthIn — 여덟 자리·여섯 자리·구분 글자", () => {
+  assert.equal(birthIn("19591015", 2026), "1959-10-15");
+  assert.equal(birthIn("591015", 2026), "1959-10-15");
+  assert.equal(birthIn("180301", 2026), "2018-03-01");
+  assert.equal(birthIn("59.10.15", 2026), "1959-10-15");
+  assert.equal(birthIn("1959-10-15", 2026), "1959-10-15");
+  assert.equal(birthIn("59년 10월 15일", 2026), "1959-10-15");
+  assert.equal(birthIn("", 2026), "");
+  assert.equal(birthIn("  ", 2026), "");
+  assert.equal(birthIn("1959", 2026), null);
+  assert.equal(birthIn("19591315", 2026), null);
+  assert.equal(birthIn("19590231", 2026), null);
+  assert.equal(birthText("1959-10-15"), "1959.10.15");
+  assert.equal(birthText(null), "");
+});
+
+test("cardToForm — 새 카드는 오늘·본인 한 줄·인도자 두 칸", () => {
+  const f = cardToForm(null, "2026-10-11");
+  assert.equal(f.regDate, "2026-10-11");
+  assert.equal(f.consent, false);
+  assert.equal(f.people.length, 1);
+  assert.equal(f.people[0].relation, "본인");
+  assert.equal(f.people[0].target, null);   // 예/아니오를 골라야 한다
+  assert.equal(f.guides.length, 2);
+});
+
+test("cardToForm → formToCard — 고칠 때 번호·때(base)가 실린다", () => {
+  const r = { card: { id: "c1", updatedAt: "t1", regDate: "2026-10-04", service: "3부", address: "주소", selfCome: false, draft: true },
+    guides: [{ seq: 1, name: "박인도", mok: "기쁨-25", phone: "010-1111-2222" }],
+    people: [{ id: "p1", relation: "본인", name: "김하늘", gender: "여", birth: "1959-10-15", birthLunar: true, phone: "010-1234-5678", tel: "", baptized: "yes", target: true },
+      { id: "p2", relation: "자녀", name: "김바다", gender: "", birth: null, phone: "", tel: "", baptized: "unknown", target: false }] };
+  const f = cardToForm(r, "2026-10-11");
+  assert.equal(f.people[0].birth, "1959.10.15");
+  assert.equal(f.consent, true);
+  const { body } = formToCard(f, 2026);
+  assert.equal(body.card_id, "c1");
+  assert.equal(body.base, "t1");
+  assert.equal(body.draft, true);
+  assert.deepEqual(body.people[0], { id: "p1", relation: "본인", name: "김하늘", gender: "여", birth: "1959-10-15", birth_lunar: true,
+    phone: "010-1234-5678", tel: "", baptized: "yes", target: true });
+  assert.equal(body.people[1].birth, "");
+  assert.equal(body.people[1].target, false);
+  assert.deepEqual(body.guides, [{ name: "박인도", mok: "기쁨-25", phone: "010-1111-2222" }]);
+});
+
+test("formToCard — 보내기 전에 잡는 것", () => {
+  const base = () => ({ ...cardToForm(null, "2026-10-11"), consent: true });
+  assert.equal(formToCard({ ...base(), consent: false }, 2026).error, nfWord("no-consent"));
+  assert.match(formToCard(base(), 2026).error, /이름/);
+  const f = base();
+  f.people[0] = { ...blankPerson(true), name: "김하늘" };
+  assert.match(formToCard(f, 2026).error, /예 \/ 아니오/);
+  f.people[0].target = true;
+  f.people[0].birth = "1959";
+  assert.match(formToCard(f, 2026).error, /생년월일/);
+  f.people[0].birth = "";
+  // 이름 없는 가족 줄은 건너뛴다 · 스스로 오심이면 인도자를 보내지 않는다
+  f.people.push(blankPerson(false));
+  f.guides[0].name = "박인도";
+  f.selfCome = true;
+  const { body } = formToCard(f, 2026);
+  assert.equal(body.people.length, 1);
+  assert.deepEqual(body.guides, []);
+  assert.equal(body.self_come, true);
+  assert.equal("card_id" in body, false);
+});
+
+test("명단의 글 — 둘째 줄·인도자·단계", () => {
+  assert.equal(personLine({ relation: "본인", gender: "여", ageBand: "60대", service: "3부", regDate: "2026-10-04" }), "여 · 60대 · 3부 · 10.04 등록");
+  assert.equal(personLine({ relation: "자녀", gender: "", ageBand: "미취학" }), "자녀 · 미취학");
+  assert.equal(guideLine({ guides: [{ name: "박인도", mok: "기쁨-25" }, { name: "최인도", mok: "" }] }), "인도 박인도(기쁨-25), 최인도");
+  assert.equal(guideLine({ guides: [] }), "");
+  assert.equal(stageText({ stage: "learning", lessons: 2, stageLabel: "교육 중" }), "교육 중 2/4");
+  assert.equal(stageText({ stage: "wait_helper", stageLabel: "배정 기다림" }), "배정 기다림");
+});
+
+test("groupByStage — 할 일이 있는 단계가 위로 · 소식 없는 분이 먼저 · 이름 찾기", () => {
+  const people = [
+    { id: 1, name: "가나", stage: "info", stageLabel: "정보만" },
+    { id: 2, name: "다라", stage: "learning", stageLabel: "교육 중", quiet: false },
+    { id: 3, name: "마바", stage: "learning", stageLabel: "교육 중", quiet: true },
+    { id: 4, name: "사아", stage: "wait_helper", stageLabel: "배정 기다림" },
+  ];
+  const g = groupByStage(people);
+  assert.deepEqual(g.map((x) => x.stage), ["wait_helper", "learning", "info"]);
+  assert.deepEqual(g[1].people.map((p) => p.id), [3, 2]);
+  assert.deepEqual(groupByStage(people, "마").map((x) => x.people.length), [1]);
+  assert.deepEqual(groupByStage([], ""), []);
+});
+
+test("groupByCard — 본인이 먼저 · 등록일 늦은 카드부터", () => {
+  const cards = [{ id: "a", regDate: "2026-10-04" }, { id: "b", regDate: "2026-10-11" }];
+  const people = [{ id: 1, cardId: "a", relation: "자녀" }, { id: 2, cardId: "a", relation: "본인" }, { id: 3, cardId: "b", relation: "본인" }];
+  const g = groupByCard(cards, people);
+  assert.deepEqual(g.map((c) => c.id), ["b", "a"]);
+  assert.deepEqual(g[1].people.map((p) => p.id), [2, 1]);
+});
+
+test("helperOptions — 쉬는 분은 빠지고 맡은 수가 적은 분부터", () => {
+  const hs = [{ id: "1", name: "나섬김", services: "3부", load: 2, resting: false }, { id: "2", name: "가섬김", services: "", load: 0, resting: false },
+    { id: "3", name: "쉬는분", services: "", load: 0, resting: true }];
+  assert.deepEqual(helperOptions(hs), [{ value: "2", label: "가섬김 · 지금 0분" }, { value: "1", label: "나섬김 · 3부 · 지금 2분" }]);
+  assert.equal(helperOptions(hs, { withClear: true }).at(-1).label, "배정 풀기");
+});
+
+test("명부에서 찾은 분 — 목장 글자", () => {
+  assert.equal(foundMok({ church_mok: "기쁨-25", group: "기쁨", sub: "25" }), "기쁨-25");
+  assert.equal(foundMok({ church_mok: "", group: "기쁨", sub: "25" }), "기쁨-25");
+  assert.deepEqual(foundOptions([{ name: "박인도", church_mok: "기쁨-25", position: "집사" }]), [{ value: "0", label: "박인도 · 기쁨-25 · 집사" }]);
+});
+
+test("shrinkSize — 긴 변 1600", () => {
+  assert.deepEqual(shrinkSize(4000, 3000), { w: 1600, h: 1200 });
+  assert.deepEqual(shrinkSize(3000, 4000), { w: 1200, h: 1600 });
+  assert.deepEqual(shrinkSize(800, 600), { w: 800, h: 600 });
+});
