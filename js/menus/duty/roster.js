@@ -1,4 +1,5 @@
 // 📅 당번 명단 — 당번 고르기 · 날짜 칩(날짜가 넷 이상이면 달력 — roster-cal.js) · 그날 판(확정·쉬는 날·메모) · 자리마다 선 분(넣기·빼기·옮기기·메모) · 자리 틀 · 날짜 더하기 · 쉬는 기간 · 엑셀
+//   명단은 **달을 통째로** 읽는다(rosterFrom — 달력이 그리는 달에 「아직 안 읽은 날」이 없게) · 달력이 있을 때 다시 그려도 화면은 제자리다(settleView — 달력이 손끝에서 달아나지 않게).
 //   (봉사 당번 1단계 · 2026-10-06 · 설계 v2 docs/superpowers/specs/2026-10-06-duty-roster-design.md §6)
 //   서버: dutyBoardList·dutyRoster·dutyBoardSave·dutyLineSave·dutyLineRemove·dutyDateAdd·dutyDaySet·dutyDaysOff·dutySlotSet·dutySlotDelete·
 //         dutySignAdd·dutySignRemove·dutySignMove·dutySignNote·dutyAskClear·dutyPeopleLookup·dutyExport
@@ -11,11 +12,11 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { openBoardForm } from "./board-form.js";
-import { emptyWhy, seenOfRoster, calUse, calStep, olderPick, olderText, revealBy } from "./duty-logic.js";
+import { emptyWhy, seenOfRoster, calUse, calStep, olderPick, olderText, rosterFrom, olderBack, calSettle } from "./duty-logic.js";
 import { calHtml } from "./roster-cal.js";
 import { openLineForm, openDateAddForm, openOffForm, offFlow, openAddForm, openNoteForm, openDayNoteForm, openCapacityForm, failText, sayDone } from "./roster-forms.js";
 import {
-  boardRest, contactHtml, maxBack, lineText, lineSavedText, lineRemovedText, boardSavedText, initialDay, dayChip, dayStateText, dayActions, dayLabel, addDays, slotName, timeRange,
+  boardRest, contactHtml, maxBack, lineText, lineSavedText, lineRemovedText, boardSavedText, initialDay, dayChip, dayStateText, dayActions, dayLabel, slotName, timeRange,
   slotCount, signupBadges, askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, removeAsk, restoreAsk, restoredText, slotOffAsk,
   movedText, dateAddedText, dayHiddenText, draftNote, appNote, STALE_BOARD, notifyBadges, confirmDoneText,
   offDoneText, notifyTail, needsReload, lostBoard, exportFileName, exportRanges, EMPTY_ASSIGNED, EMPTY_ALL,
@@ -24,7 +25,7 @@ import {
 const TITLE = `<h2 class="page-title">📅 당번 명단</h2>`;
 const LOADING = `<p class="empty">불러오는 중…</p>`;
 const TABS = [["roster", "명단"], ["lines", "자리 틀"]];
-const BACK_STEP = 28;   // 「지난 날 더 보기」 한 번에 4주(52주까지 — duty-logic.js maxBack)
+const BACK_STEP = 28;   // 「지난 날 더 보기」 한 번에 4주(52주까지 — duty-logic.js maxBack) · 불러오는 것은 그 날이 든 달의 1일부터(rosterFrom — 달을 통째로)
 const STATE_NOTE = {
   closed: "지원 멈춤 — 앱에 당번표와 내 당번은 보이지만 새 지원은 받지 않아요. 담당자가 「넣기」로 넣어요.",
   archived: "보관한 당번이에요 — 볼 수만 있어요(당번 총괄이 🧰 당번 관리에서 상태를 바꾸면 다시 고칠 수 있어요).",
@@ -80,10 +81,11 @@ export async function render(el, { call, query }) {
   let ros = null;        // dutyRoster 답 { chief, today, from, to, board, lines, days, staff }
   let day = "";          // 고른 날짜
   let tab = "roster";
-  let back = 14;         // 지난 며칠까지 불러왔나
+  let back = 14;         // 지난 며칠까지 불러왔나(실제로는 그 날이 든 달의 1일부터 — rosterFrom)
   const pending = new Set();
   const folds = new Set();   // 「빠진 분」을 펼쳐 둔 자리
-  let calFocus = "";         // 달력을 눌러 다시 그리면 눌렀던 단추가 사라진다 — 그린 뒤 초점을 돌려줄 곳("day" · "prev" · "next")
+  let calFocus = "";         // 눌러서 다시 그리면 눌렀던 단추가 사라진다 — 그린 뒤 초점을 돌려줄 곳("day" · "prev" · "next" · "older" = 달력 밖의 「지난 날 더 보기」)
+  let calView = null;        // 이번 그리기가 무엇을 눌러서인가 — { cal: 달력을 눌렀다 · reveal: 날짜를 눌렀다(그날 판 보이기) · kb: 자판으로 눌렀다 } · 초점 표식처럼 한 번 쓰고 지운다
 
   const loadBoards = async () => {
     const r = await call("dutyBoardList", {});
@@ -96,8 +98,8 @@ export async function render(el, { call, query }) {
   // 당번 b 의 명단을 불러와 cur·ros 로 — 실패하면 아무것도 바꾸지 않는다(보던 당번이 그대로 남는다)
   //   → { ok:true } · { ok:false, gone:"당번을 놓을 까닭" } · { ok:false, error }
   const loadRoster = async (b, wantDay = day) => {
-    // 끝(to)은 보내지 않는다 — 서버가 앞날(가장 먼 날짜 줄까지 · 오늘 + 400일)과 지난 날을 따로 자른다
-    const r = await call("dutyRoster", { board_id: b.id, ...(today ? { from: addDays(today, -back) } : {}) });
+    // 끝(to)은 보내지 않는다 — 서버가 앞날(가장 먼 날짜 줄까지 · 오늘 + 400일)과 지난 날을 따로 자른다. 처음(from)은 달의 1일 — 달력이 그리는 달은 늘 통째로 읽은 달이다
+    const r = await call("dutyRoster", { board_id: b.id, ...(today ? { from: rosterFrom(today, back) } : {}) });
     if (!r.ok && r.error === "not-found") return { ok: false, gone: "그 당번을 찾지 못했어요" };
     if (!r.ok && lostBoard(r.error)) return { ok: false, gone: failText(r), lost: true };   // 그사이 맡은 당번에서 빠졌다
     if (!r.ok) return { ok: false, error: r };
@@ -188,18 +190,42 @@ export async function render(el, { call, query }) {
       days.map((x) => chipHtml(x, x.date === day, today)).join("")}</div>`;
     return tools + chips + panel;
   };
-  // 달력에서 날짜를 누른 뒤 — 그날 판(.dty-day)이 화면 아래에 가려 있으면 보일 만큼만 굴린다(얼마나는 duty-logic.js revealBy · PC 는 달력 옆이라 0)
-  const revealDay = () => {
+  // ---------- 다시 그린 뒤의 화면 자리(달력이 있을 때) ----------
+  //   셈은 duty-logic.js calSettle(시험) — 여기서는 재고 옮기기만 한다: 굴린 자리를 지키고(문서가 줄어 달력이 손끝에서 달아나지 않게),
+  //   달력을 눌러 그린 것(view)이면 붙은 달력 옆의 그날 판을 맨 위부터 · 폰에서는 그날 판이 보일 만큼 · 자판으로 눌렀으면 초점이 가려지지 않게.
+  const pageY = () => (typeof window.scrollY === "number" ? window.scrollY : null);
+  // 달력이 머리줄 아래에 붙어 있나(PC — css 의 position:sticky) → 붙은 선(px) · 아니면 null. **다시 그리기 전에** 잰다(그린 뒤에는 문서가 줄어 자리가 달라진다).
+  const stuckAt = () => {
+    const sp = el.querySelector(".dty-split"), cal = sp && sp.querySelector ? sp.querySelector(".dty-cal") : null;
+    if (!cal || !sp.getBoundingClientRect || typeof getComputedStyle !== "function") return null;
+    const cs = getComputedStyle(cal), line = parseFloat(cs.top);
+    return cs.position === "sticky" && Number.isFinite(line) && sp.getBoundingClientRect().top < line - 0.5 ? line : null;
+  };
+  const settleView = (y0, view) => {
     const p = el.querySelector(".dty-day");
     if (!p || !p.getBoundingClientRect) return;
-    const by = revealBy(p.getBoundingClientRect().top, window.innerHeight);
-    if (!by) return;
+    const rect = (x) => (x && x.getBoundingClientRect ? x.getBoundingClientRect() : null);
+    const sp = el.querySelector(".dty-split"), pr = rect(p), sr = rect(sp), y = pageY(), doc = typeof document === "undefined" ? null : document;
+    const a = view && view.kb && doc ? doc.activeElement : null, fr = a && el.contains && el.contains(a) ? rect(a) : null;
+    // 내용의 끝 = 이 화면을 담은 판(main.view — 아래 여백까지)의 아래끝. 문서 높이(scrollHeight)로 재지 않는다 — 내용이 화면보다 짧으면 화면 높이를 준다
+    const er = rect(el.parentElement) || rect(el);
+    const s = calSettle({ y0, y, viewH: window.innerHeight, endBottom: er ? er.bottom : null,
+      splitTop: sr ? sr.top : null, splitH: sr ? sr.height : null, panelTop: pr.top, panelBottom: pr.bottom, focusTop: fr ? fr.top : null, focusBottom: fr ? fr.bottom : null,
+      stuck: view ? view.stuck : null, reveal: !!(view && view.reveal), kb: !!(view && view.kb) });
+    if (s.grow && sp && sp.style) sp.style.minHeight = `${s.grow}px`;
+    if (s.to !== null && y !== null && Math.abs(s.to - y) >= 1 && window.scrollTo) {
+      window.scrollTo(0, s.to);   // 바로(움직임 없이) — 제자리로 돌려놓는 것이라 보이지 않아야 한다
+      const lack = s.to - (pageY() ?? s.to);   // 그래도 덜 갔으면(잰 것과 달리 문서가 조금 모자랐다) 그만큼 더 늘리고 한 번 더 — 달력이 제자리에 오는 것이 약속이다
+      if (lack >= 1 && sp && sp.style && sr) { sp.style.minHeight = `${(s.grow || Math.ceil(sr.height)) + Math.ceil(lack)}px`; window.scrollTo(0, s.to); }
+    }
+    if (!s.by) return;
     const calm = !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    try { window.scrollBy({ top: by, behavior: calm ? "auto" : "smooth" }); } catch { window.scrollBy(0, by); }   // 옛 브라우저는 숫자 둘만 받는다
+    try { window.scrollBy({ top: s.by, behavior: calm ? "auto" : "smooth" }); } catch { window.scrollBy(0, s.by); }   // 옛 브라우저는 숫자 둘만 받는다
   };
 
   const draw = () => {
-    const want = calFocus; calFocus = "";   // 어느 길로 끝나든 한 번만 쓴다(다음 그리기로 넘어가 엉뚱한 때 초점이 튀지 않게)
+    const want = calFocus, view = calView; calFocus = ""; calView = null;   // 어느 길로 끝나든 한 번만 쓴다(다음 그리기로 넘어가 엉뚱한 때 초점·화면이 튀지 않게)
+    const y0 = pageY(), stuck = view && view.cal ? stuckAt() : null;       // 다시 그리기 **전의** 자리
     if (!boards.length) { el.innerHTML = TITLE + `<p class="empty">${esc(scope === "assigned" ? EMPTY_ASSIGNED : EMPTY_ALL)}</p>`; return; }
     if (!cur || !ros) { el.innerHTML = TITLE + boardBtn() + `<p class="empty">당번을 골라 주세요</p>`; return; }
     const b = ros.board, ro = b.status === "archived";
@@ -217,10 +243,17 @@ export async function render(el, { call, query }) {
     if (on && rowEl && on.getBoundingClientRect) {
       rowEl.scrollLeft += on.getBoundingClientRect().left - rowEl.getBoundingClientRect().left - (rowEl.clientWidth - on.offsetWidth) / 2;
     }
-    // 달력을 눌러 다시 그렸으면 초점을 돌려준다 — 눌렀던 단추는 innerHTML 과 함께 사라졌다(자판·화면 낭독으로 쓰는 분의 자리가 맨 위로 튕기지 않게).
-    //   앞뒤 달 단추는 같은 쪽 단추로(그쪽에 더 갈 달이 없어 단추가 사라졌으면 고른 날로) · 날짜는 고른 날로. 화면은 굴리지 않는다(preventScroll).
-    const f = !want ? null : (want === "day" ? null : el.querySelector(`.dty-cal-nav.${want === "next" ? "r" : "l"}`)) || el.querySelector(".dty-cal-c.on");
+    // 눌러서 다시 그렸으면 초점을 돌려준다 — 눌렀던 단추는 innerHTML 과 함께 사라졌다(자판·화면 낭독으로 쓰는 분의 자리가 맨 위로 튕기지 않게).
+    //   앞뒤 달 단추는 같은 쪽 단추로(그쪽에 더 갈 달이 없어 단추가 사라졌으면 고른 날로) · 날짜는 고른 날로 ·
+    //   달력 밖의 「지난 날 더 보기」(빈 명단의 단추 · 칩 줄의 칩)는 그 단추로(날짜가 나와 단추가 사라졌으면 고른 날로 — 52주까지 열세 번 누를 수 있는 단추다).
+    //   초점을 주며 화면을 굴리지는 않는다(preventScroll) — 화면 자리는 아래 settleView 가 한 번에 정한다(자판으로 눌렀을 때만 초점이 보이게 옮긴다).
+    const f = !want ? null
+      : want === "older" ? el.querySelector('[data-act="older"]') || el.querySelector(".dty-cal-c.on") || el.querySelector(".dty-chipd.on")
+      : (want === "day" ? null : el.querySelector(`.dty-cal-nav.${want === "next" ? "r" : "l"}`)) || el.querySelector(".dty-cal-c.on");
     if (f && f.focus) f.focus({ preventScroll: true });
+    // 자판으로 칩 줄의 「더 보기」를 눌렀으면 줄을 처음으로 — 고른 칩을 가운데 두느라 그 칩이 줄 밖(왼쪽)으로 밀려나 초점이 안 보이지 않게
+    if (f && want === "older" && view && view.kb && rowEl && rowEl.contains && rowEl.contains(f)) rowEl.scrollLeft = 0;
+    if (tab === "roster") settleView(y0, view ? { ...view, stuck } : null);
   };
 
   // ---------- 처음 ----------
@@ -367,20 +400,21 @@ export async function render(el, { call, query }) {
     try { await fn(); } finally { pending.delete(key); }
   };
   el.addEventListener("click", async (ev) => {
+    const kb = ev.detail === 0;   // 자판(Enter·Space)으로 누른 것 — 손끝이 없다(마우스·터치는 1 이상)
     const t = ev.target.closest("[data-tab]");
     if (t) { if (tab !== t.dataset.tab) { tab = t.dataset.tab; draw(); } return; }
     // 달력의 앞뒤 달 단추 — 그 달에서 고를 날(오늘 이후 첫 날 → 마지막 날)로 간다. 서버를 부르지 않는다(가진 명단으로 다시 그린다).
     const mon = ev.target.closest("button[data-cal]");
     if (mon) {
       const to = ros ? calStep(ros.days, day, mon.dataset.cal, today) : "";
-      if (to) { day = to; lastDay = day; calFocus = mon.dataset.cal === "next" ? "next" : "prev"; draw(); }
+      if (to) { day = to; lastDay = day; calFocus = mon.dataset.cal === "next" ? "next" : "prev"; calView = { cal: true, reveal: false, kb }; draw(); }
       return;
     }
     const chip = ev.target.closest("[data-day]");
     if (chip) {
-      const inCal = !!chip.classList && chip.classList.contains("dty-cal-c");
-      if (day !== chip.dataset.day) { day = chip.dataset.day; lastDay = day; if (inCal) calFocus = "day"; draw(); }
-      if (inCal) revealDay();   // 폰: 그날 판이 달력 아래에 가려 있으면 보일 만큼만 굴린다(이미 고른 날을 다시 눌러도)
+      const inCal = !!chip.classList && chip.classList.contains("dty-cal-c"), view = inCal ? { cal: true, reveal: true, kb } : null;
+      if (day !== chip.dataset.day) { day = chip.dataset.day; lastDay = day; if (inCal) calFocus = "day"; calView = view; draw(); }
+      else if (view) settleView(pageY(), { ...view, stuck: stuckAt() });   // 이미 고른 날을 다시 눌러도 그날 판을 보여 준다(폰: 보일 만큼 내린다 · 붙은 달력: 맨 위부터)
       return;
     }
 
@@ -393,25 +427,27 @@ export async function render(el, { call, query }) {
         if (got === null || (cur && got === cur.id)) return;
         const next = boards.find((b) => b.id === got);
         if (!next) return;
-        back = 14; folds.clear();
+        const was = back;
+        back = 14;
         const r = await busy(el, () => loadRoster(next, ""));   // 실패하면 보던 당번이 그대로 남는다
+        if (!r.ok) back = was;   // 불러온 범위도 그대로 — 14 로 남으면 그 뒤의 「지난 날」이 이미 불러온 범위를 도로 줄인다
         if (r.gone) { toast(r.gone); if (r.lost) await busy(el, reloadAll); return; }
         if (!r.ok) { toast(failText(r.error)); return; }
-        tab = "roster"; draw();
+        folds.clear(); tab = "roster"; draw();
         return;
       }
       if (!cur || !ros) return;
       await once(act, async () => {
         if (act === "older") {
-          // 지난 날을 4주 더 — 달력에서 눌렀으면 보던 달에 새 날짜가 없을 때 새로 생긴 앞 달로 간다(olderPick) · 새 날짜가 없으면 그렇다고 말한다(olderText).
+          // 지난 날을 4주 더(앞 달이 통째로 들어올 때까지 — olderBack) — 달력에서 눌렀으면 새로 생긴 앞 달로 간다(olderPick) · 새 날짜가 없으면 그렇다고 말한다(olderText).
           const before = (ros.days || []).map((x) => x.date), was = back, inCal = !!a.classList && a.classList.contains("dty-cal-nav");
-          back = Math.min(maxBack(), back + BACK_STEP);
-          if (inCal) calFocus = "prev";
+          back = olderBack(today, back, BACK_STEP);
+          calFocus = inCal ? "prev" : "older"; calView = { cal: inCal, reveal: false, kb };
           const ok = await busy(el, () => reload());
-          calFocus = "";
+          calFocus = ""; calView = null;
           if (!ok || !ros) { back = was; return; }   // 못 불러왔다(까닭은 reload 가 말했다) — 「더 지난 날짜가 없어요」라고 하지 않는다 · 다음에 같은 만큼 다시
           const to = inCal ? olderPick(before, ros.days, day, today) : day;
-          if (to !== day) { day = to; lastDay = day; calFocus = "prev"; draw(); }
+          if (to !== day) { day = to; lastDay = day; calFocus = "prev"; calView = { cal: true, reveal: false, kb }; draw(); }
           toast(olderText(before, ros.days, back, today));
         }
         else if (act === "export") await exportXlsx(a);
@@ -421,7 +457,7 @@ export async function render(el, { call, query }) {
           const got = await openDateAddForm({ call, boardId: cur.id, lines: live, today, untilDate: ros.board.untilDate || "" });
           if (got) {
             toast(dateAddedText(got.r, got.date));
-            if (got.date < addDays(today, -back)) back = Math.min(maxBack(), Math.max(back, 35));   // 지난 날짜를 더했으면 그날까지 불러온다
+            if (got.date < rosterFrom(today, back)) back = Math.min(maxBack(), Math.max(back, 35));   // 불러온 범위 앞의 날짜를 더했으면 그날까지 불러온다(더하기는 31일 앞까지)
             await busy(el, () => reload(got.date));
           }
         } else if (act === "off-range") {
