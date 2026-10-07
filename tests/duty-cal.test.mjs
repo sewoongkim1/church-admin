@@ -5,10 +5,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { HOL_FROM, HOL_UNTIL, HOLIDAYS, holidayName, holItems, holOutside, holOutsideText } from "../js/menus/duty/holidays.js";
 import {
   CAL_MIN, calUse, calMonths, calTitle, calMonthWord, calMonth, calCell, calMark, calLabel, calPick, calStep, olderPick, olderText, revealBy, calSettle,
-  rosterFrom, olderBack, dayChip, initialDay, maxBack, addDays, isSunday,
+  rosterFrom, rosterFromKeep, olderBack, dayChip, initialDay, maxBack, addDays, isSunday,
 } from "../js/menus/duty/duty-logic.js";
 import { calHtml } from "../js/menus/duty/roster-cal.js";
 import { render } from "../js/menus/duty/roster.js";
@@ -84,7 +86,7 @@ test("공휴일 표 — 꼴 · 해마다 있어야 하는 날 · 대체공휴일
   }
   assert.deepEqual(keys.filter((k) => H[k] === "대체공휴일"), [...want].filter((d) => d <= until).sort(), "대체공휴일이 규칙으로 셈한 것과 다르다(빠졌거나 더 들었다)");
   // ⚠️ 표는 두 저장소에 있다 — 성경암송 tests/duty-front.test.cjs 의 지문과 **같은 값**이어야 한다. 표를 고치면 두 표와 두 지문을 함께 고친다.
-  //   지문은 범위(HOL_FROM~HOL_UNTIL)도 싣는다 — 달력의 풀이가 그 범위를 말하므로(「…까지만 빨갛게 보여요」) 범위만 달라도 두 달력이 다른 말을 한다.
+  //   지문은 범위(HOL_FROM~HOL_UNTIL)도 싣는다 — 달력의 풀이가 그 범위를 말하므로(「…다른 공휴일은 2028년 12월까지만 표시돼요」) 범위만 달라도 두 달력이 다른 말을 한다.
   const print = createHash("sha256").update([`${from}~${until}`, ...keys.map((k) => `${k}=${H[k]}`)].join("\n")).digest("hex").slice(0, 12);
   assert.equal(print, "9c07bd766842", "공휴일 표(또는 그 범위)가 바뀌었다 — 성경암송 js/duty.js 의 DUTY_HOLIDAYS·DUTY_HOL_FROM·DUTY_HOL_UNTIL 도 같게 고치고, 두 저장소 시험의 지문을 같은 값으로 바꾼다");
 });
@@ -105,7 +107,7 @@ test("공휴일 이름 · 풀이 조각 — 표에 있는 날짜만 · 틀린 �
   assert.deepEqual(holItems(calMonth("2028-10")), ["2~4일 추석", "5일 대체공휴일", "9일 한글날"]); assert.deepEqual(holItems(calMonth("2028-04")), ["12일 국회의원 선거"]);
   assert.equal(holidayName("2027-06-07"), "", "현충일은 대체공휴일이 없다"); assert.equal(holidayName("2028-01-03"), "", "신정도 없다");
   assert.deepEqual(holItems(null), []); assert.deepEqual(holItems([{ date: "", n: 0 }, null]), []);
-  // 표가 덮지 않는 달 — 빨간 날짜가 없는 것이 「공휴일이 없다」는 뜻이 아니다(달력의 풀이가 그렇게 말한다). 1년짜리 당번은 표 끝의 한 해 전부터 그 뒤의 달을 보여 준다
+  // 표가 덮지 않는 달 — 평일이 빨갛지 않은 것이 「공휴일이 없다」는 뜻이 아니다(달력의 풀이가 그렇게 말한다 · 일요일은 표와 상관없이 어느 달이나 빨갛다). 1년짜리 당번은 표 끝의 한 해 전부터 그 뒤의 달을 보여 준다
   assert.equal(holOutside(HOL_FROM.slice(0, 7)), ""); assert.equal(holOutside(HOL_UNTIL.slice(0, 7)), ""); assert.equal(holOutside("2027-06"), "");
   assert.equal(holOutside(addDays(HOL_UNTIL, 1).slice(0, 7)), "after"); assert.equal(holOutside(addDays(HOL_FROM, -1).slice(0, 7)), "before"); assert.equal(holOutside("2031-03"), "after");
   for (const bad of ["", null, undefined, "x", "2029", "2029-1", "2029-01-01", 202901]) assert.equal(holOutside(bad), "", String(bad));
@@ -123,6 +125,17 @@ test("일요일인가(isSunday) — 날짜만 있는 값이라 UTC 로 읽는다
     assert.equal(isSunday(d), col === 0, d); n += isSunday(d) ? 1 : 0;
   }
   assert.equal(n, 114, "800일 가운데 일요일 114번");
+  // 다른 시간대의 기기에서도 같은 답인가(올리기 전 확인 반영 2026-10-07) — 이 시험이 도는 PC(한국)와 배포 전 검사(UTC)에서는 getDay 와 getUTCDay 가 같은 값이라,
+  //   요일을 기기 시각으로 읽게 바꿔도 여기까지는 모두 통과한다. UTC 서쪽·날짜선 양쪽 시간대의 자식 node 에서 모듈을 다시 읽어 일요일 판정 · 요일 글자(dayLabel) · 달력의 열(calMonth)을 함께 본다.
+  //   ⚠️ 손으로 볼 때 Git Bash 의 `TZ=… node` 는 node 에 닿지 않는다 — 자식의 env 로 준다.
+  const DS = ["2026-10-10", "2026-10-11", "2026-10-12", "2027-01-03", "2027-01-04", "2028-12-31", "2029-01-01"];
+  const child = `import { isSunday, dayLabel, calMonth } from "./js/menus/duty/duty-logic.js"; const D = ${JSON.stringify(DS)};
+    process.stdout.write(JSON.stringify({ sun: D.map(isSunday), label: D.map(dayLabel), col: D.map((d) => calMonth(d.slice(0, 7)).findIndex((c) => c.date === d) % 7) }));`;
+  for (const tz of ["America/Los_Angeles", "Pacific/Pago_Pago", "Pacific/Kiritimati"]) {
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", child], { cwd: fileURLToPath(new URL("../", import.meta.url)), env: { ...process.env, TZ: tz }, encoding: "utf8" });
+    assert.equal(r.status, 0, `${tz} — ${r.stderr}`);
+    assert.deepEqual(JSON.parse(r.stdout), { sun: [false, true, false, true, false, true, false], label: ["10월 10일(토)", "10월 11일(일)", "10월 12일(월)", "1월 3일(일)", "1월 4일(월)", "12월 31일(일)", "1월 1일(월)"], col: [6, 0, 1, 0, 1, 0, 1] }, tz);
+  }
 });
 
 test("명단을 어디서부터 읽나 — 달을 통째로(그 날이 든 달의 1일) · 「지난 날」은 불러오는 달이 실제로 앞으로 갈 때까지 · 52주까지", () => {
@@ -151,6 +164,36 @@ test("명단을 어디서부터 읽나 — 달을 통째로(그 날이 든 달�
   }
   assert.equal(olderBack("2026-10-07", maxBack()), maxBack(), "52주에서는 그대로"); assert.equal(olderBack("2026-10-07", 350), maxBack());
   assert.equal(olderBack("", 14), 42, "오늘을 모르면 4주만"); assert.equal(olderBack("2026-10-07", 14, 0), 42, "틀린 걸음은 4주로");
+});
+
+test("읽은 범위는 줄이지 않는다(rosterFromKeep) — 화면을 연 채 날이 바뀌어도 읽던 달이 통째로 빠지지 않는다 · 서버가 자르는 곳 앞으로는 가지 않는다(올리기 전 확인 반영)", () => {
+  // 10월 14일에 열어 9월 1일부터 읽었다. 15일이 되면 「오늘 − 14일」이 10월 1일이라 rosterFrom 은 한 달 뒤로 뛴다 — 9월의 날을 보던 판이 저장 뒤 다른 날로 바뀌었다
+  assert.equal(rosterFrom("2026-10-14", 14), "2026-09-01"); assert.equal(rosterFrom("2026-10-15", 14), "2026-10-01");
+  assert.equal(rosterFromKeep("2026-10-15", 14, "2026-09-01"), "2026-09-01", "이미 읽은 처음보다 뒤로 가지 않는다");
+  assert.equal(rosterFromKeep("2026-10-15", 14, ""), "2026-10-01", "읽은 것이 없으면(처음 · 다른 당번) rosterFrom 그대로");
+  assert.equal(rosterFromKeep("2026-10-15", 14), "2026-10-01"); assert.equal(rosterFromKeep("2026-10-15", 14, null), "2026-10-01"); assert.equal(rosterFromKeep("2026-10-15", 14, "x"), "2026-10-01");
+  assert.equal(rosterFromKeep("2026-10-15", 42, "2026-10-01"), "2026-09-01", "더 불러올 때는 앞으로 간다(읽은 처음이 더 뒤)");
+  assert.equal(rosterFromKeep("2026-10-15", 14, "2026-10-01"), "2026-10-01");
+  // 서버는 오늘 − 400일에서 자른다 — 읽은 처음이 그보다 앞이 될 만큼 오래 열어 둔 화면은 52주가 든 달의 1일까지만(달 가운데서 잘린 명단을 받지 않게)
+  assert.equal(rosterFrom("2027-12-20", maxBack()), "2026-12-01"); assert.equal(rosterFromKeep("2027-12-20", 14, "2026-10-01"), "2026-12-01", "한 해 넘게 연 화면");
+  assert.equal(rosterFromKeep("", 14, "2026-09-01"), "", "오늘을 모르면 보내지 않는다");
+  for (let i = 0; i < 366; i++) {   // 어느 날이든: 읽은 처음보다 뒤가 아니고 · rosterFrom 보다 뒤가 아니고 · 서버가 자르는 곳보다 뒤(달의 1일)
+    const t = addDays("2027-01-01", i), read = rosterFrom(addDays(t, -40), 14), got = rosterFromKeep(t, 14, read);
+    assert.ok(got <= rosterFrom(t, 14) && got <= read && got > addDays(t, -400) && got.endsWith("-01"), `${t} ${read} → ${got}`);
+  }
+  // 「지난 날」은 **읽은 처음보다 앞 달**이 될 때까지 간다 — 날이 바뀐 뒤(읽은 처음 9/1 · 「오늘 − 14일」의 달은 10월)에 4주만 더하면 9월을 다시 읽고 「없어요」라고만 한다
+  assert.equal(olderBack("2026-10-15", 14, 28, "2026-09-01"), 70, "9/17(같은 9월)을 지나 8/6(8월)까지"); assert.equal(rosterFrom("2026-10-15", 70), "2026-08-01");
+  assert.equal(olderBack("2026-10-15", 14, 28, ""), 42, "읽은 것을 모르면 「오늘 − back」의 달에서"); assert.equal(olderBack("2026-10-15", 14, 28, "2026-10-01"), 42);
+  assert.equal(olderBack("2026-10-15", 14, 28, "2026-11-01"), 42, "읽은 처음이 더 뒤라는 값은 믿지 않는다"); assert.equal(olderBack("2026-10-15", 14, 28, "x"), 42);
+  assert.equal(olderBack("2026-11-13", 14, 28, "2026-11-01"), 70, "…믿으면 10/30 − 28일 = 10/2(같은 10월)에서 멈춰 같은 달을 다시 읽는다");
+  assert.equal(olderBack("2026-10-15", 350, 28, "2025-11-01"), maxBack(), "52주에서 멈춘다");
+  // 명단 화면의 잇기 — 가짜 화면으로는 「같은 범위로 다시 읽기」(메모·빼기 뒤 — 창이 뜬다)를 일으킬 수 없어 글자로 본다(끝까지는 진짜 브라우저 탐침이 본다):
+  //   읽을 때 같은 당번이면 앞서 읽은 처음을 넘기고 · 읽은 뒤에만 적고 · 당번이 풀리면 버리고 · 「지난 날」과 날짜 더하기도 실제로 읽은 처음과 견준다
+  const src = read("js/menus/duty/roster.js");
+  for (const line of ['const from = today ? rosterFromKeep(today, back, cur && cur.id === b.id ? readFrom : "") : "";', "cur = b; ros = r; today = r.today || today; readFrom = from;",
+    'const drop = () => { cur = null; ros = null; day = ""; readFrom = ""; lastBoardId = ""; lastDay = ""; };', "back = olderBack(today, back, BACK_STEP, readFrom);",
+    "if (got.date < (readFrom || rosterFrom(today, back))) back = Math.min(maxBack(), Math.max(back, 35));"]) assert.ok(src.includes(line), line);
+  assert.equal(src.split("readFrom = ").length - 1, 3, "읽은 처음을 적는 곳은 셋뿐 — 처음 값 · 읽은 뒤 · 당번이 풀릴 때(못 읽은 때에는 적지 않는다)");
 });
 
 test("달력을 쓸 때 · 달 — 날짜가 넷 이상 · 날짜가 있는 달만 · 주를 채운 칸", () => {
@@ -274,6 +317,27 @@ test("다시 그린 뒤의 화면 자리(calSettle) — 굴린 자리를 지킨�
   assert.deepEqual(S({ y0: 500, y: 500, kb: true, focusTop: 30, focusBottom: 82 }), { to: 466, by: 0, grow: 0 }, "머리줄 밑이면 올린다");
   assert.deepEqual(S({ y0: 500, y: 500, kb: true, focusTop: 300, focusBottom: 352 }), { to: 500, by: 0, grow: 0 }, "보이면 그대로");
   assert.equal(S({ viewH: 100, kb: true, focusTop: 70, focusBottom: 140 }).to, 6, "초점이 화면보다 커도 머리줄 밑으로 넘기지는 않는다(70 − 64)");
+  // ② + 자판(올리기 전 확인 반영) — 붙어 있던 달력 안의 초점(칸·달 단추)은 문서를 굴려도 화면에서 제자리다: 자판 보정을 하지 않는다(하면 판이 가운데로 튄다 — 1610 → 1085)
+  const pin = { y0: 1610, y: 1610, splitTop: -1202, panelTop: -1202, panelBottom: 1900, stuck: 64, reveal: true, focusTop: 315, focusBottom: 367 };
+  assert.deepEqual(S({ ...pin, kb: true }), { to: 344, by: 0, grow: 0 }, "붙은 달력에서 Enter: 마우스와 같은 자리(판의 위가 붙은 선 64 에)");
+  assert.deepEqual(S({ ...pin, kb: true }), S({ ...pin, kb: false }), "붙어 있었으면 자판과 마우스가 같다");
+  assert.equal(S({ ...pin, kb: true, focusTop: 700, focusBottom: 752, viewH: 720 }).to, 344, "붙은 달력의 아래쪽 칸이어도(화면 아래 가까이) 판을 다시 내리지 않는다");
+  assert.equal(S({ ...pin, kb: true, stuck: null }).to, 1610, "붙어 있지 않았으면 굴린 자리 그대로(초점이 보이면)");
+  // ⑤ 달력을 누르지 않았는데 보이는 날이 바뀐 그리기(moved — 「옮기기」로 다른 날에 · 날짜 더하기): 굴린 자리를 지키지 않는다 · 문서를 늘리지 않는다
+  assert.deepEqual(S({ moved: true, y0: 2332, y: 1157, viewH: 844, endBottom: 844, splitTop: -330, splitH: 1070, panelTop: 164, panelBottom: 844 }), { to: 1157, by: 0, grow: 0 },
+    "폰: 짧은 새 판으로 문서가 줄어 브라우저가 1157 로 잘랐다 → 그대로 둔다(새 판이 보인다). 2332 로 되돌리고 늘리면 빈 화면만 남는다");
+  assert.deepEqual(S({ y0: 2332, y: 1157, viewH: 844, endBottom: 844, splitTop: -330, splitH: 1070, panelTop: 164, panelBottom: 844 }), { to: 2332, by: 0, grow: 2245 },
+    "같은 값에서 moved 가 아니면(같은 날을 다시 그림) 굴린 자리를 지킨다 — 이것이 다른 날에 쓰이면 「옮기기」 뒤 빈 화면이다");
+  assert.deepEqual(S({ moved: true, y0: 1500, y: 1500, splitTop: -1291, panelTop: -800, panelBottom: 1200 }), { to: 636, by: 0, grow: 0 }, "긴 판 → 긴 판: 새 판의 위가 머리줄 아래 선(64)에 오게 올린다(1500 − 800 − 64)");
+  assert.deepEqual(S({ moved: true, y0: 100, y: 100, splitTop: 309, panelTop: 309 }), { to: 100, by: 0, grow: 0 }, "새 판의 위가 이미 보이면 그대로 — 아래로는 굴리지 않는다");
+  assert.deepEqual(S({ moved: true, y0: 420, y: 100, viewH: 720, endBottom: 720, splitTop: 309, panelTop: 309, splitH: 400 }), { to: 100, by: 0, grow: 0 }, "문서가 줄었어도 늘리지 않는다(지킬 손끝이 없다)");
+  assert.deepEqual(S({ moved: true, y0: 790, y: 790, splitTop: -381, panelTop: -200, stuck: 64, reveal: true, kb: true, focusTop: 30, focusBottom: 82 }), { to: 526, by: 0, grow: 0 },
+    "moved 는 다른 셈(붙음·보이기·자판)보다 앞선다 — 판의 위(−200)를 선에(790 − 200 − 64) · 붙은 선 셈이면 345 다");
+  assert.deepEqual(S({ moved: true, y0: 500, y: 500, panelTop: null, splitTop: null }), { to: 500, by: 0, grow: 0 }, "판을 잴 수 없으면 제자리");
+  assert.equal(S({ moved: true, y0: 30, y: 30, panelTop: 20, splitTop: 20 }).to, 0, "0 아래로는 가지 않는다");
+  // 맨 위(갈 자리 0)에서는 늘리지 않는다(올리기 전 확인 반영) — 내용이 화면에 다 들어가는 큰 화면의 처음 그리기: 늘리면 올림 탓에 문서가 화면보다 1px 길어져 없던 굴림줄이 생긴다
+  assert.deepEqual(S({ viewH: 1080, endBottom: 986.2, splitTop: 409, panelTop: 409, panelBottom: 700 }), { to: 0, by: 0, grow: 0 }, "굴린 적이 없고 내용이 화면보다 짧다 → min-height 없음");
+  assert.deepEqual(S({ y0: 1, y: 0, viewH: 1080, endBottom: 986.2, splitTop: 409, panelTop: 409, panelBottom: 700 }), { to: 1, by: 0, grow: 655 }, "1px 이라도 굴려 두었으면 그 자리를 지킨다(1 + 1080 − 986.2 = 94.8px 모자란다)");
   // 잴 수 없을 때 — 굴린 자리를 모르면 ③ 만(옛 브라우저·시험의 가짜 화면) · 화면 높이를 모르면 아무것도 하지 않는다
   assert.deepEqual(calSettle({ y: undefined, viewH: 667, panelTop: 620, reveal: true }), { to: null, by: 173, grow: 0 });
   assert.deepEqual(calSettle({ y: undefined, viewH: 667, panelTop: 620, splitTop: 620, reveal: true }), { to: null, by: 0, grow: 0 });
@@ -310,6 +374,10 @@ test("달력 조각(calHtml) — 칸 = 단추(data-day) · 칩과 같은 뜻 · 
     '<span class="hd">빨간 날짜</span>는 일요일과 공휴일이에요(<span class="ki">3일 개천절</span> · <span class="ki">5일 대체공휴일</span> · <span class="ki">9일 한글날</span>).<br>날짜를 누르면 그날의 명단이 보여요.</p>'), "풀이");
   // 오늘이 당번 날이면 단추에 today · aria-current · 「오늘」
   const onDuty = calHtml(DAYS, "2026-10-09", "2026-10-09");
+  // 오늘이 **일요일**인 칸 — today 와 sun 이 함께 붙는다(고른 오늘 · 고르지 않은 오늘 · 당번이 없는 오늘). 오늘인 칸에서만 sun 이 빠져도 다른 단언은 모두 통과했다(올리기 전 확인 반영)
+  assert.ok(calHtml(DAYS, "2026-10-25", "2026-10-11").includes('class="dty-cal-c has k-need today sun" data-day="2026-10-11" aria-pressed="false" aria-current="date"'), "고르지 않은 오늘(일요일)");
+  assert.ok(calHtml(DAYS, "2026-10-11", "2026-10-11").includes('class="dty-cal-c has k-need on today sun" data-day="2026-10-11" aria-pressed="true" aria-current="date"'), "고른 오늘(일요일)");
+  assert.ok(calHtml(DAYS, "2026-11-01", "2026-11-15").includes('<span class="dty-cal-c today sun" aria-current="date"><span>15</span></span>'), "당번이 없는 오늘(일요일)");
   assert.ok(onDuty.includes('class="dty-cal-c has k-need on today hol" data-day="2026-10-09" aria-pressed="true" aria-current="date" aria-label="10월 9일(금) — 빈 자리 1 · 필요 2명 가운데 1명 채워졌어요 · 공휴일(한글날) · 오늘"'));
   // 첫 달 — 앞 달이 없으면 「◀ 지난 날」(더 불러올 수 있을 때만) · 마지막 달 — 오른쪽 단추 없음
   const sep = calHtml(DAYS, "2026-09-27", TODAY, { older: true });
@@ -341,7 +409,7 @@ test("달력 조각(calHtml) — 칸 = 단추(data-day) · 칩과 같은 뜻 · 
   assert.ok(big.includes('class="dty-cal-c has k-need on sun" data-day="2026-11-08" aria-pressed="true" aria-label="11월 8일(일) — 빈 자리 20 · 필요 120명 가운데 100명 채워졌어요"><span>8</span><i aria-hidden="true">100/<wbr>120</i></button>'));
   assert.ok(big.includes('<i aria-hidden="true">쉼</i>') && big.includes('<i aria-hidden="true">–</i>'));
   assert.equal((oct.match(/<wbr>/g) || []).length, 4, "10월 — 수가 적힌 칸마다 하나(4·9·11·25일 · 쉬는 18일에는 없다)");
-  // 공휴일 표가 덮지 않는 달 — 풀이가 그렇게 말한다(빨간 날짜가 없는 것이 「공휴일이 없다」로 읽히지 않게 · 1년짜리 당번은 표 끝의 한 해 전부터 그 뒤의 달을 보여 준다)
+  // 공휴일 표가 덮지 않는 달 — 풀이가 그렇게 말한다(평일이 빨갛지 않은 것이 「공휴일이 없다」로 읽히지 않게 — 일요일은 그 달에도 빨갛다 · 1년짜리 당번은 표 끝의 한 해 전부터 그 뒤의 달을 보여 준다)
   const far = [day("2028-12-24", [slot(1)]), day("2028-12-31", [slot(2)]), day("2029-01-07", [slot(3)]), day("2029-01-14", [slot(4)])];
   const jan29 = calHtml(far, "2029-01-07", TODAY);
   assert.ok(jan29.includes("<br>이 달은 일요일만 빨갛게 보여요(다른 공휴일은 2028년 12월까지만 표시돼요).<br>날짜를 누르면 그날의 명단이 보여요.</p>"), "표 끝 뒤의 달");
@@ -367,15 +435,16 @@ function screen(give = {}, { onDraw = null, contains = null, box = null } = {}) 
     pick: (date, inCal = true, ev) => click({ "[data-day]": { dataset: { day: date }, classList: { contains: (c) => inCal && c === "dty-cal-c" } } }, ev),
     older: (inCal = true, ev) => click({ "button[data-act]": { dataset: { act: "older" }, classList: { contains: (c) => inCal && c === "dty-cal-nav" } } }, ev) };
 }
-// 가짜 서버 — from(서버 duty_roster 와 같은 자르기) 뒤의 날짜만 준다. fail 을 켜 두면 명단을 못 읽는다. today = 서버가 말하는 오늘.
+// 가짜 서버 — from(서버 duty_roster 와 같은 자르기) 뒤의 날짜만 준다. fail 을 켜 두면 명단을 못 읽는다. today = 서버가 말하는 오늘
+//   (state.today 를 바꾸면 그 뒤의 답이 새 「오늘」을 말한다 — 화면을 연 채 날이 바뀐 것).
 function server(id, all, today = TODAY) {
-  const calls = [], state = { fail: false };
+  const calls = [], state = { fail: false, today };
   const call = async (action, body) => {
     calls.push([action, body]);
-    if (action === "dutyBoardList") return { ok: true, scope: "all", today, boards: [{ id, title: "식당 봉사", status: "open", statusLabel: "받는 중" }] };
+    if (action === "dutyBoardList") return { ok: true, scope: "all", today: state.today, boards: [{ id, title: "식당 봉사", status: "open", statusLabel: "받는 중" }] };
     if (action === "dutyRoster") {
       if (state.fail) return { ok: false, error: "network" };
-      return { ok: true, chief: true, appOpen: false, today, staff: [], lines: [{ id: 1, active: true, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, weekday: 0, sort: 0 }],
+      return { ok: true, chief: true, appOpen: false, today: state.today, staff: [], lines: [{ id: 1, active: true, service: "2부", task: "설거지", start: "11:30", end: "12:30", capacity: 2, weekday: 0, sort: 0 }],
         board: { id, title: "식당 봉사", status: "open", statusLabel: "받는 중", openDays: 56, untilDate: "", place: "", contact: "", maxAhead: null },
         days: all.filter((d) => d.date >= body.from) };
     }
@@ -529,6 +598,24 @@ test("명단 화면 — 「◀ 지난 날」: 앞 달을 통째로 더 불러와
     assert.equal(said.textContent, "지난 날짜 1개를 더 불러왔어요");
     assert.deepEqual([title(sc.el), chosen(sc.el)], ["2026년 9월", "2026-09-27"]);
   });
+  await withPage(async ({ said }) => {
+    // 올리기 전 확인 반영 — 화면을 연 채 날이 바뀐 뒤의 「◀ 지난 날」: **이미 읽은 처음보다 앞 달**이 될 때까지 간다.
+    //   10/14 에 열어 7월까지 불러온 탭을 두었다가 11/20 에 돌아왔다(화면이 아는 오늘은 답을 받을 때 바뀐다): 「오늘 − back」의 달(8월)만 보고 4주를 더하면
+    //   이미 읽은 7월을 다시 읽고 「더 지난 날짜가 없어요」라고만 한다
+    const P = { past: true };
+    const all = [day("2026-06-07", [slot(1)], P), day("2026-07-05", [slot(2)], P), day("2026-08-09", [slot(3)], P), day("2026-09-20", [slot(4)], P), day("2026-10-18", [slot(5)]), day("2026-10-25", [slot(6)]), day("2026-11-22", [slot(7)])];
+    const sv = server("cal-r", all, "2026-10-14"), sc = screen();
+    await render(sc.el, { call: sv.call, query: {} });
+    await sc.older();
+    assert.deepEqual([sv.froms(), said.textContent], [["2026-09-01", "2026-08-01"], "지난 날짜 1개를 더 불러왔어요"], "10/14: 9월 1일부터 → 「지난 날」 한 번에 8월까지 읽는다(9/2 는 같은 9월이라 한 걸음 더)");
+    assert.deepEqual([title(sc.el), chosen(sc.el)], ["2026년 9월", "2026-09-20"], "보던 달(10월)의 앞 달로 간다");
+    sv.state.today = "2026-11-20";
+    await sc.older();
+    assert.deepEqual([sv.froms()[2], chosen(sc.el)], ["2026-07-01", "2026-08-09"], "이번 요청은 아직 옛 오늘(10/14)로 셈한다 — 답을 받으며 오늘이 11/20 이 된다");
+    await sc.older();
+    assert.deepEqual([sv.froms()[3], title(sc.el), chosen(sc.el), said.textContent], ["2026-06-01", "2026년 7월", "2026-07-05", "지난 날짜 1개를 더 불러왔어요"],
+      "11/20 의 「오늘 − 98일」은 8월이지만 이미 7월 1일부터 읽었다 → 6월까지 읽는다(7월을 다시 읽고 「없어요」라고 하지 않는다)");
+  });
 });
 
 test("명단 화면 — 다시 그려도 달력은 제자리: 붙은 달력 옆의 판은 맨 위부터 · 문서가 줄면 그만큼 늘린다 · 자판으로 눌렀으면 초점이 가려지지 않게(독립 검토 반영)", async () => {
@@ -560,7 +647,54 @@ test("명단 화면 — 다시 그려도 달력은 제자리: 붙은 달력 옆�
       Object.assign(geo, { splitTop: -100, panelTop: -100, panelBottom: 800, docH: 3000 }); win.scrollY = 509;
       await sc.click({ "[data-tab]": { dataset: { tab: "lines" } } }); await sc.click({ "[data-tab]": { dataset: { tab: "roster" } } });
       assert.deepEqual(jumps, [345, 345], "문서가 넉넉하면 아무것도 옮기지 않는다 — 붙은 달력이어도(달력을 누른 것이 아니다)");
+      // 달력을 누르지 않았는데 **보이는 날이 바뀐** 그리기(올리기 전 확인 반영 — 「옮기기」로 다른 날에 · 날짜 더하기 · 서버가 거절해 다시 읽은 때): 굴린 자리를 지키지 않는다.
+      //   가짜 화면에서는 달력 칸이 아닌 날짜 단추의 누름이 그 꼴이다(view 없음 + 날이 바뀜 — draw 가 지난번 그린 날과 견준다).
+      //   긴 판을 2332 까지 굴렸다 → 짧은 판의 날로 바뀌어 문서가 줄고 브라우저가 1157 로 잘랐다: 그대로 둔다(되돌리고 늘리면 새 판이 화면 위로 사라져 빈 화면만 남는다)
+      split.style.minHeight = undefined; win.scrollY = 2332; Object.assign(geo, { splitTop: -1900, panelTop: -1900, panelBottom: 700, docH: 3232 });
+      geo.next = { y: 1157, geo: { splitTop: -330, panelTop: 164, panelBottom: 844, docH: 2001 } };
+      await sc.pick("2026-11-01", false);
+      assert.equal(chosen(sc.el), "2026-11-01", "보이는 날이 바뀌었다");
+      assert.deepEqual([jumps, split.style.minHeight, win.scrollY], [[345, 345], undefined, 1157], "굴린 자리로 되돌리지 않고 문서도 늘리지 않는다 — 브라우저가 둔 자리에서 새 판이 보인다");
+      // 긴 판 → 긴 판: 새 판의 위가 머리줄 아래 선(64)보다 위에 있으면 그 선까지 올린다(새 날의 판을 위부터 본다)
+      win.scrollY = 1500; Object.assign(geo, { splitTop: -1291, panelTop: -800, panelBottom: 1200, docH: 4000 });
+      await sc.pick("2026-10-25", false);
+      assert.deepEqual([jumps, split.style.minHeight], [[345, 345, 636], undefined], "1500 − 800 − 64 = 636 · 늘리지 않는다");
+      // 같은 날을 다시 그리는 것(탭 바꾸기 · 빼기·메모 뒤의 다시 읽기)은 여전히 굴린 자리를 지킨다
+      win.scrollY = 900; Object.assign(geo, { splitTop: -691, panelTop: -200, panelBottom: 1800, docH: 4000 });
+      await sc.click({ "[data-tab]": { dataset: { tab: "lines" } } }); await sc.click({ "[data-tab]": { dataset: { tab: "roster" } } });
+      assert.deepEqual([jumps, win.scrollY], [[345, 345, 636], 900], "같은 날이면 판의 위가 가려 있어도 올리지 않는다(읽던 줄이 그대로 있다)");
     }, { win: { innerHeight: 900, scrollY: 0 }, css: (x) => (x === cal ? { position: "sticky", top: "64px" } : { position: "static", top: "auto" }) });
+  }
+  // 붙은 달력(PC) + 자판(올리기 전 확인 반영) — 긴 판을 굴린 채 달력의 다른 날에서 Enter: 마우스와 같은 자리(판의 위가 붙은 선에). 초점(붙은 달력 안의 칸)은 문서를 굴려도 제자리라 보정하지 않는다
+  {
+    const cal = {}, focus = { getBoundingClientRect: () => ({ top: 315, bottom: 367 }) }, geo = { splitTop: 409, panelTop: 409, panelBottom: 3200, docH: 4000 };
+    const split = { style: {}, getBoundingClientRect: () => ({ top: geo.splitTop, height: 2800 }), querySelector: (q) => (q === ".dty-cal" ? cal : null) };
+    const panel = { getBoundingClientRect: () => ({ top: geo.panelTop, bottom: geo.panelBottom }) };
+    for (const detail of [0, 1]) {
+      await withPage(async ({ scrolls, jumps, win }) => {
+        const sv = server("cal-p" + detail, DAYS), sc = screen({ ".dty-split": split, ".dty-day": panel }, { contains: (x) => x === focus, box: () => ({ bottom: geo.docH - win.scrollY }) });
+        Object.assign(geo, { splitTop: 409, panelTop: 409 }); split.style.minHeight = undefined;
+        await render(sc.el, { call: sv.call, query: {} });
+        win.scrollY = 1610; Object.assign(geo, { splitTop: -1202, panelTop: -1202 });
+        await sc.pick("2026-10-25", true, { detail });
+        assert.deepEqual([jumps, scrolls, split.style.minHeight], [[344], [], undefined], detail ? "마우스: 판의 위가 붙은 선에(1610 − 1202 − 64)" : "자판(Enter): 마우스와 같은 자리 — 1085 로 튀지 않는다");
+        Object.assign(geo, { splitTop: -1202, panelTop: -1202 }); win.scrollY = 1610;
+        await sc.pick("2026-10-25", true, { detail });
+        assert.deepEqual(jumps, [344, 344], "이미 고른 날을 다시 눌러도 같다");
+      }, { win: { innerHeight: 900, scrollY: 0 }, doc: { activeElement: focus }, css: (x) => (x === cal ? { position: "sticky", top: "64px" } : { position: "static", top: "auto" }) });
+    }
+  }
+  // 큰 화면(1080p)의 짧은 명단 — 내용이 화면에 다 들어간다(올리기 전 확인 반영): 처음 그릴 때도 · 달·날짜를 바꿔도 묶음을 늘리지 않는다(늘리면 문서가 화면보다 1px 길어져 없던 굴림줄이 생긴다)
+  {
+    const cal = {}, split = { style: {}, getBoundingClientRect: () => ({ top: 409, height: 482.4 }), querySelector: (q) => (q === ".dty-cal" ? cal : null) };
+    const panel = { getBoundingClientRect: () => ({ top: 409, bottom: 700 }) };
+    await withPage(async ({ scrolls, jumps }) => {
+      const sv = server("cal-q", DAYS), sc = screen({ ".dty-split": split, ".dty-day": panel }, { box: () => ({ bottom: 986.2 }) });
+      await render(sc.el, { call: sv.call, query: {} });
+      assert.deepEqual([jumps, scrolls, split.style.minHeight], [[], [], undefined], "처음 그리기 — min-height 없음");
+      await sc.nav("next"); await sc.pick("2026-11-08"); await sc.nav("prev");
+      assert.deepEqual([jumps, scrolls, split.style.minHeight], [[], [], undefined], "달·날짜를 바꿔도 맨 위에서는 늘리지 않는다");
+    }, { win: { innerHeight: 1080, scrollY: 0 }, css: (x) => (x === cal ? { position: "sticky", top: "64px" } : { position: "static", top: "auto" }) });
   }
   // 폰·낮은 화면 — 달력 아래에 판. 자판(Enter)으로 날짜를 고르면 고른 칸이 화면에 남는 만큼만 내린다 · 마우스·터치는 그날 판을 보여 준다
   {
@@ -684,10 +818,28 @@ test("색 — 달력은 이미 쓰는 값만 쓴다(새 색 없음) · 공휴일
   for (const rule of [".dty-cal-c.hol > span{color:var(--error)}", ".dty-cal-c.on.hol > span,.dty-cal-c.on.sun > span{color:var(--danger-bd)}", ".dty-cal-k .hd{color:var(--error);font-weight:700}",
     ".dty-cal-c.sun > span,.dty-cal-w .sun{color:var(--error)}",   // 일요일은 공휴일과 같은 값 — 요일 줄의 「일」도
     ".dty-cal-c.k-need{background:#fff3d6;border-color:var(--gold)}", ".dty-cal-c.k-ask{background:var(--danger-bg);border-color:var(--danger-bd)}",
-    ".dty-cal-c.on{background:var(--navy);border-color:var(--navy);color:#fff}", ".dty-cal-c.today{border-color:var(--navy);border-width:2px}"]) assert.ok(block.includes(rule), rule);
+    ".dty-cal-c.on{background:var(--navy);border-color:var(--navy);color:#fff}", ".dty-cal-c.today{border-color:var(--navy);box-shadow:inset 0 0 0 1px var(--navy)}",   // 오늘 — 2px 로 보이되 상자는 다른 칸과 같다(테두리 1px + 안쪽 그림자 1px)
+    "@media (forced-colors:active){.dty-cal-c.today{border-width:2px}}", ".dty-cal-c.on.today{box-shadow:inset 0 0 0 2px var(--gold)}"]) assert.ok(block.includes(rule), rule);
+  // 오늘 칸의 상자를 바꾸는 규칙(테두리 굵기·안쪽 여백)은 강제 색 갈래에만 — 테두리를 2px 로 굵히면 오늘 칸만 안쪽이 2px 좁아 「10/12」가 그 칸에서만 두 줄이 되고 숫자가 1px 내려간다(올리기 전 확인 반영)
+  const plain = block.replace(/\/\*[\s\S]*?\*\//g, "").replace("@media (forced-colors:active){.dty-cal-c.today{border-width:2px}}", "");
+  assert.equal(/\.dty-cal-c[^{}]*\.today[^{}]*\{[^}]*(border-width|border:|padding|margin)/.test(plain), false, "오늘 칸의 상자는 다른 칸과 같다(굵기·여백을 따로 주지 않는다)");
+  assert.ok(block.indexOf(".dty-cal-c.on.today{") > block.indexOf(".dty-cal-c.today{"), "고른 오늘(금색 안쪽 테)이 오늘(남색 안쪽 그림자) 뒤에 온다");
   assert.ok(block.indexOf(".dty-cal-c.on{") > block.indexOf(".dty-cal-c.k-ask{") && block.indexOf(".dty-cal-c.on{") > block.indexOf(".dty-cal-c.hol > span{"), "고른 날의 색이 뜻 색·공휴일 색 뒤에 온다(같은 무게라 뒤가 이긴다)");
-  assert.ok(block.indexOf(".dty-cal-c.sun > span,") > block.indexOf(".dty-cal-c.k-off > span,.dty-cal-c.k-past > span{") && block.indexOf(".dty-cal-c.on{") > block.indexOf(".dty-cal-c.sun > span,")
-    && block.indexOf(".dty-cal-c.sun > span,") > block.indexOf(".dty-cal-w span{"), "일요일 색은 지난 날·쉬는 날의 흐린 숫자와 요일 줄의 기본 색 뒤에, 고른 날의 색 앞에 온다");
+  // 날짜 숫자(칸 > span)의 색을 정하는 규칙을 차례대로 모아서 본다 — 같은 무게(클래스 둘)의 규칙은 **뒤가 이긴다**:
+  //   ① 공휴일·일요일 색 뒤에 오는 숫자 색 규칙은 고른 날(.on) 것뿐이어야 한다(흐린 숫자 규칙이나 새 색 규칙이 그 뒤로 가면 지난·쉬는 일요일·공휴일이 빨갛지 않게 된다)
+  //   ② 그 앞의 규칙은 클래스 둘까지(셋으로 무게를 올리면 차례와 상관없이 이긴다). 찾는 글자(닻)로 견주면 그 글자가 바뀔 때 검사가 소리 없이 꺼진다 — indexOf 는 못 찾으면 -1 이다(올리기 전 확인 반영)
+  const bare = block.replace(/\/\*[\s\S]*?\*\//g, "");
+  const numRules = [...bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ parts: m[1].split(",").map((x) => x.trim()).filter((x) => /^\.dty-cal-c[^ ]* > span$/.test(x)), body: m[2] }))
+    .filter((r) => r.parts.length && /(^|;)\s*color:/.test(r.body));
+  const at = (sel) => numRules.findIndex((r) => r.parts.includes(sel)), iHol = at(".dty-cal-c.hol > span"), iSun = at(".dty-cal-c.sun > span"), iDim = at(".dty-cal-c.k-past > span");
+  assert.ok(iHol >= 0 && iSun >= 0 && iDim >= 0 && numRules.length >= 5, `숫자 색 규칙을 찾았다(공휴일 ${iHol} · 일요일 ${iSun} · 흐린 숫자 ${iDim} · 모두 ${numRules.length})`);
+  assert.ok(iDim < Math.min(iHol, iSun), "지난 날·쉬는 날의 흐린 숫자 규칙이 공휴일·일요일 색 앞에 온다");
+  numRules.forEach((r, i) => r.parts.forEach((sel) => {
+    const red = sel === ".dty-cal-c.hol > span" || sel === ".dty-cal-c.sun > span", on = sel.includes(".on"), classes = (sel.match(/\./g) || []).length;
+    if (i > Math.min(iHol, iSun) && !red) assert.ok(on, `${sel} — 공휴일·일요일 색 뒤에 오는 숫자 색 규칙은 고른 날(.on) 것뿐이어야 한다`);
+    if (!on) assert.ok(classes <= 2, `${sel} — 고른 날이 아닌 숫자 색 규칙은 클래스 둘까지(무게를 올리면 일요일·공휴일 색을 이긴다)`);
+  }));
+  assert.ok(block.includes(".dty-cal-w span{") && block.indexOf(".dty-cal-c.sun > span,.dty-cal-w .sun{") > 0, "요일 줄의 「일」은 무게로 이긴다(.dty-cal-w .sun 이 .dty-cal-w span 보다 무겁다 — 차례와 무관)");
   assert.ok(/min-height:4[4-9]px|min-height:5\dpx/.test(block.match(/\.dty-cal-c\{[^}]*\}/)[0]), "칸은 44px 이상(폰에서 누르는 크기)");
   assert.ok(css.includes(".dty-split{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr)"), "PC — 달력 옆에 그날 판");
 });
@@ -703,6 +855,16 @@ test("모양(독립 검토 반영) — 초점 테는 남색 · 단추 칸의 기
   for (const rule of [".dty-cal-c > em{grid-row:1;font-style:normal;font-size:10px;line-height:1}", '.dty-cal-c.has::before{content:"\\200b";grid-area:1 / 1 / 2 / -1;font-size:10px;line-height:1}',
     ".dty-cal-c.has > span{grid-area:2 / 1 / 3 / -1;font-weight:700}", ".dty-cal-c.has > i{grid-area:3 / 1 / 4 / -1}"]) assert.ok(block.includes(rule), rule);
   assert.equal(/\.dty-cal-c[^{}]*> i\{[^}]*nowrap/.test(block), false, "인원 글에 nowrap 을 걸지 않는다(한 줄에 못 들면 「/」 뒤에서 줄을 바꾼다 — 넘쳐 이웃 칸에 묻히지 않게)");
+  // 물려받는 nowrap 도 걸지 않는다 — 달력 상자·격자·칸에 걸면 인원 글이 물려받는다. 크롬은 nowrap 아래에서도 <wbr> 에서 줄을 바꿔 크롬 탐침은 지나가지만
+  //   사파리·파이어폭스에서는 「100/120」이 다시 칸을 넘친다(올리기 전 확인이 세 엔진으로 잰 것). 달 제목·달 단추·풀이 조각(.dty-cal-h b · .dty-cal-nav · .ki)의 nowrap 은 괜찮다
+  const inherits = /\.dty-cal(-g|-c)?(?![-\w])[^{}]*\{[^}]*nowrap/;
+  assert.equal(inherits.test(block), false, "달력 상자·격자·칸에 nowrap 을 걸지 않는다(인원 글이 물려받는다)");
+  for (const bad of [".dty-cal-c{white-space:nowrap}", ".dty-cal-c.has{display:grid;white-space:nowrap}", ".dty-cal-g{white-space:nowrap}", ".dty-cal{white-space:nowrap}", ".dty-cal-c.k-need > i{white-space:nowrap}"]) assert.ok(inherits.test(bad), bad);
+  for (const fine of [".dty-cal-h b{white-space:nowrap}", ".dty-cal-nav{white-space:nowrap}", ".dty-cal-k .ki{white-space:nowrap}"]) assert.equal(inherits.test(fine), false, fine);
+  // ⚠ 는 첫 열·🔒 는 둘째 열 — 열을 못 박지 않으면 빈 띠(::before)가 첫 줄의 두 열을 다 차지해 기호가 셋째 열로 밀리고 숫자가 옆으로 치우친다
+  assert.ok(block.includes(".dty-cal-c > em.wn{grid-column:1;justify-self:start;") && block.includes(".dty-cal-c > em.lk{grid-column:2;justify-self:end;"), "기호의 열");
+  // 인원 글에 음수 여백을 주지 않는다 — 테두리까지 쓰게 하면 글씨를 키운 브라우저(최소 글꼴 14~16px)에서 ⚠·🔒 가 함께 붙은 칸의 글이 칸 밖으로 나간다(올리기 전 확인이 잰 것)
+  assert.equal(/\.dty-cal-c[^{}]*> i\{[^}]*margin[^;}]*-\d/.test(block), false, "인원 글에 음수 여백 없음");
   assert.ok(/\.dty-cal-c\.has\{display:grid;grid-template-columns:1fr 1fr;align-content:start;/.test(block), "단추 칸은 세 줄(기호 띠 · 숫자 · 인원)");
   const size = (sel) => block.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{[^}]*\\}"))[0].match(/font-size:[^;}]+/)[0];
   assert.equal(size(".dty-cal-c > em"), size(".dty-cal-c.has::before"), "빈 띠와 기호가 같은 글꼴 크기 — 기호가 없는 칸도 같은 높이를 비운다");

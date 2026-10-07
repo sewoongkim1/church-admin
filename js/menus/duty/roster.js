@@ -1,5 +1,6 @@
 // 📅 당번 명단 — 당번 고르기 · 날짜 칩(날짜가 넷 이상이면 달력 — roster-cal.js) · 그날 판(확정·쉬는 날·메모) · 자리마다 선 분(넣기·빼기·옮기기·메모) · 자리 틀 · 날짜 더하기 · 쉬는 기간 · 엑셀
 //   명단은 **달을 통째로** 읽는다(rosterFrom — 달력이 그리는 달에 「아직 안 읽은 날」이 없게) · 달력이 있을 때 다시 그려도 화면은 제자리다(settleView — 달력이 손끝에서 달아나지 않게).
+//   다만 달력을 누르지 않았는데 보이는 날·당번이 바뀐 그리기(「옮기기」로 다른 날에 · 날짜 더하기 등)는 굴린 자리를 지키지 않고 새 판을 위부터 보인다(drawnKey — 지키면 빈 화면만 남는다).
 //   (봉사 당번 1단계 · 2026-10-06 · 설계 v2 docs/superpowers/specs/2026-10-06-duty-roster-design.md §6)
 //   서버: dutyBoardList·dutyRoster·dutyBoardSave·dutyLineSave·dutyLineRemove·dutyDateAdd·dutyDaySet·dutyDaysOff·dutySlotSet·dutySlotDelete·
 //         dutySignAdd·dutySignRemove·dutySignMove·dutySignNote·dutyAskClear·dutyPeopleLookup·dutyExport
@@ -12,7 +13,7 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { openBoardForm } from "./board-form.js";
-import { emptyWhy, seenOfRoster, calUse, calStep, olderPick, olderText, rosterFrom, olderBack, calSettle } from "./duty-logic.js";
+import { emptyWhy, seenOfRoster, calUse, calStep, olderPick, olderText, rosterFrom, rosterFromKeep, olderBack, calSettle } from "./duty-logic.js";
 import { calHtml } from "./roster-cal.js";
 import { openLineForm, openDateAddForm, openOffForm, offFlow, openAddForm, openNoteForm, openDayNoteForm, openCapacityForm, failText, sayDone } from "./roster-forms.js";
 import {
@@ -82,10 +83,12 @@ export async function render(el, { call, query }) {
   let day = "";          // 고른 날짜
   let tab = "roster";
   let back = 14;         // 지난 며칠까지 불러왔나(실제로는 그 날이 든 달의 1일부터 — rosterFrom)
+  let readFrom = "";     // 고른 당번(cur)에서 이 화면이 실제로 읽은 처음 — 화면을 연 채 날이 바뀌어도 그보다 뒤에서 읽지 않는다(rosterFromKeep · 읽던 달이 통째로 빠지지 않게)
   const pending = new Set();
   const folds = new Set();   // 「빠진 분」을 펼쳐 둔 자리
   let calFocus = "";         // 눌러서 다시 그리면 눌렀던 단추가 사라진다 — 그린 뒤 초점을 돌려줄 곳("day" · "prev" · "next" · "older" = 달력 밖의 「지난 날 더 보기」)
   let calView = null;        // 이번 그리기가 무엇을 눌러서인가 — { cal: 달력을 눌렀다 · reveal: 날짜를 눌렀다(그날 판 보이기) · kb: 자판으로 눌렀다 } · 초점 표식처럼 한 번 쓰고 지운다
+  let drawnKey = "";         // 지난번에 명단 탭에 그린 것("당번|날") — 달력을 누르지 않았는데 이것이 바뀐 그리기에서는 굴린 자리를 지키지 않는다(draw · calSettle ⑤)
 
   const loadBoards = async () => {
     const r = await call("dutyBoardList", {});
@@ -98,17 +101,19 @@ export async function render(el, { call, query }) {
   // 당번 b 의 명단을 불러와 cur·ros 로 — 실패하면 아무것도 바꾸지 않는다(보던 당번이 그대로 남는다)
   //   → { ok:true } · { ok:false, gone:"당번을 놓을 까닭" } · { ok:false, error }
   const loadRoster = async (b, wantDay = day) => {
-    // 끝(to)은 보내지 않는다 — 서버가 앞날(가장 먼 날짜 줄까지 · 오늘 + 400일)과 지난 날을 따로 자른다. 처음(from)은 달의 1일 — 달력이 그리는 달은 늘 통째로 읽은 달이다
-    const r = await call("dutyRoster", { board_id: b.id, ...(today ? { from: rosterFrom(today, back) } : {}) });
+    // 끝(to)은 보내지 않는다 — 서버가 앞날(가장 먼 날짜 줄까지 · 오늘 + 400일)과 지난 날을 따로 자른다. 처음(from)은 달의 1일 — 달력이 그리는 달은 늘 통째로 읽은 달이다.
+    //   같은 당번을 다시 읽을 때는 앞서 읽은 처음보다 뒤로 가지 않는다(화면을 연 채 날이 바뀌어도 보던 달이 빠지지 않는다 — rosterFromKeep).
+    const from = today ? rosterFromKeep(today, back, cur && cur.id === b.id ? readFrom : "") : "";
+    const r = await call("dutyRoster", { board_id: b.id, ...(from ? { from } : {}) });
     if (!r.ok && r.error === "not-found") return { ok: false, gone: "그 당번을 찾지 못했어요" };
     if (!r.ok && lostBoard(r.error)) return { ok: false, gone: failText(r), lost: true };   // 그사이 맡은 당번에서 빠졌다
     if (!r.ok) return { ok: false, error: r };
-    cur = b; ros = r; today = r.today || today;
+    cur = b; ros = r; today = r.today || today; readFrom = from;
     day = initialDay(r.days, today, wantDay);
     lastBoardId = b.id; lastDay = day;
     return { ok: true };
   };
-  const drop = () => { cur = null; ros = null; day = ""; lastBoardId = ""; lastDay = ""; };
+  const drop = () => { cur = null; ros = null; day = ""; readFrom = ""; lastBoardId = ""; lastDay = ""; };
   // 고른 당번이 풀린 뒤(없어졌다 · 맡은 당번에서 빠졌다) — 남은 당번이 하나뿐이면 그 당번을 바로 연다(고르기 단추만 남아 막히지 않게)
   const openOnly = async () => {
     if (cur || boards.length !== 1) return;
@@ -193,6 +198,7 @@ export async function render(el, { call, query }) {
   // ---------- 다시 그린 뒤의 화면 자리(달력이 있을 때) ----------
   //   셈은 duty-logic.js calSettle(시험) — 여기서는 재고 옮기기만 한다: 굴린 자리를 지키고(문서가 줄어 달력이 손끝에서 달아나지 않게),
   //   달력을 눌러 그린 것(view)이면 붙은 달력 옆의 그날 판을 맨 위부터 · 폰에서는 그날 판이 보일 만큼 · 자판으로 눌렀으면 초점이 가려지지 않게.
+  //   달력을 누르지 않았는데 보이는 날·당번이 바뀐 그리기(view.moved)는 굴린 자리를 지키지 않는다 — 새 판의 위가 가려 있으면 머리줄 아래까지만 올린다.
   const pageY = () => (typeof window.scrollY === "number" ? window.scrollY : null);
   // 달력이 머리줄 아래에 붙어 있나(PC — css 의 position:sticky) → 붙은 선(px) · 아니면 null. **다시 그리기 전에** 잰다(그린 뒤에는 문서가 줄어 자리가 달라진다).
   const stuckAt = () => {
@@ -211,7 +217,7 @@ export async function render(el, { call, query }) {
     const er = rect(el.parentElement) || rect(el);
     const s = calSettle({ y0, y, viewH: window.innerHeight, endBottom: er ? er.bottom : null,
       splitTop: sr ? sr.top : null, splitH: sr ? sr.height : null, panelTop: pr.top, panelBottom: pr.bottom, focusTop: fr ? fr.top : null, focusBottom: fr ? fr.bottom : null,
-      stuck: view ? view.stuck : null, reveal: !!(view && view.reveal), kb: !!(view && view.kb) });
+      stuck: view ? view.stuck : null, reveal: !!(view && view.reveal), kb: !!(view && view.kb), moved: !!(view && view.moved) });
     if (s.grow && sp && sp.style) sp.style.minHeight = `${s.grow}px`;
     if (s.to !== null && y !== null && Math.abs(s.to - y) >= 1 && window.scrollTo) {
       window.scrollTo(0, s.to);   // 바로(움직임 없이) — 제자리로 돌려놓는 것이라 보이지 않아야 한다
@@ -253,7 +259,12 @@ export async function render(el, { call, query }) {
     if (f && f.focus) f.focus({ preventScroll: true });
     // 자판으로 칩 줄의 「더 보기」를 눌렀으면 줄을 처음으로 — 고른 칩을 가운데 두느라 그 칩이 줄 밖(왼쪽)으로 밀려나 초점이 안 보이지 않게
     if (f && want === "older" && view && view.kb && rowEl && rowEl.contains && rowEl.contains(f)) rowEl.scrollLeft = 0;
-    if (tab === "roster") settleView(y0, view ? { ...view, stuck } : null);
+    if (tab !== "roster") return;
+    // 달력을 누르지 않았는데(view 없음) 보이는 당번·날이 지난번 그린 것과 다른가 — 「옮기기」로 다른 날에(서버가 거절해 다시 읽은 때에도) · 날짜 더하기 ·
+    //   맡은 당번에서 빠져 남은 당번이 저절로 열림. 그때는 옛 판에서 굴려 둔 자리를 지키지 않는다(지키면 짧은 새 판이 화면 위로 사라지고 빈 화면만 남는다 — 올리기 전 확인 2026-10-07).
+    const key = `${cur.id}|${day}`, moved = drawnKey !== key;   // 처음 그리기도 「바뀐 것」이다 — 맨 위(0)에서는 어느 쪽이든 같다
+    drawnKey = key;
+    settleView(y0, view ? { ...view, stuck } : moved ? { moved: true } : null);   // 달력을 눌러 그린 것(view)이 먼저다 — 그때는 날이 바뀌어도 달력의 자리를 지킨다
   };
 
   // ---------- 처음 ----------
@@ -441,7 +452,7 @@ export async function render(el, { call, query }) {
         if (act === "older") {
           // 지난 날을 4주 더(앞 달이 통째로 들어올 때까지 — olderBack) — 달력에서 눌렀으면 새로 생긴 앞 달로 간다(olderPick) · 새 날짜가 없으면 그렇다고 말한다(olderText).
           const before = (ros.days || []).map((x) => x.date), was = back, inCal = !!a.classList && a.classList.contains("dty-cal-nav");
-          back = olderBack(today, back, BACK_STEP);
+          back = olderBack(today, back, BACK_STEP, readFrom);
           calFocus = inCal ? "prev" : "older"; calView = { cal: inCal, reveal: false, kb };
           const ok = await busy(el, () => reload());
           calFocus = ""; calView = null;
@@ -457,7 +468,7 @@ export async function render(el, { call, query }) {
           const got = await openDateAddForm({ call, boardId: cur.id, lines: live, today, untilDate: ros.board.untilDate || "" });
           if (got) {
             toast(dateAddedText(got.r, got.date));
-            if (got.date < rosterFrom(today, back)) back = Math.min(maxBack(), Math.max(back, 35));   // 불러온 범위 앞의 날짜를 더했으면 그날까지 불러온다(더하기는 31일 앞까지)
+            if (got.date < (readFrom || rosterFrom(today, back))) back = Math.min(maxBack(), Math.max(back, 35));   // 읽은 범위 앞의 날짜를 더했으면 그날까지 불러온다(더하기는 31일 앞까지)
             await busy(el, () => reload(got.date));
           }
         } else if (act === "off-range") {

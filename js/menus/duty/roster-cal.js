@@ -5,7 +5,7 @@
 //   칸의 바탕과 인원 글은 뜻 색 그대로 · 요일 줄의 「일」도 빨갛다 — 친구 결정 2026-10-07 「네 빨갛게」).
 //   앞뒤 달 단추는 날짜가 있는 달로만(data-cal) · 더 앞 달이 없고 지난 날을 더 불러올 수 있으면 「◀ 지난 날」(data-act="older" — 칩 줄의 「지난 날 더 보기」와 같은 일).
 //   아래 풀이는 이 당번에 실제로 있는 표시만(색만으로 말하지 않는다 — 글·기호를 함께). 글자는 모두 esc.
-//   공휴일 표가 덮지 않는 달(holidays.js holOutside)에는 풀이가 그렇게 말한다 — 빨간 날짜가 없는 것이 「공휴일이 없다」로 읽히지 않게.
+//   공휴일 표가 덮지 않는 달(holidays.js holOutside)에는 풀이가 그렇게 말한다 — 평일이 빨갛지 않은 것이 「공휴일이 없다」로 읽히지 않게(일요일은 그 달에도 빨갛다).
 //   ⚠️ 그리는 달은 **통째로 읽은 달**이어야 한다(roster.js 가 달의 1일부터 읽는다 — duty-logic.js rosterFrom). 달 가운데서 자른 명단을 주면
 //      아직 읽지 않은 날짜가 「당번 없는 날」과 같은 칸으로 그려진다.
 // ⚠️ 이 파일은 Node 시험이 읽는다(tests/duty-cal.test.mjs) — document·window 를 만지지 않는다.
@@ -30,7 +30,7 @@ export function calHtml(days, day, today, { older = false } = {}) {
     const cls = `${now ? " today" : ""}${isSunday(c.date) ? " sun" : ""}${hol ? " hol" : ""}`, cur = now ? ` aria-current="date"` : "";
     if (!it) return `<span class="dty-cal-c${cls}"${cur}${hol ? ` title="${esc(hol)}"` : ""}><span>${c.n}</span></span>`;
     const { d, x } = it, on = c.date === day;
-    // 인원 글은 「/」 뒤에서 줄을 바꿀 수 있다(<wbr>) — 칸에 한 줄로 못 들 때만 두 줄이 된다(「100/120」 · 좁은 폰 · 글씨를 키운 브라우저). 넘친 글자가 이웃 칸에 묻히지 않게
+    // 인원 글은 「/」 뒤에서 줄을 바꿀 수 있다(<wbr>) — 칸의 안쪽 폭(테두리를 뺀)에 한 줄로 못 들 때만 두 줄이 된다(「100/120」 · 좁은 폰 · 글씨를 키운 브라우저). 넘친 글자가 이웃 칸에 묻히지 않게
     return `<button type="button" class="dty-cal-c has k-${x.kind}${x.lock ? " lock" : ""}${on ? " on" : ""}${cls}" data-day="${esc(c.date)}" aria-pressed="${on}"${cur} aria-label="${esc(calLabel(d, x, hol))}">` +
       `<span>${c.n}</span><i aria-hidden="true">${esc(calMark(x)).replace("/", "/<wbr>")}</i>${x.kind === "ask" ? `<em class="wn" aria-hidden="true">⚠</em>` : ""}${x.lock ? `<em class="lk" aria-hidden="true">🔒</em>` : ""}</button>`;
   }).join("");

@@ -161,12 +161,22 @@ export function rosterFrom(today, back) {
   const d = addDays(today, -Math.max(0, Number(back) || 0));
   return d ? `${d.slice(0, 8)}01` : "";
 }
+// 명단을 실제로 읽을 처음 — rosterFrom 이되 **이 화면이 이 당번에서 이미 읽은 처음(read)보다 뒤로 가지 않는다**.
+//   rosterFrom 은 달 단위로 뛴다: 화면을 연 채 날이 바뀌어 「오늘 − back」이 달을 넘으면(처음 화면은 매달 14 → 15일) 읽던 지난달이 통째로 빠지고,
+//   그 달의 날을 보던 판이 저장 뒤 다른 날짜의 판으로 바뀐다(올리기 전 확인 2026-10-07 — 하루씩 읽던 앞 판에서는 창 끝의 하루만 빠졌다).
+//   서버가 자르는 곳(오늘 − 400일)보다 앞으로는 가지 않는다 — 52주가 든 달의 1일(rosterFrom(today, maxBack()))까지만.
+export function rosterFromKeep(today, back, read = "") {
+  const want = rosterFrom(today, back), floor = rosterFrom(today, maxBack());   // 오늘을 모르면 둘 다 빈 글 — 아래도 빈 글을 돌려준다(처음을 보내지 않는다)
+  const from = isDate(read) && read < want ? read : want;
+  return from < floor ? floor : from;
+}
 // 「지난 날 더 보기」 한 번 뒤의 back — step(4주)씩 늘리되 **불러오는 달이 실제로 앞으로 갈 때까지**
-//   (달의 29~31일에서 4주를 빼면 같은 달이라, 눌러도 같은 것을 다시 읽고 「더 지난 날짜가 없어요」라고만 하게 된다) · 52주까지
-export function olderBack(today, back, step = 28) {
-  const max = maxBack(), s = Math.max(1, Number(step) || 28), was = rosterFrom(today, back);
+//   (달의 29~31일에서 4주를 빼면 같은 달이라, 눌러도 같은 것을 다시 읽고 「더 지난 날짜가 없어요」라고만 하게 된다) · 52주까지.
+//   read = 이미 읽은 처음(rosterFromKeep 이 지켜 준 것 — 날이 바뀐 뒤에는 「오늘 − back」의 달보다 앞일 수 있다): 그보다 앞 달이 될 때까지 간다.
+export function olderBack(today, back, step = 28, read = "") {
+  const max = maxBack(), s = Math.max(1, Number(step) || 28), at = rosterFrom(today, back), was = isDate(read) && at && read < at ? read : at;
   let b = Math.max(0, Number(back) || 0);
-  do { b = Math.min(max, b + s); } while (was && b < max && rosterFrom(today, b) === was);
+  do { b = Math.min(max, b + s); } while (was && b < max && rosterFrom(today, b) >= was);
   return b;
 }
 // 당번을 저장한 뒤 한 줄 — 끝 날짜 뒤에 선 분이 있으면 알린다
@@ -321,10 +331,17 @@ export function revealBy(top, viewH, { head = 56, keep = 220 } = {}) {
 //   ② 달력을 눌렀고 그때 달력이 머리줄 아래에 **붙어 있었으면**(stuck = 붙은 선 · PC) 그날 판의 위를 그 선에 맞춘다 — 붙은 달력의 자리는 그대로이고 판은 맨 위부터 보인다.
 //      붙지 않는 PC(낮은 화면)에서는 올리지 않는다 — 올리면 눌렀던 칸이 손끝에서 달아난다.
 //   ③ 달력에서 날짜를 눌렀고(reveal) 그날 판이 달력 **아래**에 있으면(폰) 판이 보일 만큼만 내린다(revealBy — 짧은 판은 그 끝이 보일 때까지만)
-//   ④ 자판으로 눌렀으면(kb) 손끝이 없다 — 초점(focusTop·focusBottom)이 머리줄 밑·화면 밖에 남지 않게: ③ 은 초점이 머리줄 아래에 남는 만큼만, 그래도 가려 있으면 보일 만큼 옮긴다
-//   g = { y0: 그리기 전 굴린 자리 · y: 지금 굴린 자리 · viewH · endBottom: 내용의 끝(명단 화면의 아래끝) · splitTop · splitH · panelTop · panelBottom · focusTop · focusBottom · stuck · reveal · kb }
+//   ④ 자판으로 눌렀으면(kb) 손끝이 없다 — 초점(focusTop·focusBottom)이 머리줄 밑·화면 밖에 남지 않게: ③ 은 초점이 머리줄 아래에 남는 만큼만, 그래도 가려 있으면 보일 만큼 옮긴다.
+//      ② 로 간 때에는 하지 않는다 — 그 초점은 **붙은 달력 안**(칸·달 단추)이라 문서를 굴려도 화면에서 제자리다. 문서와 함께 움직인다고 보고 셈하면
+//      판이 맨 위도 굴린 자리도 아닌 가운데로 수백 px 튄다(올리기 전 확인 2026-10-07).
+//   ⑤ 달력을 누르지 않았는데 **보이는 날(또는 당번)이 바뀐** 그리기(moved — 「옮기기」로 다른 날에 · 날짜 더하기 · 맡은 당번에서 빠져 남은 당번이 저절로 열림)는
+//      ① 을 하지 않는다: 옛 날의 긴 판에서 굴려 둔 자리를 지키면 짧은 새 판이 화면 위로 사라지고 늘린 빈 자리만 남는다(올리기 전 확인 — 「옮기기」 뒤 빈 화면).
+//      브라우저가 둔 자리(y)에서, 새 판의 위가 머리줄 아래 선보다 위에 있을 때만 그 선까지 올린다 — 아래로는 굴리지 않고 문서도 늘리지 않는다(지킬 손끝이 없다).
+//   g = { y0: 그리기 전 굴린 자리 · y: 지금 굴린 자리 · viewH · endBottom: 내용의 끝(명단 화면의 아래끝) · splitTop · splitH · panelTop · panelBottom · focusTop · focusBottom · stuck · reveal · kb · moved }
 //     — top·bottom 은 지금(y) 화면 기준 · 잴 수 없는 값은 null. 굴린 자리를 잴 수 없으면(y 없음) ③ 만 한다.
 //     ⚠️ 문서의 끝은 **내용의 아래끝**으로 잰다(scrollHeight 가 아니다) — 내용이 화면보다 짧으면 scrollHeight 는 화면 높이라, 그것으로 셈하면 덜 늘려 달력이 내려간다(1920×1080 에서 잡았다).
+//     ⚠️ 갈 자리가 맨 위(0)면 늘리지 않는다 — 맨 위는 늘 닿는다. 내용이 화면에 다 들어가는 큰 화면에서 처음 그릴 때부터 늘리면 올림 탓에 문서가 화면보다 1px 길어져
+//        없던 세로 굴림줄이 생긴다(올리기 전 확인).
 //   → { to: 먼저 갈 자리(바로 — null 이면 그대로) · by: 이어서 더 굴릴 거리(부드럽게) · grow: .dty-split 의 min-height(0 = 그대로) }
 export function calSettle(g, { head = 56, keep = 220, gap = 8 } = {}) {
   const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -333,7 +350,9 @@ export function calSettle(g, { head = 56, keep = 220, gap = 8 } = {}) {
   const side = splitTop !== null && panelTop !== null && Math.abs(panelTop - splitTop) <= 4;   // 달력 옆에 판(PC 두 칸) — 달력이 보이면 판도 같은 높이에서 보인다
   if (y === null) return { to: null, by: o.reveal && panelTop !== null && !side ? revealBy(panelTop, viewH, { head, keep }) : 0, grow: 0 };
   const y0 = num(o.y0) ?? y, stuck = num(o.stuck), floor = head + gap;
-  let to = Math.max(0, Math.round(stuck !== null && splitTop !== null ? y + splitTop - stuck : y0));
+  if (o.moved) return { to: Math.max(0, Math.round(panelTop === null ? y : Math.min(y, y + panelTop - floor))), by: 0, grow: 0 };   // ⑤
+  const pinned = stuck !== null && splitTop !== null;   // ② — 붙어 있던 달력을 눌렀다
+  let to = Math.max(0, Math.round(pinned ? y + splitTop - stuck : y0));
   const at = (v) => v + (y - to);   // 그 자리(to)로 간 뒤의 화면 기준 위치
   let by = 0;
   if (o.reveal && panelTop !== null && !side) {
@@ -342,7 +361,7 @@ export function calSettle(g, { head = 56, keep = 220, gap = 8 } = {}) {
     if (by > 0 && end !== null) by = Math.max(0, Math.min(by, Math.ceil(at(end) - (viewH - gap))));
   }
   const fTop = num(o.focusTop), fBottom = num(o.focusBottom);
-  if (o.kb && fTop !== null && fBottom !== null) {
+  if (o.kb && !pinned && fTop !== null && fBottom !== null) {
     by = Math.max(0, Math.min(by, Math.floor(at(fTop) - floor)));
     const t = at(fTop) - by, b = at(fBottom) - by;
     if (t < floor) to = Math.max(0, Math.round(to + (t - floor)));
@@ -350,7 +369,7 @@ export function calSettle(g, { head = 56, keep = 220, gap = 8 } = {}) {
   }
   const end = num(o.endBottom), splitH = num(o.splitH);
   const short = end === null || splitH === null ? 0 : to + by + viewH - (y + end);   // 갈 자리의 화면 아래끝 − 내용의 끝(문서 기준)
-  return { to, by, grow: short > 0 ? Math.ceil(splitH + short) : 0 };
+  return { to, by, grow: short > 0 && to + by > 0 ? Math.ceil(splitH + short) : 0 };
 }
 // 앱 알림(확정·전날·담당자가 바꾼 것)이 실제로 나가는가 — 2026-10-06 3단계(성경암송 api internalDutyNotify)를 운영에 올려 true 로 바꿨다.
 //   false 인 동안에는 「알림 꺼짐」 딱지를 그리지 않는다(딱지 없는 분께는 알림이 간다는 뜻으로 읽힌다 — 검토 반영 2026-10-06).

@@ -1741,7 +1741,9 @@ body.ec-cert-on{overflow:hidden}
   border:1px solid transparent;border-radius:10px;background:none;font:inherit;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .dty-cal-c > span{font-size:14px;line-height:1.2}
 /* 인원 글 — 한 줄에 못 들면 「/」 뒤에서 줄을 바꾼다(roster-cal.js 가 그 자리에 <wbr> 을 둔다 · nowrap 을 걸지 않는다): 「100/120」은 폰 폭의 칸(37~45px)을 넘쳐
-   이웃 칸에 묻히고 고른 날(남색)에서는 「00/12」로 읽혔다(독립 검토 반영 2026-10-07). 잘라 내지(overflow:hidden) 않는다 — 잘린 수는 그럴듯한 틀린 수가 된다 */
+   이웃 칸에 묻히고 고른 날(남색)에서는 「00/12」로 읽혔다(독립 검토 반영 2026-10-07). 잘라 내지(overflow:hidden) 않는다 — 잘린 수는 그럴듯한 틀린 수가 된다.
+   「못 든다」는 칸의 **안쪽 폭**(칸 폭 − 테두리 2px) 이야기다 — 테두리에 걸쳐 한 줄로 서던 긴 수(360px 의 「87/100」 · PC 의 「100/120」)는 두 줄이 된다(칸 밖으로는 나가지 않는다).
+   음수 여백으로 테두리까지 쓰게 하지 않는다: 글씨를 키운 브라우저(최소 글꼴 14~16px)에서 ⚠·🔒 가 함께 붙은 칸의 글이 칸 밖으로 나간다(올리기 전 확인에서 잰 것) */
 .dty-cal-c > i{font-style:normal;font-size:12px;line-height:1.2;color:var(--ink-2)}
 /* 단추 칸은 세 줄 — 기호 띠(⚠ 왼쪽 · 🔒 오른쪽) · 날짜 숫자 · 인원 글. 띠는 **흐름 안의 한 줄**이다(::before 의 빈 글자가 기호와 같은 글꼴로 줄 높이를 만든다):
    좁은 폰(칸 폭 37px)에서도 기호가 숫자에 얹히지 않고, 브라우저가 글씨를 키워도(「최소 글꼴 크기」 16px 등) 띠가 함께 커져 기호가 숫자를 덮지 않는다.
@@ -1760,7 +1762,10 @@ body.ec-cert-on{overflow:hidden}
 .dty-cal-c.k-full > i{color:var(--green);font-weight:700}
 .dty-cal-c.k-off,.dty-cal-c.k-past,.dty-cal-c.k-none{background:var(--light)}
 .dty-cal-c.k-off > span,.dty-cal-c.k-past > span{color:var(--ink-2)}
-.dty-cal-c.today{border-color:var(--navy);border-width:2px}
+/* 오늘 — 남색 테두리 2px 로 보이되 **칸의 상자는 다른 칸과 같다**(테두리 1px + 안쪽 그림자 1px). 테두리를 2px 로 굵히면 오늘 칸만 안쪽이 가로 2px 좁고 세로 1px 낮아,
+   폭 320px 에서 오늘 칸의 「10/12」만 두 줄이 되고 숫자가 이웃보다 1px 내려갔다(올리기 전 확인 2026-10-07). 강제 색(고대비)에서는 그림자가 사라지므로 테두리를 굵힌다 */
+.dty-cal-c.today{border-color:var(--navy);box-shadow:inset 0 0 0 1px var(--navy)}
+@media (forced-colors:active){.dty-cal-c.today{border-width:2px}}
 .dty-cal-c.hol > span{color:var(--error)}
 /* 일요일(2026-10-07 친구 결정 「네 빨갛게」) — 공휴일과 같은 색·같은 규칙: 날짜 숫자와 요일 줄의 「일」만 빨갛고 칸의 바탕·인원 글은 뜻 색 그대로(대비도 위와 같다) */
 .dty-cal-c.sun > span,.dty-cal-w .sun{color:var(--error)}
