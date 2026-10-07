@@ -290,6 +290,7 @@ test("확인 창 글 — 확정 · 쉬는 날 · 빼기 · 숨기기", () => {
   // 「받는 중」 확인 — 앱에 아직 안 열렸으면 「바로 보여요」라고 말하지 않는다
   const LIVE = { live: true };
   assert.ok(openWarn(true, LIVE).includes("바로 보이고 지원을 받아요") && !openWarn(true, LIVE).includes("시험 참여자"));
+  assert.ok(openWarn(true, LIVE).includes("성경암송 앱의 🙋 봉사 당번 신청에"), "앱의 단추 이름 그대로(2026-10-07 「봉사 당번 신청」으로 바뀌었다)");
   assert.ok(openWarn(false, LIVE).includes("아직 성도님 앱에 열지 않아서") && openWarn(false, LIVE).includes("시험 참여자에게만"));
   // 앱에 화면이 아직 없으면(2단계 전) 「시험 참여자에게 보여요」라고 말하지 않는다 — 누구에게도 안 보인다
   assert.equal(APP_LIVE, true, "2026-10-06 2단계(앱 화면 + api)를 운영에 올렸다 — 앱 쪽을 되돌리면 false 로(이 줄도 함께)");
