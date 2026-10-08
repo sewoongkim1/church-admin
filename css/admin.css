@@ -748,6 +748,7 @@ a.mn-tel.sm{padding:2px 8px}
   background:var(--ghost-bg);color:var(--navy);font-size:13px;font-weight:700}
 .dlg.pd .pd-aff{font-size:15px;color:var(--ink);font-weight:600}
 .dlg.pd .pd-age{font-size:14px;color:var(--ink-2)}
+.dlg.pd .pd-life{font-size:13px;color:#18794e;font-weight:700;margin-top:4px}
 .dlg.pd .pd-tels{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
 .dlg.pd .pd-tel{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:6px;min-height:var(--tap);
   padding:0 10px;border-radius:999px;border:1px solid var(--ghost-bd);background:var(--ghost-bg);color:var(--navy);

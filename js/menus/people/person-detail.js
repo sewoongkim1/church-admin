@@ -96,6 +96,7 @@ export function personDetailHtml(p, family = [], history = null, tab = "church")
     (pos ? `<span class="pd-pos">${t(pos)}</span>` : "") +
     (aff ? `<p class="pd-aff">${t(aff)}</p>` : "") +
     (age ? `<p class="pd-age">${t(age)}</p>` : "") +
+    (p.lifeConfirmed ? `<p class="pd-life" title="이 교인에 성경암송 앱에서 본인 확인(확인 번호)을 마친 계정이 이어져 있어요">🔐 성경암송 본인 확인됨</p>` : "") +
     `</div><div class="pd-tels">${tels || `<p class="pd-none">연락처 없음</p>`}</div></div>` +
     `<div class="pd-main">${mainHtml(secHtml, hist, tabOf(tab, hist))}</div></div>`;
 }

@@ -1281,7 +1281,10 @@ async function peoplePerson(ctx: Ctx, b: any) {
   // ⚠️ 탭은 덧붙는 기능 — 읽기가 실패하면 history 를 빼고 예전 창(탭 없이)으로 연다(창 전체를 500 으로 만들지 않는다 · personHistorySafe)
   const history = await personHistorySafe(id);
   await audit(ctx, "people.view", String(id), { name: data.name });
-  return withHistory({ ok: true, person: { ...data, photo: urls.get(id) ?? "" }, family }, history);
+  // 교적 맞대기(2026-10-08 · Plan 4 Task 4) — 이 교인에 성경암송 확인 번호로 이어진 계정이 있나(있음/없음만).
+  const conf = await db.from("life_pins").select("user_id").eq("person_id", id).in("person_how", ["auto", "staff"]).limit(1);
+  const lifeConfirmed = !!(conf.data && conf.data.length);
+  return withHistory({ ok: true, person: { ...data, photo: urls.get(id) ?? "", lifeConfirmed }, family }, history);
 }
 
 async function peopleStats() {
