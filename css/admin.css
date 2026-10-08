@@ -1409,14 +1409,14 @@ section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:
     border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.55)}
   .home-g,.home-g:first-of-type{align-self:stretch;display:flex;align-items:center;gap:7px;margin:0;padding:0 12px 0 2px;
     border-right:1px solid var(--border);font-size:14px}
-  .home-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:3px;min-width:0}
-  a.home-card{display:flex;align-items:center;margin:0;padding:5px 8px;min-width:0;min-height:34px;height:100%;border-color:transparent;border-radius:9px;background:transparent;
+  .home-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:7px;min-width:0}
+  a.home-card{display:flex;align-items:center;margin:0;padding:7px 10px;min-width:0;min-height:40px;height:100%;border-color:var(--border);border-radius:10px;background:#fff;
     transition:border-color .15s,box-shadow .15s,transform .15s}
   .home-card .hc-main{display:flex;align-items:center;gap:6px;min-width:0}
   .home-card .hc-ic{font-size:17px;line-height:1;margin:0;text-align:center}
   .home-card .hc-t{min-width:0;font-size:14px;line-height:1.25;color:var(--navy-dark);word-break:keep-all}
   .home-card .hc-d{display:none}
-  .home-card:hover{border-color:var(--ghost-bd);background:var(--ghost-bg);box-shadow:none;transform:none}
+  .home-card:hover{border-color:var(--ghost-bd);background:var(--ghost-bg);box-shadow:0 2px 8px rgba(13,27,62,.08);transform:translateY(-1px)}
   .home-card:focus-visible{outline:3px solid var(--navy);outline-offset:2px}
   /* 교육 — 강좌 카드는 2~3열 · 신청 줄은 읽기 좋은 폭 */
   .ec-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:12px;align-items:start;margin-top:12px}
