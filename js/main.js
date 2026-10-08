@@ -136,6 +136,7 @@ async function route() {
   const host = document.createElement("section");
   view.replaceChildren(host);
   const m = menus.find((x) => x.id === menu);
+  host.classList.add("route-view", m ? `route-${m.id}` : "route-home");
   if (!m) return renderHome(host, menus);
   host.innerHTML = `<p class="empty">불러오는 중…</p>`;
   try {

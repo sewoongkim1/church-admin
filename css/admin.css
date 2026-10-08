@@ -56,8 +56,19 @@ body.nav-open .nav{transform:none}
   .nav a.on{padding-left:6px}
   .nav-g a.on{padding-left:8px}
   .nav-dim{display:none!important}
-  /* 아주 넓은 화면(2K 이상)에서 한 줄이 끝없이 늘지 않게 넉넉한 상한 — 표가 많은 메뉴도 1,376px 안쪽 폭이면 충분하다(2026-10-05) */
-  .view{margin-left:var(--nav-w);max-width:1440px;padding:24px 32px 96px}
+  /* 본문 바탕은 남은 PC 폭을 쓰되, 실제 화면은 성격별 최대 폭 안에서 가운데 정렬한다. */
+  .view{margin-left:var(--nav-w);max-width:none;padding:24px clamp(24px,3vw,48px) 96px}
+  .route-view{width:100%;max-width:1040px;margin-inline:auto}
+  /* 이름 찾기·일반 목록처럼 정보가 조금 더 많은 화면 */
+  .route-people,.route-catalog,.route-edu-courses,.route-edu-enroll,.route-edu-cert,
+  .route-duty-people,.route-nf-card,.route-nf-ceremony,.route-nf-staff,.route-members{max-width:1100px}
+  /* 여러 열 표·통계·명단은 넓게 보되 큰 모니터 끝까지 늘어나지는 않는다. */
+  .route-people-stats,.route-status,.route-appointed,.route-mn-history,.route-mn-stats,
+  .route-be-roster,.route-be-history,.route-edu-attend,.route-edu-stats,
+  .route-duty-roster,.route-nf-board,.route-nf-stats,.route-audit{max-width:1240px}
+  /* 올리기·신청 처리·설정은 긴 입력 줄이 생기지 않도록 읽기 폭으로 제한한다. */
+  .route-paper,.route-mn-requests,.route-be-upload,.route-duty-boards,.route-testers{max-width:840px}
+  .route-home{max-width:1280px}
   .view:has(.home){padding-top:16px;padding-bottom:16px}
 }
 
