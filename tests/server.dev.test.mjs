@@ -163,6 +163,8 @@ const PROBE = {
   membersApprove: { member_id: ZERO, roles: ["ministry"] },
   membersSetRoles: { member_id: ZERO, roles: ["ministry"] },
   membersSetStatus: { member_id: ZERO, status: "disabled" },
+  lifeResetList: {},
+  lifeResetDo: { request_id: 0 },                                  // 없는 요청 → not-found(아무것도 안 지움)
   auditList: { limit: 1 },
   ministryAppointed: {},
   ministryList: {},

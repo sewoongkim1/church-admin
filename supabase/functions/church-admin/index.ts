@@ -329,6 +329,44 @@ async function membersSetStatus(ctx: Ctx, b: any) {
   return { ok: true };
 }
 
+// 교회 생활 확인 번호 풀기(2026-10-08 · 성경암송 설계 2026-10-08-church-life-pin-design.md §7)
+// 성경암송 앱 lifeResetRequest 가 life_reset_requests 에 쌓은 열린 요청을 보여 주고, 풀면 그분 번호·기기를 지운다(새로 정하게).
+// ⚠️ 응답에 user_id·pin_hash·token_hash 를 싣지 않는다 — 이름·소속·요청 시각만. 역할 super(authz).
+async function lifeResetList() {
+  const { data, error } = await db.from("life_reset_requests")
+    .select("id,user_id,created_at").eq("status", "open").order("created_at", { ascending: true }).limit(200);
+  if (error) throw error;
+  const reqs = (data ?? []) as { id: number; user_id: string; created_at: string }[];
+  const ids = [...new Set(reqs.map((r) => r.user_id))];
+  const who = new Map<string, any>();
+  if (ids.length) {
+    const u = await db.from("users").select("id,name,gu,mok,bu,grade,type").in("id", ids);
+    for (const x of (u.data ?? []) as any[]) who.set(x.id, x);
+  }
+  const whoText = (x: any) => !x ? "앱 계정을 찾을 수 없어요"
+    : (x.type === "교구" ? [x.gu, x.mok].filter(Boolean).join("-") : [x.bu, x.grade].filter(Boolean).join(" "));
+  const rows = reqs.map((r) => {
+    const x = who.get(r.user_id);
+    return { id: r.id, name: x ? x.name : "(알 수 없음)", who: whoText(x), at: r.created_at };
+  });
+  return { ok: true, rows };
+}
+
+async function lifeResetDo(ctx: Ctx, b: any) {
+  const reqId = Number(b.request_id);
+  if (!Number.isFinite(reqId)) return { ok: false, error: "bad-args" };
+  const { data: r, error } = await db.from("life_reset_requests").select("user_id").eq("id", reqId).maybeSingle();
+  if (error) throw error;
+  if (!r) return { ok: false, error: "not-found" };
+  const uid = (r as any).user_id as string;
+  // 번호·기기를 지운다 — 다음에 들어올 때 새로 정하게. 같은 분의 다른 열린 요청도 함께 닫는다.
+  await db.from("life_pins").delete().eq("user_id", uid);
+  await db.from("life_devices").delete().eq("user_id", uid);
+  await db.from("life_reset_requests").update({ status: "done", handled_at: new Date().toISOString(), handled_by: ctx.member?.id ?? null }).eq("user_id", uid).eq("status", "open");
+  await audit(ctx, "life.reset", String(reqId), {});   // 번호·user_id·이름 안 남긴다
+  return { ok: true };
+}
+
 async function auditList(b: any) {
   const limit = Math.min(Math.max(Number(b.limit) || 100, 1), 200);
   let q = db.from("admin_audit").select("id,at,member_id,action,target,detail").order("id", { ascending: false }).limit(limit);
@@ -2495,6 +2533,8 @@ Deno.serve(async (req) => {
       case "membersApprove":   return json(await membersApprove(ctx, b));
       case "membersSetRoles":  return json(await membersSetRoles(ctx, b));
       case "membersSetStatus": return json(await membersSetStatus(ctx, b));
+      case "lifeResetList":    return json(await lifeResetList());
+      case "lifeResetDo":      return json(await lifeResetDo(ctx, b));
       case "auditList":        return json(await auditList(b));
       case "ministryAppointed": return json(await ministryAppointed());
       case "ministryList":      return json(await ministryList());

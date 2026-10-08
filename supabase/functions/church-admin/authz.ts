@@ -24,6 +24,9 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   membersSetRoles: "super",
   membersSetStatus: "super",
   auditList: "super",
+  // 교회 생활 확인 번호 풀기(2026-10-08) — 번호를 잊었거나 남이 먼저 정한 분을 총괄이 푼다.
+  lifeResetList: "super",
+  lifeResetDo: "super",
   // 교인명부(2026-10-01) — 새 명부를 올린 뒤 사역신청·성경필사 기록을 교인과 다시 잇는다(auto 줄만 · 사람이 정한 줄은 그대로).
   //   apply:true 가 아니면 세기만 한다(시험 PROBE 가 아무것도 안 바꾸게). 기록 people.linksync(수만).
   peopleLinkSync: "super",
