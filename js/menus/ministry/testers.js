@@ -14,14 +14,14 @@ function testerCard(t) {
   const sub = t.missing
     ? "앱 계정이 지워졌거나 합쳐졌어요 — 빼 주세요"
     : lastSeen(t) + (t.moved ? " · 등록한 뒤 이름·소속이 바뀐 분" : "");
-  return `<div class="card" data-key="${esc(t.key)}">
+  return `<div class="card mt-card" data-key="${esc(t.key)}">
     <div>${head}</div><div class="muted">${esc(sub)}</div>
     <div class="acts"><button type="button" class="btn danger" data-act="remove">빼기</button></div>
   </div>`;
 }
 
 function userCard(u) {
-  return `<div class="card" data-key="${esc(u.key)}">
+  return `<div class="card mt-card" data-key="${esc(u.key)}">
     <div><b>${esc(u.name)}</b> <span class="muted">${esc(u.who)}</span></div>
     <div class="muted">${esc(lastSeen(u))}</div>
     <div class="acts">${u.tester ? `<span class="badge ok">명단에 있음</span>`

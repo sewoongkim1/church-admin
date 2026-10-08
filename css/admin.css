@@ -1286,6 +1286,13 @@ body:has(#view > section[aria-busy="true"]){cursor:progress}
 .mt-find .search{flex:1;min-width:0;margin-bottom:0}
 .mt-find .btn{flex:none;min-width:88px}
 .mt-warn{margin-top:14px}
+@media (min-width:1200px){
+  .mt-list,.mt-res{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+  .mt-list>.mt-card,.mt-res>.mt-card{min-width:0;margin-bottom:0}
+  .mt-list>.empty,.mt-res>.empty,.mt-list>.muted,.mt-res>.muted{grid-column:1/-1}
+  .mt-card .acts{margin-top:8px}
+  .mt-card .acts .btn{flex:0 0 auto;min-width:92px}
+}
 /* 🧪 시험 참여자의 신청(2026-10-01) — 종이 딱지(.mn-paper)와 같은 꼴, 색만 주황으로 가른다 */
 .mn-test{color:#8a4b00;background:#fff4e0;border-color:#f5d6a3}
 
