@@ -4,17 +4,18 @@ import { homeHtml } from "../js/home-view.js";
 import { menusFor } from "../js/menus/registry.js";
 
 const member = { name: "<b>김</b>", type: "교구", gu: "화평", mok: "20" };
-test("묶음마다 제목 하나 + 격자 하나 · 이름은 이스케이프", () => {
+test("권한 메뉴를 한 격자에 잇고 카드마다 대분류를 표시 · 이름은 이스케이프", () => {
   const h = homeHtml({ member, rolesInfo: [{ label: "교육 총괄" }], roles: ["education"], menus: menusFor(["education"]) });
-  assert.equal((h.match(/class="home-g"/g) || []).length, 1);
   assert.equal((h.match(/class="home-grid"/g) || []).length, 1);
+  assert.equal((h.match(/class="hc-cat"/g) || []).length, 5);
   assert.equal((h.match(/home-card/g) || []).length, 5);   // 강좌 관리 · 신청 현황 · 출석부 · 수료 · 교육 통계(4단계 C)
   assert.ok(!h.includes("<b>김</b>") && h.includes("&lt;b&gt;김"));
   assert.ok(h.includes("화평 20목장 · 교육 총괄"));
 });
 test("super 는 모든 묶음 · 빈 상태 두 글", () => {
   const h = homeHtml({ member, rolesInfo: [], roles: ["super"], menus: menusFor(["super"]) });
-  assert.equal((h.match(/class="home-grid"/g) || []).length, 7);   // 교인명부 · 사역신청 · 성경필사(암송) · 교육 · 봉사 당번(2026-10-06) · 새가족(2026-10-07) · 시스템
+  assert.equal((h.match(/class="home-grid"/g) || []).length, 1);
+  assert.equal((h.match(/class="hc-cat"/g) || []).length, menusFor(["super"]).length);
   assert.ok(homeHtml({ member, roles: ["x"], menus: [] }).includes("곧 열려요"));
   assert.ok(homeHtml({ member, roles: [], menus: [] }).includes("역할을 받아"));
 });
