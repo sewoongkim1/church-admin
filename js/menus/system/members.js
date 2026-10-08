@@ -71,12 +71,12 @@ function draw(el, r, me, call) {
   const by = (s) => r.members.filter((m) => m.status === s);
   const pending = by("pending"), active = by("active"), disabled = by("disabled");
   el.innerHTML = TITLE + `
-    <div class="acts" style="margin-bottom:4px"><button type="button" class="btn" data-act="reload">↻ 새로 불러오기</button></div>
+    <div class="acts mem-reload"><button type="button" class="btn" data-act="reload">↻ 새로 불러오기</button></div>
     <h3 class="sec-title">승인 대기 ${pending.length}명</h3>
-    ${pending.length ? pending.map((m) => pendingCard(m, r.roles)).join("") : `<p class="empty">기다리는 분이 없어요</p>`}
+    ${pending.length ? `<div class="mem-grid">${pending.map((m) => pendingCard(m, r.roles)).join("")}</div>` : `<p class="empty mem-empty">기다리는 분이 없어요</p>`}
     <h3 class="sec-title">사용 중 ${active.length}명</h3>
-    ${active.map((m) => activeCard(m, r.roles, me.member.id)).join("")}
-    ${disabled.length ? `<h3 class="sec-title">정지됨 ${disabled.length}명</h3>${disabled.map(disabledCard).join("")}` : ""}`;
+    <div class="mem-grid">${active.map((m) => activeCard(m, r.roles, me.member.id)).join("")}</div>
+    ${disabled.length ? `<h3 class="sec-title">정지됨 ${disabled.length}명</h3><div class="mem-grid">${disabled.map(disabledCard).join("")}</div>` : ""}`;
 
   const reload = () => render(el, { me, call });
   el.onclick = async (e) => {
