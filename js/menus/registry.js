@@ -75,6 +75,8 @@ export const MENUS = [
     role: "super", load: () => import("./ministry/testers.js") },
   { id: "audit", group: "시스템", icon: "📜", label: "바꾼 기록", desc: "누가 언제 무엇을 바꿨나",
     role: "super", load: () => import("./system/audit.js") },
+  { id: "life-reset", group: "시스템", icon: "🔑", label: "확인 번호 풀기", desc: "교회 생활 확인 번호를 잊은 분 풀어 주기",
+    role: "super", load: () => import("./system/life-reset.js") },
 ];
 
 // 묶음(대분류) 머리의 아이콘 — 메뉴 줄(중분류)의 아이콘과 겹치지 않게 고른다
