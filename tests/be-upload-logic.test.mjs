@@ -284,7 +284,7 @@ test("메뉴 — 📤 명단 올리기가 📋 회차·명단 바로 다음 · C
   assert.equal(ids[ids.indexOf("be-roster") + 1], "be-upload");
   const m = MENUS.find((x) => x.id === "be-upload");
   assert.deepEqual([m.group, m.icon, m.label, m.desc, m.role],
-    ["성경필사(암송)", "📤", "명단 올리기", "엑셀·붙여넣기로 한꺼번에 더하기", "bibleevent"]);
+    ["성경 필사·암송", "📤", "명단 올리기", "엑셀·붙여넣기로 한꺼번에 더하기", "bibleevent"]);
 });
 
 test("화면 모듈이 Node 에서 읽힌다 — import 한 이름이 모두 있다(틀리면 여기서 SyntaxError)", async () => {

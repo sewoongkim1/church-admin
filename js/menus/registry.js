@@ -22,11 +22,11 @@ export const MENUS = [
     role: "ministry", load: () => import("./ministry/requests.js") },
   { id: "mn-stats", group: "사역 신청", icon: "📊", label: "사역 통계", desc: "해마다 봉사자·자리 · 계속·처음·쉼 · 계열별 · 나이·직분 · 엑셀",
     role: "ministry", load: () => import("./ministry/stats.js") },
-  { id: "be-roster", group: "성경필사(암송)", icon: "📋", label: "회차·명단", desc: "완서자 명단 보기 · 고치기 · 회차 설정",
+  { id: "be-roster", group: "성경 필사·암송", icon: "📋", label: "회차·명단", desc: "완서자 명단 보기 · 고치기 · 회차 설정",
     role: "bibleevent", load: () => import("./bibleevent/roster.js") },
-  { id: "be-upload", group: "성경필사(암송)", icon: "📤", label: "명단 올리기", desc: "엑셀·붙여넣기로 한꺼번에 더하기",
+  { id: "be-upload", group: "성경 필사·암송", icon: "📤", label: "명단 올리기", desc: "엑셀·붙여넣기로 한꺼번에 더하기",
     role: "bibleevent", load: () => import("./bibleevent/upload.js") },
-  { id: "be-history", group: "성경필사(암송)", icon: "👤", label: "사람별 이력·통계", desc: "이름으로 찾기 · 회차별·교구별 · 여러 번 참여",
+  { id: "be-history", group: "성경 필사·암송", icon: "👤", label: "사람별 이력·통계", desc: "이름으로 찾기 · 회차별·교구별 · 여러 번 참여",
     role: "bibleevent", load: () => import("./bibleevent/history.js") },
   // 🎓 교육신청(2026-10-05 · 1단계) — 강좌 관리(교육 총괄만 · 담당자 지정도 여기) · 신청 현황(교육 총괄 = 모든 강좌 ·
   //   교육 담당(맡은 강좌) = 지정받은 강좌만 — 서버 edu-db.ts 가 강좌마다 막는다 not-assigned).
@@ -78,7 +78,7 @@ export const MENUS = [
 ];
 
 // 묶음(대분류) 머리의 아이콘 — 메뉴 줄(중분류)의 아이콘과 겹치지 않게 고른다
-export const GROUP_ICON = { "교인명부": "👥", "사역 신청": "🤝", "성경필사(암송)": "✍️", "교육 신청": "🎓", "봉사 당번 신청": "🙋", "새가족 관리": "💐", "시스템": "⚙️" };
+export const GROUP_ICON = { "교인명부": "👥", "사역 신청": "🤝", "성경 필사·암송": "✍️", "교육 신청": "🎓", "봉사 당번 신청": "🙋", "새가족 관리": "💐", "시스템": "⚙️" };
 
 // 메뉴 하나가 받는 역할들 — roles 배열 · role 배열 · role 글자 하나 모두 배열로
 export function menuRoles(m) {
