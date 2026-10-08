@@ -367,6 +367,41 @@ async function lifeResetDo(ctx: Ctx, b: any) {
   return { ok: true };
 }
 
+// 확인 번호 교적 맞대기(2026-10-08 · Plan 4) — 성경암송 api 가 내부 키로 부른다.
+//   번호를 주고받지 않는다: 같은 비밀값(LIFE_PIN_SECRET · 프로젝트 공용)으로 교인명부 연락처 뒷자리로 해시를 만들어
+//   life_pins.pin_hash 와 본다. 이름이 같고 뒷자리까지 같은 분이 **정확히 하나**면 그 교인ID(친구 결정 1).
+// ⚠️ 해시 공식 "life-pin|"+user_id+"|"+(뒷자리4) 은 성경암송 api lifePinHash 와 **글자까지 같아야** 한다.
+async function hmacHex(secret: string, msg: string): Promise<string> {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg)));
+  return Array.from(sig).map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+async function internalPinMatch(b: any) {
+  const uid = String(b?.user_id || "");
+  const who = b?.who && typeof b.who === "object" ? b.who : {};
+  if (!uid) return { ok: false, error: "no-user" };
+  const secret = Deno.env.get("LIFE_PIN_SECRET") ?? "";
+  if (!secret) return { ok: true, matched: "none" };
+  const { data: pin } = await db.from("life_pins").select("pin_hash").eq("user_id", uid).maybeSingle();
+  if (!pin) return { ok: true, matched: "none" };
+  const nk = nameKey(who.name);
+  if (!nk) return { ok: true, matched: "none" };
+  const { data: ppl, error } = await db.from("church_people").select("person_id,name,phone_digits").eq("name", String(who.name ?? ""));
+  if (error || !ppl) return { ok: true, matched: "none" };
+  const hits = new Set<number>();
+  for (const p of ppl as any[]) {
+    if (nameKey(p.name) !== nk) continue;                                     // NFC 까지 같은 이름만
+    for (const ph of String(p.phone_digits ?? "").split(/\s+/).filter(Boolean)) {
+      const last4 = ph.slice(-4);
+      if (last4.length !== 4) continue;
+      if ((await hmacHex(secret, "life-pin|" + uid + "|" + last4)) === pin.pin_hash) { hits.add(p.person_id); break; }
+    }
+  }
+  const uniq = [...hits];
+  if (uniq.length === 1) return { ok: true, matched: "one", person_id: uniq[0] };
+  return { ok: true, matched: uniq.length ? "many" : "none" };
+}
+
 async function auditList(b: any) {
   const limit = Math.min(Math.max(Number(b.limit) || 100, 1), 200);
   let q = db.from("admin_audit").select("id,at,member_id,action,target,detail").order("id", { ascending: false }).limit(limit);
@@ -2498,6 +2533,7 @@ async function internalRoute(req: Request): Promise<Response> {
     switch (action) {
       case "internalMyHistory":      return json(await internalMyHistory(b));
       case "internalHistoryRequest": return json(await internalHistoryRequest(b));
+      case "internalPinMatch":       return json(await internalPinMatch(b));
     }
     return json({ ok: false, error: "unknown-action" }, 400);
   } catch (e) {
