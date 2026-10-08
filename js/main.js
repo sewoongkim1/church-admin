@@ -86,17 +86,32 @@ function renderShell() {
     <nav class="nav" aria-label="메뉴">
       <a href="#/" data-id="">🏠 처음</a>
       ${menuGroups(menus).map((g, i) => `<div class="nav-g" role="group" aria-labelledby="nav-g${i}">` +
-        `<h3 id="nav-g${i}"><span class="nav-gi" aria-hidden="true">${g.icon}</span>${esc(g.group)}</h3>` +
+        `<h3><button type="button" class="nav-group-toggle" id="nav-g${i}" aria-expanded="false" aria-controls="nav-sub${i}">` +
+        `<span class="nav-gi" aria-hidden="true">${g.icon}</span><span>${esc(g.group)}</span><span class="nav-chev" aria-hidden="true">⌄</span></button></h3>` +
+        `<div class="nav-sub" id="nav-sub${i}" hidden>` +
         g.menus.map((m) => `<a href="#/${m.id}" data-id="${m.id}"><span aria-hidden="true">${m.icon}</span>${esc(m.label)}</a>`).join("") +
+        `</div>` +
         `</div>`).join("")}
     </nav>
     <div class="nav-dim" hidden></div>
     <main class="view" id="view"></main>`;
   const dim = app.querySelector(".nav-dim");
   const setNav = (open) => { document.body.classList.toggle("nav-open", open); dim.hidden = !open; };
+  const setGroup = (button, open) => {
+    button.setAttribute("aria-expanded", String(open));
+    document.getElementById(button.getAttribute("aria-controls")).hidden = !open;
+  };
   app.querySelector(".menu").onclick = () => setNav(!document.body.classList.contains("nav-open"));
   dim.onclick = () => setNav(false);
-  app.querySelector(".nav").addEventListener("click", (e) => { if (e.target.closest("a")) setNav(false); });
+  app.querySelector(".nav").addEventListener("click", (e) => {
+    const toggle = e.target.closest(".nav-group-toggle");
+    if (toggle) {
+      const open = toggle.getAttribute("aria-expanded") !== "true";
+      app.querySelectorAll(".nav-group-toggle").forEach((b) => setGroup(b, b === toggle && open));
+      return;
+    }
+    if (e.target.closest("a")) setNav(false);
+  });
   app.querySelector(".out").onclick = onSignOut;
 }
 
@@ -109,6 +124,13 @@ async function route() {
   const { menu, sub, query } = parseHash(location.hash);
   const menus = menusFor(me.roles);
   app.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("on", a.dataset.id === menu));
+  const activeLink = menu ? app.querySelector(`.nav a[data-id="${CSS.escape(menu)}"]`) : null;
+  const activeGroup = activeLink?.closest(".nav-g");
+  app.querySelectorAll(".nav-group-toggle").forEach((button) => {
+    const open = button.closest(".nav-g") === activeGroup;
+    button.setAttribute("aria-expanded", String(open));
+    document.getElementById(button.getAttribute("aria-controls")).hidden = !open;
+  });
   window.scrollTo(0, 0);
   // 메뉴마다 새 <section> — 앞 메뉴가 달아 둔 이벤트가 다음 메뉴로 새지 않게
   const host = document.createElement("section");
