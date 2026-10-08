@@ -402,6 +402,27 @@ async function internalPinMatch(b: any) {
   return { ok: true, matched: uniq.length ? "many" : "none" };
 }
 
+// 새 명부를 올린 뒤(peopleLinkSync apply) 아직 안 이어진 확인 번호를 다시 맞대 본다(친구 결정 2 ②).
+//   person_id 가 없고 사람이 정한 것(staff)이 아닌 life_pins 만. 한 분으로 좁혀지면 잇는다. (수가 많으면 나중에 배치.)
+async function lifeRematchAll(): Promise<number> {
+  const { data } = await db.from("life_pins").select("user_id,person_how").is("person_id", null).neq("person_how", "staff");
+  if (!data || !data.length) return 0;
+  const ids = (data as any[]).map((r) => r.user_id);
+  const us = await db.from("users").select("id,type,gu,mok,bu,grade,name").in("id", ids);
+  const who = new Map<string, any>((us.data ?? []).map((u: any) => [u.id, u]));
+  let linked = 0;
+  for (const r of data as any[]) {
+    const u = who.get(r.user_id);
+    if (!u) continue;
+    const m: any = await internalPinMatch({ user_id: r.user_id, who: u });
+    if (m && m.ok && m.matched === "one") {
+      await db.from("life_pins").update({ person_id: m.person_id, person_how: "auto", matched_at: new Date().toISOString() }).eq("user_id", r.user_id);
+      linked++;
+    }
+  }
+  return linked;
+}
+
 async function auditList(b: any) {
   const limit = Math.min(Math.max(Number(b.limit) || 100, 1), 200);
   let q = db.from("admin_audit").select("id,at,member_id,action,target,detail").order("id", { ascending: false }).limit(limit);
@@ -1367,8 +1388,9 @@ async function peopleLinkSync(ctx: Ctx, b: any) {
     unmatched: oc.unmatched + sc.unmatched };
   if (!apply) return { ok: true, dry: true, ...counts };
   const written = await writeAutoLinks([...oRecs, ...sRecs]);
-  await audit(ctx, "people.linksync", String(look.importId), { ...counts, written });
-  return { ok: true, dry: false, ...counts, written };
+  const lifeLinked = await lifeRematchAll();   // 새 명부로 확인 번호도 다시 맞대 본다(교적 맞대기 Plan 4 Task 5)
+  await audit(ctx, "people.linksync", String(look.importId), { ...counts, written, lifeLinked });
+  return { ok: true, dry: false, ...counts, written, lifeLinked };
 }
 
 // ---------- 교인명부 — 「자세히」 창의 사역·성경필사 탭(2026-10-01 · 설계 §4·§5) ----------
