@@ -12,8 +12,9 @@ export function homeHtml({ member, rolesInfo, roles, menus }) {
   return `<div class="home"><h2 class="page-title">${esc(member.name)} 님, 평안하세요</h2>
     <p class="muted home-who">${esc(affiliation(member))} · ${esc(labels.join(" · ") || "역할 없음")}</p>
     ${menus && menus.length
-      ? menuGroups(menus).map((g) => `<h3 class="home-g"><span aria-hidden="true">${g.icon}</span>${esc(g.group)}</h3>` +
-          `<div class="home-grid">${g.menus.map(cardHtml).join("")}</div>`).join("")
+      ? `<div class="home-groups">${menuGroups(menus).map((g) => `<section class="home-group">` +
+          `<h3 class="home-g"><span aria-hidden="true">${g.icon}</span>${esc(g.group)}</h3>` +
+          `<div class="home-grid">${g.menus.map(cardHtml).join("")}</div></section>`).join("")}</div>`
       : roles && roles.length
         ? `<p class="empty">이 역할의 메뉴는 곧 열려요</p>`
         : `<p class="empty">아직 쓸 수 있는 메뉴가 없어요 — 총괄 관리자에게 역할을 받아 주세요</p>`}</div>`;

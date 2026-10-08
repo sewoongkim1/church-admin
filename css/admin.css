@@ -35,11 +35,21 @@ body.nav-open .nav{transform:none}
 .home-who{margin-bottom:12px}
 .view{max-width:900px;margin:0 auto;padding:16px 16px 96px}
 @media (min-width:1024px){
+  :root{--nav-w:320px}
   .top .icon-btn.menu{display:none}
-  .nav{transform:none;transition:none}
+  /* PC 메뉴는 한 화면 안에서 두 단으로 읽는다. 메뉴 자체의 별도 스크롤은 만들지 않는다. */
+  .nav{transform:none;transition:none;overflow:hidden;columns:2;column-fill:auto;column-gap:0;padding:4px 0 8px}
+  .nav-g{break-inside:avoid;margin-top:2px;padding-bottom:2px}
+  .nav h3{gap:5px;padding:6px 10px 3px;font-size:13px;line-height:1.25}
+  .nav-gi{font-size:15px}
+  .nav a{min-height:30px;padding:2px 8px;font-size:13px;line-height:1.25}
+  .nav-g a{margin-left:12px;padding-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nav a.on{padding-left:6px}
+  .nav-g a.on{padding-left:6px}
   .nav-dim{display:none!important}
   /* 아주 넓은 화면(2K 이상)에서 한 줄이 끝없이 늘지 않게 넉넉한 상한 — 표가 많은 메뉴도 1,376px 안쪽 폭이면 충분하다(2026-10-05) */
   .view{margin-left:var(--nav-w);max-width:1440px;padding:24px 32px 96px}
+  .view:has(.home){padding-top:16px;padding-bottom:16px}
 }
 
 /* 단추 — 주 동작 48 · 보조 44 · 위험 44 */
@@ -1355,15 +1365,18 @@ section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:
 /* PC 처음 화면·교육 메뉴 격자(2026-10-05) — 폰(<1024px)은 위 옛 규칙 그대로 한 줄 카드 */
 @media (min-width:1024px){
   .home{max-width:1280px}
-  .home-g{font-size:16px;margin:28px 0 12px}
-  .home-g:first-of-type{margin-top:10px}
-  .home-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
-  a.home-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0;padding:18px;height:100%;
+  .home-who{margin-bottom:8px}
+  .home-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start}
+  .home-group{min-width:0;padding:8px;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.42)}
+  .home-g{font-size:14px;margin:0 0 6px}
+  .home-g:first-of-type{margin-top:0}
+  .home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  a.home-card{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:6px;margin:0;padding:6px 8px;min-height:38px;height:100%;
     transition:border-color .15s,box-shadow .15s,transform .15s}
   .home-card br{display:none}
-  .home-card .hc-ic{font-size:26px;line-height:1;margin-bottom:6px}
-  .home-card .hc-t{font-size:1.02rem;color:var(--navy-dark)}
-  .home-card .hc-d{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45;word-break:keep-all}
+  .home-card .hc-ic{font-size:19px;line-height:1;margin:0;text-align:center}
+  .home-card .hc-t{min-width:0;font-size:14px;line-height:1.3;color:var(--navy-dark);word-break:keep-all}
+  .home-card .hc-d{display:none}
   .home-card:hover{border-color:var(--ghost-bd);box-shadow:0 6px 18px rgba(13,27,62,.10);transform:translateY(-2px)}
   .home-card:focus-visible{outline:3px solid var(--navy);outline-offset:2px}
   /* 교육 — 강좌 카드는 2~3열 · 신청 줄은 읽기 좋은 폭 */
@@ -1373,6 +1386,9 @@ section.mh-drop{outline:3px dashed var(--navy);outline-offset:4px;border-radius:
   .ee-page{max-width:1000px}
   /* 강좌 관리 맨 위 단추(학기·새 강좌) — PC 에서 폭 전체로 늘지 않게 */
   .ec-top .btn{flex:0 0 auto;min-width:200px}
+}
+@media (min-width:1280px){
+  .home-groups{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 @media (min-width:1024px) and (prefers-reduced-motion:reduce){
   .home-card{transition:none}
