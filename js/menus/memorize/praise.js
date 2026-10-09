@@ -5,6 +5,11 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 const TITLE = `<h2 class="page-title">🎵 찬양 아카이브</h2>`;
 const nfc = (s) => String(s || "").normalize("NFC");
 const vidOf = (u) => { const m = String(u || "").match(/[A-Za-z0-9_-]{11}/); return m ? m[0] : ""; };
+// 구분(분류) — 옛 찬양 관리·성도님 앱 콤보와 같은 목록(praise-config.js CATEGORIES). 성경암송 SERMON_CATS 방식처럼
+//   수정 때 목록에 없는 옛 값(예: 특송·기타)은 맨 앞에 끼워 안 잃는다. 새 곡(빈 값)은 첫 항목(찬양대)이 된다.
+const CATS = ["찬양대", "찬양팀", "중창단", "특별찬양"];
+const catOpts = (sel) => (sel && !CATS.includes(sel) ? [sel, ...CATS] : CATS)
+  .map((c) => `<option${c === sel ? " selected" : ""}>${esc(c)}</option>`).join("");
 
 export async function render(el, { me, call }) {
   const isSuper = !!(me && (me.roles || []).includes("super"));
@@ -45,7 +50,7 @@ export async function render(el, { me, call }) {
       <label class="field"><span>영상 ID</span><input data-f="id" value="${esc(s.id || "")}" ${s.id ? "readonly" : ""}></label>
       <label class="field"><span>제목</span><input data-f="song" value="${esc(nfc(s.song))}"></label>
       <label class="field"><span>찬양대</span><input data-f="choir" value="${esc(nfc(s.choir))}"></label>
-      <label class="field"><span>분류</span><input data-f="category" value="${esc(nfc(s.category))}"></label>
+      <label class="field"><span>분류</span><select data-f="category">${catOpts(nfc(s.category))}</select></label>
       <label class="field"><span>예배일</span><input data-f="svc_date" type="date" value="${esc(s.svc_date || "")}"></label>
     </div>`;
   }
