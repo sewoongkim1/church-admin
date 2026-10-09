@@ -47,10 +47,13 @@ export async function render(el, { call }) {
 
   // 숫자(또는 숫자 문자열)는 천단위 콤마, 그 밖(구분·소속 텍스트)은 그대로.
   const cell = (v) => (v !== null && v !== "" && typeof v !== "boolean" && !isNaN(v)) ? num(v) : esc(v ?? "");
+  // 숫자 열(값이 모두 비었거나 숫자)은 오른쪽 정렬, 글자 열(구분·소속)은 왼쪽.
+  const numCol = (rows, k) => rows.every((r) => r[k] == null || r[k] === "" || (typeof r[k] !== "boolean" && !isNaN(r[k])));
   const table = (rows) => {
     const keys = [...new Set(rows.flatMap((r) => Object.keys(r)))];
-    const head = keys.map((k) => `<th style="text-align:left;padding:6px 10px;white-space:nowrap">${esc(COL[k] || k)}</th>`).join("");
-    const body = rows.map((r) => `<tr>${keys.map((k) => `<td style="padding:6px 10px;border-top:1px solid var(--border);white-space:nowrap">${cell(r[k])}</td>`).join("")}</tr>`).join("");
+    const align = Object.fromEntries(keys.map((k) => [k, numCol(rows, k) ? "right" : "left"]));
+    const head = keys.map((k) => `<th style="text-align:${align[k]};padding:6px 10px;white-space:nowrap">${esc(COL[k] || k)}</th>`).join("");
+    const body = rows.map((r) => `<tr>${keys.map((k) => `<td style="text-align:${align[k]};padding:6px 10px;border-top:1px solid var(--border);white-space:nowrap">${cell(r[k])}</td>`).join("")}</tr>`).join("");
     return `<div class="card" style="margin-top:12px;overflow-x:auto"><b style="font-size:13px">상세</b>
       <table style="border-collapse:collapse;min-width:100%;margin-top:8px;font-size:13px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   };
