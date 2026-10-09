@@ -2076,6 +2076,8 @@ body.ec-cert-on{overflow:hidden}
 .ma-grid .ma-wide{grid-column:1/-1}
 .ma-grid .field{margin-bottom:0}
 .field select{width:100%;min-height:var(--tap);padding:0 10px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:1rem}
+/* 콤보 박스(시스템 select)는 .field 밖(예: 필사 상태)에서도 모두 둥글게 — 친구 2026-10-10 */
+select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);border-radius:10px;background:#fff}
 /* 한 줄에 여러 칸 — 좁으면 저절로 내려간다(설교 ① 등) */
 .sm-row{display:flex;gap:12px;flex-wrap:wrap}
 .sm-row>.field{flex:1 1 170px;margin:0}
