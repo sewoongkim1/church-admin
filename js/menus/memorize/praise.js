@@ -23,7 +23,9 @@ export async function render(el, { me, call }) {
     body.innerHTML = `<p class="muted">불러오는 중…</p>`;
     const r = await call("adminList");
     if (!r.ok) { body.innerHTML = `<p class="muted">${esc(errorText(r))}</p>`; return; }
-    songs = (r.songs || []).map((s) => ({ ...s, song: nfc(s.song), choir: nfc(s.choir) }));
+    songs = (r.songs || []).map((s) => ({ ...s, song: nfc(s.song), choir: nfc(s.choir) }))
+      // 예배일 최근순 — 날짜 없는 곡은 맨 뒤(화면에서만 정렬 · 서버·성도님 앱은 그대로)
+      .sort((a, b) => (b.svc_date || "").localeCompare(a.svc_date || ""));
     body.innerHTML = `<div class="acts"><button class="btn" id="pr-refresh">조회수 새로고침(전곡)</button></div>
       <p class="muted">${songs.length}곡</p>` + songs.map((s) => `
       <div class="card" data-id="${esc(s.id)}">
