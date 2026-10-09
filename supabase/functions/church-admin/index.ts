@@ -8,7 +8,7 @@
 //   ⚠️ 응답에 auth_user_id 를 싣지 않는다(MEMBER_COLS 에 없다).
 // ============================================================
 import { createClient } from "npm:@supabase/supabase-js@2.117.2";
-import { canCall, identityCandidates, kakaoAvatar, kakaoNickname, norm, parseIdentity, parseRoles } from "./authz.ts";
+import { canCall, identityCandidates, identityKey, kakaoAvatar, kakaoNickname, norm, parseIdentity, parseRoles } from "./authz.ts";
 import { statusPatch } from "./ministry.ts";
 import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINISTRY_FREQ_COLS, MINISTRY_FREQ_KEYS } from "./catalog.ts";
 import { appIdentityKey, legacyNorm, ministryPaperKeys, ministryPaperOne, paperName, PAPER_MAX_ROWS } from "./paper.ts";
@@ -1237,6 +1237,90 @@ async function photoUrls(ids: number[]): Promise<Map<number, string>> {
     if (x.signedUrl && !x.error) out.set(id, x.signedUrl);
   }
   return out;
+}
+
+// ── 성도 계정 관리 (2026-10-09 · 성경암송 admin-members 이전) ──────────────────────────────
+//   users 를 service_role 로 직접 읽고, 변경/합치기는 성경암송 RPC(admin_update_member_profile·
+//   admin_preview_member_merge·admin_merge_members · service_role grant)를 db.rpc 로 부른다.
+//   역할 게이트는 dispatch 의 canCall 이 건다(members: find/update/history · super: merge).
+//   RPC 와 합치기 로직·트리거는 성경암송 저장소에 그대로 둔다 — 여기서는 부르기만.
+const MEMBER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function memberProfile(p: any) {
+  const type = norm(p?.type), name = norm(p?.name);
+  return { type, name,
+    gu: type === "교구" ? norm(p?.gu) : null, mok: type === "교구" ? norm(p?.mok) : null,
+    bu: type === "교회학교" ? norm(p?.bu) : null, grade: type === "교회학교" ? norm(p?.grade) : null };
+}
+function memberProfileOk(pr: any, reason: string): boolean {
+  if (!["교구", "교회학교"].includes(pr.type) || !pr.name || pr.name.length > 80) return false;
+  if (Object.values(pr).some((v: any) => v && (String(v).length > 80 || /[|<>"\x00-\x1f]/.test(String(v))))) return false;
+  if (pr.type === "교구" && (!pr.gu || !/^(\d+|남성)$/.test(pr.mok || ""))) return false;
+  if (pr.type === "교회학교" && (!pr.bu || !pr.grade)) return false;
+  if (!reason || reason.length > 300) return false;
+  return true;
+}
+
+async function memberFind(ctx: Ctx, b: any) {
+  const q = norm(b.query);
+  if (!q || q.length > 80) return { ok: false, error: "invalid-search" };
+  const pattern = q.replace(/[\\%_]/g, "\\$&");
+  const { data, error } = await db.from("users")
+    .select("id,type,gu,mok,bu,grade,name,identity_key,created_at,last_seen_at")
+    .ilike("name", `%${pattern}%`).order("name").order("id").limit(51);
+  if (error) throw error;
+  await audit(ctx, "member.search", "", { q: q.slice(0, 40), n: (data ?? []).length });
+  return { ok: true, users: (data ?? []).slice(0, 50), more: (data ?? []).length > 50 };
+}
+
+async function memberHistory(_ctx: Ctx, b: any) {
+  if (!MEMBER_UUID.test(b.user_id || "")) return { ok: false, error: "invalid-member" };
+  const { data, error } = await db.from("user_profile_changes")
+    .select("id,before_profile,after_profile,reason,created_at")
+    .eq("user_id", b.user_id).order("id", { ascending: false }).limit(20);
+  if (error) throw error;
+  return { ok: true, history: data ?? [] };
+}
+
+async function memberUpdate(ctx: Ctx, b: any) {
+  if (!MEMBER_UUID.test(b.user_id || "") || typeof b.expected_key !== "string" || !b.expected_key)
+    return { ok: false, error: "invalid-member" };
+  const pr = memberProfile(b.profile || {}), reason = norm(b.reason);
+  if (!memberProfileOk(pr, reason)) return { ok: false, error: "invalid-profile" };
+  const { data, error } = await db.rpc("admin_update_member_profile", {
+    p_user_id: b.user_id, p_expected_key: b.expected_key,
+    p_profile: { ...pr, identity_key: identityKey(pr as any) }, p_reason: reason,
+  });
+  if ((error as any)?.code === "23505") return { ok: false, error: "identity-conflict" };
+  if (error) throw error;
+  await audit(ctx, "member.update", b.user_id, { reason: reason.slice(0, 60) });
+  return data;
+}
+
+async function memberMergePreview(_ctx: Ctx, b: any) {
+  if (!MEMBER_UUID.test(b.user_id || "") || typeof b.expected_key !== "string" || !b.expected_key || !b.profile)
+    return { ok: false, error: "invalid-member" };
+  const pr = memberProfile(b.profile);
+  const { data, error } = await db.rpc("admin_preview_member_merge", {
+    p_source_id: b.user_id, p_source_key: b.expected_key, p_target_key: identityKey(pr as any),
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function memberMerge(ctx: Ctx, b: any) {
+  if (b.confirm_same_person !== true || !MEMBER_UUID.test(b.source_id || "") || !MEMBER_UUID.test(b.target_id || "") ||
+      b.source_id === b.target_id || typeof b.source_key !== "string" || typeof b.target_key !== "string" ||
+      !norm(b.reason) || norm(b.reason).length > 300)
+    return { ok: false, error: "invalid-merge" };
+  const { data, error } = await db.rpc("admin_merge_members", {
+    p_source_id: b.source_id, p_target_id: b.target_id, p_source_key: b.source_key,
+    p_target_key: b.target_key, p_reason: norm(b.reason),
+  });
+  if ((error as any)?.code === "23505") return { ok: false, error: "merge-record-conflict" };
+  if (error) throw error;
+  await audit(ctx, "member.merge", b.source_id + "→" + b.target_id, { reason: norm(b.reason).slice(0, 60) });
+  return data;
 }
 
 async function peopleSearch(ctx: Ctx, b: any) {
@@ -2612,6 +2696,11 @@ Deno.serve(async (req) => {
       case "ministryTesterSave": return json(await ministryTesterSave(ctx, b));
       case "peopleSearch": return json(await peopleSearch(ctx, b));
       case "peoplePerson": return json(await peoplePerson(ctx, b));
+      case "memberFind":         return json(await memberFind(ctx, b));
+      case "memberHistory":      return json(await memberHistory(ctx, b));
+      case "memberUpdate":       return json(await memberUpdate(ctx, b));
+      case "memberMergePreview": return json(await memberMergePreview(ctx, b));
+      case "memberMerge":        return json(await memberMerge(ctx, b));
       case "peopleStats":  return json(await peopleStats());
       case "peopleExport": return json(await peopleExport(ctx, b));
       case "peopleHistory": return json(await peopleHistory(b));
