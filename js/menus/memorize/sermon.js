@@ -24,19 +24,19 @@ export async function render(el, { me, call }) {
     return H3("① 토요일 — 이번 주 암송 구절 + 설교 정보") + `
       <div class="card"><p class="muted">암송 구절이 있는 주에 토요일 넣어요. 제목·예배일·구분·설교자도 여기서 함께 넣으면 일요일에 다시 안 넣어도 돼요.</p>
       <form id="sv-form"><div class="ma-grid">
+        <label class="field ma-wide"><span>제목</span><input id="sv-title" maxlength="200" placeholder="설교 제목"></label>
         <label class="field"><span>구절 번호(1~999) <small id="sv-no-hint" class="muted"></small></span><input id="sv-no" inputmode="numeric" maxlength="3"></label>
         <label class="field"><span>구절(짧게 · 예: 요 3:16)</span><input id="sv-ref" maxlength="60"></label>
         <label class="field ma-wide"><span>본문</span><input id="sv-text" maxlength="2000"></label>
         <label class="field"><span>구절(길게 · 선택)</span><input id="sv-reff" maxlength="120"></label>
-        <label class="field"><span>제목</span><input id="sv-title" maxlength="200"></label>
         <label class="field"><span>예배일</span><input id="sv-date" type="date"></label>
         <label class="field"><span>구분</span><select id="sv-cat">${catOpts("주일설교")}</select></label>
         <label class="field"><span>설교자</span><input id="sv-preacher" maxlength="60"></label>
         <label class="field"><span>영문 구절(NIV · 선택)</span><input id="sv-ref-en" maxlength="120"></label>
         <label class="field ma-wide"><span>영문 본문(NIV · 선택)</span><input id="sv-text-en" maxlength="2000"></label>
       </div>
-      <div class="acts"><button type="button" class="btn" id="sv-niv">AI 로 영문(NIV) 만들기</button></div>
-      <button class="btn primary wide" type="submit">구절·설교 정보 저장</button></form><p id="sv-status" class="muted"></p></div>`
+      <div class="acts" style="margin-top:12px"><button type="button" class="btn" id="sv-niv">AI 로 영문(NIV) 만들기</button></div>
+      <button class="btn primary wide" type="submit" style="margin-top:12px">구절·설교 정보 저장</button></form><p id="sv-status" class="muted"></p></div>`
     + H3("② 일요일 — 유튜브 + 자막") + `
       <div class="card"><p class="muted">자막을 붙여넣으면 AI 가 노트·3분 음성·챗봇 색인까지 만들어요(몇 분 걸려요).</p>
       <div class="acts"><input id="sj-pull-no" inputmode="numeric" maxlength="3" placeholder="구절 번호" class="search" style="max-width:130px;margin:0">
@@ -50,7 +50,7 @@ export async function render(el, { me, call }) {
         <label class="field"><span>설교자</span><input id="sj-preacher" maxlength="60"></label>
       </div>
       <label class="field"><span>자막(붙여넣기)</span><textarea id="sj-transcript" rows="8" class="pl-memo-in" style="width:100%"></textarea></label>
-      <button class="btn primary wide" type="submit">설교 올리기 시작</button></form><p id="sj-status" class="muted"></p></div>`
+      <button class="btn primary wide" type="submit" style="margin-top:12px">설교 올리기 시작</button></form><p id="sj-status" class="muted"></p></div>`
     + H3("진행 상황") + `<div class="acts"><button class="btn" id="sj-refresh">새로고침</button></div><div id="sj-jobs"></div>`;
   }
 
