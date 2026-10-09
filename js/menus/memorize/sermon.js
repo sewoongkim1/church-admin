@@ -6,7 +6,7 @@
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 
 const TITLE = `<h2 class="page-title">⛪ 설교·찬양</h2>`;
-const CATS = ["주일설교", "금요성령집회", "새벽기도회", "송구영신예배", "특별집회", "청년예배"];
+const CATS = ["주일설교", "월삭예배", "금요성령집회", "새벽기도회", "송구영신예배", "특별집회", "청년예배"];
 const ymd = (d) => d.toISOString().slice(0, 10);
 const H3 = (t) => `<h3 style="font-size:14px;font-weight:800;color:var(--navy);margin:16px 0 8px">${t}</h3>`;
 const vidOf = (u) => { const m = String(u || "").match(/[A-Za-z0-9_-]{11}/); return m ? m[0] : ""; };
