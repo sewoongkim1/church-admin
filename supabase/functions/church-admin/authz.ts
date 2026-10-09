@@ -59,6 +59,13 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   peoplePerson: "directory",
   peopleStats: "directory",
   peopleExport: "directory",
+  // 성도 계정 관리(2026-10-09 · 성경암송 admin-members 이전) — 앱 계정(users) 찾기·이름/소속 변경·변경 이력은 members,
+  //   계정 합치기(미리보기+실행)는 되돌릴 수 없어 super 만. 합치기 로직(RPC)은 성경암송에 두고 서버가 부른다.
+  memberFind: "members",
+  memberUpdate: "members",
+  memberHistory: "members",
+  memberMergePreview: "super",
+  memberMerge: "super",
   // 교인명부 「자세히」 창 사역·성경필사 탭(2026-10-01) — 이름이 같고 아직 안 이어진 기록(읽기만 · 기록 없음 — 창을 연 people.view 가 있다) ·
   //   「이분 것」·「이분 아님」·「풀기」(줄 이름 = 교인 이름일 때만 · 바꾼 기록 people.link). 메모·사유·전화·앱 계정은 싣지 않는다.
   peopleHistory: "directory",
