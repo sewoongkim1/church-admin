@@ -68,7 +68,7 @@ export async function render(el, { me, call }) {
   }
   function openEdit(card, s) {
     const box = card.querySelector(".pr-edit"); box.hidden = false;
-    box.innerHTML = songForm(s) + `<button class="btn primary" data-act="save">저장</button>`;
+    box.innerHTML = songForm(s) + `<button class="btn primary" data-act="save" style="margin-top:12px">저장</button>`;
     box.querySelector('[data-act="save"]').addEventListener("click", () => saveSong(box, s));
   }
 
@@ -84,9 +84,12 @@ export async function render(el, { me, call }) {
         const r = await call("ytFetch", { url: q, id: vidOf(q) });
         if (!r.ok) { toast(errorText(r)); return; }
         const m = r.meta || {};
-        const seed = { id: m.id || vidOf(q), song: nfc(m.song), choir: "", category: "", svc_date: m.svc_date || "" };
+        // ⚠️ ytFetch 의 썸네일·재생시간을 seed 에 담아 둔다 — 저장(upsert)이 폼에 없는 칸을 0/null 로 덮으므로,
+        //    안 담으면 새 곡이 썸네일 없이·재생시간 0 으로 저장된다(성도님 앱에서 썸네일이 빈다).
+        const seed = { id: m.id || vidOf(q), song: nfc(m.song), choir: "", category: "", svc_date: m.svc_date || "",
+          thumbnail: m.thumbnail || null, duration: m.duration || null, duration_sec: m.duration_sec || 0 };
         const nf = body.querySelector("#pr-newform");
-        nf.innerHTML = songForm(seed) + `<button class="btn primary" data-act="save">곡 저장</button>`;
+        nf.innerHTML = songForm(seed) + `<button class="btn primary" data-act="save" style="margin-top:12px">곡 저장</button>`;
         nf.querySelector('[data-act="save"]').addEventListener("click", () => saveSong(nf, seed));
       });
     });
