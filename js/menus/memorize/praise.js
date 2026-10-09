@@ -68,7 +68,7 @@ export async function render(el, { me, call }) {
   }
   function openEdit(card, s) {
     const box = card.querySelector(".pr-edit"); box.hidden = false;
-    box.innerHTML = songForm(s) + `<button class="btn primary" data-act="save" style="margin-top:12px">저장</button>`;
+    box.innerHTML = songForm(s) + `<button class="btn primary" data-act="save" style="margin-top:20px">저장</button>`;
     box.querySelector('[data-act="save"]').addEventListener("click", () => saveSong(box, s));
   }
 
@@ -89,7 +89,7 @@ export async function render(el, { me, call }) {
         const seed = { id: m.id || vidOf(q), song: nfc(m.song), choir: "", category: "", svc_date: m.svc_date || "",
           thumbnail: m.thumbnail || null, duration: m.duration || null, duration_sec: m.duration_sec || 0 };
         const nf = body.querySelector("#pr-newform");
-        nf.innerHTML = songForm(seed) + `<button class="btn primary" data-act="save" style="margin-top:12px">곡 저장</button>`;
+        nf.innerHTML = songForm(seed) + `<button class="btn primary" data-act="save" style="margin-top:20px">곡 저장</button>`;
         nf.querySelector('[data-act="save"]').addEventListener("click", () => saveSong(nf, seed));
       });
     });
