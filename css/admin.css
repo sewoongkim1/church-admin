@@ -2075,7 +2075,11 @@ body.ec-cert-on{overflow:hidden}
 .ma-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .ma-grid .ma-wide{grid-column:1/-1}
 .ma-grid .field{margin-bottom:0}
-.ma-grid .field select{width:100%;min-height:var(--tap);padding:0 10px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:1rem}
+.field select{width:100%;min-height:var(--tap);padding:0 10px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:1rem}
+/* 한 줄에 여러 칸 — 좁으면 저절로 내려간다(설교 ① 등) */
+.sm-row{display:flex;gap:12px;flex-wrap:wrap}
+.sm-row>.field{flex:1 1 170px;margin:0}
+.sm-row>.field.grow{flex:2 1 220px}
 .ma-save{margin-top:14px}
 .ma-hist h3{font-size:14px;font-weight:800;color:var(--navy);margin:0 0 8px}
 .ma-hist-item{border-top:1px solid var(--border);padding:8px 0;font-size:14px}
