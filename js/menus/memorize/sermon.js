@@ -55,6 +55,7 @@ export async function render(el, { me, call }) {
         <label class="field"><span>예배일</span><input id="sj-date" type="date" value="${ymd(new Date())}"></label>
         <label class="field"><span>구분</span><select id="sj-cat">${catOpts("주일설교")}</select></label>
         <label class="field"><span>설교자</span><input id="sj-preacher" maxlength="60"></label>
+        <label class="field ma-wide"><span>설교 구절(그날 본문 · 암송 구절과 다름 · 선택)</span><input id="sj-scripture" maxlength="200" placeholder="예: 요한복음 3:16-21 — 비우면 AI 가 자막에서 뽑아요"></label>
       </div>
       <label class="field"><span>자막(붙여넣기)</span><textarea id="sj-transcript" rows="8" class="pl-memo-in" style="width:100%"></textarea></label>
       <button class="btn primary wide" type="submit" style="margin-top:12px">설교 올리기 시작</button></form><p id="sj-status" class="muted"></p></div>`
@@ -113,7 +114,7 @@ export async function render(el, { me, call }) {
       e.preventDefault();
       const videoId = vidOf($("sj-url").value);
       if (!videoId) { $("sj-status").textContent = "유튜브 주소/ID 를 확인해 주세요."; return; }
-      const job = { videoId, title: $("sj-title").value, date: $("sj-date").value, category: $("sj-cat").value, preacher: $("sj-preacher").value, transcript: $("sj-transcript").value };
+      const job = { videoId, title: $("sj-title").value, date: $("sj-date").value, category: $("sj-cat").value, preacher: $("sj-preacher").value, scripture: $("sj-scripture").value, transcript: $("sj-transcript").value };
       const go = await dialog({ title: "설교 올리기를 시작할까요?", text: "AI 노트·음성·색인이 만들어져요(몇 분 걸려요).", ok: "시작", cancel: "그만두기" });
       if (!go) return;
       await busy(el, async () => { const r = await call("sermonJobCreate", { job }); $("sj-status").textContent = r.ok ? "시작했어요 — 진행 상황에서 지켜봐 주세요." : errorText(r); if (r.ok) { toast("시작했어요."); refreshJobs(); } });
