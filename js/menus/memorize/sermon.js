@@ -37,11 +37,12 @@ export async function render(el, { me, call }) {
       </div>
       <div class="acts" style="margin-top:12px"><button type="button" class="btn" id="sv-niv">AI 로 영문(NIV) 만들기</button></div>
       <button class="btn primary wide" type="submit" style="margin-top:12px">구절·설교 정보 저장</button></form><p id="sv-status" class="muted"></p></div>`
-    + H3("② 일요일 — 유튜브 + 자막") + `
+    + H3("② 영상 올리기 (일요일) — 암송 없이 올리는 설교도 여기서") + `
       <div class="card"><p class="muted">자막을 붙여넣으면 AI 가 노트·3분 음성·챗봇 색인까지 만들어요(몇 분 걸려요).</p>
-      <div class="acts"><input id="sj-pull-no" inputmode="numeric" maxlength="3" placeholder="구절 번호" class="search" style="max-width:130px;margin:0">
+      <p class="muted"><b>암송 구절이 있는 주</b>는 번호로 불러오면 제목·예배일·구분·설교자가 자동 채워져요. <b>암송 없이 올리는 설교</b>는 불러오기 없이 아래를 직접 넣으세요.</p>
+      <div class="acts"><input id="sj-pull-no" inputmode="numeric" maxlength="3" placeholder="구절 번호(있을 때만)" class="search" style="max-width:170px;margin:0">
         <button class="btn" id="sj-pull">구절에서 불러오기</button></div>
-      <p class="muted" id="sj-pull-status">암송 구절이 있으면 번호로 불러오세요. 없이 올리는 설교면 아래를 직접 넣으세요.</p>
+      <p class="muted" id="sj-pull-status"></p>
       <form id="sj-form"><div class="ma-grid">
         <label class="field ma-wide"><span>유튜브 주소 또는 영상 ID</span><input id="sj-url" placeholder="https://youtu.be/..."></label>
         <label class="field"><span>제목</span><input id="sj-title" maxlength="200"></label>
