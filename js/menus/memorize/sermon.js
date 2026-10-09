@@ -150,10 +150,12 @@ export async function render(el, { me, call }) {
       <label class="field"><span>구분</span><select id="me-cat">${catOpts(s.category)}</select></label>
       <label class="field"><span>설교자</span><input id="me-preacher" maxlength="60" value="${esc(s.preacher || "")}"></label>
       <label class="field"><span>숨김</span><select id="me-hidden"><option value="">보임</option><option value="1"${s.hidden ? " selected" : ""}>숨김</option></select></label>
+      <label class="field ma-wide"><span>설교 구절(그날 본문 · 암송 구절과 다름)</span><input id="me-scripture" maxlength="200" value="${esc(s.scripture || "")}" placeholder="예: 요한복음 3:16-21"></label>
     </div><button class="btn primary" data-act="save">저장</button>`;
     box.querySelector('[data-act="save"]').addEventListener("click", async () => {
       const sermon = { id: s.id, title: box.querySelector("#me-title").value, svc_date: box.querySelector("#me-date").value,
-        category: box.querySelector("#me-cat").value, preacher: box.querySelector("#me-preacher").value, hidden: !!box.querySelector("#me-hidden").value };
+        category: box.querySelector("#me-cat").value, preacher: box.querySelector("#me-preacher").value, hidden: !!box.querySelector("#me-hidden").value,
+        scripture: box.querySelector("#me-scripture").value };
       await busy(el, async () => { const r = await call("sermonStaffSave", { sermon }); toast(r.ok ? "저장했어요." : errorText(r)); if (r.ok) loadList(); });
     });
   }
