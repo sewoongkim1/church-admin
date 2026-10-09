@@ -11,7 +11,7 @@ export async function render(el, { call }) {
     <p class="muted">구절 번호를 넣고 <b>장면 제안</b>을 받은 뒤, 장면·화풍을 골라 그려 보세요. 마음에 들면 저장해요.</p>
     <div class="acts">
       <input id="vi-no" inputmode="numeric" maxlength="3" placeholder="구절 번호" class="search" style="max-width:140px;margin:0">
-      <select id="vi-slot">${SLOTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+      <select id="vi-slot" class="search" style="max-width:120px;margin:0">${SLOTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
       <button class="btn" id="vi-scenes">장면 제안</button>
     </div>
     <p id="vi-status" class="muted"></p>
