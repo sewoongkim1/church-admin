@@ -9,7 +9,7 @@ const vidOf = (u) => { const m = String(u || "").match(/[A-Za-z0-9_-]{11}/); ret
 export async function render(el, { me, call }) {
   const isSuper = !!(me && (me.roles || []).includes("super"));
   el.innerHTML = TITLE + `
-    <div class="acts"><button class="btn primary" data-tab="list">곡 목록</button><button class="btn" data-tab="new">새 곡</button><button class="btn" data-tab="use">사용 현황</button></div>
+    <div class="acts" style="margin-bottom:12px"><button class="btn primary" data-tab="list">곡 목록</button><button class="btn" data-tab="new">새 곡</button><button class="btn" data-tab="use">사용 현황</button></div>
     <div id="pr-body"></div>`;
   const body = el.querySelector("#pr-body");
   let songs = [];
