@@ -29,7 +29,7 @@ export async function render(el, { me, call }) {
     body.innerHTML = `<div class="acts"><button class="btn" id="pr-refresh">조회수 새로고침(전곡)</button></div>
       <p class="muted">${songs.length}곡</p>` + songs.map((s) => `
       <div class="card" data-id="${esc(s.id)}">
-        <div><b>${esc(s.song)}</b> <span class="muted">${esc(s.choir || "")}${s.category ? " · " + esc(s.category) : ""}${s.views != null ? " · 조회 " + esc(Number(s.views).toLocaleString("ko-KR")) : ""}</span></div>
+        <div><b>${esc(s.song)}</b> <span class="muted">${esc(s.choir || "")}${s.category ? " · " + esc(s.category) : ""}${s.svc_date ? " · " + esc(String(s.svc_date).slice(0, 10)) : ""}${s.views != null ? " · 조회 " + esc(Number(s.views).toLocaleString("ko-KR")) : ""}</span></div>
         <div class="acts"><button class="btn" data-act="edit">수정</button>${isSuper ? `<button class="btn danger" data-act="del">삭제</button>` : ""}</div>
         <div class="pr-edit" hidden></div>
       </div>`).join("");
