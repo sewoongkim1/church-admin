@@ -2755,7 +2755,7 @@ Deno.serve(async (req) => {
       case "sermonChatLog": case "embedSermons": case "clearChatCache": case "clearSummaryCache":
       case "pushStats": case "pushSubscribers": case "pushHistory": case "pushPreview": case "monitor":
       case "sermonStaffList": case "sermonJobCreate": case "sermonJobs": case "sermonJobRetry":
-      case "sermonStaffSave": case "staffVerseSave": case "sermonDelete": case "verseNextNo":
+      case "sermonStaffSave": case "staffVerseSave": case "sermonDelete": case "verseNextNo": case "verseMeta": case "generateNiv":
       case "verseImgList": case "verseImgScenes": case "verseImgGenerate":
       case "verseImgAlt": case "verseImgSave": case "verseImgHide":
         return json(await memProxy(ctx, action, b));

@@ -83,7 +83,7 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   pushPreview: "memorizeadmin", monitor: "memorizeadmin",
   // 설교·찬양(묶음5 · 담당자 역할 content) — 삭제만 super(되돌릴 수 없음). 워크플로 콜백은 넣지 않는다(기계용).
   sermonStaffList: "content", sermonJobCreate: "content", sermonJobs: "content", sermonJobRetry: "content",
-  sermonStaffSave: "content", staffVerseSave: "content", sermonDelete: "super", verseNextNo: "content",
+  sermonStaffSave: "content", staffVerseSave: "content", sermonDelete: "super", verseNextNo: "content", verseMeta: "content", generateNiv: "content",
   verseImgList: "content", verseImgScenes: "content", verseImgGenerate: "content",
   verseImgAlt: "content", verseImgSave: "content", verseImgHide: "content",
   // 찬양 아카이브(묶음6 · 역할 content) — 삭제·일괄 가져오기는 super(되돌리기 어려움)
