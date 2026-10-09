@@ -522,7 +522,7 @@ export const APP_LIVE = true;
 export const TESTERS_SEE_NAMES = "받는 중·지원 멈춤 당번에 선 분의 이름이 시험 참여자 앱에 보여요 — 앱에 열기 전에는 시험 당번만 열어 두고, 진짜 명단은 「준비 중」 당번에 넣어 두세요";
 // 플레이스토어 앱에서는 🙋 단추를 숨겨 두었다(성경암송 app.js `MINISTRY_HIDE_ON_PLAY` — 심사가 끝난 날 그쪽을 false 로 뒤집을 때 이 값도 false 로).
 //   그 앱을 쓰는 시험 참여자에게는 「시험 참여자만 볼 수 있어요」라는 말과 달리 단추가 없다 — 까닭을 화면이 말한다(검증 2026-10-06).
-export const PLAY_HIDDEN = true;
+export const PLAY_HIDDEN = false;   // 2026-10-09 성경암송 플레이 새 앱 출시 — MINISTRY_HIDE_ON_PLAY 도 false
 export const PLAY_NOTE = "플레이스토어 앱에서는 심사가 끝날 때까지 🙋 단추가 보이지 않아요 — 안드로이드는 크롬으로 열어 확인해 주세요";
 // ── 앱 당번표에 무엇이 보이나(받는 중·지원 멈춤 당번) ──
 //   앱(duty_board_view)은 오늘 ~ 오늘+보이는 기간 · 끝 날짜까지의 **자리가 있는 날**만 보여 준다. 그래서 「앱에 날짜가 안 보여요」는 그 범위의 자리 수(shown)가 0 일 때만 참이다.

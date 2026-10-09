@@ -448,7 +448,7 @@ test("「받는 중」 확인 글 — 열어도 앱에 지원할 날짜가 없�
   assert.equal(openWarn(true, { kind: "leftover" }).includes("날짜가 보이지 않아"), false, "남은 자리의 날짜는 보인다");
   assert.ok(openWarn(true, { kind: "later" }).includes("날이 가까워질 때까지") && openWarn(true, { kind: "until-past" }).includes("끝 날짜가 지났어요") && openWarn(true, { kind: "no-dates" }).includes("「날짜 더하기」"));
   // 플레이스토어 앱에서는 🙋 단추를 숨겨 두었다 — 문이 닫힌 동안(시험 참여자만)의 두 글이 그렇게 말한다
-  assert.equal(PLAY_HIDDEN, true, "성경암송 app.js 의 MINISTRY_HIDE_ON_PLAY 를 false 로 뒤집는 날 이 값과 이 줄도 함께 바꾼다");
+  assert.equal(PLAY_HIDDEN, false, "2026-10-09 성경암송 app.js 의 MINISTRY_HIDE_ON_PLAY 를 false 로 뒤집었다 — 이 값도 false");
   for (const t of [openWarn(false, { live: true, play: true }), appNote(false, { live: true, notify: false, play: true }), appNote(false, { live: true, notify: true, play: true })]) assert.ok(t.includes(PLAY_NOTE), t);
   for (const t of [openWarn(false, { live: true, play: false }), appNote(false, { live: true, notify: false, play: false }), openWarn(true, { live: true, play: true }),
     appNote(true, { live: true, notify: false, play: true }), openWarn(false, { live: false, play: true }), appNote(false, { live: false, play: true })]) assert.equal(t.includes("플레이스토어"), false, t);
