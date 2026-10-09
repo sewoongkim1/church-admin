@@ -585,6 +585,29 @@ async function appApiInternal(body: Record<string, unknown>, label: string): Pro
   }
 }
 
+// ── 성경암송 관리(2026-10-09 · admin-stats 안전 묶음 이전) — api 를 내부 키로 부르고 응답을 그대로 돌려준다.
+//   appApiInternal 과 달리 ok:false 오류도 그대로 돌려준다(화면이 보여 줘야 하므로). canCall 이 역할 게이트.
+async function memCall(action: string, body: Record<string, unknown>): Promise<any> {
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  try {
+    const res = await fetch(Deno.env.get("SUPABASE_URL") + "/functions/v1/api", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-key": key },
+      body: JSON.stringify({ ...body, action }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const j = await res.json().catch(() => null);
+    return j && typeof j === "object" ? j : { ok: false, error: "server" };
+  } catch (_) { return { ok: false, error: "network" }; }
+}
+const MEM_WRITE = new Set(["boardModerate", "boardReply", "boardPost", "boardReportResolve",
+  "sermonAnswerReportResolve", "saveConfig", "savePassage", "deletePassage", "pilsaSetStatus",
+  "embedSermons", "clearChatCache", "clearSummaryCache"]);
+async function memProxy(ctx: Ctx, action: string, b: any) {
+  if (MEM_WRITE.has(action)) await audit(ctx, "mem." + action, String(b.id ?? b.key ?? b.op ?? ""), {});
+  return await memCall(action, b);
+}
+
 // 임명 알림은 성경암송 api 의 내부 액션이 보낸다(한 벌) — 실패해도 상태 바꾸기는 이미 끝났으니 결과만 알린다
 async function notifyAppointed(id: number) {
   const j = await appApiInternal({ action: "internalMinistryNotify", id }, "notifyAppointed");
@@ -2701,6 +2724,15 @@ Deno.serve(async (req) => {
       case "memberUpdate":       return json(await memberUpdate(ctx, b));
       case "memberMergePreview": return json(await memberMergePreview(ctx, b));
       case "memberMerge":        return json(await memberMerge(ctx, b));
+      // 성경암송 관리 — api 내부 키 프록시(2026-10-09). canCall 이 역할(memorizeadmin)을 이미 걸렀다.
+      case "stats": case "participants": case "verses": case "blessingUsage": case "ranking":
+      case "boardList": case "boardModerate": case "boardReply": case "boardPost":
+      case "boardReports": case "boardReportResolve": case "sermonAnswerReports": case "sermonAnswerReportResolve":
+      case "getConfig": case "saveConfig": case "eventEntrants":
+      case "getPassages": case "savePassage": case "deletePassage":
+      case "pilsaList": case "pilsaSetStatus":
+      case "sermonChatLog": case "embedSermons": case "clearChatCache": case "clearSummaryCache":
+        return json(await memProxy(ctx, action, b));
       case "peopleStats":  return json(await peopleStats());
       case "peopleExport": return json(await peopleExport(ctx, b));
       case "peopleHistory": return json(await peopleHistory(b));

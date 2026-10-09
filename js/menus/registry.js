@@ -10,6 +10,17 @@ export const MENUS = [
     role: "directory", load: () => import("./people/stats.js") },
   { id: "member-accounts", group: "교인명부", icon: "👤", label: "성도 계정", desc: "앱 계정 찾기 · 이름/소속 변경 · 변경 이력 · 합치기(총괄)",
     role: "members", load: () => import("./people/member-accounts.js") },
+  // 성경암송 관리(2026-10-09 · admin-stats 안전 묶음 이전) — 성경암송 api 를 내부 키로 부른다.
+  { id: "mem-stats", group: "성경암송", icon: "📊", label: "통계", desc: "기간별 사용 현황(구분·소속별)",
+    role: "memorizeadmin", load: () => import("./memorize/stats.js") },
+  { id: "mem-board", group: "성경암송", icon: "🚩", label: "게시판 관리", desc: "글·답글 숨김/삭제 · 🚩 신고 · AI답 신고",
+    role: "memorizeadmin", load: () => import("./memorize/board.js") },
+  { id: "mem-config", group: "성경암송", icon: "⚙️", label: "앱 설정·문구", desc: "인트로 · 오늘의 메시지 · 응원 · 이벤트 문구",
+    role: "memorizeadmin", load: () => import("./memorize/config.js") },
+  { id: "mem-pilsa", group: "성경암송", icon: "✍️", label: "필사 명단", desc: "성경필사 노트 신청 명단 · 상태",
+    role: "memorizeadmin", load: () => import("./memorize/pilsa.js") },
+  { id: "mem-chatlog", group: "성경암송", icon: "💬", label: "말씀 질문 기록", desc: "AI 질문 기록 · 색인 · 캐시",
+    role: "memorizeadmin", load: () => import("./memorize/chatlog.js") },
   { id: "status", group: "사역 신청", icon: "📋", label: "신청 현황", desc: "접수·임명·취소 · 같은 번호 확인 · 삭제",
     role: "ministry", load: () => import("./ministry/status.js") },
   { id: "catalog", group: "사역 신청", icon: "🗂️", label: "사역팀 정보", desc: "팀 설명 · 언제 · 담당 · 지금 섬기는 분 · 차례",
@@ -82,7 +93,7 @@ export const MENUS = [
 ];
 
 // 묶음(대분류) 머리의 아이콘 — 메뉴 줄(중분류)의 아이콘과 겹치지 않게 고른다
-export const GROUP_ICON = { "교인명부": "👥", "사역 신청": "🤝", "성경 필사·암송": "✍️", "교육 신청": "🎓", "봉사 당번 신청": "🙋", "새가족 관리": "💐", "시스템": "⚙️" };
+export const GROUP_ICON = { "교인명부": "👥", "성경암송": "📖", "사역 신청": "🤝", "성경 필사·암송": "✍️", "교육 신청": "🎓", "봉사 당번 신청": "🙋", "새가족 관리": "💐", "시스템": "⚙️" };
 
 // 메뉴 하나가 받는 역할들 — roles 배열 · role 배열 · role 글자 하나 모두 배열로
 export function menuRoles(m) {

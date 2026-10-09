@@ -66,6 +66,18 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   memberHistory: "members",
   memberMergePreview: "super",
   memberMerge: "super",
+  // 성경암송 관리(2026-10-09 · admin-stats 안전 묶음 이전) — 통계·게시판·설정·필사·말씀기록.
+  //   실제 일은 성경암송 api 를 내부 키로 부른다(index.ts memCall). 여기서는 역할만 건다.
+  stats: "memorizeadmin", participants: "memorizeadmin", verses: "memorizeadmin",
+  blessingUsage: "memorizeadmin", ranking: "memorizeadmin",
+  boardList: "memorizeadmin", boardModerate: "memorizeadmin", boardReply: "memorizeadmin",
+  boardPost: "memorizeadmin", boardReports: "memorizeadmin", boardReportResolve: "memorizeadmin",
+  sermonAnswerReports: "memorizeadmin", sermonAnswerReportResolve: "memorizeadmin",
+  getConfig: "memorizeadmin", saveConfig: "memorizeadmin", eventEntrants: "memorizeadmin",
+  getPassages: "memorizeadmin", savePassage: "memorizeadmin", deletePassage: "memorizeadmin",
+  pilsaList: "memorizeadmin", pilsaSetStatus: "memorizeadmin",
+  sermonChatLog: "memorizeadmin", embedSermons: "memorizeadmin",
+  clearChatCache: "memorizeadmin", clearSummaryCache: "memorizeadmin",
   // 교인명부 「자세히」 창 사역·성경필사 탭(2026-10-01) — 이름이 같고 아직 안 이어진 기록(읽기만 · 기록 없음 — 창을 연 people.view 가 있다) ·
   //   「이분 것」·「이분 아님」·「풀기」(줄 이름 = 교인 이름일 때만 · 바꾼 기록 people.link). 메모·사유·전화·앱 계정은 싣지 않는다.
   peopleHistory: "directory",

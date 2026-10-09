@@ -56,7 +56,7 @@ test("ministry 액션 × 사람 여섯 가지 — 사역 담당·총괄은 통�
     "ministryCatalogSave", "ministryDelete", "ministryList", "ministryPaperCheck", "ministryPaperSave",
     "ministryPerson", "ministryPhoneClear", "ministrySetStatus", "ministryStats"]);
   for (const a of ministryActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
-  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "duty", "dutylead", "education", "educourse", "members", "ministry", "newfamily", "nfteam", "super", "teacher"]);
+  assert.deepEqual(knownRoles(), ["bibleevent", "directory", "duty", "dutylead", "education", "educourse", "members", "memorizeadmin", "ministry", "newfamily", "nfteam", "super", "teacher"]);
 });
 
 test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄만 통과, 사역 담당은 막힘", () => {
