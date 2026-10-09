@@ -99,8 +99,25 @@ export async function render(el, { me, call }) {
     body.innerHTML = `<p class="muted">불러오는 중…</p>`;
     const r = await call("usageStats");
     if (!r.ok) { body.innerHTML = `<p class="muted">${esc(errorText(r))}</p>`; return; }
-    const st = r.stats;
-    body.innerHTML = `<div class="card"><pre style="white-space:pre-wrap;font-size:13px;margin:0">${esc(JSON.stringify(st, null, 2))}</pre></div>`;
+    const s = r.stats || {};
+    const num = (n) => (Number(n) || 0).toLocaleString("ko-KR");
+    const box = (n, l) => `<div style="flex:1 1 92px;background:#f4f7fc;border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+      <div style="font-size:22px;font-weight:800;color:var(--navy)">${num(n)}</div>
+      <div class="muted" style="font-size:12px">${esc(l)}</div></div>`;
+    const top = (s.top_songs || []).map((t, i) => `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="width:20px;color:var(--navy);font-weight:800;flex:none">${i + 1}</span>
+      <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.song || "(삭제된 곡)")}<span class="muted"> · ${esc(t.choir || "")}</span></span>
+      <span style="font-weight:700;flex:none">${num(t.cnt)}회</span></div>`).join("") || `<p class="muted">최근 재생 기록 없음</p>`;
+    body.innerHTML = `<div class="card">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${box(s.visits_today, "오늘 방문")}${box(s.uniq_today, "오늘 순방문자")}
+        ${box(s.visits_7d, "7일 방문")}${box(s.uniq_7d, "7일 순방문자")}
+        ${box(s.visits_30d, "30일 방문")}${box(s.visits_total, "전체 방문")}
+        ${box(s.plays_7d, "7일 재생")}${box(s.plays_total, "전체 재생")}
+      </div>
+      <div style="margin-top:14px"><b style="font-size:13px">🔥 최근 7일 인기곡 TOP 10</b>
+        <div style="margin-top:6px">${top}</div></div>
+    </div>`;
   }
 
   const tabs = { list: loadList, new: newHtml, use: useHtml };
