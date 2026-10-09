@@ -148,6 +148,22 @@ const MESSAGES = {
   // 교육 강좌별 담당자(2026-10-05 · 서버 edu-db.ts) — 교육 담당(맡은 강좌)이 맡지 않은 강좌를 건드렸을 때 · 담당자 지정에 후보가 아닌 분
   "not-assigned": "맡은 강좌가 아니에요",
   "bad-member": "교육 담당 역할이 없거나 사용이 멈춘 분이 있어요 — 빼고 저장해 주세요",
+  // 성도 계정 관리(2026-10-09 · 성경암송 admin-members 이전 · 서버 member*·합치기 RPC)
+  "invalid-search": "찾을 이름을 80자 이내로 적어 주세요",
+  "invalid-member": "그 성도 정보를 확인할 수 없어요 — 다시 찾아 주세요",
+  "invalid-profile": "이름·소속과 변경 사유를 확인해 주세요 (목장은 숫자 또는 남성 · | < > \" 는 쓸 수 없어요)",
+  "member-not-found": "그 성도를 찾지 못했어요 — 다시 찾아 주세요",
+  "member-changed": "다른 분이 먼저 바꿨어요 — 다시 찾아 주세요",
+  "identity-conflict": "같은 이름·소속이 다른 계정에 이미 있어요 — 저장하지 않았어요",
+  "merge-target-missing": "합칠 대상이 달라졌어요 — 다시 찾아 주세요",
+  "invalid-merge": "같은 분인지 확인하고 변경 사유를 적어 주세요",
+  "merge-record-conflict": "서로 겹치는 신청 기록이 있어요 — 아무것도 합치지 않았어요",
+  "merge-unsupported-records": "새 기능의 기록이 이어져 있어 확인이 필요해요 — 아무것도 합치지 않았어요",
+  "merge-ministry-conflict": "같은 해·사역팀 신청이 양쪽에 있어요 — 중복 신청을 먼저 정리해 주세요",
+  "merge-signup-conflict": "같은 이벤트 상세 신청이 양쪽에 있어요 — 중복을 먼저 정리해 주세요",
+  "merge-edu-conflict": "같은 강좌 교육 신청이 양쪽에 있어요 — 중복을 먼저 정리해 주세요",
+  "merge-edu-attendance": "같은 강좌·회차 출석이 양쪽에 다르게 있어요 — 한쪽을 먼저 고쳐 주세요",
+  "merge-duty-conflict": "같은 날 시간이 겹치는 봉사 당번에 각각 서 있어요 — 한쪽을 뺀 뒤 합쳐 주세요",
 };
 
 // 서버 답 → 한 문장(+ 오류 번호)
