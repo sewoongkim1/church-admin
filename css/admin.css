@@ -2066,3 +2066,20 @@ body.ec-cert-on{overflow:hidden}
   .nf-group[open] > summary{grid-column:1/-1}
   .nf-list .card,.nf-group .card{margin-bottom:0}
 }
+
+/* 👤 성도 계정 (2026-10-09 · 성경암송 admin-members 이전) — 검색·수정 폼·변경 이력 */
+.ma-res{display:flex;align-items:center;gap:12px}
+.ma-res>div{flex:1;min-width:0}
+.ma-res>div b{display:block}
+.ma-res .btn{flex:none}
+.ma-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ma-grid .ma-wide{grid-column:1/-1}
+.ma-grid .field{margin-bottom:0}
+.ma-grid .field select{width:100%;min-height:var(--tap);padding:0 10px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:1rem}
+.ma-save{margin-top:14px}
+.ma-hist h3{font-size:14px;font-weight:800;color:var(--navy);margin:0 0 8px}
+.ma-hist-item{border-top:1px solid var(--border);padding:8px 0;font-size:14px}
+.ma-hist-item:first-of-type{border-top:0}
+.ma-hist-item small{color:var(--gray);font-size:12px}
+.ma-hist-item .chg{margin:3px 0;font-weight:600}
+@media (max-width:560px){ .ma-grid{grid-template-columns:1fr} }
