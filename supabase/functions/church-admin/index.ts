@@ -2732,6 +2732,7 @@ Deno.serve(async (req) => {
       case "getPassages": case "savePassage": case "deletePassage":
       case "pilsaList": case "pilsaSetStatus":
       case "sermonChatLog": case "embedSermons": case "clearChatCache": case "clearSummaryCache":
+      case "pushStats": case "pushSubscribers": case "pushHistory": case "pushPreview": case "monitor":
         return json(await memProxy(ctx, action, b));
       case "peopleStats":  return json(await peopleStats());
       case "peopleExport": return json(await peopleExport(ctx, b));
