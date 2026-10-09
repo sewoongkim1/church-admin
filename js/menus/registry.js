@@ -30,6 +30,8 @@ export const MENUS = [
     role: "content", load: () => import("./memorize/sermon.js") },
   { id: "sermon-image", group: "설교·찬양", icon: "🖼️", label: "연상 그림", desc: "그 주 구절의 AI 그림(장면→화풍→생성)",
     role: "content", load: () => import("./memorize/verseimg.js") },
+  { id: "praise-archive", group: "설교·찬양", icon: "🎵", label: "찬양 아카이브", desc: "곡 등록·수정·삭제 · 조회수 · 사용 현황",
+    role: "content", load: () => import("./memorize/praise.js") },
   { id: "status", group: "사역 신청", icon: "📋", label: "신청 현황", desc: "접수·임명·취소 · 같은 번호 확인 · 삭제",
     role: "ministry", load: () => import("./ministry/status.js") },
   { id: "catalog", group: "사역 신청", icon: "🗂️", label: "사역팀 정보", desc: "팀 설명 · 언제 · 담당 · 지금 섬기는 분 · 차례",

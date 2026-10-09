@@ -609,6 +609,25 @@ async function memProxy(ctx: Ctx, action: string, b: any) {
   if (MEM_WRITE.has(action)) await audit(ctx, "mem." + action, String(b.id ?? b.key ?? b.op ?? ""), {});
   return await memCall(action, b);
 }
+// 찬양 아카이브(2026-10-09 묶음6) — 제3레포 praise 함수를 내부 키로 부른다(songs 는 같은 프로젝트). canCall 이 역할 게이트.
+async function praiseCall(action: string, body: Record<string, unknown>): Promise<any> {
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  try {
+    const res = await fetch(Deno.env.get("SUPABASE_URL") + "/functions/v1/praise", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-key": key },
+      body: JSON.stringify({ ...body, action }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const j = await res.json().catch(() => null);
+    return j && typeof j === "object" ? j : { ok: false, error: "server" };
+  } catch (_) { return { ok: false, error: "network" }; }
+}
+const PRAISE_WRITE = new Set(["saveSong", "deleteSong", "setOrdering", "refreshViews", "importSongs"]);
+async function praiseProxy(ctx: Ctx, action: string, b: any) {
+  if (PRAISE_WRITE.has(action)) await audit(ctx, "praise." + action, String(b.id ?? b.kind ?? ""), {});
+  return await praiseCall(action, b);
+}
 
 // 임명 알림은 성경암송 api 의 내부 액션이 보낸다(한 벌) — 실패해도 상태 바꾸기는 이미 끝났으니 결과만 알린다
 async function notifyAppointed(id: number) {
@@ -2740,6 +2759,10 @@ Deno.serve(async (req) => {
       case "verseImgList": case "verseImgScenes": case "verseImgGenerate":
       case "verseImgAlt": case "verseImgSave": case "verseImgHide":
         return json(await memProxy(ctx, action, b));
+      // 찬양 아카이브(묶음6) — 제3레포 praise 함수로
+      case "adminList": case "saveSong": case "deleteSong": case "setOrdering":
+      case "refreshViews": case "ytFetch": case "usageStats": case "importSongs":
+        return json(await praiseProxy(ctx, action, b));
       case "peopleStats":  return json(await peopleStats());
       case "peopleExport": return json(await peopleExport(ctx, b));
       case "peopleHistory": return json(await peopleHistory(b));

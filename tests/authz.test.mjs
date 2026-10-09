@@ -29,7 +29,7 @@ test("super 액션 × 사람 다섯 가지", () => {
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const superActions = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "super");
-  assert.deepEqual(superActions.sort(), ["auditList", "lifeResetDo", "lifeResetList", "memberMerge", "memberMergePreview", "membersApprove", "membersList", "membersSetRoles", "membersSetStatus",
+  assert.deepEqual(superActions.sort(), ["auditList", "deleteSong", "importSongs", "lifeResetDo", "lifeResetList", "memberMerge", "memberMergePreview", "membersApprove", "membersList", "membersSetRoles", "membersSetStatus",
     "ministryTesterFind", "ministryTesterSave", "ministryTesters", "peopleLinkSync", "sermonDelete"]);
   for (const a of superActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
