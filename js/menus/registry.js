@@ -8,6 +8,8 @@ export const MENUS = [
     role: "directory", load: () => import("./people/search.js") },
   { id: "people-stats", group: "교인명부", icon: "📊", label: "교인 현황", desc: "교구별 인원·가구 · 직분·부서·연령대별 인원",
     role: "directory", load: () => import("./people/stats.js") },
+  { id: "member-accounts", group: "교인명부", icon: "👤", label: "성도 계정", desc: "앱 계정 찾기 · 이름/소속 변경 · 변경 이력 · 합치기(총괄)",
+    role: "members", load: () => import("./people/member-accounts.js") },
   { id: "status", group: "사역 신청", icon: "📋", label: "신청 현황", desc: "접수·임명·취소 · 같은 번호 확인 · 삭제",
     role: "ministry", load: () => import("./ministry/status.js") },
   { id: "catalog", group: "사역 신청", icon: "🗂️", label: "사역팀 정보", desc: "팀 설명 · 언제 · 담당 · 지금 섬기는 분 · 차례",
