@@ -602,7 +602,9 @@ async function memCall(action: string, body: Record<string, unknown>): Promise<a
 }
 const MEM_WRITE = new Set(["boardModerate", "boardReply", "boardPost", "boardReportResolve",
   "sermonAnswerReportResolve", "saveConfig", "savePassage", "deletePassage", "pilsaSetStatus",
-  "embedSermons", "clearChatCache", "clearSummaryCache"]);
+  "embedSermons", "clearChatCache", "clearSummaryCache",
+  "sermonJobCreate", "sermonJobRetry", "sermonStaffSave", "staffVerseSave", "sermonDelete",
+  "verseImgGenerate", "verseImgAlt", "verseImgSave", "verseImgHide"]);
 async function memProxy(ctx: Ctx, action: string, b: any) {
   if (MEM_WRITE.has(action)) await audit(ctx, "mem." + action, String(b.id ?? b.key ?? b.op ?? ""), {});
   return await memCall(action, b);
@@ -2733,6 +2735,10 @@ Deno.serve(async (req) => {
       case "pilsaList": case "pilsaSetStatus":
       case "sermonChatLog": case "embedSermons": case "clearChatCache": case "clearSummaryCache":
       case "pushStats": case "pushSubscribers": case "pushHistory": case "pushPreview": case "monitor":
+      case "sermonStaffList": case "sermonJobCreate": case "sermonJobs": case "sermonJobRetry":
+      case "sermonStaffSave": case "staffVerseSave": case "sermonDelete":
+      case "verseImgList": case "verseImgScenes": case "verseImgGenerate":
+      case "verseImgAlt": case "verseImgSave": case "verseImgHide":
         return json(await memProxy(ctx, action, b));
       case "peopleStats":  return json(await peopleStats());
       case "peopleExport": return json(await peopleExport(ctx, b));

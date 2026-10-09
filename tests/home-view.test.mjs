@@ -15,8 +15,8 @@ test("권한 메뉴를 대분류 구역으로 나누고 이름은 이스케이�
 });
 test("super 는 모든 묶음 · 빈 상태 두 글", () => {
   const h = homeHtml({ member, rolesInfo: [], roles: ["super"], menus: menusFor(["super"]) });
-  assert.equal((h.match(/class="home-grid"/g) || []).length, 8);
-  assert.equal((h.match(/class="home-group"/g) || []).length, 8);
+  assert.equal((h.match(/class="home-grid"/g) || []).length, 9);
+  assert.equal((h.match(/class="home-group"/g) || []).length, 9);
   assert.ok(homeHtml({ member, roles: ["x"], menus: [] }).includes("곧 열려요"));
   assert.ok(homeHtml({ member, roles: [], menus: [] }).includes("역할을 받아"));
 });

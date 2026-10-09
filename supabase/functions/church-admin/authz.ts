@@ -81,6 +81,11 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   // 알림 조회·시스템 상태(묶음4 · 읽기만 · 발송은 안 옮긴다)
   pushStats: "memorizeadmin", pushSubscribers: "memorizeadmin", pushHistory: "memorizeadmin",
   pushPreview: "memorizeadmin", monitor: "memorizeadmin",
+  // 설교·찬양(묶음5 · 담당자 역할 content) — 삭제만 super(되돌릴 수 없음). 워크플로 콜백은 넣지 않는다(기계용).
+  sermonStaffList: "content", sermonJobCreate: "content", sermonJobs: "content", sermonJobRetry: "content",
+  sermonStaffSave: "content", staffVerseSave: "content", sermonDelete: "super",
+  verseImgList: "content", verseImgScenes: "content", verseImgGenerate: "content",
+  verseImgAlt: "content", verseImgSave: "content", verseImgHide: "content",
   // 교인명부 「자세히」 창 사역·성경필사 탭(2026-10-01) — 이름이 같고 아직 안 이어진 기록(읽기만 · 기록 없음 — 창을 연 people.view 가 있다) ·
   //   「이분 것」·「이분 아님」·「풀기」(줄 이름 = 교인 이름일 때만 · 바꾼 기록 people.link). 메모·사유·전화·앱 계정은 싣지 않는다.
   peopleHistory: "directory",

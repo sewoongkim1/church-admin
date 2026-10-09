@@ -25,6 +25,11 @@ export const MENUS = [
     role: "memorizeadmin", load: () => import("./memorize/push.js") },
   { id: "mem-monitor", group: "성경암송", icon: "🩺", label: "시스템 상태", desc: "구독자 · 말씀 신선도 · 크론 점검",
     role: "memorizeadmin", load: () => import("./memorize/monitor.js") },
+  // 설교·찬양(2026-10-09 묶음5 · 담당자 역할 content)
+  { id: "sermon-manage", group: "설교·찬양", icon: "⛪", label: "설교 관리", desc: "① 주간 구절 · ② 설교 내용 등록 · 목록·묵상",
+    role: "content", load: () => import("./memorize/sermon.js") },
+  { id: "sermon-image", group: "설교·찬양", icon: "🖼️", label: "연상 그림", desc: "그 주 구절의 AI 그림(장면→화풍→생성)",
+    role: "content", load: () => import("./memorize/verseimg.js") },
   { id: "status", group: "사역 신청", icon: "📋", label: "신청 현황", desc: "접수·임명·취소 · 같은 번호 확인 · 삭제",
     role: "ministry", load: () => import("./ministry/status.js") },
   { id: "catalog", group: "사역 신청", icon: "🗂️", label: "사역팀 정보", desc: "팀 설명 · 언제 · 담당 · 지금 섬기는 분 · 차례",
@@ -97,7 +102,7 @@ export const MENUS = [
 ];
 
 // 묶음(대분류) 머리의 아이콘 — 메뉴 줄(중분류)의 아이콘과 겹치지 않게 고른다
-export const GROUP_ICON = { "교인명부": "👥", "성경암송": "📖", "사역 신청": "🤝", "성경 필사·암송": "✍️", "교육 신청": "🎓", "봉사 당번 신청": "🙋", "새가족 관리": "💐", "시스템": "⚙️" };
+export const GROUP_ICON = { "교인명부": "👥", "성경암송": "📖", "설교·찬양": "⛪", "사역 신청": "🤝", "성경 필사·암송": "✍️", "교육 신청": "🎓", "봉사 당번 신청": "🙋", "새가족 관리": "💐", "시스템": "⚙️" };
 
 // 메뉴 하나가 받는 역할들 — roles 배열 · role 배열 · role 글자 하나 모두 배열로
 export function menuRoles(m) {
