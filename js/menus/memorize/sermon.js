@@ -20,7 +20,7 @@ export async function render(el, { me, call }) {
     return H3("① 이번 주 암송 구절") + `
       <div class="card"><form id="sv-form">
         <div class="ma-grid">
-          <label class="field"><span>구절 번호(1~999)</span><input id="sv-no" inputmode="numeric" maxlength="3"></label>
+          <label class="field"><span>구절 번호(1~999) <small id="sv-no-hint" class="muted"></small></span><input id="sv-no" inputmode="numeric" maxlength="3"></label>
           <label class="field"><span>구절(짧게 · 예: 요 3:16)</span><input id="sv-ref" maxlength="60"></label>
           <label class="field ma-wide"><span>본문</span><input id="sv-text" maxlength="2000"></label>
           <label class="field"><span>구절(길게 · 선택)</span><input id="sv-reff" maxlength="120"></label>
@@ -58,6 +58,12 @@ export async function render(el, { me, call }) {
   async function refreshJobs() { const r = await call("sermonJobs"); if (r.ok) drawJobs(r.jobs); }
 
   function wireUp() {
+    // 구절 번호 자동 — 다음 번호(지금까지 최대+1)를 미리 넣는다(고칠 수 있다 · 옛 구절 수정·건너뛴 주 대비).
+    (async () => {
+      const r = await call("verseNextNo");
+      const noEl = el.querySelector("#sv-no"), hint = el.querySelector("#sv-no-hint");
+      if (r && r.ok && noEl && !noEl.value) { noEl.value = r.next; if (hint) hint.textContent = "— 다음 번호예요(고치셔도 돼요)"; }
+    })();
     el.querySelector("#sv-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const verse = { no: Number(el.querySelector("#sv-no").value), refShort: el.querySelector("#sv-ref").value,
