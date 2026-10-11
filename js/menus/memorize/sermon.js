@@ -90,7 +90,9 @@ export async function render(el, { me, call }) {
     $("sv-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const verse = { no: Number($("sv-no").value), refShort: $("sv-ref").value, text: $("sv-text").value, refFull: $("sv-reff").value,
-        sermonTitle: $("sv-title").value, date: $("sv-date").value, memCategory: $("sv-cat").value, pastor: $("sv-preacher").value,
+        // ⚠️ 날짜는 한국 자정으로 — 「2026-10-11」만 보내면 서버가 UTC 자정(= 한국 아침 9시)으로 저장해
+        //    그날 아침 알림·위젯이 지난주 구절을 보낸다(2026-10-11 41번에서 실제로). 성경암송 admin-stats 와 같은 +09:00.
+        sermonTitle: $("sv-title").value, date: $("sv-date").value ? $("sv-date").value + "T00:00:00+09:00" : "", memCategory: $("sv-cat").value, pastor: $("sv-preacher").value,
         textEn: $("sv-text-en").value, refEn: $("sv-ref-en").value };
       await busy(el, async () => { const r = await call("staffVerseSave", { verse }); $("sv-status").textContent = r.ok ? "구절·설교 정보를 저장했어요." : errorText(r); if (r.ok) toast("저장했어요."); });
     });
@@ -115,9 +117,17 @@ export async function render(el, { me, call }) {
       const videoId = vidOf($("sj-url").value);
       if (!videoId) { $("sj-status").textContent = "유튜브 주소/ID 를 확인해 주세요."; return; }
       const job = { videoId, title: $("sj-title").value, date: $("sj-date").value, category: $("sj-cat").value, preacher: $("sj-preacher").value, scripture: $("sj-scripture").value, transcript: $("sj-transcript").value };
+      // 불러온 구절 번호도 함께 — 서버가 그 구절의 비어 있는 설교 주소를 채운다(없으면 예배일이 같은 이번 주 구절 · 2026-10-11)
+      const verseNo = Number($("sj-pull-no").value) || 0;
       const go = await dialog({ title: "설교 올리기를 시작할까요?", text: "AI 노트·음성·색인이 만들어져요(몇 분 걸려요).", ok: "시작", cancel: "그만두기" });
       if (!go) return;
-      await busy(el, async () => { const r = await call("sermonJobCreate", { job }); $("sj-status").textContent = r.ok ? "시작했어요 — 진행 상황에서 지켜봐 주세요." : errorText(r); if (r.ok) { toast("시작했어요."); refreshJobs(); } });
+      await busy(el, async () => {
+        const r = await call("sermonJobCreate", { job, verseNo });
+        $("sj-status").textContent = r.ok
+          ? "시작했어요 — 진행 상황에서 지켜봐 주세요." + (r.verseLinked ? ` ${r.verseLinked}번 구절에 이 설교 주소를 넣었어요(암송 구절에 연결돼요).` : "")
+          : errorText(r);
+        if (r.ok) { toast("시작했어요."); refreshJobs(); }
+      });
     });
     $("sj-refresh").addEventListener("click", refreshJobs);
     refreshJobs();

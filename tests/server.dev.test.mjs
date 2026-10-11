@@ -128,6 +128,7 @@ async function call(token, action, extra = {}) {
 
 // super 액션마다 「통과하면 아무것도 안 바뀌는」 입력 — 없는 사람(ZERO)을 가리킨다
 const PROBE = {
+  meditationWeeks: {},                                             // 🌿 매일 묵상 — 읽기만
   // 새가족(1단계 · 2026-10-07) — 읽기거나, 없는 줄(not-found)·틀린 입력(no-consent·no-name·bad-which)이라 아무것도 쓰지도 기록하지도 않는다
   nfMe: {},
   nfStaffList: {},

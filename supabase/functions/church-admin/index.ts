@@ -587,6 +587,12 @@ async function appApiInternal(body: Record<string, unknown>, label: string): Pro
 
 // ── 성경암송 관리(2026-10-09 · admin-stats 안전 묶음 이전) — api 를 내부 키로 부르고 응답을 그대로 돌려준다.
 //   appApiInternal 과 달리 ok:false 오류도 그대로 돌려준다(화면이 보여 줘야 하므로). canCall 이 역할 게이트.
+// AI 를 부르는 액션은 오래 걸린다 — 연상 그림 한 장이 Gemini 로 22~26초(2026-10-04·11 실측).
+//   15초로 끊었더니 그림은 그려져 하루 한도에서 빠지고 화면엔 「인터넷 연결을 확인해 주세요」만 떴다(2026-10-11).
+//   api 는 생성을 150초 안에서 나눠 쓴다 — 여기서는 그보다 조금 짧게 기다린다(이 함수의 벽시계도 넘지 않게).
+const MEM_SLOW_MS: Record<string, number> = {
+  verseImgGenerate: 140000, verseImgScenes: 60000, verseImgAlt: 60000, generateNiv: 60000,
+};
 async function memCall(action: string, body: Record<string, unknown>): Promise<any> {
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   try {
@@ -594,7 +600,7 @@ async function memCall(action: string, body: Record<string, unknown>): Promise<a
       method: "POST",
       headers: { "Content-Type": "application/json", "x-internal-key": key },
       body: JSON.stringify({ ...body, action }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(MEM_SLOW_MS[action] ?? 15000),
     });
     const j = await res.json().catch(() => null);
     return j && typeof j === "object" ? j : { ok: false, error: "server" };
@@ -607,8 +613,66 @@ const MEM_WRITE = new Set(["boardModerate", "boardReply", "boardPost", "boardRep
   "verseImgGenerate", "verseImgAlt", "verseImgSave", "verseImgHide"]);
 async function memProxy(ctx: Ctx, action: string, b: any) {
   if (MEM_WRITE.has(action)) await audit(ctx, "mem." + action, String(b.id ?? b.key ?? b.op ?? ""), {});
-  return await memCall(action, b);
+  const r = await memCall(action, b);
+  if (action === "sermonJobCreate" && r && r.ok) {
+    try {
+      const no = await fillVerseSermonUrl(b);
+      if (no) { r.verseLinked = no; await audit(ctx, "mem.verseSermonUrl", String(no), { videoId: String(b?.job?.videoId ?? "") }); }
+    } catch (_) { /* 작업은 이미 시작됐다 — 주소 채우기가 실패해도 그대로 둔다 */ }
+  }
+  return r;
 }
+// ② 설교 올리기를 시작하면 그 주 암송 구절의 **비어 있는** 설교 주소를 채운다(2026-10-11).
+//   설교 쪽 구절 연결(gocheok-sermons 4-link)은 「이 영상 주소를 가진 구절」을 찾는 방식이라, ①(토요일 — 영상이 아직 없다)에서
+//   주소를 못 넣으면 연결·쉬운 풀이·기억법이 빠진다(10/4·10/11 두 주 연속). 이미 주소가 있으면 건드리지 않는다.
+//   어느 구절인가: ②에서 불러온 구절 번호 → 없으면 예배일(한국 날짜)이 같은 주간 구절(no<1000) 하나뿐일 때.
+async function fillVerseSermonUrl(b: any): Promise<number | null> {
+  const vid = String(b?.job?.videoId ?? "");
+  if (!/^[A-Za-z0-9_-]{11}$/.test(vid)) return null;
+  const url = "https://www.youtube.com/watch?v=" + vid;
+  let cand: any[] = [];
+  const n = Number(b?.verseNo);
+  if (Number.isInteger(n) && n > 0 && n < 1000) {
+    const { data, error } = await db.from("verses").select("no,sermon_url").eq("no", n);
+    if (error) throw error; cand = data ?? [];
+  } else {
+    const d = String(b?.job?.date ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+    const next = new Date(Date.parse(d + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
+    const { data, error } = await db.from("verses").select("no,sermon_url").lt("no", 1000)
+      .gte("date", d + "T00:00:00+09:00").lt("date", next + "T00:00:00+09:00");
+    if (error) throw error; cand = data ?? [];
+    if (cand.length !== 1) return null;   // 둘 이상이면 어느 것인지 모른다 — 건드리지 않는다
+  }
+  const v = cand[0];
+  if (!v || (v.sermon_url && String(v.sermon_url).trim())) return null;
+  const { data: up, error: ue } = await db.from("verses").update({ sermon_url: url })
+    .eq("no", v.no).or("sermon_url.is.null,sermon_url.eq.").select("no");
+  if (ue) throw ue;
+  return up && up.length ? v.no : null;
+}
+// 🌿 매일 묵상(2026-10-11) — 설교마다 다음 주 월~일 하루 하나씩 앱에 보이는 묵상 7개(읽기만).
+//   성경암송 admin-stats 「매일 묵상 조회」는 sermon 함수의 getSermons(1.9MB 전체)를 받아 걸렀다 —
+//   여기서는 같은 DB 의 sermons 표에서 묵상이 있는 설교만 고른다(칸 모양은 gocheok-sermons toApp 의 dailyMeditations 와 같다).
+//   ⚠️ 무엇을 「오늘」 보여 줄지 고르는 규칙은 성경암송 app.js·api 두 곳이다(docs/notes/meditation.md) — 여기는 목록만.
+async function meditationWeeks() {
+  const { data, error } = await db.from("sermons")
+    .select("id,title,svc_date,preacher,scripture,mem_ref,hidden,daily_meditations")
+    .not("daily_meditations", "is", null).order("svc_date", { ascending: false }).limit(60);
+  if (error) throw error;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const weeks = (data ?? [])
+    .filter((s: any) => Array.isArray(s.daily_meditations) && s.daily_meditations.length)
+    .map((s: any) => ({
+      id: s.id, title: str(s.title), date: s.svc_date, preacher: str(s.preacher),
+      ref: str(s.mem_ref) || str(s.scripture), hidden: !!s.hidden,
+      days: (s.daily_meditations as any[]).slice(0, 7).map((m: any) => ({
+        heading: str(m?.heading), message: str(m?.message), question: str(m?.question),
+      })),
+    }));
+  return { ok: true, today: kstToday(), weeks };
+}
+
 // 찬양 아카이브(2026-10-09 묶음6) — 제3레포 praise 함수를 내부 키로 부른다(songs 는 같은 프로젝트). canCall 이 역할 게이트.
 async function praiseCall(action: string, body: Record<string, unknown>): Promise<any> {
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -2759,6 +2823,7 @@ Deno.serve(async (req) => {
       case "verseImgList": case "verseImgScenes": case "verseImgGenerate":
       case "verseImgAlt": case "verseImgSave": case "verseImgHide":
         return json(await memProxy(ctx, action, b));
+      case "meditationWeeks": return json(await meditationWeeks());
       // 찬양 아카이브(묶음6) — 제3레포 praise 함수로
       case "adminList": case "saveSong": case "deleteSong": case "setOrdering":
       case "refreshViews": case "ytFetch": case "usageStats": case "importSongs":

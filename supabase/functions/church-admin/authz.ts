@@ -86,6 +86,7 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   sermonStaffSave: "content", staffVerseSave: "content", sermonDelete: "super", verseNextNo: "content", verseMeta: "content", generateNiv: "content",
   verseImgList: "content", verseImgScenes: "content", verseImgGenerate: "content",
   verseImgAlt: "content", verseImgSave: "content", verseImgHide: "content",
+  meditationWeeks: "content",   // 🌿 매일 묵상(읽기만 · 2026-10-11)
   // 찬양 아카이브(묶음6 · 역할 content) — 삭제·일괄 가져오기는 super(되돌리기 어려움)
   adminList: "content", saveSong: "content", setOrdering: "content",
   refreshViews: "content", ytFetch: "content", usageStats: "content",

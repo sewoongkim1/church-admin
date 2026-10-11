@@ -28,8 +28,10 @@ export const MENUS = [
   // 설교·찬양(2026-10-09 묶음5 · 담당자 역할 content)
   { id: "sermon-manage", group: "설교·찬양", icon: "⛪", label: "설교 관리", desc: "① 주간 구절 · ② 설교 내용 등록 · 목록·묵상",
     role: "content", load: () => import("./memorize/sermon.js") },
-  { id: "sermon-image", group: "설교·찬양", icon: "🖼️", label: "연상 그림", desc: "그 주 구절의 AI 그림(장면→화풍→생성)",
+  { id: "sermon-image", group: "설교·찬양", icon: "🖼️", label: "연상 그림", desc: "그 주 구절의 AI 그림(장면 → 그리기 → 확인표 → 저장)",
     role: "content", load: () => import("./memorize/verseimg.js") },
+  { id: "sermon-meditation", group: "설교·찬양", icon: "🌿", label: "매일 묵상", desc: "설교마다 다음 주 월~일 묵상 7개(주제·메시지·질문)",
+    role: "content", load: () => import("./memorize/meditation.js") },
   { id: "praise-archive", group: "설교·찬양", icon: "🎵", label: "찬양 아카이브", desc: "곡 등록·수정·삭제 · 조회수 · 사용 현황",
     role: "content", load: () => import("./memorize/praise.js") },
   { id: "status", group: "사역 신청", icon: "📋", label: "신청 현황", desc: "접수·임명·취소 · 같은 번호 확인 · 삭제",
