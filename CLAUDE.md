@@ -24,6 +24,7 @@
 | 봉사 당번 — 당번 관리·명단·👥 봉사자·앱 알림·지난 날의 명단 | `docs/notes/duty.md` |
 | 봉사 당번 — 📅 달력·명단 화면의 자리·공휴일 표 | `docs/notes/duty-calendar.md` |
 | 새가족 — 카드·현황·등록식·통계·함께 쓰는 분 | `docs/notes/newfamily.md` |
+| Edge Function `church-admin` 배포 — `tools/deploy-fn.py` 가드(직접 deploy 금지) | `docs/notes/deploy-guard.md` |
 | 총괄이 카카오 계정을 잃었을 때 · 사람·사역 이력을 지울 때 · 카카오 설정 | 이 문서 맨 아래 「비상 절차」 |
 
 ## 스택
@@ -48,7 +49,8 @@
 
 ## 배포
 - 화면: main 푸시 → Actions: preflight → stamp(파일마다 `?v=해시`, 커밋 안 함) → Pages. **bump 없음.**
-- 서버: `supabase functions deploy church-admin --no-verify-jwt --project-ref ktpwthwqzgcqcrmsafdo`(개발 먼저) → `xnomlgydifiqiybervtf`.
+- 서버: `python tools/deploy-fn.py church-admin --dev`(개발 먼저 · main 에 없는 내 가지는 `--allow-ahead`) → localhost 확인 → `python tools/deploy-fn.py church-admin --prod`(origin/main 과 같아야만). 검사만은 `--dry-run`.
+  ⚠️ `supabase functions deploy` 직접 금지 — 읽을 것 `docs/notes/deploy-guard.md`(커밋 안 된 것·뒤처진 체크아웃·빠지는 액션을 막는다 · 걸리면 까닭을 고친다).
 - SQL: `supabase/sql/` — 개발 먼저. CLI 는 저장소 밖 작업 폴더로만 link 한다(`~/.church-admin/supa-dev`·`supa-prod`). 저장소 루트 link 금지.
 - 개발 서버 시험: `set -a; . ~/.church-admin/dev.env; set +a; node --experimental-strip-types --test tests/server.dev.test.mjs`
 

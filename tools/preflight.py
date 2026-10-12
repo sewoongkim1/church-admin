@@ -34,6 +34,9 @@ run("stamp", [sys.executable, os.path.join("tools", "stamp.py"), "--check"])
 print("\n[4] 명단이 커밋되지 않았나 (교인명부 · tools/leak-scan.mjs)")
 run("명단 검사", ["node", os.path.join("tools", "leak-scan.mjs")])
 
+print("\n[5] Edge Function 배포 가드 판단 시험 (tests/deploy-fn-guard.py)")
+run("배포 가드", [sys.executable, os.path.join("tests", "deploy-fn-guard.py")])
+
 print()
 if fail:
     print("실패 %d건 — 배포하지 않는다" % len(fail))
