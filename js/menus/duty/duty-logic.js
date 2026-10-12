@@ -520,10 +520,7 @@ export const APP_LIVE = true;
 // 앱에 아직 열지 않은 동안(문 dutyOpen 닫힘) — 받는 중·지원 멈춤 당번에 선 분의 이름이 🧪 시험 참여자 앱에 보인다.
 //   개인정보 안내에 적기 전이라 진짜 명단은 「준비 중」에 넣어 두게 한다(설계 §11 ⚠️ · 검토 반영 2026-10-06).
 export const TESTERS_SEE_NAMES = "받는 중·지원 멈춤 당번에 선 분의 이름이 시험 참여자 앱에 보여요 — 앱에 열기 전에는 시험 당번만 열어 두고, 진짜 명단은 「준비 중」 당번에 넣어 두세요";
-// 플레이스토어 앱에서는 🙋 단추를 숨겨 두었다(성경암송 app.js `MINISTRY_HIDE_ON_PLAY` — 심사가 끝난 날 그쪽을 false 로 뒤집을 때 이 값도 false 로).
-//   그 앱을 쓰는 시험 참여자에게는 「시험 참여자만 볼 수 있어요」라는 말과 달리 단추가 없다 — 까닭을 화면이 말한다(검증 2026-10-06).
-export const PLAY_HIDDEN = false;   // 2026-10-09 성경암송 플레이 새 앱 출시 — MINISTRY_HIDE_ON_PLAY 도 false
-export const PLAY_NOTE = "플레이스토어 앱에서는 심사가 끝날 때까지 🙋 단추가 보이지 않아요 — 안드로이드는 크롬으로 열어 확인해 주세요";
+// 플레이스토어 앱 숨김 스위치(PLAY_HIDDEN · PLAY_NOTE)는 2026-10-09 끄고 2026-10-12 걷었다 — 성경암송 MINISTRY_HIDE_ON_PLAY 와 함께. 플레이 앱도 웹과 같은 문이다.
 // ── 앱 당번표에 무엇이 보이나(받는 중·지원 멈춤 당번) ──
 //   앱(duty_board_view)은 오늘 ~ 오늘+보이는 기간 · 끝 날짜까지의 **자리가 있는 날**만 보여 준다. 그래서 「앱에 날짜가 안 보여요」는 그 범위의 자리 수(shown)가 0 일 때만 참이다.
 //   o = { lines: 살아 있는 자리 틀 수 · shown: 그 범위의 자리 수 · later: 범위 밖(끝 날짜 안)의 앞날 자리 수 · untilPast: 끝 날짜가 지났다 }
@@ -579,18 +576,18 @@ const OPEN_TAIL = {
   "no-dates": " ⚠️ 앱에 보이는 날짜가 아직 없어요 — 「📅 당번 명단」의 「날짜 더하기」로 날짜를 넣기 전에는 지원할 수 없어요.",
 };
 export const openWarn = (appOpen, opt = {}) => openWarnBase(appOpen, opt) + (OPEN_TAIL[opt.kind] || "");
-const openWarnBase = (appOpen, { live = APP_LIVE, play = PLAY_HIDDEN } = {}) => (!live
+const openWarnBase = (appOpen, { live = APP_LIVE } = {}) => (!live
   ? "「받는 중」으로 저장해요. 성경암송 앱에는 아직 봉사 당번 화면이 없어서 지금은 성도님께 보이지 않아요 — 화면이 열리는 날 이 당번이 바로 보이고 지원을 받아요."
   : appOpen
     ? "「받는 중」으로 저장하면 성경암송 앱의 🙋 봉사 당번 신청에 이 당번이 바로 보이고 지원을 받아요."   // 앱의 단추·화면 제목과 같은 이름(2026-10-07 「봉사 당번」 → 「봉사 당번 신청」)
-    : `「받는 중」으로 저장해요. 봉사 당번은 아직 성도님 앱에 열지 않아서, 지금은 🧪 시험 참여자에게만 보여요 — 앱에 열리는 날 이 당번이 바로 보이고 지원을 받아요. ⚠️ ${TESTERS_SEE_NAMES}.${play ? ` ${PLAY_NOTE}.` : ""}`);
+    : `「받는 중」으로 저장해요. 봉사 당번은 아직 성도님 앱에 열지 않아서, 지금은 🧪 시험 참여자에게만 보여요 — 앱에 열리는 날 이 당번이 바로 보이고 지원을 받아요. ⚠️ ${TESTERS_SEE_NAMES}.`);
 // 화면 머리에 두는 안내 한 줄(사실대로 · 없으면 "") — 앱에 화면이 없다 / 아직 열지 않았다(시험 참여자만) / 앱 알림이 아직 안 나간다.
 //   문이 닫힌 동안에는 알림이 나가도(NOTIFY_LIVE) 시험 참여자에게만 간다 — 그렇게 말한다.
 //   알림 말은 문(appOpen)과 따로다 — 문을 열어도 알림(3단계 · NOTIFY_LIVE)이 올라가기 전에는 「따로 알려 주세요」가 그대로 뜬다.
-export function appNote(appOpen, { live = APP_LIVE, notify = NOTIFY_LIVE, play = PLAY_HIDDEN } = {}) {
+export function appNote(appOpen, { live = APP_LIVE, notify = NOTIFY_LIVE } = {}) {
   const tell = "넣거나 바꾼 것은 그분께 따로 알려 주세요";
   if (!live) return `🙈 성경암송 앱에는 아직 봉사 당번 화면이 없어요 — 지금 넣는 것은 준비예요. 성도님께는 보이지도 알림이 가지도 않으니 ${tell}.`;
-  if (!appOpen) return `🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. ⚠️ ${TESTERS_SEE_NAMES}.` + (play ? ` ${PLAY_NOTE}.` : "") +
+  if (!appOpen) return `🙈 봉사 당번은 아직 성도님 앱에 열지 않았어요 — 지금은 🧪 시험 참여자만 볼 수 있어요. ⚠️ ${TESTERS_SEE_NAMES}.` +
     // 알림이 나가는 때에도 문이 닫힌 동안에는 시험 참여자에게만 간다(성경암송 api dutyNotifySend — 앱에서 🙋 가 보이는 분과 같은 규칙) — 「알림 꺼짐」 딱지가 없다고 그분께 알림이 가는 것이 아니다
     (notify ? ` 앱 알림도 시험 참여자에게만 가요 — 다른 분께는 ${tell}.` : ` 앱 알림도 아직 보내지 않으니 ${tell}.`);
   return notify ? "" : `🔕 앱 알림(확정·전날·담당자가 바꾼 것)은 아직 보내지 않아요 — ${tell}.`;

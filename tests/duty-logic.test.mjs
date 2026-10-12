@@ -1,6 +1,7 @@
 // 봉사 당번 — 화면 규칙 시험(js/menus/duty/duty-logic.js · 2026-10-06)
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   STATUS_OPTIONS, STATUS_LABEL, LEAD_STATUS_OPTIONS, leadCanSetStatus, WEEKDAY_OPTIONS, weekdayText, openDaysText, openDaysOptions,
   isDate, dayLabel, dayShort, addDays, cutoffText, slotName, timeRange, lineText, linesSummary, formToLine, lineToForm, lineSavedText, lineRemovedText,
@@ -8,7 +9,7 @@ import {
   askText, endedText, moveOptions, forceAsk, needsForce, confirmDayAsk, unconfirmAsk, offAsk, removeAsk, slotOffAsk, hideAsk, HIDE_PAST, STATUS_PAST_HINT, DRAFT_NO_PAST, notifyTail, addDoneText,
   movedText, dateAddedText, offDoneText, hasWord, dutyWord, needsReload, lostBoard, fileTitle, exportFileName, exportRanges,
   dayHiddenText, restoreAsk, restoredText, openWarn, afterAsk, draftNote, appNote, APP_LIVE, NOTIFY_LIVE, STALE_BOARD, TESTERS_SEE_NAMES, ADD_NOTE,
-  emptyWhy, emptyChip, liveLineCount, emptyKind, seenOfCounts, seenOfRoster, addNote, PLAY_HIDDEN, PLAY_NOTE,
+  emptyWhy, emptyChip, liveLineCount, emptyKind, seenOfCounts, seenOfRoster, addNote,
   notifyFailed, confirmDoneText, notifyBadges, DUP_REMOVE_NOAPP, DUP_REMOVE_APP, slotTwins, addEndedNote, CONFIRM_RETRY,
 } from "../js/menus/duty/duty-logic.js";
 import { boardCard } from "../js/menus/duty/boards.js";
@@ -435,7 +436,7 @@ test("당번 카드 — 경고 칩은 앱에서 지원할 날짜가 없을 때�
   assert.equal(boardCard({ id: "b9", title: "t", status: "open", statusLabel: "받는 중", lines: [{ id: 1 }], counts: { lines: 1, slots: 2, shown: 2 } }).includes("앱에 날짜가 안 보여요"), false, "오늘을 안 줘도 그린다");
 });
 
-test("「받는 중」 확인 글 — 열어도 앱에 지원할 날짜가 없으면 그 까닭을 덧붙인다 · 플레이스토어 앱에서는 시험 참여자에게도 안 보인다는 말 · 넣기 창", () => {
+test("「받는 중」 확인 글 — 열어도 앱에 지원할 날짜가 없으면 그 까닭을 덧붙인다 · 플레이스토어 앱 이야기는 없다(스위치 걷음) · 넣기 창", () => {
   for (const o of [{ live: true }, { live: false }]) for (const open of [true, false]) {
     for (const kind of ["no-lines", "leftover", "until-past", "later", "no-dates"]) {
       const t = openWarn(open, { ...o, kind });
@@ -447,12 +448,14 @@ test("「받는 중」 확인 글 — 열어도 앱에 지원할 날짜가 없�
   assert.ok(openWarn(true, { kind: "no-lines" }).includes("자리 틀이 아직 없어요") && openWarn(true, { kind: "leftover" }).includes("남은 자리의 날짜만 보이고"));
   assert.equal(openWarn(true, { kind: "leftover" }).includes("날짜가 보이지 않아"), false, "남은 자리의 날짜는 보인다");
   assert.ok(openWarn(true, { kind: "later" }).includes("날이 가까워질 때까지") && openWarn(true, { kind: "until-past" }).includes("끝 날짜가 지났어요") && openWarn(true, { kind: "no-dates" }).includes("「날짜 더하기」"));
-  // 플레이스토어 앱에서는 🙋 단추를 숨겨 두었다 — 문이 닫힌 동안(시험 참여자만)의 두 글이 그렇게 말한다
-  assert.equal(PLAY_HIDDEN, false, "2026-10-09 성경암송 app.js 의 MINISTRY_HIDE_ON_PLAY 를 false 로 뒤집었다 — 이 값도 false");
-  for (const t of [openWarn(false, { live: true, play: true }), appNote(false, { live: true, notify: false, play: true }), appNote(false, { live: true, notify: true, play: true })]) assert.ok(t.includes(PLAY_NOTE), t);
-  for (const t of [openWarn(false, { live: true, play: false }), appNote(false, { live: true, notify: false, play: false }), openWarn(true, { live: true, play: true }),
-    appNote(true, { live: true, notify: false, play: true }), openWarn(false, { live: false, play: true }), appNote(false, { live: false, play: true })]) assert.equal(t.includes("플레이스토어"), false, t);
-  assert.equal(openWarn(false), openWarn(false, { live: APP_LIVE, play: PLAY_HIDDEN }));
+  // 플레이스토어 앱 숨김 스위치(PLAY_HIDDEN)는 2026-10-09 끄고 2026-10-12 걷었다(성경암송 MINISTRY_HIDE_ON_PLAY 와 함께) — 플레이 앱도 웹과 같은 문.
+  //   어느 갈래의 글에도 「플레이스토어」·「크롬으로 열어」가 없고, 걷은 이름이 duty-logic.js 에 되살아나지 않았다.
+  for (const live of [true, false]) for (const open of [true, false]) for (const notify of [true, false]) {
+    for (const t of [openWarn(open, { live }), appNote(open, { live, notify })]) assert.equal(t.includes("플레이스토어") || t.includes("크롬으로 열어"), false, t);
+  }
+  const src = readFileSync(new URL("../js/menus/duty/duty-logic.js", import.meta.url), "utf8");
+  for (const name of ["PLAY_HIDDEN =", "PLAY_NOTE =", "play = ", "${PLAY_NOTE}"]) assert.equal(src.includes(name), false, name);
+  assert.equal(openWarn(false), openWarn(false, { live: APP_LIVE }));
   // 넣기 창 — 그날이 앱 당번표에 실리는 날일 때만 「이름이 보여요」(지난 날·끝 날짜 뒤·보이는 기간 밖에도 넣기가 있다 · 검증 S-5)
   assert.equal(addNote({ date: "2026-10-18" }), ADD_NOTE); assert.equal(addNote(null), ADD_NOTE); assert.equal(addNote(), ADD_NOTE);
   assert.ok(addNote({ past: true }).startsWith("지난 날짜예요") && !addNote({ past: true }).includes("당번표에 보여요") && !addNote({ past: true }).includes("못 가게 됐어요"));
