@@ -1,6 +1,8 @@
 // ⚙️ 앱 설정·문구 — 환영 인트로·오늘의 메시지·응원·이벤트 문구 등. 성경암송 api 프록시(getConfig·saveConfig). 역할 memorizeadmin.
 //   ⚠️ 값은 JSON 으로 다룬다(배열·객체·문자열). 저장 전 JSON 이 맞는지 검사한다.
 //   ⚠️ 관리 설정(loginLimit·lifePin)은 다루지 않는다 — 이 목록에 없다.
+//   ⚠️ 「내 안에 거하는 말씀」 공개(passagesPublic)는 📜 내 안에 거하는 말씀 메뉴(passages.js) 한 곳에서 켜고 끈다(2026-10-13 이 목록에서 뺐다) —
+//      여기서 JSON 으로 "false" 라고 적으면 글자라서 성도님 앱이 「켜짐」으로 읽는다. 두 곳에 두면 어디서 바꿨는지도 갈린다.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 
 const TITLE = `<h2 class="page-title">⚙️ 앱 설정·문구</h2>`;
@@ -10,7 +12,6 @@ const KEYS = [
   ["heartMessages", "마음에 둠(축하 메시지)"],
   ["milestoneMessages", "10회 단위 응원"],
   ["event", "말씀 이벤트 문구"],
-  ["passagesPublic", "내 안에 거하는 말씀 공개 여부"],
 ];
 
 export async function render(el, { call }) {
@@ -18,6 +19,7 @@ export async function render(el, { call }) {
     <label class="field"><span>고칠 설정</span>
       <select id="cf-key">${KEYS.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select></label>
     <p class="muted">값은 <b>JSON</b> 꼴이에요. 모양을 지키면서 내용만 고쳐 주세요.</p>
+    <p class="muted">「내 안에 거하는 말씀」 공개는 <a href="#/mem-passages">📜 내 안에 거하는 말씀</a> 메뉴에서 켜고 꺼요.</p>
     <textarea id="cf-val" class="pl-memo-in" rows="14" style="width:100%;font-family:monospace;font-size:13px"></textarea>
     <div class="acts"><button class="btn primary" id="cf-save">저장</button> <button class="btn" id="cf-reload">다시 불러오기</button></div>
     <p class="muted" id="cf-status"></p>`;
