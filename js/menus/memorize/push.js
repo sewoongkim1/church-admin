@@ -1,10 +1,10 @@
 // 📣 알림 현황 — 구독 기기 수·시간대·발송 이력(읽기만). 성경암송 api 프록시(pushStats·pushHistory·pushSubscribers).
 //   ⚠️ 전체 발송·리포트 메일은 여기 없다(성경암송 admin-stats 에 남겨 둠 · 크론은 그대로). 역할 memorizeadmin.
 import { esc, errorText, busy } from "../../core/ui.js";
+import { pushModeLabel, pushWhen } from "./status-format.js";
 
 const TITLE = `<h2 class="page-title">📣 알림 현황</h2>`;
 const H3 = (t) => `<h3 style="font-size:14px;font-weight:800;color:var(--navy);margin:14px 0 8px">${t}</h3>`;
-const kst = (v) => v ? new Date(v).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "";
 const who = (r) => r.who || [r.gu, r.mok ? r.mok + "목장" : "", r.bu, r.grade].filter(Boolean).join(" ");
 
 export async function render(el, { call }) {
@@ -23,7 +23,7 @@ export async function render(el, { call }) {
     const h = await call("pushHistory", { limit: 50 });
     el.querySelector("#pu-hist").innerHTML = h.ok
       ? ((h.rows || []).length ? h.rows.map((r) => `<div class="card">
-          <div><b>${esc(r.mode || r.kind || "발송")}</b> <span class="muted">${esc(kst(r.created_at))}</span></div>
+          <div><b>${esc(pushModeLabel(r.mode || r.kind))}</b> <span class="muted">${esc(pushWhen(r))}</span>${r.title ? ` <span class="muted">· ${esc(r.title)}</span>` : ""}</div>
           <div class="muted">보냄 ${esc(r.sent ?? 0)} · 실패 ${esc(r.failed ?? 0)} · 대상 ${esc(r.total ?? 0)}${r.note ? ` · ${esc(r.note)}` : ""}</div>
         </div>`).join("") : `<p class="muted">발송 이력이 없어요.</p>`)
       : `<p class="muted">${esc(errorText(h))}</p>`;
