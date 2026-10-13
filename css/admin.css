@@ -2124,6 +2124,7 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
   .mp-list>.card{margin-bottom:0}
   .mp-list>.empty{grid-column:1/-1}
   .be-box:has(.mp-form){max-width:640px}
+}
 
 /* 📊 성경암송 통계 (2026-10-13 · js/menus/memorize/stats.js · 접두사 ms-) — 네 보기(기간별·구절별·도전·축복 기도문)가 기간 하나를 함께 쓴다.
    폰(먼저): 보기 단추(.tabs)는 여러 줄로 접힌다 · 날짜 단추 둘이 한 줄(가운데 ~) · 빠른 기간 칩과 「조회」는 그 아래 ·
