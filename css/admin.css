@@ -2089,3 +2089,18 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .ma-hist-item small{color:var(--gray);font-size:12px}
 .ma-hist-item .chg{margin:3px 0;font-weight:600}
 @media (max-width:560px){ .ma-grid{grid-template-columns:1fr} }
+/* 🚩 게시판 관리 — 📢 공지 쓰기 · 관리자 답글(2026-10-13 · js/menus/memorize/board.js) — 폰 세로가 기준 */
+/* 탭 넷 — 폰은 두 줄(2×2) · 넓으면 한 줄. 한 줄 넷이면 폰에서 「공 / 지 쓰기」·「신 / 고」로 낱말이 쪼개졌다 */
+.bd-tabs{margin-bottom:10px}
+.bd-tabs .btn{flex:1 1 140px;word-break:keep-all}
+.bd-form textarea{display:block;width:100%;min-height:96px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
+  background:var(--paper);font:inherit;font-size:1rem;line-height:1.55;resize:vertical}
+.bd-form .field small{font-size:13px;font-weight:400;color:var(--gray)}
+.bd-form .field small.over{color:var(--error);font-weight:700}
+.bd-reply-form{margin-left:16px}
+.bd-check{display:flex;align-items:center;gap:8px;min-height:var(--tap);font-size:15px;font-weight:600;color:var(--navy);cursor:pointer}
+.bd-check input{width:20px;height:20px;flex:none}
+.bd-hint{margin:0 0 12px;font-size:13px;color:var(--gray);line-height:1.55}
+.bd-note{margin:0 0 12px;padding:9px 12px;border-radius:10px;background:var(--ghost-bg);color:var(--navy);font-size:14px;line-height:1.55}
+.bd-warn{margin:0 0 12px;padding:9px 12px;border:1px solid var(--danger-bd);border-radius:10px;background:var(--danger-bg);
+  color:var(--error);font-size:14px;line-height:1.55}
