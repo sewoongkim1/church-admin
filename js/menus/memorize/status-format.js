@@ -5,8 +5,13 @@
 // 발송 종류(push_log.mode) → 한글. 모르는 것은 그대로 보인다(새 종류가 생겨도 숨지 않게).
 export const PUSH_MODE = {
   daily: "아침 알림", "weekly-verse": "주일 말씀 알림", evening: "저녁 알림", manual: "손으로 보낸 알림",
-  ministry: "사역 임명 알림", "duty-remind": "봉사 당번 알림", pilsa: "필사 알림", "pilsa-apply": "필사 신청 알림(담당자)",
+  ministry: "사역 임명 알림", pilsa: "필사 알림", "pilsa-apply": "필사 신청 알림(담당자)",
   "board-report": "게시판 신고 알림(담당자)", diag: "발송 진단",
+  // 봉사 당번(api 「duty-」 + 종류 · DUTY_NOTE_KINDS) · 교육(edu-)
+  "duty-confirmed": "봉사 당번 — 확정", "duty-added": "봉사 당번 — 담당자가 넣음", "duty-moved": "봉사 당번 — 옮김",
+  "duty-removed": "봉사 당번 — 뺌", "duty-off": "봉사 당번 — 쉼", "duty-reopen": "봉사 당번 — 다시 엶",
+  "duty-remind": "봉사 당번 — 전날 알림", "duty-applied": "봉사 당번 — 지원",
+  "edu-confirmed": "교육 — 신청 확정", "edu-first-day": "교육 — 첫날 알림",
 };
 export const pushModeLabel = (m) => PUSH_MODE[m] || m || "발송";
 

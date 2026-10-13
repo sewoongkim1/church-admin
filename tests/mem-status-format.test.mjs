@@ -6,6 +6,8 @@ import { pushModeLabel, pushWhen, kstShort, monitorText, monitorRows } from "../
 test("발송 종류는 한글 · 모르는 것은 그대로", () => {
   assert.equal(pushModeLabel("daily"), "아침 알림");
   assert.equal(pushModeLabel("weekly-verse"), "주일 말씀 알림");
+  assert.equal(pushModeLabel("duty-applied"), "봉사 당번 — 지원");
+  assert.equal(pushModeLabel("edu-first-day"), "교육 — 첫날 알림");
   assert.equal(pushModeLabel("new-kind"), "new-kind");
   assert.equal(pushModeLabel(""), "발송");
 });
