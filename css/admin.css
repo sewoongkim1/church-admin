@@ -2089,3 +2089,24 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .ma-hist-item small{color:var(--gray);font-size:12px}
 .ma-hist-item .chg{margin:3px 0;font-weight:600}
 @media (max-width:560px){ .ma-grid{grid-template-columns:1fr} }
+
+/* 📜 내 안에 거하는 말씀(js/menus/memorize/passages.js · 2026-10-13) — mp- · 공개 카드 · 본문 카드 · 고치기 창(.mp-form) */
+.mp-pub-h{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px}
+.mp-pub .be-warn{margin:10px 0 0}
+.mp-pub .acts{margin-top:12px}
+.mp-pv{margin-top:8px}
+.badge.mp-warn{background:#fff3d6;color:#7a5200}
+.mp-top{margin-bottom:6px}
+.mp-order{margin-bottom:10px}
+.mp-h b{font-size:16px;font-weight:800;color:var(--navy)}
+.mp-chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.mp-first{margin:0 0 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-form textarea{min-height:220px;line-height:1.7}
+.mp-count{margin-top:-6px;font-weight:700;color:var(--ink-2)}
+@media (min-width:1024px){
+  .mp-pub .acts .btn,.mp-top .btn{flex:0 0 auto;min-width:190px}
+  .mp-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);align-items:start}
+  .mp-list>.card{margin-bottom:0}
+  .mp-list>.empty{grid-column:1/-1}
+  .be-box:has(.mp-form){max-width:640px}
+}

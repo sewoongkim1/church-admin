@@ -17,6 +17,10 @@ export const MENUS = [
     role: "memorizeadmin", load: () => import("./memorize/board.js") },
   { id: "mem-config", group: "성경암송", icon: "⚙️", label: "앱 설정·문구", desc: "인트로 · 오늘의 메시지 · 응원 · 이벤트 문구",
     role: "memorizeadmin", load: () => import("./memorize/config.js") },
+  // 📜 내 안에 거하는 말씀(2026-10-13 · admin-stats renderPassages 이전) — 긴 본문 더하기·고치기·지우기 + 공개 스위치(passagesPublic 은 여기 한 곳).
+  //   아이콘은 옛 화면·성도님 앱과 같은 📜(📖 는 이 묶음 머리 아이콘이라 피한다).
+  { id: "mem-passages", group: "성경암송", icon: "📜", label: "내 안에 거하는 말씀", desc: "주기도문·사도신경 같은 긴 본문 더하기·고치기·지우기 · 성도님께 공개",
+    role: "memorizeadmin", load: () => import("./memorize/passages.js") },
   { id: "mem-pilsa", group: "성경암송", icon: "✍️", label: "필사 명단", desc: "성경필사 노트 신청 명단 · 상태",
     role: "memorizeadmin", load: () => import("./memorize/pilsa.js") },
   { id: "mem-chatlog", group: "성경암송", icon: "💬", label: "말씀 질문 기록", desc: "AI 질문 기록 · 색인 · 캐시",
