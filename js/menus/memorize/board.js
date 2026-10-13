@@ -6,6 +6,17 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 const TITLE = `<h2 class="page-title">🚩 게시판 관리</h2>`;
 const kst = (v) => v ? new Date(v).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "";
 const tag = (x) => `${x.hidden ? '<span class="muted">[숨김]</span> ' : ""}${x.deleted ? '<span class="muted">[삭제]</span> ' : ""}`;
+// 신고 까닭 — 성경암송 api 는 { 까닭코드: 건수 } 꼴로 준다(boardReportGroup · sermonReportGroup).
+//   ⚠️ 배열로 알고 .map 을 부르면 신고가 한 건이라도 있는 순간 탭이 「불러오는 중…」에서 멈춘다(2026-10-13 운영에서 AI답 신고 탭이 그랬다).
+//   옛 배열 꼴(문자열·{reason})도 받는다.
+export function reasonText(reasons, labels) {
+  const lab = (k) => (labels && labels[k]) || k;
+  if (Array.isArray(reasons)) return reasons.map((x) => esc(lab(x && x.reason ? x.reason : x))).join(" · ");
+  if (!reasons || typeof reasons !== "object") return "";
+  return Object.entries(reasons).map(([k, n]) => esc(lab(k)) + (Number(n) > 1 ? ` ${Number(n)}` : "")).join(" · ");
+}
+const notesHtml = (notes) => (Array.isArray(notes) && notes.length)
+  ? `<div class="muted" style="margin:3px 0">덧붙인 말: ${notes.map((n) => esc(n)).join(" / ")}</div>` : "";
 
 export async function render(el, { call }) {
   el.innerHTML = TITLE + `
@@ -54,11 +65,13 @@ export async function render(el, { call }) {
     if (!r.ok) { body.innerHTML = `<p class="muted">${esc(errorText(r))}</p>`; return; }
     const items = r.items || [];
     body.innerHTML = `<p class="muted">처리 전 신고 ${items.length}건 · ${r.keepDays || 90}일 뒤 저절로 지워져요.</p>` + (items.length ? items.map((it) => {
-      const reasons = (it.reasons || it.reason_counts || []).map((x) => esc((r.labels && r.labels[x.reason || x]) || x.reason || x)).join(" · ");
-      const target = it.target || it.post || it.reply || {};
-      return `<div class="card" data-id="${esc(it.id ?? target.id ?? "")}" data-kind="${esc(it.kind || "post")}">
+      const reasons = reasonText(it.reasons || it.reason_counts, r.labels);
+      // 서버(boardReports)는 글 내용을 excerpt(발췌)로 · 쓴 분을 name 으로 · 상태를 hidden·deleted·gone 으로 준다
+      const state = `${tag(it)}${it.gone ? '<span class="muted">[글 없음]</span> ' : ""}`;
+      return `<div class="card" data-id="${esc(it.id ?? "")}" data-kind="${esc(it.kind || "post")}">
         <div><b>🚩 ${esc(it.count ?? "")}건</b> <span class="muted">${reasons}</span></div>
-        <div style="margin:4px 0;white-space:pre-wrap">${esc(target.content || it.content || "")}</div>
+        <div class="muted" style="margin:3px 0">${state}${esc(it.kind === "reply" ? "답글" : "글")} · ${esc(it.name || "")} · ${esc(kst(it.last_at))}</div>
+        <div style="margin:4px 0;white-space:pre-wrap">${esc(it.excerpt || it.content || "")}</div>${notesHtml(it.notes)}
         <div class="acts"><button class="btn" data-r="hide">숨기기</button><button class="btn" data-r="resolve">처리 완료</button></div></div>`;
     }).join("") : `<p class="muted">기다리는 신고가 없어요.</p>`);
     body.querySelectorAll("[data-r]").forEach((btn) => btn.addEventListener("click", async () => {
@@ -73,11 +86,11 @@ export async function render(el, { call }) {
     if (!r.ok) { body.innerHTML = `<p class="muted">${esc(errorText(r))}</p>`; return; }
     const items = r.items || [];
     body.innerHTML = `<p class="muted">AI답 신고 ${items.length}건 · ${r.keepDays || 90}일 보관.</p>` + (items.length ? items.map((it) => {
-      const reasons = (it.reasons || []).map((x) => esc((r.labels && r.labels[x.reason || x]) || x.reason || x)).join(" · ");
+      const reasons = reasonText(it.reasons, r.labels);
       return `<div class="card" data-id="${esc(it.id ?? "")}">
-        <div><b>🚩 ${esc(it.count ?? "")}건</b> <span class="muted">${reasons}</span></div>
+        <div><b>🚩 ${esc(it.count ?? "")}건</b> <span class="muted">${reasons} · ${esc(kst(it.last_at))}</span></div>
         <div class="muted" style="margin:3px 0">질문: ${esc(it.question || "")}</div>
-        <div style="margin:4px 0;white-space:pre-wrap">${esc(it.answer || "")}</div>
+        <div style="margin:4px 0;white-space:pre-wrap">${esc(it.answer || "")}</div>${notesHtml(it.notes)}
         <div class="acts"><button class="btn" data-a="resolve">처리 완료</button><button class="btn" data-a="uncache">답 지우기(uncache)</button></div></div>`;
     }).join("") : `<p class="muted">기다리는 신고가 없어요.</p>`);
     body.querySelectorAll("[data-a]").forEach((btn) => btn.addEventListener("click", async () => {
