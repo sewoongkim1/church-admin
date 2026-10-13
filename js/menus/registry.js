@@ -11,7 +11,7 @@ export const MENUS = [
   { id: "member-accounts", group: "교인명부", icon: "👤", label: "성도 계정", desc: "앱 계정 찾기 · 이름/소속 변경 · 변경 이력 · 합치기(총괄)",
     role: "members", load: () => import("./people/member-accounts.js") },
   // 성경암송 관리(2026-10-09 · admin-stats 안전 묶음 이전) — 성경암송 api 를 내부 키로 부른다.
-  { id: "mem-stats", group: "성경암송", icon: "📊", label: "통계", desc: "기간별 사용 현황(구분·소속별)",
+  { id: "mem-stats", group: "성경암송", icon: "📊", label: "통계", desc: "기간별 사용현황 · 구절별 현황 · 도전 현황 · 축복 기도문 사용현황",
     role: "memorizeadmin", load: () => import("./memorize/stats.js") },
   { id: "mem-board", group: "성경암송", icon: "🚩", label: "게시판 관리", desc: "글·답글 숨김/삭제 · 🚩 신고 · AI답 신고",
     role: "memorizeadmin", load: () => import("./memorize/board.js") },
