@@ -13,7 +13,7 @@ export const MENUS = [
   // 성경암송 관리(2026-10-09 · admin-stats 안전 묶음 이전) — 성경암송 api 를 내부 키로 부른다.
   { id: "mem-stats", group: "성경암송", icon: "📊", label: "통계", desc: "기간별 사용 현황(구분·소속별)",
     role: "memorizeadmin", load: () => import("./memorize/stats.js") },
-  { id: "mem-board", group: "성경암송", icon: "🚩", label: "게시판 관리", desc: "글·답글 숨김/삭제 · 🚩 신고 · AI답 신고",
+  { id: "mem-board", group: "성경암송", icon: "🚩", label: "게시판 관리", desc: "글·답글 숨김/삭제 · 관리자 답글 · 📢 공지 쓰기 · 🚩 신고 · AI답 신고",
     role: "memorizeadmin", load: () => import("./memorize/board.js") },
   { id: "mem-config", group: "성경암송", icon: "⚙️", label: "앱 설정·문구", desc: "인트로 · 오늘의 메시지 · 응원 · 이벤트 문구",
     role: "memorizeadmin", load: () => import("./memorize/config.js") },
