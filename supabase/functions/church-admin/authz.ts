@@ -70,6 +70,9 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   //   실제 일은 성경암송 api 를 내부 키로 부른다(index.ts memCall). 여기서는 역할만 건다.
   stats: "memorizeadmin", participants: "memorizeadmin", verses: "memorizeadmin",
   blessingUsage: "memorizeadmin", ranking: "memorizeadmin",
+  // 📊 통계 「구절별 현황」의 말씀 이름(2026-10-13) — 성경암송 앱이 로그인 없이 받는 말씀 목록(getVerses) 그대로 · 읽기만.
+  //   api 에서는 공개 액션이라 INTERNAL_ADMIN_OK 에 없어도 된다(내부 키 머리는 그냥 지나간다).
+  getVerses: "memorizeadmin",
   boardList: "memorizeadmin", boardModerate: "memorizeadmin", boardReply: "memorizeadmin",
   boardPost: "memorizeadmin", boardReports: "memorizeadmin", boardReportResolve: "memorizeadmin",
   sermonAnswerReports: "memorizeadmin", sermonAnswerReportResolve: "memorizeadmin",

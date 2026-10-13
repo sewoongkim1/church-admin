@@ -2124,4 +2124,61 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
   .mp-list>.card{margin-bottom:0}
   .mp-list>.empty{grid-column:1/-1}
   .be-box:has(.mp-form){max-width:640px}
+
+/* 📊 성경암송 통계 (2026-10-13 · js/menus/memorize/stats.js · 접두사 ms-) — 네 보기(기간별·구절별·도전·축복 기도문)가 기간 하나를 함께 쓴다.
+   폰(먼저): 보기 단추(.tabs)는 여러 줄로 접힌다 · 날짜 단추 둘이 한 줄(가운데 ~) · 빠른 기간 칩과 「조회」는 그 아래 ·
+   수 카드는 폭에 맞춰 둘~여섯 칸 · 표는 상자(.ms-tw) 안에서만 옆으로 밀린다(화면 전체는 안 밀린다).
+   PC(1024px~): 날짜 단추와 빠른 기간이 한 줄 · 날짜 단추가 화면 끝까지 늘지 않게 · 읽기 좋은 폭 1000px(📊 교육 통계 .est-page 와 같게). */
+.ms-tabs{margin-bottom:12px}
+.ms-filter{margin:0 0 6px}
+.ms-dates{display:flex;align-items:center;gap:6px;margin:0 0 8px}
+.ms-dates .pk-field{flex:1 1 0;min-width:0;font-size:15px;padding:0 10px}
+.ms-dates > span{color:var(--gray);font-weight:700}
+.ms-quick{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ms-quick button[data-q]{min-height:var(--chip);padding:0 14px;font-size:13px;font-weight:700;color:#5a6273;background:#fff;
+  border:1px solid #dde3ee;border-radius:999px;cursor:pointer}
+.ms-quick button[data-q].on{color:#fff;background:var(--navy);border-color:var(--navy)}
+.ms-quick button[data-q]:disabled{opacity:.45;cursor:default}
+.ms-go{margin-left:auto}
+.ms-chal{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.ms-chal .tabs{margin:0}
+.ms-chal .pp-pick-b{flex:1 1 200px;width:auto;max-width:360px}
+.ms-chal .pp-pick-b:disabled{background:#eef0f4;color:#aab2c0}
+.ms-chal .pp-pick-b:disabled .pk-field-x{background:#aab2c0}
+.ms-hint{flex-basis:100%;margin:0;line-height:1.5;word-break:keep-all}
+.ms-bar{margin:0 0 8px}
+.ms-bar b{color:var(--navy-dark)}
+.ms-note{margin:-4px 0 12px;line-height:1.5;word-break:keep-all}
+.ms-kpis{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:10px 0 12px;padding:0}
+.ms-kpi{background:#f4f7fc;border:1px solid var(--border);border-radius:12px;padding:12px 8px;text-align:center}
+.ms-kpi b{display:block;font-size:22px;font-weight:800;line-height:1.3;color:var(--navy)}
+.ms-kpi.gold b{color:#b8860b}
+.ms-kpi span{display:block;font-size:12px;color:var(--gray);margin-top:2px;word-break:keep-all}
+.ms-chart{margin-bottom:0}
+.ms-ct{display:block;font-size:13px;margin-bottom:8px}
+.ms-barrow{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}
+.ms-bl{width:92px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ms-bt{flex:1;min-width:0;height:16px;background:#e7edf6;border-radius:8px;overflow:hidden}
+.ms-bt > span{display:block;height:100%;background:var(--navy);border-radius:8px}
+.ms-bv{width:72px;flex:none;text-align:right;font-weight:700}
+.ms-tw{overflow-x:auto;background:#fff;border:1px solid var(--border);border-radius:12px;margin:0 0 12px}
+.ms-t{width:100%;border-collapse:collapse;font-size:13.5px}
+.ms-t th,.ms-t td{padding:7px 10px;border-bottom:1px solid var(--light);text-align:right;white-space:nowrap}
+.ms-t .l{text-align:left}
+.ms-t .c{text-align:center}
+.ms-t .ms-wrap{white-space:normal;min-width:180px;word-break:keep-all;overflow-wrap:anywhere}
+.ms-t thead th{background:var(--light);color:var(--gray);font-size:12.5px;font-weight:700}
+.ms-t tbody tr:last-child td{border-bottom:0}
+.ms-t tbody tr:hover{background:#f8fafd}
+.ms-t tfoot td{border-top:2px solid var(--border);border-bottom:0;font-weight:800;color:var(--navy-dark);background:var(--ghost-bg)}
+.ms-gb{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:#e7ecf5;color:var(--navy)}
+.ms-gb.school{background:#f4e3ad;color:var(--navy-dark)}
+.ms-grp{display:inline-block;font-size:12px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--light);color:var(--gray)}
+@media (min-width:1024px){
+  .ms-page{max-width:1000px}
+  .ms-filter{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+  .ms-dates{flex:0 1 480px;margin:0}
+  .ms-quick{flex:1 1 auto}
+  .ms-go{margin-left:4px}
+  .ms-chal{flex-basis:100%;margin-top:2px}
 }

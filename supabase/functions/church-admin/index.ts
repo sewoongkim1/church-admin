@@ -2811,6 +2811,7 @@ Deno.serve(async (req) => {
       case "memberMerge":        return json(await memberMerge(ctx, b));
       // 성경암송 관리 — api 내부 키 프록시(2026-10-09). canCall 이 역할(memorizeadmin)을 이미 걸렀다.
       case "stats": case "participants": case "verses": case "blessingUsage": case "ranking":
+      case "getVerses":   // 📊 통계 구절별 현황의 말씀 이름(2026-10-13 · 앱 공개 말씀 목록 · 읽기만)
       case "boardList": case "boardModerate": case "boardReply": case "boardPost":
       case "boardReports": case "boardReportResolve": case "sermonAnswerReports": case "sermonAnswerReportResolve":
       case "getConfig": case "saveConfig": case "eventEntrants":
