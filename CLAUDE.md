@@ -20,6 +20,7 @@
 | 성경필사(암송) — 회차·명단·올리기·사람별 이력·통계(`js/menus/bibleevent/`) | `docs/notes/bible-events.md` · 옛 동작 `docs/port/event-roster-legacy.md` |
 | 사역 이력 · 📮 정정 신청 · 부서 이음표 · 📊 사역 통계 | `docs/notes/history.md` |
 | 사역신청 다섯 메뉴의 옛 동작(성경암송 관리 화면에서 옮겨 올 때의 원문) | `docs/port/ministry-catalog-legacy.md` · `ministry-paper-legacy.md` · `ministry-status-legacy.md` |
+| 성경암송 메뉴(통계 넷 · 게시판 공지·답글·신고 · 📜 내 안에 거하는 말씀 · 알림 현황 · 시스템 상태 — 성경암송 api 중계) — 신고 까닭은 객체 · push_log 는 sent_at · 공개 스위치는 📜 에서만 | `docs/notes/memorize.md` |
 | 교육 — 강좌·신청 현황·출석부·수료·확정 알림 | `docs/notes/edu.md` |
 | 봉사 당번 — 당번 관리·명단·👥 봉사자·앱 알림·지난 날의 명단 | `docs/notes/duty.md` |
 | 봉사 당번 — 📅 달력·명단 화면의 자리·공휴일 표 | `docs/notes/duty-calendar.md` |
