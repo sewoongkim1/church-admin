@@ -38,7 +38,7 @@ test("공지 — 글쓴이를 비우면 「제자양육부」 · 40자로 자름
 });
 
 test("답글 — 글 번호와 내용", () => {
-  assert.deepEqual(replyBody(12, "  감사해요 "), { ok: true, body: { post_id: 12, content: "감사해요" } });
+  assert.deepEqual(replyBody(12, "  감사해요 "), { ok: true, body: { post_id: 12, id: 12, content: "감사해요" } });
   assert.deepEqual(replyBody("12", "감사해요").body.post_id, 12);
   assert.equal(replyBody(0, "x").ok, false);
   assert.equal(replyBody("abc", "x").ok, false);

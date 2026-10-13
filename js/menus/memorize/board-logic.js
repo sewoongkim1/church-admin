@@ -34,13 +34,14 @@ export function noticeBody({ name, content, rich } = {}) {
   return { ok: true, body: { name: nm, content: String(content).trim(), rich: rich === true } };
 }
 
-// 관리자 답글 → { ok:true, body:{ post_id, content } } | { ok:false, message }
+// 관리자 답글 → { ok:true, body:{ post_id, id, content } } | { ok:false, message }
+//   id 는 교회 어드민 「바꾼 기록」의 대상 칸 몫이다(memProxy 가 b.id 로 채운다 · 성경암송 boardReply 는 id 를 읽지 않는다 · 2026-10-13).
 export function replyBody(postId, content) {
   const id = Number(postId);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, message: "답글을 달 글을 찾지 못했어요 — 새로 불러와 주세요" };
   const p = contentProblem(content);
   if (p) return { ok: false, message: p };
-  return { ok: true, body: { post_id: id, content: String(content).trim() } };
+  return { ok: true, body: { post_id: id, id, content: String(content).trim() } };
 }
 
 // HTML 태그처럼 보이는 것이 있나(<b> · </p> · <br/> · <span style=…>) — 「HTML 로 그리기」를 끈 채면 태그가 글자 그대로 보인다
