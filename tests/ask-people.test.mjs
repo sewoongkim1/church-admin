@@ -183,6 +183,8 @@ test("AI 에게 가는 것 — 스키마는 재귀 없이 · 모든 객체가 ad
   const walk = (o, path) => {
     if (!o || typeof o !== "object") return;
     assert.ok(!("$ref" in o), "재귀(참조) 없음: " + path);
+    // null 을 받는 갈래 칸(anyOf · 타입 배열)이 많으면 API 가 400 — 하나도 두지 않는다(2026-10-15 개발에서 24칸으로 걸림)
+    assert.ok(!("anyOf" in o) && !Array.isArray(o.type), "갈래 칸 없음: " + path);
     if (o.type === "object") {
       assert.equal(o.additionalProperties, false, path);
       assert.deepEqual([...o.required].sort(), Object.keys(o.properties).sort(), path);
@@ -201,6 +203,21 @@ test("AI 에게 가는 것 — 지시문에 사람 자료(이름 · 목장 이�
   assert.ok(p.includes("시온찬양대"));
   assert.ok(p.includes("2010~2026년"));
   assert.ok(p.includes("2021년은 명단이 일부"));
+});
+
+test("AI 가 「안 씀」을 정해 둔 값(num -1 · years_ago -1 · text \"\" · within 0 · dept none)으로 보내면 없음으로 읽는다", () => {
+  const S = { num: -1, years_ago: -1, text: "", list: [], within: { last_years: 0, from: 0, to: 0 }, dept: { level: "none", name: "" } };
+  const t = tree({
+    all: [leaf({ ...S, field: "served_years_count", op: ">=", num: 10 })],
+    none: [leaf({ ...S, field: "served_in_year", op: "has", years_ago: 0 })],
+  });
+  assert.equal(t.all[0].within, null);
+  assert.equal(t.all[0].dept, null);
+  assert.equal(t.none[0].year, 2026);
+  assert.deepEqual(names(t), ["시험-가"]);
+  // 수가 -1 이면(채우지 않음) 그 잎은 「수를 알 수 없어요」
+  const c = checkTree({ all: [leaf({ ...S, field: "age", op: ">=", from_text: "나이" })] }, D.vocab, Y);
+  assert.equal(c.unsupported[0].note, "「나이」의 수를 알 수 없어요");
 });
 
 test("질문 다듬기", () => {

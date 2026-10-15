@@ -150,9 +150,10 @@ export function buildAskData(peopleRows: any[], histRows: any[], mapRows: any[],
 // ---------- AI 에게 주는 것: 스키마 · 지시문 ----------
 // 구조화 출력(output_config.format)의 JSON 스키마. 재귀 · minimum/maximum 을 못 쓰므로(Claude 구조화 출력의 한계)
 // 트리는 묶음 셋(all · any · none)에 잎을 펼쳐 두고, 범위 · 값이 명부에 있는지는 checkTree 가 본다.
+// ⚠️ null 을 받는 칸(anyOf · 타입 배열)을 쓰지 않는다 — 갈래 칸이 많으면 API 가 400(「too many parameters with union types」 ·
+//    2026-10-15 개발에서 24칸으로 걸렸다). 그래서 「안 씀」은 정해 둔 값으로 받는다: num -1 · years_ago -1 · text "" · list [] ·
+//    within 은 셋 다 0 · dept 는 level "none"(이름 ""). checkLeaf 가 이 값을 「없음」으로 읽는다.
 // 값 목록(교구·부서 이름)은 스키마에 넣지 않는다 — 스키마가 늘 같아야 컴파일 캐시가 산다. 이름은 지시문에 두고 서버가 검사한다.
-const NUL = { type: "null" };
-const orNull = (t: any) => ({ anyOf: [t, NUL] });
 function leafSchema(): any {
   return {
     type: "object", additionalProperties: false,
@@ -160,14 +161,14 @@ function leafSchema(): any {
     properties: {
       field: { type: "string", enum: FIELD_IDS },
       op: { type: "string", enum: OPS },
-      num: orNull({ type: "number" }),
-      years_ago: orNull({ type: "integer" }),
-      text: orNull({ type: "string" }),
+      num: { type: "number" },
+      years_ago: { type: "integer" },
+      text: { type: "string" },
       list: { type: "array", items: { type: "string" } },
-      within: orNull({ type: "object", additionalProperties: false, required: ["last_years", "from", "to"],
-        properties: { last_years: orNull({ type: "integer" }), from: orNull({ type: "integer" }), to: orNull({ type: "integer" }) } }),
-      dept: orNull({ type: "object", additionalProperties: false, required: ["level", "name"],
-        properties: { level: { type: "string", enum: DEPT_LEVELS }, name: { type: "string" } } }),
+      within: { type: "object", additionalProperties: false, required: ["last_years", "from", "to"],
+        properties: { last_years: { type: "integer" }, from: { type: "integer" }, to: { type: "integer" } } },
+      dept: { type: "object", additionalProperties: false, required: ["level", "name"],
+        properties: { level: { type: "string", enum: [...DEPT_LEVELS, "none"] }, name: { type: "string" } } },
       from_text: { type: "string" },
     },
   };
@@ -205,9 +206,9 @@ export function askSystemPrompt(v: AskVocab, today: string): string {
     ...FIELDS.map((f) => `- ${f.id}(${f.label}) · op ${f.ops.join(" ")} · 값 ${VALUE_HINT[f.value]} · ${f.desc}` + (f.service ? " · within·dept 를 붙일 수 있음" : "")),
     "",
     "[값 쓰는 법]",
-    "- 쓰지 않는 칸은 null, list 는 [].",
+    "- 쓰지 않는 칸: num -1 · years_ago -1 · text \"\" · list [] · within 은 last_years·from·to 모두 0 · dept 는 level \"none\", name \"\".",
     "- 해: 질문에 정확한 해(2015년)가 있으면 num 에 그 해. 「올해·작년·N년 전」은 years_ago(0=올해, 1=작년). 해를 직접 셈하지 않는다.",
-    "- within(기간): 「최근 N년」= last_years N · 「2015년부터 2020년까지」= from 2015, to 2020. 기간이 없으면 null.",
+    "- within(기간): 「최근 N년」= last_years N · 「2015년부터 2020년까지」= from 2015, to 2020(last_years 0).",
     "- dept(부서): 아래 [부서 이름]에서 그대로 고른다 — 질문에 가장 가까운 단계. 예: 「찬양대」= mid 찬양대 · 「교회학교」= big 교회학교 · 「시온찬양대」= team 시온찬양대.",
     "- 「N년 동안 사역」처럼 뜻이 갈리면 하나를 고르고(기본: 합쳐서 센 해 served_years_count), 다른 읽기는 alternatives 에 한국어 한 줄로.",
     "- from_text: 그 조건이 나온 질문의 말을 그대로.",
@@ -275,9 +276,10 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
   // 기간 · 부서 — 사역 필드에만
   if (f.service && r?.within && typeof r.within === "object") {
     const w = r.within;
-    const n = intOr(w.last_years);
-    const from = n !== null && n > 0 ? thisYear - n + 1 : intOr(w.from);
-    const to = n !== null && n > 0 ? thisYear : intOr(w.to);
+    const pos = (x: unknown) => { const k = intOr(x); return k !== null && k > 0 ? k : null; };   // 0 · -1 · null = 안 씀
+    const n = pos(w.last_years);
+    const from = n !== null ? thisYear - n + 1 : pos(w.from);
+    const to = n !== null ? thisYear : pos(w.to);
     if (from !== null || to !== null) {
       let a = from ?? v.yearMin, b = to ?? thisYear;
       if (a > b) [a, b] = [b, a];
@@ -294,7 +296,7 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
   const span = leaf.within ? leaf.within.to - Math.max(leaf.within.from, v.yearMin) + 1 : span0;
 
   if (f.value === "num") {
-    const n = typeof r?.num === "number" && Number.isFinite(r.num) ? Math.round(r.num) : null;
+    const n = typeof r?.num === "number" && Number.isFinite(r.num) && r.num >= 0 ? Math.round(r.num) : null;   // -1 = 안 씀
     if (n === null) return no("too_complex", `「${f.label}」의 수를 알 수 없어요`);
     if (f.id === "age" && (n < 0 || n > 120)) return no("out_of_range", "나이가 이치에 맞지 않아요");
     if ((f.id === "served_years_count" || f.id === "served_streak_max") && n < 0) return no("too_complex", "해 수가 이치에 맞지 않아요");
@@ -304,8 +306,8 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
     leaf.num = n;
   } else if (f.value === "year") {
     let y: number | null = Number.isInteger(r?.year) ? r.year : null;
-    if (y === null && Number.isInteger(r?.years_ago)) y = thisYear - r.years_ago;
-    if (y === null && typeof r?.num === "number" && Number.isFinite(r.num)) y = Math.round(r.num);
+    if (y === null && Number.isInteger(r?.years_ago) && r.years_ago >= 0) y = thisYear - r.years_ago;   // -1 = 안 씀
+    if (y === null && typeof r?.num === "number" && Number.isFinite(r.num) && r.num >= 0) y = Math.round(r.num);
     if (y === null || y < 1900 || y > thisYear + 1) return no("too_complex", "해를 알 수 없어요");
     if (f.service && op !== "<=" && op !== ">=" && (y < v.yearMin || y > v.yearMax))
       return no("out_of_range", `사역 기록은 ${v.yearMin}~${v.yearMax}년만 있어요`);
@@ -313,7 +315,7 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
       notices.push(`${y}년은 사역 명단이 일부예요 — 빠진 분이 있을 수 있어요`);
     leaf.year = y;
   } else if (f.value === "text") {
-    const t = clean(r?.text ?? (Array.isArray(r?.list) ? r.list[0] : ""));
+    const t = clean(r?.text) || clean(Array.isArray(r?.list) ? r.list[0] : "");   // "" = 안 씀
     if (f.id === "mok") {
       if (/^목장\s*없음$/.test(t)) leaf.text = "목장 없음";
       else if (t && v.mokKeys.includes(mokKey(t))) leaf.text = t;
