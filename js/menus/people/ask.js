@@ -76,7 +76,7 @@ function rowsHtml(r, dropped) {
   return banner + `<p class="ak-total">${n(r.total)}명${r.truncated ? ` <span class="muted">· 앞의 ${n(r.rows.length)}명만 보여요</span>` : ""}</p>
     <div class="ak-tbl"><table class="pp-stat"><thead><tr><th>이름</th><th>직분</th><th>교구</th><th>목장</th><th>나이</th>
       <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th></tr></thead><tbody>` +
-    r.rows.map((x) => `<tr><td>${esc(x.name)}</td><td>${esc(x.position || "—")}</td><td>${esc(x.gu || "—")}</td><td>${esc(x.mok || "—")}</td>` +
+    r.rows.map((x) => `<tr><td><button type="button" class="ak-name" data-pid="${Number(x.id)}" aria-label="${esc(x.name)} 자세히">${esc(x.name)}</button></td><td>${esc(x.position || "—")}</td><td>${esc(x.gu || "—")}</td><td>${esc(x.mok || "—")}</td>` +
       `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td></tr>`).join("") +
     `</tbody></table></div><p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창(교적 · 사역 · 성경필사 · 교육)이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
 }
