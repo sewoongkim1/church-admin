@@ -6,6 +6,8 @@
 import { esc, busy, errorText, toast } from "../../core/ui.js";
 // 이름을 누르면 교인명부 「자세히」 창(교적 · 🤝 사역 · ✍️ 성경필사 · 🎓 교육 탭) — 교인 찾기와 같은 창 · 서버 peoplePerson 이 people.view 를 남긴다
 import { openPerson } from "./search.js";
+// 🏠 심방 준비 한 장(2026-10-15) — 줄의 「심방」 단추 · 서버 visitCard · visitPoints
+import { openVisitCard } from "./visit-card.js";
 
 const TITLE = `<h2 class="page-title">🤖 성도 묻기 <span class="badge">시험판</span></h2>`;
 const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b> · <b>사역 이력</b> · <b>성경필사</b>에서 찾아 드려요.
@@ -76,10 +78,10 @@ function rowsHtml(r, dropped) {
   const span = (x) => (x.served ? (x.first === x.last ? `${x.first}` : `${x.first}~${x.last}`) : "—");
   return banner + `<p class="ak-total">${n(r.total)}명${r.truncated ? ` <span class="muted">· 앞의 ${n(r.rows.length)}명만 보여요</span>` : ""}</p>
     <div class="ak-tbl"><table class="pp-stat"><thead><tr><th>이름</th><th>직분</th><th>교구</th><th>목장</th><th>나이</th>
-      <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th><th>성경필사</th></tr></thead><tbody>` +
+      <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th><th>성경필사</th><th>심방</th></tr></thead><tbody>` +
     r.rows.map((x) => `<tr><td><button type="button" class="ak-name" data-pid="${Number(x.id)}" aria-label="${esc(x.name)} 자세히">${esc(x.name)}</button></td><td>${esc(x.position || "—")}</td><td>${esc(x.gu || "—")}</td><td>${esc(x.mok || "—")}</td>` +
-      `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td><td>${x.pilsa ? x.pilsa + "번" : "—"}</td></tr>`).join("") +
-    `</tbody></table></div><p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창(교적 · 사역 · 성경필사 · 교육)이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
+      `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td><td>${x.pilsa ? x.pilsa + "번" : "—"}</td><td><button type="button" class="ak-visit" data-visit="${Number(x.id)}" aria-label="${esc(x.name)} 심방 준비">준비</button></td></tr>`).join("") +
+    `</tbody></table></div><p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창, 「심방 · 준비」를 누르면 심방 준비 한 장(가족 · 섬김 · 배움 · AI 이야깃거리)이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
 }
 
 function resultHtml(r, st) {
@@ -127,6 +129,8 @@ export async function render(el, { call }) {
     const ex = e.target.closest("button[data-ex]");
     if (ex && el.contains(ex)) { qEl.value = EXAMPLES[Number(ex.dataset.ex)] || ""; ask(); return; }
     if (!st) return;
+    const vb = e.target.closest("button[data-visit]");
+    if (vb && el.contains(vb)) { openVisitCard(call, Number(vb.dataset.visit), vb); return; }
     const nb = e.target.closest("button[data-pid]");
     if (nb && el.contains(nb)) {
       // 「👪 가족 모두 목록으로」는 이 메뉴에 가족 목록이 없어 알림 한 줄(창은 그대로 · 성경필사 이름 창과 같다)

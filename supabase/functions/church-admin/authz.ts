@@ -35,6 +35,10 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   //   (설계 v2 docs/superpowers/specs/2026-10-15-pastor-ai-ask-design.md). 기록 people.ask · people.ask.run(질문 앞 120자 · 수만).
   askPeople: "super",
   askPeopleRun: "super",
+  // 🧪 견주기(개발 전용 — 운영 함수는 dev-only 로 막는다) · 🏠 심방 준비 한 장(2026-10-15 · 카드 people.visit 기록 · 이야깃거리는 AI 에 이름 없는 사실만)
+  askEval: "super",
+  visitCard: "super",
+  visitPoints: "super",
   // 사역신청(2단계 · 2026-09-28) — 임명현황. 읽기만, 임명확정만, 번호·메모 없음.
   ministryAppointed: "ministry",
   // 사역신청(3단계) — 신청 현황. 목록은 번호·메모를 담는다(관리 화면 전용). 상태 바꾸기·삭제는 바꾼 기록에 남는다.

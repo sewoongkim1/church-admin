@@ -219,6 +219,10 @@ const PROBE = {
   // 🤖 성도 묻기(시험판 · 2026-10-15) — 빈 질문(no-question) · 트리 없음(bad-tree)이라 재료도 안 읽고 AI 도 안 부르고 기록도 안 남긴다
   askPeople: { question: "" },
   askPeopleRun: { tree: null },
+  // 견주기 · 심방 준비(2026-10-15) — 빈 질문(no-question) · 없는 교인(not-found)이라 AI 도 안 부르고 기록도 안 남긴다
+  askEval: { question: "" },
+  visitCard: { id: 0 },
+  visitPoints: { id: 0 },
   // 사역 이력(2026-10-01) — 읽기 · 빈 올리기 · 없는 줄(0) · 확인 없는 다시 맞추기 · 없는 해 내려받기 — 아무것도 쓰지도 기록하지도 않는다
   historyList: {},
   historyUploadCheck: { rows: [] },

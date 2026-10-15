@@ -2216,3 +2216,26 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .ak-raw pre{white-space:pre-wrap;word-break:break-all;background:var(--light);padding:10px;border-radius:8px;max-height:320px;overflow:auto;font-size:12px}
 .ak-name{border:0;background:none;padding:0;min-height:32px;font:inherit;font-weight:700;color:var(--navy);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .ak-name:hover{color:var(--navy-dark)}
+
+/* 🏠 심방 준비 한 장(시험판 · 2026-10-15 · js/menus/people/visit-card.js) — 접두사 vc- */
+.dlg.vc-dlg{max-width:560px}
+.vc{display:flex;flex-direction:column;gap:10px;text-align:left}
+.vc-head{display:flex;gap:14px;align-items:center}
+.vc-ini{width:56px;height:56px;flex:none;border-radius:50%;background:var(--light);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:var(--navy)}
+.vc-name{margin:0;font-size:20px;font-weight:800;color:var(--navy-dark)}
+.vc-name span{font-size:15px;font-weight:700;color:var(--ink-2)}
+.vc-sub{margin:2px 0 0;font-size:13px;color:var(--ink-2)}
+.vc-tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0}
+.vc-tag{padding:2px 10px;border-radius:999px;background:var(--ghost-bg);border:1px solid var(--ghost-bd);font-size:12px;font-weight:700;color:var(--navy)}
+.vc-sec{border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:#fff}
+.vc-sec h4{margin:0 0 6px;font-size:14px;font-weight:800;color:var(--navy-dark)}
+.vc-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:8px;font-size:14px;padding:3px 0}
+.vc-row b{color:var(--navy);font-weight:800}
+.vc-ai{background:var(--ghost-bg);border-color:var(--ghost-bd)}
+.vc-ai ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14.5px;line-height:1.6}
+.vc-note{margin:8px 0 0;font-size:12px;color:var(--gray)}
+.vc-wait{margin:0;color:var(--ink-2);font-size:14px}
+.vc-err{margin:0;color:var(--error);font-size:13px}
+.vc-empty{margin:0;color:var(--gray);font-size:13px}
+.ak-visit{min-height:32px;padding:0 12px;border:1px solid var(--border);border-radius:999px;background:var(--light);font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
+.ak-visit:hover{background:#fff}

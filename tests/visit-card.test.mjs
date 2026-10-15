@@ -1,0 +1,76 @@
+// 🏠 심방 준비 한 장(시험판 · 2026-10-15) — 카드 재료 · AI 에 줄 사실 목록(이름 없음) · 답 검사(visit-card.ts · 순수)
+//   이름은 모두 지어낸 것(시험-가 …).
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { visitCard, visitFacts, visitSchema, visitPointsOut, VISIT_SYSTEM } from "../supabase/functions/church-admin/visit-card.ts";
+
+const TODAY = "2026-10-15";
+const PERSON = { person_id: 1, name: "시험-가", position: "권사", gender: "여", age: 55, mok1: "화평", mok3: "화평-20목장", kind2: "장년",
+  registered_date: "2011-03-04", household_rel: "본인", phone1: "010-0000-0001", address: "어딘가 1" };
+const FAMILY = [
+  { person_id: 2, name: "시험-나", household_rel: "남편", position: "안수집사", age: 58 },
+  { person_id: 3, name: "시험-다", household_rel: "딸", position: "", age: 24 },
+];
+const HISTORY = {
+  ministry: [
+    { kind: "history", year: 2025, committee: "찬양위원회", team: "시온찬양대" },
+    { kind: "history", year: 2024, committee: "찬양위원회", team: "시온찬양대" },
+    { kind: "history", year: 2024, committee: "예배위원회", team: "안내" },
+    { kind: "history", year: 2023, committee: "찬양위원회", team: "시온찬양대" },
+    { kind: "order", year: 2027, committee: "찬양위원회", team: "시온찬양대", status: "접수" },
+  ],
+  bible: [
+    { title: "2026 썸머 써 바이블 옵/말 완서자", short_title: "", opens_on: "2026-05-01" },
+    { title: "2025 사순절 요한복음 완서자", short_title: "", opens_on: "2025-03-05" },
+  ],
+  education: [{ term: "2025-1", title: "제자훈련", status: "confirmed", statusLabel: "확정", certNo: "2025-007", certRevoked: false }],
+};
+
+test("카드 — 머리 · 꼬리표 · 가족 · 섬김(해마다 · 같은 해 팀 묶음) · 사역신청 따로 · 성경필사 · 교육", () => {
+  const c = visitCard(PERSON, FAMILY, HISTORY, TODAY);
+  assert.equal(c.head.name, "시험-가");
+  assert.equal(c.head.regYear, 2011);
+  assert.equal(c.head.regYears, 16);
+  assert.deepEqual(c.tags, ["2026년 사역 쉼", "2026년 성경필사", "교육 수료"]);
+  assert.equal(c.family.length, 2);
+  assert.deepEqual(c.service.years[0], { year: 2025, teams: ["시온찬양대"] });
+  assert.deepEqual(c.service.years[1], { year: 2024, teams: ["시온찬양대", "안내"] });
+  assert.equal(c.service.total, 3);
+  assert.equal(c.service.first, 2023);
+  assert.deepEqual(c.orders, [{ year: 2027, team: "시온찬양대", status: "접수" }]);
+  assert.equal(c.bible[0].year, 2026);
+  assert.equal(c.education[0].status, "수료");
+  // 연락처 · 주소는 카드에 없다
+  assert.ok(!JSON.stringify(c).includes("010-0000-0001"));
+  assert.ok(!JSON.stringify(c).includes("어딘가"));
+});
+
+test("사역한 적 없음 · 올해 섬기는 중", () => {
+  assert.deepEqual(visitCard(PERSON, [], { ministry: [] }, TODAY).tags, ["사역한 적 없음"]);
+  const now = visitCard(PERSON, [], { ministry: [{ kind: "history", year: 2026, team: "안내" }] }, TODAY);
+  assert.equal(now.tags[0], "2026년 섬기는 중");
+  assert.equal(visitCard(PERSON, [], null, TODAY).service.total, 0);   // 탭 자료가 없어도(읽기 실패) 카드는 선다
+});
+
+test("AI 에 줄 사실 — 이름이 없다(본인 · 가족) · 관계 · 직분 · 나이 · 해 · 팀 · 회차 · 강좌는 있다", () => {
+  const facts = visitFacts(visitCard(PERSON, FAMILY, HISTORY, TODAY), TODAY).join("\n");
+  for (const n of ["시험-가", "시험-나", "시험-다", "010-0000-0001", "어딘가", "화평-20"]) assert.ok(!facts.includes(n), "새면 안 됨: " + n);
+  assert.ok(facts.includes("이분: 직분 권사"));
+  assert.ok(facts.includes("남편 안수집사 58세"));
+  assert.ok(facts.includes("모두 3해 · 2023~2025 · 2026년 쉼"));
+  assert.ok(facts.includes("2024 시온찬양대·안내"));
+  assert.ok(facts.includes("2026 2026 썸머 써 바이블"));
+  assert.ok(facts.includes("2025-1 제자훈련(수료)"));
+  assert.ok(facts.includes("사역신청: 2027 시온찬양대(접수)"));
+});
+
+test("지시문 · 스키마 · 답 검사", () => {
+  assert.ok(VISIT_SYSTEM.includes("짐작하지 않는다"));
+  assert.ok(VISIT_SYSTEM.includes("평가하거나 판단하는 말"));
+  const sc = visitSchema();
+  assert.equal(sc.additionalProperties, false);
+  assert.ok(!JSON.stringify(sc).includes("anyOf"));
+  assert.deepEqual(visitPointsOut({ points: [" 하나 ", "", "둘", "셋", "넷"] }), ["하나", "둘", "셋"]);
+  assert.deepEqual(visitPointsOut({}), []);
+  assert.equal(visitPointsOut({ points: ["가".repeat(300)] })[0].length, 200);
+});

@@ -24,6 +24,8 @@ export const LABEL = {
   "people.link": "교적 잇기",
   // 🤖 성도 묻기(시험판 · 2026-10-15) — detail {q(질문 앞 120자), status, total, error?} · 다시 세기 {status, total, dropped}
   "people.ask": "성도 묻기(AI)", "people.ask.run": "성도 묻기(조건 고쳐 다시)",
+  // 🏠 심방 준비 한 장(2026-10-15) — detail {name}(people.view 와 같은 꼴)
+  "people.visit": "심방 준비 봄",
   // 성경필사(암송) — detail 모양은 서버 index.ts 의 audit() 호출과 한 벌(tests/audit.test.mjs 가 못 박는다)
   "event.create": "성경필사 회차 만듦", "event.settings": "성경필사 회차 설정 바꿈",
   "event.add": "성경필사 명단 더함", "event.edit": "성경필사 명단 고침", "event.delete": "성경필사 명단 뺌",
@@ -197,7 +199,7 @@ export function detailText(r) {
     const f = filtersText(d.filters);
     return `${d.q ? `‘${d.q}’` : "(검색어 없음)"}${f ? " · " + f : ""} · ${d.total}명${d.page ? ` · ${d.page + 1}쪽` : ""}`;
   }
-  if (r.action === "people.view") return d.name || "";
+  if (r.action === "people.view" || r.action === "people.visit") return d.name || "";
   if (r.action === "people.export") {
     const f = filtersText(d.filters);
     return `${d.count}명${d.q ? ` · ‘${d.q}’` : ""}${f ? " · " + f : ""}`;

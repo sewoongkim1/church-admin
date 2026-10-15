@@ -82,6 +82,9 @@ import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
 import { parseRequestLine, requestKey, requestLineOut, type MissingApply, type ReqLine } from "./history-db.ts";
 // 🤖 성도 묻기(시험판 · 2026-10-15) — 규약·검사·셈은 ask-people.ts(순수) · Claude 는 공식 SDK 로(구조화 출력)
 import { ASK_CONTRACT, askOut, askQuestion, askSchema, askSystemPrompt, buildAskData, type AskData } from "./ask-people.ts";
+// 견주기(askEval)가 더 쓰는 이름 · 🏠 심방 준비 한 장(2026-10-15)
+import { checkTree, describeLeaf, statusOf } from "./ask-people.ts";
+import { visitCard, visitFacts, visitPointsOut, visitSchema, VISIT_SYSTEM } from "./visit-card.ts";
 import Anthropic from "npm:@anthropic-ai/sdk@0.131.0";
 
 const cors = {
@@ -1629,36 +1632,38 @@ function anthropicOrNull(): Anthropic | null {
   return anthropicClient;
 }
 
-// 질문 → 조건 JSON(구조화 출력 · 스키마는 askSchema). stop_reason 을 먼저 본다 — 거절·잘림이면 조건을 쓰지 않는다.
-async function askClaude(question: string, data: AskData, today: string):
-  Promise<{ ok: true; raw: unknown; model: string } | { ok: false; error: string; code?: string }> {
+// Claude 한 번 — 구조화 출력(schema)으로 JSON 한 덩이. stop_reason 을 먼저 본다 — 거절·잘림이면 쓰지 않는다.
+//   성도 묻기(조건) · 심방 이야깃거리 · 견주기(askEval)가 함께 쓴다. usage = 입력 · 출력 토큰(비용 재기).
+type ClaudeOut = { ok: true; raw: any; model: string; usage: { input: number; output: number } }
+  | { ok: false; error: string; code?: string; msg?: string };
+async function claudeJson(system: string, user: string, schema: any, model?: string): Promise<ClaudeOut> {
   const client = anthropicOrNull();
   if (!client) return { ok: false, error: "ask-no-key" };
-  const model = Deno.env.get("ASK_MODEL") || "claude-haiku-5-5";
+  const m = model || Deno.env.get("ASK_MODEL") || "claude-haiku-5-5";
   const req: any = {
-    model,
+    model: m,
     max_tokens: 16000,
-    system: askSystemPrompt(data.vocab, today),
-    messages: [{ role: "user", content: question }],
-    output_config: { effort: "low", format: { type: "json_schema", schema: askSchema() } },
+    system,
+    messages: [{ role: "user", content: user }],
+    output_config: { effort: "low", format: { type: "json_schema", schema } },
   };
   let res: any;
   try {
-    if (/^claude-(opus|sonnet|fable)-/.test(model)) {
+    if (/^claude-(opus|sonnet|fable)-/.test(m)) {
       // 안전 분류기 거절 대비 서버 쪽 대체(fallbacks) — Opus · Sonnet · Fable 만(Haiku 는 서버 쪽 대체가 없다).
       //   이 조합을 안 받으면(400) 대체 없이 한 번 더
       try {
         res = await client.beta.messages.create({ ...req, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
       } catch (e) {
         if ((e as any)?.status !== 400) throw e;
-        console.error("askClaude fallbacks 400 — 대체 없이 다시", (e as any)?.message);
+        console.error("claudeJson fallbacks 400 — 대체 없이 다시", (e as any)?.message);
         res = await client.messages.create(req);
       }
     } else {
       res = await client.messages.create(req);
     }
   } catch (e) {
-    console.error("askClaude", e);
+    console.error("claudeJson", e);
     // 까닭 한 줄(API 오류 문장 — 키·사람 자료는 들어 있지 않다)을 함께 — 총괄만 보는 응답이다
     const msg = String((e as any)?.error?.error?.message ?? (e as any)?.message ?? "").slice(0, 200);
     return { ok: false, error: "ask-ai", code: String((e as any)?.status ?? "net"), msg };
@@ -1666,23 +1671,28 @@ async function askClaude(question: string, data: AskData, today: string):
   if (res?.stop_reason === "refusal") return { ok: false, error: "ask-refused" };
   if (res?.stop_reason === "max_tokens") return { ok: false, error: "ask-cut" };
   const text = (res?.content ?? []).filter((c: any) => c?.type === "text").map((c: any) => c.text).join("");
-  try { return { ok: true, raw: JSON.parse(text), model: String(res?.model ?? "") }; }
+  const usage = { input: Number(res?.usage?.input_tokens) || 0, output: Number(res?.usage?.output_tokens) || 0 };
+  try { return { ok: true, raw: JSON.parse(text), model: String(res?.model ?? m), usage }; }
   catch { return { ok: false, error: "ask-bad-json" }; }
 }
+
+// 질문 → 조건 JSON(스키마 askSchema · 지시문 askSystemPrompt — 필드 목록과 이름 없는 값 목록만)
+const askClaude = (question: string, vocab: AskData["vocab"], today: string, model?: string) =>
+  claudeJson(askSystemPrompt(vocab, today), question, askSchema(), model);
 
 async function askPeople(ctx: Ctx, b: any) {
   const q = askQuestion(b.question);
   if (!q.ok) return q;                                 // 빈 질문은 재료도 안 읽고 AI 도 안 부른다(PROBE)
   const data = await askData();
   const today = kstToday();
-  const ai = await askClaude(q.q, data, today);
+  const ai = await askClaude(q.q, data.vocab, today);
   if (!ai.ok) {
     await audit(ctx, "people.ask", "", { q: q.q.slice(0, 120), error: ai.error });
     return ai;
   }
   const out = askOut(ai.raw, data, today, true);
   await audit(ctx, "people.ask", "", { q: q.q.slice(0, 120), status: out.status, total: out.total, contract: ASK_CONTRACT });
-  return { ok: true, contract: ASK_CONTRACT, question: q.q, model: ai.model, raw: ai.raw, ...out };
+  return { ok: true, contract: ASK_CONTRACT, question: q.q, model: ai.model, usage: ai.usage, raw: ai.raw, ...out };
 }
 
 // 화면이 고친 조건(칩 빼기 · 「나머지 조건으로만 찾기」)으로 다시 센다 — AI 를 부르지 않는다. 같은 검사를 다시 거친다(화면을 믿지 않는다).
@@ -1693,6 +1703,67 @@ async function askPeopleRun(ctx: Ctx, b: any) {
   if (out.status === "none") return { ok: false, error: "bad-tree" };
   await audit(ctx, "people.ask.run", "", { status: out.status, total: out.total, dropped: Math.max(0, Math.min(20, Number(b.dropped) || 0)), contract: ASK_CONTRACT });
   return { ok: true, contract: ASK_CONTRACT, ...out };
+}
+
+// 🧪 견주기(2026-10-15 · 개발 전용) — 질문 하나를 고른 모델로 조건만 만들어 본다(명단을 세지 않는다 · 기록 없음).
+//   vocab 을 주면 그것으로(운영의 교구 · 부서 · 해 범위 — 이름 없는 값 목록), 없으면 개발 재료로. 운영 함수에서는 dev-only 로 막는다.
+const ASK_EVAL_MODEL = /^claude-(haiku|sonnet|opus)-[0-9][0-9-]*$/;
+async function askEval(_ctx: Ctx, b: any) {
+  if (!String(Deno.env.get("SUPABASE_URL") ?? "").includes("ktpwthwqzgcqcrmsafdo")) return { ok: false, error: "dev-only" };
+  const q = askQuestion(b.question);
+  if (!q.ok) return q;
+  const model = typeof b.model === "string" && ASK_EVAL_MODEL.test(b.model) ? b.model : undefined;
+  const vocab = b.vocab && typeof b.vocab === "object" && !Array.isArray(b.vocab) ? b.vocab : (await askData()).vocab;
+  const today = kstToday();
+  const t0 = Date.now();
+  const ai = await askClaude(q.q, vocab, today, model);
+  const ms = Date.now() - t0;
+  if (!ai.ok) return { ...ai, ms };
+  const c = checkTree(ai.raw, vocab, Number(today.slice(0, 4)));
+  return { ok: true, model: ai.model, usage: ai.usage, ms, raw: ai.raw, status: statusOf(c), tree: c.tree,
+    chips: { all: c.tree.all.map(describeLeaf), any: c.tree.any.map(describeLeaf), none: c.tree.none.map(describeLeaf) },
+    unsupported: c.unsupported, alternatives: c.alternatives };
+}
+
+// ---------- 🏠 심방 준비 한 장(시험판 · 2026-10-15 · 총괄만) ----------
+// 재료는 교인명부 「자세히」와 같다(church_people 한 줄 · 같은 가구 · personHistory) — 묶는 일은 visit-card.ts(순수).
+// ⚠️ 카드에는 연락처 · 주소 · 생년월일을 싣지 않는다 · AI 에게는 visitFacts(이름 없음)만.
+const VISIT_COLS = "person_id,name,position,gender,age,mok1,mok3,kind2,registered,registered_date,household_id,household_rel";
+async function visitData(id: number): Promise<{ person: any; family: any[]; history: any } | null> {
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const { data: person, error } = await db.from("church_people").select(VISIT_COLS).eq("person_id", id).maybeSingle();
+  if (error) throw error;
+  if (!person) return null;
+  let family: any[] = [];
+  if (person.household_id) {
+    const { data: fam, error: e2 } = await db.from("church_people").select(FAMILY_COLS)
+      .eq("household_id", person.household_id).neq("person_id", id).order("person_id", { ascending: true }).limit(50);
+    if (e2) throw e2;
+    family = fam ?? [];
+  }
+  const history = await personHistorySafe(id);   // 실패하면 null — 카드는 사역 · 성경필사 · 교육 없이 선다
+  return { person, family, history };
+}
+
+async function visitCardAct(ctx: Ctx, b: any) {
+  const id = Number(b.id) || 0;
+  const v = await visitData(id);
+  if (!v) return { ok: false, error: "not-found" };
+  const card = visitCard(v.person, v.family, v.history, kstToday());
+  await audit(ctx, "people.visit", String(id), { name: card.head.name });
+  return { ok: true, id, card, historyOk: !!v.history };
+}
+
+// 나눌 이야깃거리 — 서버가 재료를 다시 읽어 사실 목록(이름 없음)을 만들고 Claude 에 묻는다(화면이 보낸 글을 믿지 않는다)
+async function visitPoints(_ctx: Ctx, b: any) {
+  const id = Number(b.id) || 0;
+  const v = await visitData(id);
+  if (!v) return { ok: false, error: "not-found" };
+  const today = kstToday();
+  const facts = visitFacts(visitCard(v.person, v.family, v.history, today), today);
+  const ai = await claudeJson(VISIT_SYSTEM, "[사실]\n" + facts.join("\n"), visitSchema());
+  if (!ai.ok) return ai;
+  return { ok: true, points: visitPointsOut(ai.raw), model: ai.model, usage: ai.usage };
 }
 
 // ---------- 교인명부 — 「자세히」 창의 사역·성경필사 탭(2026-10-01 · 설계 §4·§5) ----------
@@ -3038,6 +3109,9 @@ Deno.serve(async (req) => {
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));
       case "askPeople":      return json(await askPeople(ctx, b));
       case "askPeopleRun":   return json(await askPeopleRun(ctx, b));
+      case "askEval":        return json(await askEval(ctx, b));
+      case "visitCard":      return json(await visitCardAct(ctx, b));
+      case "visitPoints":    return json(await visitPoints(ctx, b));
       case "historyRequestList": return json(await historyRequestList(b));
       case "historyRequestSet":  return json(await historyRequestSet(ctx, b));
       case "historyRequestDelete": return json(await historyRequestDelete(ctx, b));
