@@ -130,7 +130,9 @@ export function visitFacts(c: VisitCard, today: string): string[] {
     c.orders.length ? `사역신청: ${c.orders.map((o) => `${o.year} ${o.team}(${o.status})`).join(" / ")}` : "",
     `성경필사: ${c.bible.length ? c.bible.map((b) => `${b.year ?? ""} ${b.title}`.trim()).join(" / ") : "기록 없음"}`,
     `교육: ${c.education.length ? c.education.map((e) => `${e.term} ${e.title}(${e.status})`.trim()).join(" / ") : "기록 없음"}`,
-    !m ? "" : !m.accounts ? "성경암송 앱: 계정을 찾지 못함" :
+    // ⚠️ 계정을 못 찾은 것은 AI 에 보내지 않는다 — 「앱을 안 쓴다」가 아니다(앱의 이름 · 소속이 명부와 달라도 못 찾는다 ·
+    //    2026-10-15 개발에서 가족의 「못 찾음」을 본인 일로 「계정을 찾지 못하셨다고 들었는데」라고 썼다)
+    !m || !m.accounts ? "" :
       `성경암송 앱: 다 마친 말씀 ${m.done}구절 · 활동한 날 모두 ${m.days}일(최근 30일 ${m.days30}일)` +
       (m.lastDay ? ` · 마지막 ${m.lastDay}` : "") + (m.recent.length ? ` · 최근 외운 말씀 ${m.recent.map((r) => r.ref).join(", ")}` : ""),
   ].filter(Boolean);
@@ -147,7 +149,7 @@ export function famFact(f: FamilyLine, Y: number): string {
     bits.push(f.bible.count ? `성경필사 ${f.bible.count}번(최근 ${[y, f.bible.lastTitle].filter(Boolean).join(" ")})` : "성경필사 없음");
   }
   if (f.eduDone) bits.push(`교육 수료 ${f.eduDone}`);
-  if (f.memo) bits.push(f.memo.accounts ? `성경암송 ${f.memo.done}구절 · 최근 30일 ${f.memo.days30}일` : "성경암송 앱 계정 못 찾음");
+  if (f.memo && f.memo.accounts) bits.push(`성경암송 ${f.memo.done}구절 · 최근 30일 ${f.memo.days30}일`);   // 못 찾음은 싣지 않는다(위 visitFacts ⚠️)
   return bits.length ? `${head} — ${bits.join(" · ")}` : head;
 }
 
@@ -158,6 +160,7 @@ export const VISIT_SYSTEM = [
   "- 사람을 평가하거나 판단하는 말(열심이 부족 · 소홀 · 신앙이 약함 등)을 쓰지 않는다.",
   "- 이름을 쓰지 않는다 — 「이분」. 가족은 [사실]의 관계 · 직분 · 나이만 쓴다.",
   "- 숫자와 해는 [사실]에 있는 그대로 쓴다.",
+  "- [사실]에 없는 기록은 없다고 단정하지 않는다 — 기록이 없는 것을 이야깃거리로 삼지 않는다.",
 ].join("\n");
 
 // 구조화 출력 스키마 — 갈래 칸(anyOf) 없음 · 세 가지는 서버가 자른다(배열 길이 제약은 스키마로 못 건다)

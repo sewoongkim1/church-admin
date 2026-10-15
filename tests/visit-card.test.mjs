@@ -104,7 +104,10 @@ test("가족 줄 — 섬김 · 성경필사 · 성경암송 · 읽기 실패는 
   assert.ok(facts.includes("- 딸 24세"));
   assert.ok(facts.includes("성경암송 앱: 다 마친 말씀 10구절 · 활동한 날 모두 40일(최근 30일 4일) · 마지막 2026-10-14 · 최근 외운 말씀 시 23:1"));
   // 성경암송 계정을 못 찾은 분 · 읽기 실패
-  assert.ok(visitFacts(visitCard(PERSON, [], HISTORY, TODAY, { ...memo, accounts: [] }), TODAY).join("\n").includes("성경암송 앱: 계정을 찾지 못함"));
+  // 계정을 못 찾은 것은 AI 에 안 보낸다(「앱을 안 쓴다」가 아니다) — 본인 · 가족 모두
+  const none = { ...memo, accounts: [] };
+  const f2 = visitFacts(visitCard(PERSON, [{ ...FAMILY[0], history: null, memo: none }], HISTORY, TODAY, none), TODAY).join("\n");
+  assert.ok(!f2.includes("성경암송"), f2);
   assert.equal(visitCard(PERSON, [], HISTORY, TODAY).memo, null);
 });
 
