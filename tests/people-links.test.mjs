@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { autoLink, needsAuto, phoneLinkKept, orderAutoRecs, signupAutoRecs, syncCounts, toLinkCand, linkRowOf, movedOrderIds,
   historyTabs, unlinkedRows, parseLink, linkPatch, unlinkRec, missingTable, linkNameOk, historyNameMatches, historyOrNull, withHistory,
-  BASIS_SAME, BASIS_PHONE, BASIS_MANUAL }
+  BASIS_SAME, BASIS_PHONE, BASIS_MANUAL, BASIS_NAME_ONE }
   from "../supabase/functions/church-admin/people-links.ts";
 import { applicantFromWho, applicantFromSignup } from "../supabase/functions/church-admin/people-match.ts";
 import { signupSame } from "../supabase/functions/church-admin/events-person.ts";
@@ -23,7 +23,7 @@ test("autoLink — 같은 소속 한 분이면 그분(맞음) · 07·7목장도 
   assert.deepEqual(autoLink([P(1, { mok3: "화평-7목장" }), b], W("화평 07목장")), { person_id: 1, basis: BASIS_SAME });
 });
 
-test("autoLink — 「이름이 명부에 한 분뿐」만으로는 잇지 않는다(친구 결정 2026-10-01)", () => {
+test("autoLink — 사역신청 줄은 「이름이 명부에 한 분뿐」만으로는 잇지 않는다(친구 결정 2026-10-01 · 성경필사 줄은 2026-10-15 부터 잇는다 — nameOne)", () => {
   const b = P(11, { mok1: "소망", mok3: "소망-3목장" });
   assert.deepEqual(autoLink([b], W("화평 20목장")), NONE);
   assert.deepEqual(autoLink([b], W("기쁨 5목장")), NONE);
@@ -116,10 +116,28 @@ test("signupAutoRecs — 성경필사 줄은 signupSame 으로 · 번호는 쓰�
     { id: 10, who_type: "교구", group_name: "화평", sub_name: "20", name: "홍길동" },
     { id: 11, who_type: "교구", group_name: "기쁨", sub_name: "5", name: "홍길동" },
   ];
+  // 11 — 소속은 다르지만 교구 줄이라 아이를 빼면 어른이 한 분뿐 → 그분(「이름 한 분」 · 2026-10-15 친구 결정 · 전에는 못 맞춤)
   assert.deepEqual(signupAutoRecs(rows, look, new Map()), [
     { kind: "signup", row_id: 10, person_id: 31, match_basis: "맞음", import_id: 7 },
-    { kind: "signup", row_id: 11, person_id: null, match_basis: "", import_id: 7 },
+    { kind: "signup", row_id: 11, person_id: 31, match_basis: BASIS_NAME_ONE, import_id: 7 },
   ]);
+});
+
+test("autoLink nameOne(성경필사 줄만 · 2026-10-15 친구 결정) — 이름이 명부에 한 분뿐이면 그분 · 교구 줄은 아이를 빼고 · 사역 줄은 그대로", () => {
+  const S = (who_type, group_name, sub_name) => ({ who_type, group_name, sub_name, name: "홍길동" });
+  const sl = (cands, row) => autoLink(cands, applicantFromSignup(row), { isSame: signupSame(row, cands), nameOne: true });
+  const other = P(41, { mok1: "소망", mok3: "소망-3목장" }), kid = P(42, { kind2: "교회학교", school_dept: "중등부", mok1: "소망", mok3: "소망-3목장" });
+  assert.deepEqual(sl([other], S("교구", "화평", "20")), { person_id: 41, basis: BASIS_NAME_ONE }, "소속이 달라도 한 분이면");
+  assert.deepEqual(sl([kid], S("교구", "화평", "20")), NONE, "교구 줄의 그분은 아이일 수 없다");
+  assert.deepEqual(sl([other, kid], S("교구", "화평", "20")), { person_id: 41, basis: BASIS_NAME_ONE }, "아이를 빼면 어른 한 분");
+  assert.deepEqual(sl([other, P(43, { mok1: "은혜", mok3: "은혜-1목장" })], S("교구", "화평", "20")), NONE, "어른이 둘이면 잇지 않는다");
+  const youth = P(44, { kind2: "청년", mok1: "청년공동체", mok3: "" });
+  assert.deepEqual(sl([youth], S("교회학교", "고등부", "")), { person_id: 44, basis: BASIS_NAME_ONE }, "교회학교 줄은 그사이 자란 분도");
+  assert.deepEqual(sl([], S("교구", "화평", "20")), NONE);
+  // 같은 소속이 둘이면(그 안에서 못 가림) 이름 한 분 규칙으로 넘어가지 않는다
+  assert.deepEqual(sl([P(45), P(46)], S("교구", "화평", "20")), NONE);
+  // 사역신청 줄은 nameOne 을 넘기지 않는다 — 옛 결정 그대로(위 「이름이 명부에 한 분뿐」 시험)
+  assert.deepEqual(autoLink([other], W("화평 20목장")), NONE);
 });
 
 test("syncCounts — 새로 이음 · 바뀜 · 못 맞춤", () => {

@@ -4,12 +4,16 @@
 //   (원격 import·enum·namespace 금지 · node --experimental-strip-types 가 그대로 읽는다).
 // ⚠️ 「같은 소속」을 새로 만들지 않는다 — 명단의 교적 표시와 같은 판정(사역 줄 sameAffiliation · 성경필사 줄 signupSame)이다.
 //    그래서 이은 기록 = 명단의 「교적 ✓」(같은 소속 한 분)이고, 사역 줄만 번호가 딱 한 분과 맞을 때 더 잇는다.
-// ⚠️ 「이름이 명부에 한 분뿐이면 그분」(events-person.ts personPickFor ②)은 **잇지 않는다**(2026-10-01 친구 결정) —
+// ⚠️ 「이름이 명부에 한 분뿐이면 그분」(events-person.ts personPickFor ②)은 **사역신청 줄은 잇지 않는다**(2026-10-01 친구 결정) —
 //    소속이 다르면 명부에 없는 다른 분일 수 있다. 그 줄은 「자세히」 창 「아직 안 이어진 기록」에서 사람이 「이분 것」으로 잇는다.
+//    **성경필사 줄은 잇는다**(2026-10-15 친구 결정 「성경필사를 한 분이면 모두 이어 주세요」 — 2,833줄 중 5줄만 이어져
+//    성도 묻기 · 「자세히」 창에 성경필사가 비어 보였다). 근거 BASIS_NAME_ONE(「이름 한 분」) · 교구 줄은 명부의 아이를 빼고 센다.
+//    틀리게 이은 줄은 「자세히」 창에서 「이분 아님」(none)으로 — 사람이 정한 줄은 다시 맞추기가 덮지 않는다.
 // ⚠️ manual·none(사람이 정한 줄)은 여기서 고르지 않는다(needsAuto) — DB 쪽에서도 people_links_auto() 의 where 가 한 번 더 막는다.
 // ⚠️ 응답은 아래 …Item 칸 지도로만 — user_id·ident_key·memo·phone·answers·note 는 어느 모양에도 없다(스프레드 금지).
 import { applicantFromSignup, applicantFromWho, mokToConfirm, nameKey, phoneDigits, sameAffiliation, toCand,
   type Applicant, type Cand } from "./people-match.ts";
+import { candKid } from "./people-match.ts";
 import { signupSame, type SignupRow } from "./events-person.ts";
 import { nameKeyVariants } from "./history-match.ts";
 
@@ -18,6 +22,7 @@ export const LINK_HOWS = ["manual", "none", "auto"];
 export const BASIS_SAME = "맞음";
 export const BASIS_PHONE = "번호";
 export const BASIS_MANUAL = "사람이 이음";
+export const BASIS_NAME_ONE = "이름 한 분";   // 성경필사 줄만 — 같은 소속도 번호도 없고 이 이름의 명부가 한 분뿐(2026-10-15 친구 결정)
 
 export type LinkKind = "order" | "signup";
 export type LinkHow = "auto" | "manual" | "none";
@@ -56,7 +61,10 @@ export const missingTable = (e: any): boolean => !!e && (e.code === "42P01" || e
 // 한 줄을 명부 한 분에 잇는다 — ① 같은 소속 딱 한 분(맞음) ② (번호가 있으면) 같은 소속 안에서, 같은 소속이 없으면 같은 이름 전부에서
 // (목장 모르는 줄은 같은 교구가 있으면 그 안에서 — personPickFor 와 같은 차례) 번호가 딱 한 분과 맞으면(번호) ③ 그 밖 null.
 // isSame — 성경필사 줄은 signupSame(명단의 교적 표시와 같은 판정)을 넘긴다. 넘기지 않으면 sameAffiliation(사역 줄).
-export function autoLink(cands: LinkCand[] | undefined, a: Applicant, opts: { isSame?: (c: Cand) => boolean } = {}):
+// nameOne — 성경필사 줄만(signupAutoRecs · 2026-10-15 친구 결정): ①·② 로 못 이었고 같은 소속 후보도 없을 때 이 이름의 명부가
+//   한 분뿐이면 그분(「이름 한 분」). 교구 줄은 명부의 아이를 빼고 센다(아이는 어른 줄의 그분일 수 없다 · signupSame 과 같은 까닭) ·
+//   교회학교 줄은 그대로(그사이 자라 청년이 됐을 수 있다). 같은 소속 후보가 둘 이상이면 잇지 않는다(그 안에서 못 가린다).
+export function autoLink(cands: LinkCand[] | undefined, a: Applicant, opts: { isSame?: (c: Cand) => boolean; nameOne?: boolean } = {}):
   { person_id: number | null; basis: string } {
   const all = [...(cands ?? [])].sort((x, y) => x.person_id - y.person_id);
   const judge = opts.isSame ?? ((c: Cand) => sameAffiliation(c, a));
@@ -68,6 +76,10 @@ export function autoLink(cands: LinkCand[] | undefined, a: Applicant, opts: { is
     const pool = same.length ? same : gu.length ? gu : all;
     const hit = pool.filter((c) => c.phones.includes(ph));
     if (hit.length === 1) return { person_id: hit[0].person_id, basis: BASIS_PHONE };
+  }
+  if (opts.nameOne && !same.length) {
+    const pool = a.type === "교구" ? all.filter((c) => !candKid(c)) : all;
+    if (pool.length === 1) return { person_id: pool[0].person_id, basis: BASIS_NAME_ONE };
   }
   return { person_id: null, basis: "" };
 }
@@ -117,10 +129,12 @@ export function orderAutoRecs(rows: OrderIn[], look: LinkLook, cur: Map<number, 
   return recsOf("order", rows, look, cur, all, (r, cands) => autoLink(cands, applicantFromWho(r.name, r.who, r.phone ?? "")),
     (r, c) => phoneLinkKept(c, r.phone));
 }
-// 성경필사 줄 — 명단의 교적 표시와 같은 signupSame(교구 줄 아이 빼기 · 옮겨 적은 줄 맞음) · 번호 없음
+// 성경필사 줄 — 명단의 교적 표시와 같은 signupSame(교구 줄 아이 빼기 · 옮겨 적은 줄 맞음) · 번호 없음 ·
+//   그래도 못 이으면 이름이 명부에 한 분뿐일 때 그분(nameOne · 2026-10-15 친구 결정)
 // ⚠️ cur 는 kind='signup' 으로만 거른 Map 이어야 한다(recsOf 주석 참고 — order 와 섞지 않는다).
 export function signupAutoRecs(rows: SignupIn[], look: LinkLook, cur: Map<number, LinkRow>, all = false): AutoRec[] {
-  return recsOf("signup", rows, look, cur, all, (r, cands) => autoLink(cands, applicantFromSignup(r), { isSame: signupSame(r, cands) }));
+  return recsOf("signup", rows, look, cur, all, (r, cands) =>
+    autoLink(cands, applicantFromSignup(r), { isSame: signupSame(r, cands), nameOne: true }));
 }
 
 // 「새로 이음 N · 바뀜 K · 못 맞춤 M」 — cur 는 쓰기 전 잇기 줄
