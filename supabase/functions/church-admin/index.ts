@@ -1595,7 +1595,8 @@ async function peopleLinkSync(ctx: Ctx, b: any) {
 // 설계 v2 docs/superpowers/specs/2026-10-15-pastor-ai-ask-design.md · 규약·검사·셈은 ask-people.ts(순수 · 시험 tests/ask-people.test.mjs).
 // ⚠️ Claude 에 보내는 것은 질문 글 + 지시문(필드 목록 · 교구·구분·부서 이름) + 스키마뿐 — 명단·이름·교인ID 는 보내지 않는다.
 // ⚠️ 명단은 서버가 표에서 직접 거른다(AI 를 거치지 않는다). 새 SQL 없음 — 교인명부 · 사역 이력 · 부서 이음표 · 명단이 일부인 해를 읽기만.
-// ⚠️ 키는 프로젝트 시크릿 ANTHROPIC_API_KEY(성경암송 api 와 같은 것) · 모델은 ASK_MODEL(기본 claude-opus-5-5 · effort low).
+// ⚠️ 키는 프로젝트 시크릿 ANTHROPIC_API_KEY(성경암송 api 와 같은 것) · 모델은 ASK_MODEL(기본 claude-haiku-5-5 · effort low —
+//    2026-10-15 친구 결정: 비용(1회 약 2원 · Opus 5.5 의 약 1/20)). 시크릿 ASK_MODEL 을 claude-opus-5-5 로 두면 코드 없이 되돌린다.
 const ASK_TTL = 10 * 60 * 1000;   // 재료(교인명부·사역 이력 · 약 2만 6천 줄)는 함수가 살아 있는 동안 10분 담아 둔다
 let askCache: { at: number; data: AskData } | null = null;
 async function askData(): Promise<AskData> {
@@ -1626,8 +1627,9 @@ async function askClaude(question: string, data: AskData, today: string):
   Promise<{ ok: true; raw: unknown; model: string } | { ok: false; error: string; code?: string }> {
   const client = anthropicOrNull();
   if (!client) return { ok: false, error: "ask-no-key" };
+  const model = Deno.env.get("ASK_MODEL") || "claude-haiku-5-5";
   const req: any = {
-    model: Deno.env.get("ASK_MODEL") || "claude-opus-5-5",
+    model,
     max_tokens: 16000,
     system: askSystemPrompt(data.vocab, today),
     messages: [{ role: "user", content: question }],
@@ -1635,12 +1637,17 @@ async function askClaude(question: string, data: AskData, today: string):
   };
   let res: any;
   try {
-    // 안전 분류기 거절 대비 서버 쪽 대체(fallbacks) — 이 조합을 안 받으면(400) 대체 없이 한 번 더
-    try {
-      res = await client.beta.messages.create({ ...req, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
-    } catch (e) {
-      if ((e as any)?.status !== 400) throw e;
-      console.error("askClaude fallbacks 400 — 대체 없이 다시", (e as any)?.message);
+    if (/^claude-(opus|sonnet|fable)-/.test(model)) {
+      // 안전 분류기 거절 대비 서버 쪽 대체(fallbacks) — Opus · Sonnet · Fable 만(Haiku 는 서버 쪽 대체가 없다).
+      //   이 조합을 안 받으면(400) 대체 없이 한 번 더
+      try {
+        res = await client.beta.messages.create({ ...req, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
+      } catch (e) {
+        if ((e as any)?.status !== 400) throw e;
+        console.error("askClaude fallbacks 400 — 대체 없이 다시", (e as any)?.message);
+        res = await client.messages.create(req);
+      }
+    } else {
       res = await client.messages.create(req);
     }
   } catch (e) {
