@@ -61,9 +61,12 @@ export function mhKey(t: unknown): string {
 }
 const clean = (t: unknown): string => String(t ?? "").normalize("NFC").trim();
 const str = (t: unknown, max: number): string => clean(t).slice(0, max);
-// 목장 비교 열쇠 — 「화평-20목장」 · 「화평-20」 · 「화평 - 20 목장」이 같다
+// 목장 비교 열쇠 — 「화평-20목장」 · 「화평-20」 · 「화평 - 20 목장」이 같다.
+//   번호 앞 0 · 빠진 「-」도 같게(2026-10-15 견주기 — 명부는 「기쁨-06」, 「기쁨교구 6목장」을 AI 는 「기쁨-6」으로 써서 두 모델 모두 못 찾았다)
 export function mokKey(t: unknown): string {
-  return mhKey(t).replace(/목장$/, "");
+  const k = mhKey(t).replace(/목장$/, "");
+  const m = /^(\D+?)-?0*(\d+)$/.exec(k);
+  return m ? `${m[1].replace(/교구$/, "")}-${m[2]}` : k;
 }
 const intOr = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null);
 function yearOf(d: unknown): number | null {
@@ -258,6 +261,7 @@ export function askSystemPrompt(v: AskVocab, today: string): string {
     "- 「N년 동안 사역」처럼 뜻이 갈리면 하나를 고르고(기본: 합쳐서 센 해 served_years_count), 다른 읽기는 alternatives 에 한국어 한 줄로.",
     "- 「봉사」·「섬김」·「사역」은 모두 사역 임명 명단(served_… 필드)으로 읽는다. 봉사 당번은 질문에 「당번」이 있을 때만이다(자료 없음).",
     "- 「…하지 않는」·「쉬고 계신」처럼 때를 말하지 않으면 올해(years_ago 0)로 읽고, 「한 번도」가 있으면 served_years_count = 0.",
+    "- 직분은 질문에 나온 그대로: 「집사님」= 집사 · 「안수집사님」= 안수집사 · 「권사님」= 권사. 다른 직분을 보태지 않는다.",
     "- from_text: 그 조건이 나온 질문의 말을 그대로.",
     "",
     "[할 수 없는 것 — unsupported]",
@@ -268,6 +272,7 @@ export function askSystemPrompt(v: AskVocab, today: string): string {
     "- judgment: 열심·믿음·성품·「힘들어 보이는」처럼 사람을 평가하는 말",
     "- too_complex: 가족·부부·목장 식구 사이처럼 한 사람의 필드로 못 묶는 조합",
     "질문의 모든 말은 잎의 from_text 나 unsupported 의 text 가운데 하나에 들어가야 한다. 버리는 말이 없게.",
+    "unsupported 가 있어도 필드로 바꿀 수 있는 나머지 말(직분 · 나이 · 교구 …)은 반드시 잎으로 만든다 — 예: 「믿음이 좋은 권사님」= position 권사 잎 + judgment 하나.",
     "조건과 상관없는 말뿐이면 묶음을 모두 비우고 unsupported 에 too_complex 하나.",
     "",
     "[교구 이름]", v.gu.join(" · "),

@@ -287,4 +287,11 @@ test("질문 다듬기", () => {
   assert.equal(askQuestion("").error, "no-question");
   assert.equal(askQuestion("가".repeat(301)).error, "question-too-long");
   assert.equal(mokKey("화평 - 20 목장"), "화평-20");
+  // 번호 앞 0 · 빠진 「-」 · 「교구」(2026-10-15 견주기)
+  assert.equal(mokKey("기쁨-06목장"), "기쁨-6");
+  assert.equal(mokKey("기쁨-6"), mokKey("기쁨-06"));
+  assert.equal(mokKey("기쁨교구 6목장"), "기쁨-6");
+  assert.equal(mokKey("기쁨6"), "기쁨-6");
+  assert.equal(mokKey("청년부"), "청년부");
+  assert.equal(mokKey("화평-10"), "화평-10");
 });
