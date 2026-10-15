@@ -30,7 +30,20 @@ for (const y of [2019, 2020, 2022]) HIST.push({ id: hid++, person_id: 4, year: y
 HIST.push({ id: hid++, person_id: 99, year: 2010, committee: "예배위원회", team: "안내" });          // 명부에 없는 분 — 셈에서 빠진다(해 범위에는 든다)
 HIST.push({ id: hid++, person_id: null, year: 2012, committee: "예배위원회", team: "안내" });        // 교인과 안 이어진 줄
 const GAPS = [{ scope: "*", year_from: 2021, year_to: 2021 }, { scope: "g:교회학교", year_from: 2023, year_to: 2024 }];
-const D = buildAskData(PEOPLE, HIST, MAP, GAPS);
+// 성경필사(2026-10-15) — 회차 넷(하나는 초안) · 교인과 이어진 줄: 가(2025 사순절 · 2026 썸머) · 나(2026 소책자) · 라(2025 사순절)
+//   명부에 없는 분(99)의 줄 · 초안 회차의 줄은 빠진다
+const EVENTS = [
+  { id: "lent-2025", title: "2025 사순절 요한복음 완서자", opens_on: "2025-03-05", status: "closed" },
+  { id: "lent-booklet-2026", title: "2026 사순절 소책자 이벤트 참여자", opens_on: "2026-02-18", status: "closed" },
+  { id: "summer-2026", title: "2026 썸머 써 바이블 옵/말 완서자", opens_on: "2026-05-01", status: "closed" },
+  { id: "ca-draft", title: "초안 회차", opens_on: "2026-09-01", status: "draft" },
+];
+const PILSA = [
+  { person_id: 1, event_id: "lent-2025" }, { person_id: 1, event_id: "summer-2026" },
+  { person_id: 2, event_id: "lent-booklet-2026" }, { person_id: 4, event_id: "lent-2025" },
+  { person_id: 99, event_id: "summer-2026" }, { person_id: 3, event_id: "ca-draft" },
+];
+const D = buildAskData(PEOPLE, HIST, MAP, GAPS, PILSA, EVENTS);
 
 const leaf = (o) => ({ field: "", op: "", num: null, years_ago: null, text: null, list: [], within: null, dept: null, from_text: "", ...o });
 const names = (t) => runTree(t, D).map((p) => p.name).sort();
@@ -158,7 +171,8 @@ test("세 갈래 — partial 은 AI 첫 답이면 세지 않고 멈춘다 · 화
   assert.equal(again.rows[0].served, 12);
   assert.equal(again.rows[0].main, "찬양대");
   // 교인ID(id)는 이름을 누르면 「자세히」 창을 열려고 — 연락처 · 주소는 없다
-  assert.deepEqual(Object.keys(again.rows[0]).sort(), ["age", "first", "gu", "id", "last", "main", "mok", "name", "position", "served"]);
+  assert.deepEqual(Object.keys(again.rows[0]).sort(), ["age", "first", "gu", "id", "last", "main", "mok", "name", "pilsa", "position", "served"]);
+  assert.equal(again.rows[0].pilsa, 2);
   assert.equal(again.rows[0].id, 1);
 });
 
@@ -223,6 +237,47 @@ test("AI 가 「안 씀」을 정해 둔 값(num -1 · years_ago -1 · text \"\"
   // 수가 -1 이면(채우지 않음) 그 잎은 「수를 알 수 없어요」
   const c = checkTree({ all: [leaf({ ...S, field: "age", op: ">=", from_text: "나이" })] }, D.vocab, Y);
   assert.equal(c.unsupported[0].note, "「나이」의 수를 알 수 없어요");
+});
+
+test("성경필사 — 재료: 교인과 이어진 줄 · 명부에 있는 분만 · 초안 회차 빼고 · 종류는 회차 id 로", () => {
+  assert.equal(D.pilsaLinked, 4);
+  assert.deepEqual(D.vocab.pilsaSeries, ["사순절 소책자", "사순절 필사", "썸머 써 바이블"]);
+  assert.equal(D.vocab.pilsaMin, 2025);
+  assert.equal(D.vocab.pilsaMax, 2026);
+  assert.equal(D.vocab.pilsaEventYears.length, 3);
+});
+
+test("성경필사 — 「2026년 성경필사 하신 분」 · 종류로 좁히기 · 횟수 · 한 번도 안 한 분", () => {
+  assert.deepEqual(names(tree({ all: [leaf({ field: "pilsa_in_year", op: "has", num: 2026, from_text: "2026년 성경필사 하신" })] })), ["시험-가", "시험-나"]);
+  assert.deepEqual(names(tree({ all: [leaf({ field: "pilsa_in_year", op: "has", num: 2026, text: "썸머" })] })), [], "「썸머」만으로는 이름이 안 맞는다 — 종류 이름 그대로");
+  assert.deepEqual(names(tree({ all: [leaf({ field: "pilsa_in_year", op: "has", num: 2026, text: "썸머 써 바이블" })] })), ["시험-가"]);
+  assert.deepEqual(names(tree({ all: [leaf({ field: "pilsa_count", op: ">=", num: 2 })] })), ["시험-가"]);
+  assert.deepEqual(names(tree({ all: [leaf({ field: "pilsa_count", op: "=", num: 0 })] })), ["시험-다"]);
+  assert.deepEqual(names(tree({ all: [leaf({ field: "pilsa_count", op: "<=", num: 1 })] })), ["시험-나", "시험-라"]);
+  assert.deepEqual(names(tree({ all: [leaf({ field: "pilsa_count", op: ">=", num: 1, within: { last_years: 1, from: 0, to: 0 } })] })), ["시험-가", "시험-나"]);
+  // 사역 조건과 함께
+  assert.deepEqual(names(tree({ all: [leaf({ field: "pilsa_in_year", op: "has", num: 2026 }), leaf({ field: "position", op: "in", list: ["권사"] })] })), ["시험-가"]);
+});
+
+test("성경필사 — 범위 밖 해 · 회차보다 많은 횟수 · 없는 종류는 unsupported", () => {
+  const c = checkTree({ all: [
+    leaf({ field: "pilsa_in_year", op: "has", num: 2019, from_text: "2019년 성경필사" }),
+    leaf({ field: "pilsa_count", op: ">=", num: 5, from_text: "다섯 번 넘게" }),
+    leaf({ field: "pilsa_in_year", op: "has", num: 2026, text: "가을 동행", from_text: "가을 동행" }),
+  ] }, D.vocab, Y);
+  const kinds = Object.fromEntries(c.unsupported.map((u) => [u.text, u.kind]));
+  assert.equal(kinds["2019년 성경필사"], "out_of_range");
+  assert.equal(kinds["다섯 번 넘게"], "out_of_range");
+  assert.equal(kinds["가을 동행"], "no_data");
+});
+
+test("성경필사 — 칩 글 · 지시문에 종류와 해", () => {
+  const t = tree({ all: [leaf({ field: "pilsa_in_year", op: "has", num: 2026, text: "썸머 써 바이블" }), leaf({ field: "pilsa_count", op: "=", num: 0 })] });
+  assert.deepEqual(t.all.map(describeLeaf), ["2026년 성경필사 · 썸머 써 바이블", "성경필사 한 적 없음"]);
+  const p = askSystemPrompt(D.vocab, TODAY);
+  assert.ok(p.includes("사순절 소책자 · 사순절 필사 · 썸머 써 바이블"));
+  assert.ok(p.includes("성경필사 명단이 있는 해: 2025~2026년(회차 3개)"));
+  assert.ok(!p.includes("성경필사(아직 교인과 이어지지 않아"));
 });
 
 test("질문 다듬기", () => {

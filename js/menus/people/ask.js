@@ -8,13 +8,14 @@ import { esc, busy, errorText, toast } from "../../core/ui.js";
 import { openPerson } from "./search.js";
 
 const TITLE = `<h2 class="page-title">🤖 성도 묻기 <span class="badge">시험판</span></h2>`;
-const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b>와 <b>사역 이력</b>에서 찾아 드려요.
+const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b> · <b>사역 이력</b> · <b>성경필사</b>에서 찾아 드려요.
 AI(Claude)에는 질문과 「물을 수 있는 것」 목록만 가고, 명단은 서버가 직접 찾아요 — 이름은 AI 에게 가지 않아요.
 지금은 총괄에게만 보이는 시험판이에요.</p>`;
 
 // 우리 자료로 답할 수 있는 예 + 못 하는 조건이 섞인 예 하나(마지막)
 export const EXAMPLES = [
   "10년 동안 사역하신 분들 중에 올해는 안 하고 계신 분",
+  "2026년에 성경필사를 하신 분 중 올해 사역은 안 하시는 분",
   "최근 10년 중 찬양대에서 5번 이상 섬기신 권사님",
   "2015년에 교회학교를 섬기셨는데 최근 3년은 쉬고 계신 분",
   "50대 남자 집사님 중 한 번도 사역하지 않으신 분",
@@ -75,9 +76,9 @@ function rowsHtml(r, dropped) {
   const span = (x) => (x.served ? (x.first === x.last ? `${x.first}` : `${x.first}~${x.last}`) : "—");
   return banner + `<p class="ak-total">${n(r.total)}명${r.truncated ? ` <span class="muted">· 앞의 ${n(r.rows.length)}명만 보여요</span>` : ""}</p>
     <div class="ak-tbl"><table class="pp-stat"><thead><tr><th>이름</th><th>직분</th><th>교구</th><th>목장</th><th>나이</th>
-      <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th></tr></thead><tbody>` +
+      <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th><th>성경필사</th></tr></thead><tbody>` +
     r.rows.map((x) => `<tr><td><button type="button" class="ak-name" data-pid="${Number(x.id)}" aria-label="${esc(x.name)} 자세히">${esc(x.name)}</button></td><td>${esc(x.position || "—")}</td><td>${esc(x.gu || "—")}</td><td>${esc(x.mok || "—")}</td>` +
-      `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td></tr>`).join("") +
+      `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td><td>${x.pilsa ? x.pilsa + "번" : "—"}</td></tr>`).join("") +
     `</tbody></table></div><p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창(교적 · 사역 · 성경필사 · 교육)이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
 }
 
@@ -88,7 +89,7 @@ function resultHtml(r, st) {
     ? `<p class="ak-alt">이렇게도 읽을 수 있어요: ${r.alternatives.map((a) => `<b>${esc(a)}</b>`).join(" · ")}</p>` : "";
   const notes = (r.notices || []).length ? `<ul class="ak-notes">${r.notices.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
   const src = r.source || {};
-  const foot = `<p class="ak-foot">셈: 교인명부 ${n(src.people)}명 · 사역 이력 ${esc(src.years || "")}년 가운데 교인과 이어진 ${n(src.linked)}줄(전체 ${n(src.histRows)}줄)
+  const foot = `<p class="ak-foot">셈: 교인명부 ${n(src.people)}명 · 사역 이력 ${esc(src.years || "")}년 가운데 교인과 이어진 ${n(src.linked)}줄(전체 ${n(src.histRows)}줄)${src.pilsaYears ? ` · 성경필사 ${esc(src.pilsaYears)}년 교인과 이어진 ${n(src.pilsaLinked)}줄` : ""}
     · 교인명부에 없는 분(떠난 분)과 교인과 안 이어진 줄은 빠져요 · 이 질문은 「바꾼 기록」의 교인명부 기록에 남아요.</p>`;
   const raw = st.raw ? `<details class="ak-raw"><summary>AI 가 돌려준 조건 보기(JSON)</summary>
     <pre>${esc(JSON.stringify(st.raw, null, 2))}</pre><p class="muted">모델 ${esc(st.model || "")} · 규약 ${esc(r.contract || "")}</p></details>` : "";

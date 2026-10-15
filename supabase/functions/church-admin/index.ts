@@ -1597,19 +1597,26 @@ async function peopleLinkSync(ctx: Ctx, b: any) {
 // ⚠️ 명단은 서버가 표에서 직접 거른다(AI 를 거치지 않는다). 새 SQL 없음 — 교인명부 · 사역 이력 · 부서 이음표 · 명단이 일부인 해를 읽기만.
 // ⚠️ 키는 프로젝트 시크릿 ANTHROPIC_API_KEY(성경암송 api 와 같은 것) · 모델은 ASK_MODEL(기본 claude-haiku-5-5 · effort low —
 //    2026-10-15 친구 결정: 비용(1회 약 2원 · Opus 5.5 의 약 1/20)). 시크릿 ASK_MODEL 을 claude-opus-5-5 로 두면 코드 없이 되돌린다.
-const ASK_TTL = 10 * 60 * 1000;   // 재료(교인명부·사역 이력 · 약 2만 6천 줄)는 함수가 살아 있는 동안 10분 담아 둔다
+const ASK_TTL = 10 * 60 * 1000;   // 재료(교인명부·사역 이력·성경필사 · 약 3만 줄)는 함수가 살아 있는 동안 10분 담아 둔다
 let askCache: { at: number; data: AskData } | null = null;
 async function askData(): Promise<AskData> {
   if (askCache && Date.now() - askCache.at < ASK_TTL) return askCache.data;
-  const [ppl, hist, map, gaps] = await Promise.all([
+  const [ppl, hist, map, gaps, links, signups, evs] = await Promise.all([
     allRows(() => db.from("church_people").select("person_id,name,position,gender,age,mok1,mok3,kind2,registered_date").order("person_id", { ascending: true })),
     allRows(() => db.from("ministry_history").select("id,person_id,year,committee,team").is("deleted_at", null).order("id", { ascending: true })),
     allRows(() => db.from("ministry_dept_map").select("committee_key,team_key,big_group,family,mid,team_std")
       .order("committee_key", { ascending: true }).order("team_key", { ascending: true })),
     db.from("ministry_list_gaps").select("scope,year_from,year_to"),
+    // 성경필사(2026-10-15) — 교인과 이어진 줄(이분 아님 빼고) · 그 줄의 회차 · 회차(초안은 buildAskData 가 뺀다)
+    allRows(() => db.from("people_links").select("row_id,person_id").eq("kind", "signup").not("person_id", "is", null)
+      .neq("link_how", "none").order("row_id", { ascending: true })),
+    allRows(() => db.from("event_signups").select("id,event_id").order("id", { ascending: true })),
+    allRows(() => db.from("events").select("id,title,opens_on,status").order("id", { ascending: true })),
   ]);
   if (gaps.error) throw gaps.error;
-  const data = buildAskData(ppl, hist, map, gaps.data ?? []);
+  const evOf = new Map<number, string>(signups.map((s: any) => [Number(s.id), String(s.event_id)]));
+  const pilsaRows = links.map((l: any) => ({ person_id: l.person_id, event_id: evOf.get(Number(l.row_id)) })).filter((x: any) => x.event_id);
+  const data = buildAskData(ppl, hist, map, gaps.data ?? [], pilsaRows, evs);
   askCache = { at: Date.now(), data };
   return data;
 }

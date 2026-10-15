@@ -26,7 +26,8 @@ export const POSITIONS = ["장로", "안수집사", "권사", "집사", "그 밖
 // 필드 목록 — 「물을 수 있는 것」. 이 목록 하나에서 AI 스키마의 field 값 · 지시문의 필드 표 · 검사 · 셈 · 칩 이름이 나온다.
 //   value: num(수) · year(해 — num 에 해, 또는 years_ago) · text(값 하나) · list(값 여럿)
 //   service: 사역 이력에서 세는 것 — within(기간) · dept(부서)를 붙일 수 있다.
-export type FieldDef = { id: string; label: string; ops: string[]; value: "num" | "year" | "text" | "list"; service: boolean; desc: string };
+//   pilsa: 성경필사 명단(이어진 줄)에서 세는 것 — within(기간) · text(종류 — 비우면 모두)를 붙일 수 있다(2026-10-15).
+export type FieldDef = { id: string; label: string; ops: string[]; value: "num" | "year" | "text" | "list"; service: boolean; pilsa?: boolean; desc: string };
 export const FIELDS: FieldDef[] = [
   { id: "gu", label: "교구", ops: ["in"], value: "list", service: false, desc: "교인명부의 교구 — 아래 [교구 이름] 가운데서 list 로" },
   { id: "mok", label: "목장", ops: ["="], value: "text", service: false, desc: "교인명부의 목장(「교구-번호」 꼴 — 질문에 나온 그대로). 목장이 비어 있는 분은 text 「목장 없음」" },
@@ -44,6 +45,11 @@ export const FIELDS: FieldDef[] = [
     desc: "마지막으로 임명된 해. 「3년 넘게 쉬고 계신」은 <= years_ago 4 처럼(섬긴 적이 없는 분은 맞지 않는다)" },
   { id: "served_streak_max", label: "잇따라 섬긴 해", ops: [">=", "<="], value: "num", service: true,
     desc: "쉬지 않고 이어 섬긴 가장 긴 해 수. 명단이 일부인 해는 끊긴 것으로 보지 않는다" },
+  // 성경필사(2026-10-15 친구 요청 「2026년 성경필사 하신 분」) — 교인과 이어진 성경필사 명단 줄(people_links)로 센다
+  { id: "pilsa_count", label: "성경필사 횟수", ops: [">=", "<=", "="], value: "num", service: false, pilsa: true,
+    desc: "성경필사 명단에 오른 회차 수. 「N번 이하」는 한 번이라도 한 분 중에서 · 한 번도 안 한 분은 = 0" },
+  { id: "pilsa_in_year", label: "그 해 성경필사", ops: ["has"], value: "year", service: false, pilsa: true,
+    desc: "그 해 성경필사 명단에 있음. 「2026년 성경필사 하신 분」= has num 2026" },
 ];
 const FIELD_BY_ID: Record<string, FieldDef> = Object.fromEntries(FIELDS.map((f) => [f.id, f]));
 export const FIELD_IDS = FIELDS.map((f) => f.id);
@@ -80,8 +86,11 @@ export type AskGap = { scope: string; from: number; to: number | null };
 export type AskVocab = {
   gu: string[]; kind: string[]; big: string[]; family: string[]; mid: string[]; team: string[];
   mokKeys: string[]; rows: DeptRow[]; yearMin: number; yearMax: number; gaps: AskGap[];
+  pilsaSeries: string[]; pilsaMin: number; pilsaMax: number; pilsaEventYears: number[];   // 성경필사 — 이어진 줄이 있는 회차만
 };
-export type AskData = { people: AskPerson[]; seats: Map<number, Seat[]>; vocab: AskVocab; linked: number; histRows: number };
+export type PilsaEntry = { year: number; series: string; event: string };
+export type AskData = { people: AskPerson[]; seats: Map<number, Seat[]>; pilsa: Map<number, PilsaEntry[]>; vocab: AskVocab;
+  linked: number; histRows: number; pilsaLinked: number };
 
 const byCount = (m: Map<string, number>): string[] =>
   [...m.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k]) => k);
@@ -89,7 +98,17 @@ const sortedSet = (s: Set<string>): string[] => [...s].filter(Boolean).sort((a, 
 
 // 표 넷을 받아 셈 재료로 — 교인명부 · 사역 이력(지운 줄 빼고) · 부서 이음표 · 명단이 일부인 해.
 //   사역 이력은 교인명부에 있는 분의 줄만 센다(교인ID 가 이어지지 않은 줄 · 떠난 분의 줄은 셈에서 빠진다).
-export function buildAskData(peopleRows: any[], histRows: any[], mapRows: any[], gapRows: any[]): AskData {
+// 성경필사 회차의 종류 — 회차 id 의 앞머리(lent-booklet · lent · summer)로, 모르면 제목에서 해를 뗀 것
+export function pilsaSeriesOf(id: unknown, title: unknown): string {
+  const i = clean(id), tt = clean(title);
+  if (/^lent-booklet/.test(i) || /소책자/.test(tt)) return "사순절 소책자";
+  if (/^summer/.test(i) || /썸머/.test(tt)) return "썸머 써 바이블";
+  if (/^lent/.test(i) || /사순절/.test(tt)) return "사순절 필사";
+  return tt.replace(/^\d{4}\s*/, "") || i;
+}
+
+// pilsaRows = 교인과 이어진 성경필사 줄 [{person_id, event_id}](people_links signup · 이분 아님 빼고) · eventRows = events(초안은 뺀다)
+export function buildAskData(peopleRows: any[], histRows: any[], mapRows: any[], gapRows: any[], pilsaRows: any[] = [], eventRows: any[] = []): AskData {
   const people: AskPerson[] = [];
   const ids = new Set<number>();
   const guN = new Map<string, number>(), kindN = new Map<string, number>(), moks = new Set<string>();
@@ -138,12 +157,34 @@ export function buildAskData(peopleRows: any[], histRows: any[], mapRows: any[],
     if (list) list.push(s); else seats.set(pid, [s]);
   }
   if (!Number.isFinite(yearMin)) { yearMin = 0; yearMax = 0; }
+  const evs = new Map<string, { year: number; series: string }>();
+  for (const e of eventRows ?? []) {
+    if (clean(e?.status) === "draft") continue;
+    const m = /(\d{4})$/.exec(clean(e?.id));
+    const year = yearOf(e?.opens_on) ?? (m ? Number(m[1]) : null);
+    if (year === null) continue;
+    evs.set(clean(e?.id), { year, series: pilsaSeriesOf(e?.id, e?.title) });
+  }
+  const pilsa = new Map<number, PilsaEntry[]>();
+  const usedEv = new Set<string>(), series = new Set<string>();
+  let pilsaLinked = 0;
+  for (const r of pilsaRows ?? []) {
+    const pid = Number(r?.person_id), ev = clean(r?.event_id), e = evs.get(ev);
+    if (!ids.has(pid) || !e) continue;
+    pilsaLinked++;
+    usedEv.add(ev); series.add(e.series);
+    const list = pilsa.get(pid), x = { year: e.year, series: e.series, event: ev };
+    if (list) list.push(x); else pilsa.set(pid, [x]);
+  }
+  const pilsaEventYears = [...usedEv].map((ev) => evs.get(ev)!.year);
   const gaps: AskGap[] = (gapRows ?? []).map((g: any) => ({ scope: clean(g?.scope), from: Number(g?.year_from), to: g?.year_to === null || g?.year_to === undefined ? null : Number(g.year_to) }))
     .filter((g: AskGap) => g.scope && Number.isInteger(g.from));
   return {
-    people, seats, linked, histRows: histN,
+    people, seats, pilsa, linked, histRows: histN, pilsaLinked,
     vocab: { gu: byCount(guN), kind: byCount(kindN), big: sortedSet(big), family: sortedSet(family), mid: sortedSet(mid), team: sortedSet(team),
-      mokKeys: [...moks], rows, yearMin, yearMax, gaps },
+      mokKeys: [...moks], rows, yearMin, yearMax, gaps,
+      pilsaSeries: [...series].sort(), pilsaEventYears,
+      pilsaMin: pilsaEventYears.length ? Math.min(...pilsaEventYears) : 0, pilsaMax: pilsaEventYears.length ? Math.max(...pilsaEventYears) : 0 },
   };
 }
 
@@ -197,7 +238,8 @@ export function askSystemPrompt(v: AskVocab, today: string): string {
   return [
     "너는 교회 관리 화면의 「조건 만들기」다. 담임목사님이 말로 물은 것을 아래 [필드 목록]의 조건으로만 바꾼다.",
     "명단을 찾거나 사람을 지어내지 않는다 — 조건만 만든다. 사람을 평가하지 않는다.",
-    `오늘은 ${today}, 올해는 ${y}년이다. 사역 기록이 있는 해: ${v.yearMin}~${v.yearMax}년` + (partial.length ? ` (${partial.join(" · ")}년은 명단이 일부)` : "") + ".",
+    `오늘은 ${today}, 올해는 ${y}년이다. 사역 기록이 있는 해: ${v.yearMin}~${v.yearMax}년` + (partial.length ? ` (${partial.join(" · ")}년은 명단이 일부)` : "") + "."
+      + (v.pilsaEventYears.length ? ` 성경필사 명단이 있는 해: ${v.pilsaMin}~${v.pilsaMax}년(회차 ${v.pilsaEventYears.length}개).` : ""),
     "",
     "[묶음]",
     "- all: 모두 맞아야 하는 조건(그리고)",
@@ -205,7 +247,8 @@ export function askSystemPrompt(v: AskVocab, today: string): string {
     "- none: 하나라도 맞으면 빼는 조건(아님) — 「올해는 안 하시는」은 none 에 served_in_year(years_ago 0)",
     "",
     "[필드 목록]",
-    ...FIELDS.map((f) => `- ${f.id}(${f.label}) · op ${f.ops.join(" ")} · 값 ${VALUE_HINT[f.value]} · ${f.desc}` + (f.service ? " · within·dept 를 붙일 수 있음" : "")),
+    ...FIELDS.map((f) => `- ${f.id}(${f.label}) · op ${f.ops.join(" ")} · 값 ${VALUE_HINT[f.value]} · ${f.desc}` + (f.service ? " · within·dept 를 붙일 수 있음" : "")
+      + (f.pilsa ? " · within(기간) · text(성경필사 종류 — 아래 [성경필사 종류]에서 · 비우면 모두)를 붙일 수 있음" : "")),
     "",
     "[값 쓰는 법]",
     "- 쓰지 않는 칸: num -1 · years_ago -1 · text \"\" · list [] · within 은 last_years·from·to 모두 0 · dept 는 level \"none\", name \"\".",
@@ -217,7 +260,7 @@ export function askSystemPrompt(v: AskVocab, today: string): string {
     "",
     "[할 수 없는 것 — unsupported]",
     "필드로 못 바꾸는 말은 잎을 만들지 말고 unsupported 에 { text: 질문의 그 말, kind, note: 짧은 까닭 } 으로 넣는다.",
-    "- no_data: 이 시스템에 자료가 없는 것 — 출석·예배 참석·헌금·심방·기도 제목·건강·교육 수료·봉사 당번 · 성경필사(아직 교인과 이어지지 않아 셀 수 없음)",
+    "- no_data: 이 시스템에 자료가 없는 것 — 출석·예배 참석·헌금·심방·기도 제목·건강·교육 수료·봉사 당번 · 가을 말씀암송 동행 · 성경암송 앱 활동",
     "- out_of_range: 자료 범위 밖 — 사역 기록이 있는 해 앞, 또는 그보다 긴 기간",
     "- not_allowed: 연락처·주소·정확한 생년월일·사진·메모 같은 개인정보",
     "- judgment: 열심·믿음·성품·「힘들어 보이는」처럼 사람을 평가하는 말",
@@ -228,6 +271,7 @@ export function askSystemPrompt(v: AskVocab, today: string): string {
     "[교구 이름]", v.gu.join(" · "),
     "", "[구분 이름]", v.kind.join(" · "),
     "", "[직분]", POSITIONS.join(" · "),
+    "", "[성경필사 종류]", v.pilsaSeries.join(" · ") || "(없음)",
     "", "[부서 이름]",
     `- big: ${v.big.join(" · ")}`,
     `- family: ${v.family.join(" · ")}`,
@@ -276,7 +320,9 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
   const span0 = v.yearMax - v.yearMin + 1;
 
   // 기간 · 부서 — 사역 필드에만
-  if (f.service && r?.within && typeof r.within === "object") {
+  const lo = f.pilsa ? v.pilsaMin : v.yearMin, hi = f.pilsa ? v.pilsaMax : v.yearMax;
+  const what = f.pilsa ? "성경필사 기록" : "사역 기록";
+  if ((f.service || f.pilsa) && r?.within && typeof r.within === "object") {
     const w = r.within;
     const pos = (x: unknown) => { const k = intOr(x); return k !== null && k > 0 ? k : null; };   // 0 · -1 · null = 안 씀
     const n = pos(w.last_years);
@@ -285,8 +331,8 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
     if (from !== null || to !== null) {
       let a = from ?? v.yearMin, b = to ?? thisYear;
       if (a > b) [a, b] = [b, a];
-      if (b < v.yearMin || a > v.yearMax) return no("out_of_range", `사역 기록은 ${v.yearMin}~${v.yearMax}년만 있어요`);
-      if (a < v.yearMin) { notices.push(`「${leaf.from_text}」 — 사역 기록이 ${v.yearMin}년부터라 ${v.yearMin}년부터 셌어요`); a = v.yearMin; }
+      if (b < lo || a > hi) return no("out_of_range", `${what}은 ${lo}~${hi}년만 있어요`);
+      if (a < lo) { notices.push(`「${leaf.from_text}」 — ${what}이 ${lo}년부터라 ${lo}년부터 셌어요`); a = lo; }
       leaf.within = { from: a, to: b };
     }
   }
@@ -296,6 +342,14 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
     leaf.dept = d;
   }
   const span = leaf.within ? leaf.within.to - Math.max(leaf.within.from, v.yearMin) + 1 : span0;
+  if (f.pilsa) {
+    const t = clean(r?.text);   // "" = 모든 종류
+    if (t) {
+      const sname = findName(v.pilsaSeries, t);
+      if (!sname) return no("no_data", `성경필사 종류 「${str(t, 20)}」을(를) 찾지 못했어요`);
+      leaf.text = sname;
+    }
+  }
 
   if (f.value === "num") {
     const n = typeof r?.num === "number" && Number.isFinite(r.num) && r.num >= 0 ? Math.round(r.num) : null;   // -1 = 안 씀
@@ -305,12 +359,18 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
     if ((f.id === "served_years_count" || f.id === "served_streak_max") && n > span && op !== "<=")
       return no("out_of_range", leaf.within ? `그 기간은 ${span}해라 ${n}해를 셀 수 없어요`
         : `사역 기록이 ${v.yearMin}년부터라 ${span}해까지만 셀 수 있어요`);
+    if (f.id === "pilsa_count" && op !== "<=") {
+      const w = leaf.within, nev = v.pilsaEventYears.filter((yy) => !w || (yy >= w.from && yy <= w.to)).length;
+      if (n > nev) return no("out_of_range", `그 기간의 성경필사 회차는 모두 ${nev}번이라 ${n}번을 셀 수 없어요`);
+    }
     leaf.num = n;
   } else if (f.value === "year") {
     let y: number | null = Number.isInteger(r?.year) ? r.year : null;
     if (y === null && Number.isInteger(r?.years_ago) && r.years_ago >= 0) y = thisYear - r.years_ago;   // -1 = 안 씀
     if (y === null && typeof r?.num === "number" && Number.isFinite(r.num) && r.num >= 0) y = Math.round(r.num);
     if (y === null || y < 1900 || y > thisYear + 1) return no("too_complex", "해를 알 수 없어요");
+    if (f.pilsa && op === "has" && (y < v.pilsaMin || y > v.pilsaMax))
+      return no("out_of_range", `성경필사 기록은 ${v.pilsaMin}~${v.pilsaMax}년만 있어요`);
     if (f.service && op !== "<=" && op !== ">=" && (y < v.yearMin || y > v.yearMax))
       return no("out_of_range", `사역 기록은 ${v.yearMin}~${v.yearMax}년만 있어요`);
     if (f.service && v.gaps.some((g) => g.scope === "*" && y! >= g.from && y! <= (g.to ?? v.yearMax)))
@@ -426,6 +486,11 @@ export function streakOf(years: Set<number>, gaps: Set<number>): number {
   return best;
 }
 
+// 그 잎이 보는 성경필사 줄 — 종류(text) · 기간(within)으로 거른 것
+function pilsaFor(p: AskPerson, l: Leaf, d: AskData): PilsaEntry[] {
+  return (d.pilsa.get(p.id) ?? []).filter((e) => (!l.text || e.series === l.text) && (!l.within || (e.year >= l.within.from && e.year <= l.within.to)));
+}
+
 function leafTrue(l: Leaf, p: AskPerson, d: AskData): boolean {
   switch (l.field) {
     case "gu": return l.list.includes(p.gu);
@@ -435,6 +500,11 @@ function leafTrue(l: Leaf, p: AskPerson, d: AskData): boolean {
     case "age": return p.age !== null && cmp(p.age, l.op, l.num!);
     case "kind": return mhKey(p.kind) === mhKey(l.text);
     case "registered_year": return p.regYear !== null && cmp(p.regYear, l.op, l.year!);
+    case "pilsa_count": {
+      const n = new Set(pilsaFor(p, l, d).map((e) => e.event)).size;
+      return l.op === "<=" ? n >= 1 && n <= l.num! : cmp(n, l.op, l.num!);
+    }
+    case "pilsa_in_year": return pilsaFor(p, l, d).some((e) => e.year === l.year);
   }
   const ys = yearsFor(p, l, d);
   switch (l.field) {
@@ -472,7 +542,8 @@ export function rowOut(p: AskPerson, d: AskData) {
     where.get(k)!.add(s.year);
   }
   const main = [...where.entries()].sort((a, b) => b[1].size - a[1].size || (a[0] < b[0] ? -1 : 1))[0];
-  return { id: p.id, name: p.name, position: p.position, gu: p.gu, mok: p.mok, age: p.age, served: years.length,
+  const pilsa = new Set((d.pilsa.get(p.id) ?? []).map((e) => e.event)).size;
+  return { id: p.id, name: p.name, position: p.position, gu: p.gu, mok: p.mok, age: p.age, served: years.length, pilsa,
     first: years[0] ?? null, last: years.length ? years[years.length - 1] : null, main: main ? main[0] : "" };
 }
 const rowCmp = (a: ReturnType<typeof rowOut>, b: ReturnType<typeof rowOut>) =>
@@ -496,9 +567,12 @@ export function describeLeaf(l: Leaf): string {
     case "first_served_year": s = `처음 섬긴 해 ${l.year}년${YEAR_WORD[l.op]}`; break;
     case "last_served_year": s = `마지막 섬긴 해 ${l.year}년${YEAR_WORD[l.op]}`; break;
     case "served_streak_max": s = `잇따라 섬긴 해 ${l.num}해${NUM_WORD[l.op]}`; break;
+    case "pilsa_count": s = l.op === "=" && l.num === 0 ? "성경필사 한 적 없음" : `성경필사 ${l.num}번${NUM_WORD[l.op]}`; break;
+    case "pilsa_in_year": s = `${l.year}년 성경필사`; break;
     default: s = l.field;
   }
   if (l.within) s += ` · ${l.within.from}~${l.within.to}년`;
+  if (l.text && FIELD_BY_ID[l.field]?.pilsa) s += ` · ${l.text}`;
   if (l.dept) s += ` · ${l.dept.name}`;
   return s;
 }
@@ -523,7 +597,8 @@ export function askOut(raw: any, d: AskData, today: string, fromAi: boolean) {
     unsupported: c.unsupported.map((u) => ({ ...u, label: UNSUP_LABEL[u.kind] ?? UNSUP_LABEL.too_complex })),
     alternatives: c.alternatives, notices: c.notices,
     total: null as number | null, rows: [] as ReturnType<typeof rowOut>[], truncated: false,
-    source: { people: d.people.length, years: `${d.vocab.yearMin}~${d.vocab.yearMax}`, linked: d.linked, histRows: d.histRows },
+    source: { people: d.people.length, years: `${d.vocab.yearMin}~${d.vocab.yearMax}`, linked: d.linked, histRows: d.histRows,
+      pilsaYears: d.vocab.pilsaEventYears.length ? `${d.vocab.pilsaMin}~${d.vocab.pilsaMax}` : "", pilsaLinked: d.pilsaLinked },
   };
   if (status === "none" || (status === "partial" && fromAi)) return out;
   const rows = runTree(c.tree, d).map((p) => rowOut(p, d)).sort(rowCmp);
