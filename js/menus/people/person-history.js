@@ -156,11 +156,34 @@ function unlinkedText(r) {
   if (r?.kind === "signup") return bibleText(r);
   return join(r?.year, ministryText(r), r?.kind === "history" ? r?.mok : r?.who, r?.position);
 }
-function unlinkedRow(r) {
+// ✍️ 성경필사 「이분 것」은 같은 교구 기록을 한 번에 잇는다(2026-10-15 친구 「교구가 같으면 한번 이을 때 다 같이」).
+//   누른 줄과 구분(who_type · 교구/교회학교)과 교구 · 부서(group)가 같고, 아직 안 이어진 성경필사 줄들의 row 번호(누른 줄은 빼고).
+//   ⚠️ 「이분 아님」으로 둔 줄(how none)은 넣지 않는다 — 사람이 정한 것을 함께 뒤집지 않는다(그 줄은 따로 펼쳐 하나씩).
+//   ⚠️ 목장 · 학년(sub)은 보지 않는다(친구 「교구가 같으면」) · 교구가 빈 줄(옛 명단)은 묶지 않는다(그 줄 하나만) · 사역 줄은 묶지 않는다.
+//   잇기는 줄마다 따로 부른다(person-tabs.js link — 서버 peopleLink 의 이름 확인이 줄마다 그대로 걸린다).
+export function sameGroupSignups(rows, kind, row) {
+  if (kind !== "signup") return [];
+  const all = Array.isArray(rows) ? rows : [];
+  const me = all.find((r) => r?.kind === "signup" && String(r?.row) === String(row));
+  const group = String(me?.group ?? "").trim(), type = String(me?.who_type ?? "").trim();
+  if (!me || !group) return [];
+  return all.filter((r) => r !== me && r?.kind === "signup" && r?.how !== "none" &&
+    String(r?.group ?? "").trim() === group && String(r?.who_type ?? "").trim() === type).map((r) => Number(r.row));
+}
+// rows — 「아직 안 이어진 기록」 전체(같은 교구 수를 셀 때 · 접힌 「이분 아님」 줄도 이 안에서 센다)
+function unlinkedRow(r, rows) {
   const text = unlinkedText(r);
   const chip = r?.kind === "signup" ? "" : statusChip(r?.kind === "history" ? "임명확정" : r?.status);
+  const n = sameGroupSignups(rows, r?.kind, r?.row).length;
+  const label = n ? `이분 것 · ${n + 1}건` : "이분 것";
+  const aria = n ? `${t(text)} — 같은 교구 ${n + 1}건 모두 이분 것` : `${t(text)} — 이분 것`;
   return `<li class="pd-hr pd-ur"><span class="pd-ht">${t(text)}</span>${chip}` +
-    `<button type="button" class="pd-hb" data-pd-act="link" ${dataRow(r)} aria-label="${t(text)} — 이분 것">이분 것</button></li>`;
+    `<button type="button" class="pd-hb" data-pd-act="link" ${dataRow(r)} aria-label="${aria}">${label}</button></li>`;
+}
+// 성경필사 목록에 같은 교구 줄이 둘 이상이면 한 줄 안내 — 「이분 것 · 3건」이 무슨 뜻인지
+function groupHint(tab, open, rows) {
+  if (tab !== "bible" || !open.some((r) => sameGroupSignups(rows, r?.kind, r?.row).length)) return "";
+  return `<p class="pd-un-sub">「이분 것」을 누르면 같은 교구 기록이 함께 이어져요</p>`;
 }
 // 「이름이 같고 아직 안 이어진 기록 N건 ▸」 — 탭을 처음 열 때 서버(peopleHistory)에서 받는다.
 // ⚠️ 2026-10-01 친구 결정: `link_how='none'`(이분 아님) 줄은 **따로 묶어 접어 둔다** — 표가 누구를 두고 「이분 아님」이라
@@ -181,11 +204,11 @@ export function unlinkedHtml(tab, un) {
   const main = open.length
     ? `<button type="button" class="pd-un-b" data-pd-act="more" aria-expanded="${isOpen}">${t(mainLabel)} ` +
       `<span aria-hidden="true">${isOpen ? "▾" : "▸"}</span></button>` +
-      (isOpen ? `<ul class="pd-hl pd-ul">${open.map(unlinkedRow).join("")}</ul>` : "")
+      (isOpen ? groupHint(tab, open, un.rows) + `<ul class="pd-hl pd-ul">${open.map((r) => unlinkedRow(r, un.rows)).join("")}</ul>` : "")
     : `<p class="pd-un-sub">${t(mainLabel)}</p>`;
   const notme = !rej.length ? "" :
     `<button type="button" class="pd-un-b pd-un-sub" data-pd-act="more-notme" aria-expanded="${notmeOpen}">「이분 아님」으로 둔 기록 ${rej.length}건 ` +
     `<span aria-hidden="true">${notmeOpen ? "▾" : "▸"}</span></button>` +
-    (notmeOpen ? `<ul class="pd-hl pd-ul">${rej.map(unlinkedRow).join("")}</ul>` : "");
+    (notmeOpen ? `<ul class="pd-hl pd-ul">${rej.map((r) => unlinkedRow(r, un.rows)).join("")}</ul>` : "");
   return `<div class="pd-un">${main}${notme}</div>`;
 }

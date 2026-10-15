@@ -10,7 +10,7 @@
 // 🎓 교육 탭(4단계 B · 2026-10-06) — 탭 목록은 tabsFor(history)(교육 칸이 있을 때만 넷) · 교육 탭은 읽기만이라
 //    「아직 안 이어진 기록」을 부르지 않는다(linksTab) · 잇기 뒤 서버 답에 교육 칸이 빠졌으면 보던 교육 칸을 그대로 둔다(keepEdu).
 import { toast, busy, errorText } from "../../core/ui.js";
-import { tabsFor, tabOf, tabsHtml, histPanelHtml, rowKey, linkDoneText, linksTab, keepEdu } from "./person-history.js";
+import { tabsFor, tabOf, tabsHtml, histPanelHtml, rowKey, linkDoneText, linksTab, keepEdu, sameGroupSignups } from "./person-history.js";
 
 let lastTab = "church";
 // 마지막 「자세히」 창이 보던 탭 — 가족으로 넘어갈 때 그대로 연다(search.js 가 다시 내보내고 person-popup.js 가 쓴다).
@@ -51,13 +51,26 @@ export function bindPersonTabs({ dlg, call, personId, history, tab }) {
     if (linksTab(s.tab)) loadUnlinked();
   }
   async function link(kind, row, how) {
-    const r = await busy(main, () => call("peopleLink", { kind, row: Number(row), person: personId, how }));
+    // ✍️ 성경필사 「이분 것」 — 같은 교구 줄도 함께(sameGroupSignups · 2026-10-15 친구). 누른 줄을 먼저, 되면 나머지를 하나씩
+    //   (서버의 이름 확인이 줄마다 걸린다 · 하나가 안 돼도 나머지는 계속 · 탭 자료는 마지막으로 받은 것).
+    const more = how === "manual" ? sameGroupSignups(s.unlinked.rows, kind, row) : [];
+    let together = 0, missed = 0;
+    const r = await busy(main, async () => {
+      const first = await call("peopleLink", { kind, row: Number(row), person: personId, how });
+      if (!first || !first.ok || !more.length) return first;
+      let last = first;
+      for (const id of more) {
+        const x = await call("peopleLink", { kind, row: id, person: personId, how });
+        if (x && x.ok) { together++; if (x.history) last = x; } else missed++;
+      }
+      return last;
+    });
     if (!dlg.isConnected) return;
     if (!r || !r.ok) { toast(errorText(r)); return; }
     if (r.history) s.history = keepEdu(s.history, r.history);   // 없으면(서버가 탭 자료 다시 읽기에 실패 · 쓰기는 됐다) 옛 탭 그대로 — 알림이 「다시 열면」을 덧붙인다
     const again = how === "auto" && r.relinked;
     s.confirm = again ? { key: rowKey(kind, row), relinked: true } : null;
-    toast(linkDoneText(how, r));
+    toast(linkDoneText(how, r) + (together ? ` · 같은 교구 ${together}건도 함께 이었어요` : "") + (missed ? ` · ${missed}건은 잇지 못했어요` : ""));
     if (s.unlinked.state === "ready" || s.unlinked.state === "error") await loadUnlinked(true);
     else draw();
     main.querySelector(again ? `[data-pd-panel="${s.tab}"] .pd-hc button` : `[data-pd-tab="${s.tab}"]`)?.focus({ preventScroll: true });

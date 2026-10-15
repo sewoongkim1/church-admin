@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { HIST_TABS, tabOf, tabsHtml, ministryText, statusChip, bibleText, histPanelHtml, unlinkedHtml, histTotal, rowKey,
-  linkDoneText, LINK_STALE, EDU_TAB, hasEdu, tabsFor, linksTab, keepEdu, eduChip, eduMeta, eduPanelHtml }
+  linkDoneText, LINK_STALE, EDU_TAB, hasEdu, tabsFor, linksTab, keepEdu, eduChip, eduMeta, eduPanelHtml, sameGroupSignups }
   from "../js/menus/people/person-history.js";
 import { personDetailHtml } from "../js/menus/people/person-detail.js";
 
@@ -228,4 +228,36 @@ test("personDetailHtml — 교육 칸이 있으면 탭 넷 · 교육 칸 · 교�
   const old = personDetailHtml(P, [], H(), "education");
   assert.equal(old.includes('data-pd-panel="education"'), false, "교육 칸이 없으면 칸도 없다");
   assert.ok(old.includes('data-pd-panel="church" tabindex="0">'), "보던 탭이 교육이어도 교적으로");
+});
+
+test("sameGroupSignups — 성경필사 「이분 것」은 같은 교구(구분 · 교구) 줄을 함께 · 이분 아님 · 다른 교구 · 사역 · 빈 교구는 빼고(2026-10-15)", () => {
+  const rows = [
+    B({ row: 7 }),                                                     // 누른 줄 — 교구 화평 20목장
+    B({ row: 8, event_id: "summer-2026", sub: "21" }),                 // 같은 교구 · 목장만 다름 → 함께
+    B({ row: 9, event_id: "booklet-2026" }),                           // 같은 교구 → 함께
+    B({ row: 10, how: "none" }),                                       // 「이분 아님」으로 둔 줄 → 빼기
+    B({ row: 11, group: "믿음" }),                                     // 다른 교구 → 빼기
+    B({ row: 12, who_type: "교회학교", group: "화평" }),               // 구분이 다르면 이름이 같아도 → 빼기
+    M({ row: 13 }),                                                    // 사역 줄 → 빼기
+  ];
+  assert.deepEqual(sameGroupSignups(rows, "signup", 7), [8, 9]);
+  assert.deepEqual(sameGroupSignups(rows, "signup", "7"), [8, 9], "data-row 는 글자로 온다");
+  assert.deepEqual(sameGroupSignups(rows, "order", 13), [], "사역 줄은 묶지 않는다");
+  assert.deepEqual(sameGroupSignups(rows, "signup", 10), [7, 8, 9], "「이분 아님」 줄을 이으면 아직 안 이어진 같은 교구 줄은 함께");
+  assert.deepEqual(sameGroupSignups([B({ row: 1, group: "" }), B({ row: 2, group: "" })], "signup", 1), [], "교구가 빈 줄은 묶지 않는다");
+  assert.deepEqual(sameGroupSignups(null, "signup", 7), []);
+  assert.deepEqual(sameGroupSignups(rows, "signup", 99), [], "목록에 없는 줄");
+});
+
+test("unlinkedHtml — 성경필사 같은 교구가 여럿이면 「이분 것 · N건」과 안내 한 줄 · 하나뿐이면 그대로", () => {
+  const rows = [B({ row: 7 }), B({ row: 8, event_id: "summer-2026" }), B({ row: 11, group: "믿음" })];
+  const html = unlinkedHtml("bible", { state: "ready", open: { bible: true }, rows });
+  noNL(html); noBad(html);
+  assert.ok(html.includes("같은 교구 기록이 함께 이어져요"));
+  assert.equal((html.match(/이분 것 · 2건/g) || []).length, 2, "화평 두 줄은 서로를 센다");
+  assert.ok(html.includes('data-row="11" aria-label="') && /data-row="11"[^>]*>이분 것</.test(html), "믿음 한 줄은 그대로 「이분 것」");
+  const single = unlinkedHtml("bible", { state: "ready", open: { bible: true }, rows: [B({ row: 7 }), B({ row: 11, group: "믿음" })] });
+  assert.equal(single.includes("함께 이어져요"), false);
+  const ministry = unlinkedHtml("ministry", { state: "ready", open: { ministry: true }, rows: [M({ row: 1 }), M({ row: 2 })] });
+  assert.equal(ministry.includes("· 2건"), false, "사역 탭은 묶지 않는다");
 });
