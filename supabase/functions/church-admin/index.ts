@@ -80,6 +80,9 @@ import { rosterIdent, rosterIdentity } from "./edu-rules.ts";
 import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
 // 빠진 사역을 고쳐서 반영 · 목록의 줄 미리 채우기(2026-10-02) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { parseRequestLine, requestKey, requestLineOut, type MissingApply, type ReqLine } from "./history-db.ts";
+// 🤖 성도 묻기(시험판 · 2026-10-15) — 규약·검사·셈은 ask-people.ts(순수) · Claude 는 공식 SDK 로(구조화 출력)
+import { ASK_CONTRACT, askOut, askQuestion, askSchema, askSystemPrompt, buildAskData, type AskData } from "./ask-people.ts";
+import Anthropic from "npm:@anthropic-ai/sdk@0.131.0";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -1588,6 +1591,94 @@ async function peopleLinkSync(ctx: Ctx, b: any) {
   return { ok: true, dry: false, ...counts, written, lifeLinked };
 }
 
+// ---------- 🤖 성도 묻기(시험판 · 2026-10-15 · 총괄만) ----------
+// 설계 v2 docs/superpowers/specs/2026-10-15-pastor-ai-ask-design.md · 규약·검사·셈은 ask-people.ts(순수 · 시험 tests/ask-people.test.mjs).
+// ⚠️ Claude 에 보내는 것은 질문 글 + 지시문(필드 목록 · 교구·구분·부서 이름) + 스키마뿐 — 명단·이름·교인ID 는 보내지 않는다.
+// ⚠️ 명단은 서버가 표에서 직접 거른다(AI 를 거치지 않는다). 새 SQL 없음 — 교인명부 · 사역 이력 · 부서 이음표 · 명단이 일부인 해를 읽기만.
+// ⚠️ 키는 프로젝트 시크릿 ANTHROPIC_API_KEY(성경암송 api 와 같은 것) · 모델은 ASK_MODEL(기본 claude-opus-5-5 · effort low).
+const ASK_TTL = 10 * 60 * 1000;   // 재료(교인명부·사역 이력 · 약 2만 6천 줄)는 함수가 살아 있는 동안 10분 담아 둔다
+let askCache: { at: number; data: AskData } | null = null;
+async function askData(): Promise<AskData> {
+  if (askCache && Date.now() - askCache.at < ASK_TTL) return askCache.data;
+  const [ppl, hist, map, gaps] = await Promise.all([
+    allRows(() => db.from("church_people").select("person_id,name,position,gender,age,mok1,mok3,kind2,registered_date").order("person_id", { ascending: true })),
+    allRows(() => db.from("ministry_history").select("id,person_id,year,committee,team").is("deleted_at", null).order("id", { ascending: true })),
+    allRows(() => db.from("ministry_dept_map").select("committee_key,team_key,big_group,family,mid,team_std")
+      .order("committee_key", { ascending: true }).order("team_key", { ascending: true })),
+    db.from("ministry_list_gaps").select("scope,year_from,year_to"),
+  ]);
+  if (gaps.error) throw gaps.error;
+  const data = buildAskData(ppl, hist, map, gaps.data ?? []);
+  askCache = { at: Date.now(), data };
+  return data;
+}
+
+let anthropicClient: Anthropic | null = null;
+function anthropicOrNull(): Anthropic | null {
+  const key = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!key) return null;
+  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: key });
+  return anthropicClient;
+}
+
+// 질문 → 조건 JSON(구조화 출력 · 스키마는 askSchema). stop_reason 을 먼저 본다 — 거절·잘림이면 조건을 쓰지 않는다.
+async function askClaude(question: string, data: AskData, today: string):
+  Promise<{ ok: true; raw: unknown; model: string } | { ok: false; error: string; code?: string }> {
+  const client = anthropicOrNull();
+  if (!client) return { ok: false, error: "ask-no-key" };
+  const req: any = {
+    model: Deno.env.get("ASK_MODEL") || "claude-opus-5-5",
+    max_tokens: 16000,
+    system: askSystemPrompt(data.vocab, today),
+    messages: [{ role: "user", content: question }],
+    output_config: { effort: "low", format: { type: "json_schema", schema: askSchema() } },
+  };
+  let res: any;
+  try {
+    // 안전 분류기 거절 대비 서버 쪽 대체(fallbacks) — 이 조합을 안 받으면(400) 대체 없이 한 번 더
+    try {
+      res = await client.beta.messages.create({ ...req, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
+    } catch (e) {
+      if ((e as any)?.status !== 400) throw e;
+      console.error("askClaude fallbacks 400 — 대체 없이 다시", (e as any)?.message);
+      res = await client.messages.create(req);
+    }
+  } catch (e) {
+    console.error("askClaude", e);
+    return { ok: false, error: "ask-ai", code: String((e as any)?.status ?? "net") };
+  }
+  if (res?.stop_reason === "refusal") return { ok: false, error: "ask-refused" };
+  if (res?.stop_reason === "max_tokens") return { ok: false, error: "ask-cut" };
+  const text = (res?.content ?? []).filter((c: any) => c?.type === "text").map((c: any) => c.text).join("");
+  try { return { ok: true, raw: JSON.parse(text), model: String(res?.model ?? "") }; }
+  catch { return { ok: false, error: "ask-bad-json" }; }
+}
+
+async function askPeople(ctx: Ctx, b: any) {
+  const q = askQuestion(b.question);
+  if (!q.ok) return q;                                 // 빈 질문은 재료도 안 읽고 AI 도 안 부른다(PROBE)
+  const data = await askData();
+  const today = kstToday();
+  const ai = await askClaude(q.q, data, today);
+  if (!ai.ok) {
+    await audit(ctx, "people.ask", "", { q: q.q.slice(0, 120), error: ai.error });
+    return ai;
+  }
+  const out = askOut(ai.raw, data, today, true);
+  await audit(ctx, "people.ask", "", { q: q.q.slice(0, 120), status: out.status, total: out.total, contract: ASK_CONTRACT });
+  return { ok: true, contract: ASK_CONTRACT, question: q.q, model: ai.model, raw: ai.raw, ...out };
+}
+
+// 화면이 고친 조건(칩 빼기 · 「나머지 조건으로만 찾기」)으로 다시 센다 — AI 를 부르지 않는다. 같은 검사를 다시 거친다(화면을 믿지 않는다).
+async function askPeopleRun(ctx: Ctx, b: any) {
+  if (!b.tree || typeof b.tree !== "object" || Array.isArray(b.tree)) return { ok: false, error: "bad-tree" };
+  const data = await askData();
+  const out = askOut({ all: b.tree.all, any: b.tree.any, none: b.tree.none }, data, kstToday(), false);
+  if (out.status === "none") return { ok: false, error: "bad-tree" };
+  await audit(ctx, "people.ask.run", "", { status: out.status, total: out.total, dropped: Math.max(0, Math.min(20, Number(b.dropped) || 0)), contract: ASK_CONTRACT });
+  return { ok: true, contract: ASK_CONTRACT, ...out };
+}
+
 // ---------- 교인명부 — 「자세히」 창의 사역·성경필사 탭(2026-10-01 · 설계 §4·§5) ----------
 // ⚠️ 칸은 아래 목록으로만 읽는다 — 메모(note)·취소 사유·번호(phone)·앱 계정(user_id)·ident_key·memo·answers 는 읽지도 않는다.
 //    응답은 people-links.ts 칸 지도(historyTabs·unlinkedRows) — 시험이 키 집합을 대조한다.
@@ -2929,6 +3020,8 @@ Deno.serve(async (req) => {
       case "evPerson":       return json(await evPerson(ctx, b));
       case "ministryPerson": return json(await ministryPerson(ctx, b));
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));
+      case "askPeople":      return json(await askPeople(ctx, b));
+      case "askPeopleRun":   return json(await askPeopleRun(ctx, b));
       case "historyRequestList": return json(await historyRequestList(b));
       case "historyRequestSet":  return json(await historyRequestSet(ctx, b));
       case "historyRequestDelete": return json(await historyRequestDelete(ctx, b));

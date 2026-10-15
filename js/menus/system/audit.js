@@ -22,6 +22,8 @@ export const LABEL = {
   "people.search": "명부 찾기", "people.view": "교인 보기", "people.export": "명부 내려받기", "people.import": "명부 올림",
   "people.linksync": "기록 잇기 맞추기",
   "people.link": "교적 잇기",
+  // 🤖 성도 묻기(시험판 · 2026-10-15) — detail {q(질문 앞 120자), status, total, error?} · 다시 세기 {status, total, dropped}
+  "people.ask": "성도 묻기(AI)", "people.ask.run": "성도 묻기(조건 고쳐 다시)",
   // 성경필사(암송) — detail 모양은 서버 index.ts 의 audit() 호출과 한 벌(tests/audit.test.mjs 가 못 박는다)
   "event.create": "성경필사 회차 만듦", "event.settings": "성경필사 회차 설정 바꿈",
   "event.add": "성경필사 명단 더함", "event.edit": "성경필사 명단 고침", "event.delete": "성경필사 명단 뺌",
@@ -109,6 +111,7 @@ const SRC = { app: "📱 앱", import: "📋 이관" };                         
 const LINK_KIND = { order: "사역신청", signup: "성경필사", history: "사역 이력" };
 const LINK_HOW = { manual: "이분 것", none: "이분 아님", auto: "잇기 풀기" };
 const joinDot = (...parts) => parts.filter(Boolean).join(" · ");
+const ASK_STATUS = { ok: "찾음", partial: "못 하는 조건 섞임", none: "찾을 조건 없음" };
 // 정정 신청 종류(requests-logic.js KIND_TEXT 와 같은 글자 · 이 파일은 그 메뉴를 import 하지 않는다)
 const REQ_KIND = { not_mine: "내 것이 아니에요", wrong_team: "팀·부서가 틀려요", other: "그 밖에", missing: "빠진 사역", find_me: "내 기록 찾아 주세요" };
 const HIST_FIELD = { year: "해", committee: "부서", team: "팀명", role_title: "직책", name: "이름", position: "직분", mok: "목장",
@@ -202,6 +205,9 @@ export function detailText(r) {
   if (r.action === "people.import") return `기준일 ${d.source_date} · 전체 ${d.total} · 새로 ${d.added} · 바뀜 ${d.changed} · 빠짐 ${d.removed} · 사진 ${d.photos}`;
   if (r.action === "people.linksync") return joinDot(`사역신청 ${d.orders ?? 0}줄`, `성경필사 ${d.signups ?? 0}줄`,
     `새로 이음 ${d.added ?? 0}`, `바뀜 ${d.changed ?? 0}`, `못 맞춤 ${d.unmatched ?? 0}`);
+  if (r.action === "people.ask") return joinDot(d.q ? `‘${d.q}’` : "", d.error ? `실패 ${d.error}` : ASK_STATUS[d.status] || "",
+    d.total !== null && d.total !== undefined ? `${d.total}명` : "");
+  if (r.action === "people.ask.run") return joinDot(ASK_STATUS[d.status] || "", `${d.total ?? 0}명`, d.dropped ? `뺀 조건 ${d.dropped}` : "");
   if (r.action === "people.link") return joinDot(`${LINK_KIND[d.kind] || d.kind || ""} 줄 ${d.row ?? ""}`, LINK_HOW[d.how] || d.how || "");
   if (r.action === "event.create") {
     const a = d.after || {};

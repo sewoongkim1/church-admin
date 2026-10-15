@@ -10,6 +10,9 @@ export const MENUS = [
     role: "directory", load: () => import("./people/stats.js") },
   { id: "member-accounts", group: "교인명부", icon: "👤", label: "성도 계정", desc: "앱 계정 찾기 · 이름/소속 변경 · 변경 이력 · 합치기(총괄)",
     role: "members", load: () => import("./people/member-accounts.js") },
+  // 🤖 성도 묻기(시험판 · 2026-10-15) — 말로 물으면 교인명부·사역 이력에서 찾는다(AI 는 조건만 · 명단은 서버). 총괄만 — 담임목사 역할은 교회가 정한 뒤.
+  { id: "people-ask", group: "교인명부", icon: "🤖", label: "성도 묻기 (시험)", desc: "말로 물으면 교인명부·사역 이력에서 찾기 · AI 는 조건만 만들어요",
+    role: "super", load: () => import("./people/ask.js") },
   // 성경암송 관리(2026-10-09 · admin-stats 안전 묶음 이전) — 성경암송 api 를 내부 키로 부른다.
   { id: "mem-stats", group: "성경암송", icon: "📊", label: "통계", desc: "기간별 사용현황 · 구절별 현황 · 도전 현황 · 축복 기도문 사용현황",
     role: "memorizeadmin", load: () => import("./memorize/stats.js") },

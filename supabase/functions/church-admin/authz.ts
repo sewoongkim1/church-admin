@@ -30,6 +30,11 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   // 교인명부(2026-10-01) — 새 명부를 올린 뒤 사역신청·성경필사 기록을 교인과 다시 잇는다(auto 줄만 · 사람이 정한 줄은 그대로).
   //   apply:true 가 아니면 세기만 한다(시험 PROBE 가 아무것도 안 바꾸게). 기록 people.linksync(수만).
   peopleLinkSync: "super",
+  // 🤖 성도 묻기(시험판 · 2026-10-15) — 말로 물으면 교인명부 · 사역 이력에서 찾는다. AI(Claude)에는 질문과 필드 목록만 가고 명단은 서버가 거른다.
+  //   askPeopleRun 은 화면이 고친 조건으로 다시 세기(AI 안 부름). 시험판이라 총괄만 — 담임목사 역할은 교회가 정한 뒤
+  //   (설계 v2 docs/superpowers/specs/2026-10-15-pastor-ai-ask-design.md). 기록 people.ask · people.ask.run(질문 앞 120자 · 수만).
+  askPeople: "super",
+  askPeopleRun: "super",
   // 사역신청(2단계 · 2026-09-28) — 임명현황. 읽기만, 임명확정만, 번호·메모 없음.
   ministryAppointed: "ministry",
   // 사역신청(3단계) — 신청 현황. 목록은 번호·메모를 담는다(관리 화면 전용). 상태 바꾸기·삭제는 바꾼 기록에 남는다.

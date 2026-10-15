@@ -216,6 +216,9 @@ const PROBE = {
   evPerson: { name: "" },
   // 교인명부 기록 잇기 맞추기(2026-10-01) — apply 없이 부르면 세기만 한다(쓰지도 기록하지도 않는다)
   peopleLinkSync: {},
+  // 🤖 성도 묻기(시험판 · 2026-10-15) — 빈 질문(no-question) · 트리 없음(bad-tree)이라 재료도 안 읽고 AI 도 안 부르고 기록도 안 남긴다
+  askPeople: { question: "" },
+  askPeopleRun: { tree: null },
   // 사역 이력(2026-10-01) — 읽기 · 빈 올리기 · 없는 줄(0) · 확인 없는 다시 맞추기 · 없는 해 내려받기 — 아무것도 쓰지도 기록하지도 않는다
   historyList: {},
   historyUploadCheck: { rows: [] },

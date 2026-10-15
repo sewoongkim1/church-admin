@@ -1,0 +1,528 @@
+// 교회 어드민 — 🤖 성도 묻기(시험판 · 2026-10-15): 조건 트리의 규약 · 검사 · 셈 · 칩 글(순수 함수)
+//   설계 v2 docs/superpowers/specs/2026-10-15-pastor-ai-ask-design.md(「Claude ↔ 서버 규약」 · 「할 수 없는 조건이 섞이면」).
+//   서버(Deno, index.ts)와 시험(Node, tests/ask-people.test.mjs)이 **같은 파일**을 읽는다.
+//   ⚠️ Deno 전용 API·원격 import·enum 을 쓰지 않는다 — node --experimental-strip-types 가 그대로 읽어야 한다.
+//   ⚠️ AI(Claude)에게 가는 글은 askSystemPrompt · askSchema 둘뿐이다 — 필드 목록과 이름 없는 값 목록(교구·구분·부서 이름)만 담는다.
+//      사람 자료(이름·교인ID·나이·목장 이름)는 이 둘에 넣지 않는다(시험이 지킨다). 명단은 AI 를 거치지 않고 runTree 가 거른다.
+//   흐름: 질문 → (Claude) 조건 JSON → checkTree(꼴·뜻 검사 — 못 하는 것은 unsupported 로) → runTree(교인마다 셈) → rowOut(화면 줄).
+import { positionBucket } from "./ministry-stats.ts";
+
+export const ASK_CONTRACT = "ask-v1";     // 규약 판 — 지시문 · 응답 · 바꾼 기록에 함께 싣는다
+export const ASK_Q_MAX = 300;             // 질문 글자 수 상한
+export const ASK_ROW_MAX = 200;           // 화면에 보이는 줄 상한(셈은 모두)
+export const ASK_MAX_LEAVES = 10;         // 조건(잎) 수 상한 — 넘친 것은 「아직 못 하는 조합」
+
+export const OPS = [">=", "<=", "=", "in", "has"];
+export const GROUPS = ["all", "any", "none"];                      // 그리고 · 또는 · 아님
+export const GROUP_LABEL: Record<string, string> = { all: "그리고", any: "또는", none: "아님" };
+export const UNSUP_KINDS = ["no_data", "out_of_range", "not_allowed", "judgment", "too_complex"];
+export const UNSUP_LABEL: Record<string, string> = {
+  no_data: "자료가 없어요", out_of_range: "자료 범위 밖이에요", not_allowed: "이 조건으로는 찾지 않아요",
+  judgment: "사람을 평가하는 조건은 찾지 않아요", too_complex: "아직 못 하는 조합이에요",
+};
+export const DEPT_LEVELS = ["big", "family", "mid", "team"];       // 큰 분류 · 계열 · 중분류 · 표준 팀(부서 이음표 ministry_dept_map)
+export const POSITIONS = ["장로", "안수집사", "권사", "집사", "그 밖", "직분 없음"];
+
+// 필드 목록 — 「물을 수 있는 것」. 이 목록 하나에서 AI 스키마의 field 값 · 지시문의 필드 표 · 검사 · 셈 · 칩 이름이 나온다.
+//   value: num(수) · year(해 — num 에 해, 또는 years_ago) · text(값 하나) · list(값 여럿)
+//   service: 사역 이력에서 세는 것 — within(기간) · dept(부서)를 붙일 수 있다.
+export type FieldDef = { id: string; label: string; ops: string[]; value: "num" | "year" | "text" | "list"; service: boolean; desc: string };
+export const FIELDS: FieldDef[] = [
+  { id: "gu", label: "교구", ops: ["in"], value: "list", service: false, desc: "교인명부의 교구 — 아래 [교구 이름] 가운데서 list 로" },
+  { id: "mok", label: "목장", ops: ["="], value: "text", service: false, desc: "교인명부의 목장(「교구-번호」 꼴 — 질문에 나온 그대로). 목장이 비어 있는 분은 text 「목장 없음」" },
+  { id: "position", label: "직분", ops: ["in"], value: "list", service: false, desc: "아래 [직분] 가운데서 list 로. 은퇴·명예·서리가 붙어도 같은 칸 · 직분이 없는 분은 「직분 없음」" },
+  { id: "gender", label: "성별", ops: ["="], value: "text", service: false, desc: "text 「남」 또는 「여」" },
+  { id: "age", label: "나이", ops: [">=", "<=", "="], value: "num", service: false, desc: "교인명부 기준일의 나이. 「50대」는 age >= 50 과 age <= 59 두 잎" },
+  { id: "kind", label: "구분", ops: ["="], value: "text", service: false, desc: "아래 [구분 이름] 가운데서(장년·청년 같은 것)" },
+  { id: "registered_year", label: "등록한 해", ops: [">=", "<=", "="], value: "year", service: false, desc: "교인명부 등록일의 해. 「최근 3년 안에 등록」은 >= years_ago 2" },
+  { id: "served_years_count", label: "섬긴 해 수", ops: [">=", "<=", "="], value: "num", service: true,
+    desc: "사역 임명 명단에 오른 서로 다른 해의 수(한 해에 팀이 여럿이어도 1). 「N해 이하」는 섬긴 적 있는 분 중에서. 한 번도 안 섬긴 분은 = 0" },
+  { id: "served_in_year", label: "그 해 섬김", ops: ["has"], value: "year", service: true,
+    desc: "그 해 사역 명단에 있음. 「올해는 안 하시는」은 none 묶음에 years_ago 0" },
+  { id: "first_served_year", label: "처음 섬긴 해", ops: [">=", "<=", "="], value: "year", service: true, desc: "처음 임명된 해" },
+  { id: "last_served_year", label: "마지막 섬긴 해", ops: [">=", "<=", "="], value: "year", service: true,
+    desc: "마지막으로 임명된 해. 「3년 넘게 쉬고 계신」은 <= years_ago 4 처럼(섬긴 적이 없는 분은 맞지 않는다)" },
+  { id: "served_streak_max", label: "잇따라 섬긴 해", ops: [">=", "<="], value: "num", service: true,
+    desc: "쉬지 않고 이어 섬긴 가장 긴 해 수. 명단이 일부인 해는 끊긴 것으로 보지 않는다" },
+];
+const FIELD_BY_ID: Record<string, FieldDef> = Object.fromEntries(FIELDS.map((f) => [f.id, f]));
+export const FIELD_IDS = FIELDS.map((f) => f.id);
+
+// ---------- 글자 다듬기 ----------
+// 사역 이력 · 부서 이음표 열쇠와 같은 규칙(SQL mh_key · history-match.ts nospace): NFC · 띄어쓰기(줄바꿈 없는 빈칸 · 전각 빈칸 포함) 없음
+export function mhKey(t: unknown): string {
+  return String(t ?? "").normalize("NFC").replace(/[\s 　]+/g, "");
+}
+const clean = (t: unknown): string => String(t ?? "").normalize("NFC").trim();
+const str = (t: unknown, max: number): string => clean(t).slice(0, max);
+// 목장 비교 열쇠 — 「화평-20목장」 · 「화평-20」 · 「화평 - 20 목장」이 같다
+export function mokKey(t: unknown): string {
+  return mhKey(t).replace(/목장$/, "");
+}
+const intOr = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null);
+function yearOf(d: unknown): number | null {
+  const m = /^(\d{4})/.exec(String(d ?? ""));
+  return m ? Number(m[1]) : null;
+}
+function posOf(p: unknown): string {
+  const b = positionBucket(p);
+  return b === "모름" ? "직분 없음" : b;
+}
+
+// ---------- 재료 ----------
+export type AskPerson = {
+  id: number; name: string; position: string; pos: string; gender: string; age: number | null;
+  gu: string; mok: string; mokKey: string; kind: string; regYear: number | null;
+};
+export type Seat = { year: number; big: string; family: string; mid: string; team: string };
+export type DeptRow = { big: string; family: string; mid: string; team: string };
+export type AskGap = { scope: string; from: number; to: number | null };
+export type AskVocab = {
+  gu: string[]; kind: string[]; big: string[]; family: string[]; mid: string[]; team: string[];
+  mokKeys: string[]; rows: DeptRow[]; yearMin: number; yearMax: number; gaps: AskGap[];
+};
+export type AskData = { people: AskPerson[]; seats: Map<number, Seat[]>; vocab: AskVocab; linked: number; histRows: number };
+
+const byCount = (m: Map<string, number>): string[] =>
+  [...m.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k]) => k);
+const sortedSet = (s: Set<string>): string[] => [...s].filter(Boolean).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+// 표 넷을 받아 셈 재료로 — 교인명부 · 사역 이력(지운 줄 빼고) · 부서 이음표 · 명단이 일부인 해.
+//   사역 이력은 교인명부에 있는 분의 줄만 센다(교인ID 가 이어지지 않은 줄 · 떠난 분의 줄은 셈에서 빠진다).
+export function buildAskData(peopleRows: any[], histRows: any[], mapRows: any[], gapRows: any[]): AskData {
+  const people: AskPerson[] = [];
+  const ids = new Set<number>();
+  const guN = new Map<string, number>(), kindN = new Map<string, number>(), moks = new Set<string>();
+  for (const r of peopleRows ?? []) {
+    const id = Number(r?.person_id);
+    if (!Number.isSafeInteger(id) || ids.has(id)) continue;
+    const ageN = r?.age === null || r?.age === undefined || r?.age === "" ? NaN : Number(r.age);
+    const age = Number.isFinite(ageN) && ageN >= 0 && ageN <= 120 ? Math.floor(ageN) : null;
+    const gu = clean(r?.mok1), mok = clean(r?.mok3), kind = clean(r?.kind2);
+    people.push({ id, name: clean(r?.name), position: clean(r?.position), pos: posOf(r?.position), gender: clean(r?.gender),
+      age, gu, mok, mokKey: mokKey(mok), kind, regYear: yearOf(r?.registered_date) });
+    ids.add(id);
+    if (gu) guN.set(gu, (guN.get(gu) ?? 0) + 1);
+    if (kind) kindN.set(kind, (kindN.get(kind) ?? 0) + 1);
+    if (mok) moks.add(mokKey(mok));
+  }
+  const map = new Map<string, any>();
+  const big = new Set<string>(), family = new Set<string>(), mid = new Set<string>(), team = new Set<string>();
+  const rowKeys = new Set<string>(), rows: DeptRow[] = [];
+  const addRow = (d: DeptRow) => {
+    const k = [d.big, d.family, d.mid, d.team].join("|");
+    if (rowKeys.has(k)) return;
+    rowKeys.add(k); rows.push(d);
+    big.add(d.big); family.add(d.family); if (d.mid) mid.add(d.mid); team.add(d.team);
+  };
+  for (const m of mapRows ?? []) {
+    map.set(clean(m?.committee_key) + "|" + clean(m?.team_key), m);
+    addRow({ big: clean(m?.big_group), family: clean(m?.family), mid: clean(m?.mid), team: clean(m?.team_std) });
+  }
+  const seats = new Map<number, Seat[]>();
+  let yearMin = Infinity, yearMax = -Infinity, linked = 0, histN = 0;
+  for (const h of histRows ?? []) {
+    const year = Number(h?.year);
+    if (!Number.isInteger(year)) continue;
+    histN++;
+    yearMin = Math.min(yearMin, year); yearMax = Math.max(yearMax, year);
+    const pid = Number(h?.person_id);
+    if (!ids.has(pid)) continue;
+    linked++;
+    const d = map.get(mhKey(h?.committee) + "|" + mhKey(h?.team));
+    // 이음표에 없는 쌍은 사역 통계(ministry_stats_facts)와 같이 「그 밖 · 미정 · 팀 원문」
+    const s: Seat = d ? { year, big: clean(d.big_group), family: clean(d.family), mid: clean(d.mid), team: clean(d.team_std) }
+      : { year, big: "그 밖", family: "미정", mid: "", team: clean(h?.team) || "(팀 이름 없음)" };
+    if (!d) addRow({ big: s.big, family: s.family, mid: s.mid, team: s.team });
+    const list = seats.get(pid);
+    if (list) list.push(s); else seats.set(pid, [s]);
+  }
+  if (!Number.isFinite(yearMin)) { yearMin = 0; yearMax = 0; }
+  const gaps: AskGap[] = (gapRows ?? []).map((g: any) => ({ scope: clean(g?.scope), from: Number(g?.year_from), to: g?.year_to === null || g?.year_to === undefined ? null : Number(g.year_to) }))
+    .filter((g: AskGap) => g.scope && Number.isInteger(g.from));
+  return {
+    people, seats, linked, histRows: histN,
+    vocab: { gu: byCount(guN), kind: byCount(kindN), big: sortedSet(big), family: sortedSet(family), mid: sortedSet(mid), team: sortedSet(team),
+      mokKeys: [...moks], rows, yearMin, yearMax, gaps },
+  };
+}
+
+// ---------- AI 에게 주는 것: 스키마 · 지시문 ----------
+// 구조화 출력(output_config.format)의 JSON 스키마. 재귀 · minimum/maximum 을 못 쓰므로(Claude 구조화 출력의 한계)
+// 트리는 묶음 셋(all · any · none)에 잎을 펼쳐 두고, 범위 · 값이 명부에 있는지는 checkTree 가 본다.
+// 값 목록(교구·부서 이름)은 스키마에 넣지 않는다 — 스키마가 늘 같아야 컴파일 캐시가 산다. 이름은 지시문에 두고 서버가 검사한다.
+const NUL = { type: "null" };
+const orNull = (t: any) => ({ anyOf: [t, NUL] });
+function leafSchema(): any {
+  return {
+    type: "object", additionalProperties: false,
+    required: ["field", "op", "num", "years_ago", "text", "list", "within", "dept", "from_text"],
+    properties: {
+      field: { type: "string", enum: FIELD_IDS },
+      op: { type: "string", enum: OPS },
+      num: orNull({ type: "number" }),
+      years_ago: orNull({ type: "integer" }),
+      text: orNull({ type: "string" }),
+      list: { type: "array", items: { type: "string" } },
+      within: orNull({ type: "object", additionalProperties: false, required: ["last_years", "from", "to"],
+        properties: { last_years: orNull({ type: "integer" }), from: orNull({ type: "integer" }), to: orNull({ type: "integer" }) } }),
+      dept: orNull({ type: "object", additionalProperties: false, required: ["level", "name"],
+        properties: { level: { type: "string", enum: DEPT_LEVELS }, name: { type: "string" } } }),
+      from_text: { type: "string" },
+    },
+  };
+}
+export function askSchema(): any {
+  return {
+    type: "object", additionalProperties: false,
+    required: ["all", "any", "none", "unsupported", "alternatives"],
+    properties: {
+      all: { type: "array", items: leafSchema() },
+      any: { type: "array", items: leafSchema() },
+      none: { type: "array", items: leafSchema() },
+      unsupported: { type: "array", items: { type: "object", additionalProperties: false, required: ["text", "kind", "note"],
+        properties: { text: { type: "string" }, kind: { type: "string", enum: UNSUP_KINDS }, note: { type: "string" } } } },
+      alternatives: { type: "array", items: { type: "string" } },
+    },
+  };
+}
+
+const VALUE_HINT: Record<string, string> = { num: "num", year: "num(해) 또는 years_ago", text: "text", list: "list" };
+export function askSystemPrompt(v: AskVocab, today: string): string {
+  const y = Number(today.slice(0, 4));
+  const partial = v.gaps.filter((g) => g.scope === "*").map((g) => (g.to === null || g.to === g.from ? `${g.from}` : `${g.from}~${g.to}`));
+  return [
+    "너는 교회 관리 화면의 「조건 만들기」다. 담임목사님이 말로 물은 것을 아래 [필드 목록]의 조건으로만 바꾼다.",
+    "명단을 찾거나 사람을 지어내지 않는다 — 조건만 만든다. 사람을 평가하지 않는다.",
+    `오늘은 ${today}, 올해는 ${y}년이다. 사역 기록이 있는 해: ${v.yearMin}~${v.yearMax}년` + (partial.length ? ` (${partial.join(" · ")}년은 명단이 일부)` : "") + ".",
+    "",
+    "[묶음]",
+    "- all: 모두 맞아야 하는 조건(그리고)",
+    "- any: 이 가운데 하나 이상 맞으면 되는 조건(또는) — 질문에 「또는」이 있을 때만",
+    "- none: 하나라도 맞으면 빼는 조건(아님) — 「올해는 안 하시는」은 none 에 served_in_year(years_ago 0)",
+    "",
+    "[필드 목록]",
+    ...FIELDS.map((f) => `- ${f.id}(${f.label}) · op ${f.ops.join(" ")} · 값 ${VALUE_HINT[f.value]} · ${f.desc}` + (f.service ? " · within·dept 를 붙일 수 있음" : "")),
+    "",
+    "[값 쓰는 법]",
+    "- 쓰지 않는 칸은 null, list 는 [].",
+    "- 해: 질문에 정확한 해(2015년)가 있으면 num 에 그 해. 「올해·작년·N년 전」은 years_ago(0=올해, 1=작년). 해를 직접 셈하지 않는다.",
+    "- within(기간): 「최근 N년」= last_years N · 「2015년부터 2020년까지」= from 2015, to 2020. 기간이 없으면 null.",
+    "- dept(부서): 아래 [부서 이름]에서 그대로 고른다 — 질문에 가장 가까운 단계. 예: 「찬양대」= mid 찬양대 · 「교회학교」= big 교회학교 · 「시온찬양대」= team 시온찬양대.",
+    "- 「N년 동안 사역」처럼 뜻이 갈리면 하나를 고르고(기본: 합쳐서 센 해 served_years_count), 다른 읽기는 alternatives 에 한국어 한 줄로.",
+    "- from_text: 그 조건이 나온 질문의 말을 그대로.",
+    "",
+    "[할 수 없는 것 — unsupported]",
+    "필드로 못 바꾸는 말은 잎을 만들지 말고 unsupported 에 { text: 질문의 그 말, kind, note: 짧은 까닭 } 으로 넣는다.",
+    "- no_data: 이 시스템에 자료가 없는 것 — 출석·예배 참석·헌금·심방·기도 제목·건강·교육 수료·봉사 당번 · 성경필사(아직 교인과 이어지지 않아 셀 수 없음)",
+    "- out_of_range: 자료 범위 밖 — 사역 기록이 있는 해 앞, 또는 그보다 긴 기간",
+    "- not_allowed: 연락처·주소·정확한 생년월일·사진·메모 같은 개인정보",
+    "- judgment: 열심·믿음·성품·「힘들어 보이는」처럼 사람을 평가하는 말",
+    "- too_complex: 가족·부부·목장 식구 사이처럼 한 사람의 필드로 못 묶는 조합",
+    "질문의 모든 말은 잎의 from_text 나 unsupported 의 text 가운데 하나에 들어가야 한다. 버리는 말이 없게.",
+    "조건과 상관없는 말뿐이면 묶음을 모두 비우고 unsupported 에 too_complex 하나.",
+    "",
+    "[교구 이름]", v.gu.join(" · "),
+    "", "[구분 이름]", v.kind.join(" · "),
+    "", "[직분]", POSITIONS.join(" · "),
+    "", "[부서 이름]",
+    `- big: ${v.big.join(" · ")}`,
+    `- family: ${v.family.join(" · ")}`,
+    `- mid: ${v.mid.join(" · ")}`,
+    `- team: ${v.team.join(" · ")}`,
+  ].join("\n");
+}
+
+// ---------- 검사 ----------
+export type Leaf = {
+  field: string; op: string; num: number | null; year: number | null; text: string | null; list: string[];
+  within: { from: number; to: number } | null; dept: { level: string; name: string } | null; from_text: string;
+};
+export type Tree = { all: Leaf[]; any: Leaf[]; none: Leaf[] };
+export type Unsup = { text: string; kind: string; note: string };
+export type Checked = { tree: Tree; unsupported: Unsup[]; notices: string[]; alternatives: string[] };
+type LeafCheck = { ok: true; leaf: Leaf; notices: string[] } | { ok: false; unsup: Unsup };
+
+const GENDER: Record<string, string> = { "남": "남", "남자": "남", "남성": "남", "형제": "남", "여": "여", "여자": "여", "여성": "여", "자매": "여" };
+
+function findName(list: string[], name: unknown): string | null {
+  const k = mhKey(name);
+  if (!k) return null;
+  return list.find((x) => mhKey(x) === k) ?? null;
+}
+// 부서 이름을 이음표에서 찾는다 — 말한 단계에 없으면 다른 단계에서(「찬양」이 big 에도 family 에도 있다)
+function findDept(v: AskVocab, level: unknown, name: unknown): { level: string; name: string } | null {
+  const levels = [String(level), ...DEPT_LEVELS.filter((l) => l !== level)].filter((l) => DEPT_LEVELS.includes(l));
+  for (const l of levels) {
+    const hit = findName((v as any)[l] as string[], name);
+    if (hit) return { level: l, name: hit };
+  }
+  return null;
+}
+
+function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
+  const f = FIELD_BY_ID[String(r?.field ?? "")];
+  const from_text = str(r?.from_text, 80);
+  const no = (kind: string, note: string): LeafCheck => ({ ok: false, unsup: { text: from_text || (f ? f.label : "조건"), kind, note } });
+  if (!f) return no("no_data", "모르는 조건이에요");
+  let op = String(r?.op ?? "");
+  if (f.value === "list" && (op === "=" || op === "in")) op = "in";
+  if (!f.ops.includes(op)) return no("too_complex", `「${f.label}」에는 「${op}」 비교를 쓸 수 없어요`);
+  const leaf: Leaf = { field: f.id, op, num: null, year: null, text: null, list: [], within: null, dept: null, from_text: from_text || f.label };
+  const notices: string[] = [];
+  const span0 = v.yearMax - v.yearMin + 1;
+
+  // 기간 · 부서 — 사역 필드에만
+  if (f.service && r?.within && typeof r.within === "object") {
+    const w = r.within;
+    const n = intOr(w.last_years);
+    const from = n !== null && n > 0 ? thisYear - n + 1 : intOr(w.from);
+    const to = n !== null && n > 0 ? thisYear : intOr(w.to);
+    if (from !== null || to !== null) {
+      let a = from ?? v.yearMin, b = to ?? thisYear;
+      if (a > b) [a, b] = [b, a];
+      if (b < v.yearMin || a > v.yearMax) return no("out_of_range", `사역 기록은 ${v.yearMin}~${v.yearMax}년만 있어요`);
+      if (a < v.yearMin) { notices.push(`「${leaf.from_text}」 — 사역 기록이 ${v.yearMin}년부터라 ${v.yearMin}년부터 셌어요`); a = v.yearMin; }
+      leaf.within = { from: a, to: b };
+    }
+  }
+  if (f.service && r?.dept && typeof r.dept === "object" && clean(r.dept.name)) {
+    const d = findDept(v, r.dept.level, r.dept.name);
+    if (!d) return no("no_data", `부서 「${str(r.dept.name, 30)}」을(를) 부서 이음표에서 찾지 못했어요`);
+    leaf.dept = d;
+  }
+  const span = leaf.within ? leaf.within.to - Math.max(leaf.within.from, v.yearMin) + 1 : span0;
+
+  if (f.value === "num") {
+    const n = typeof r?.num === "number" && Number.isFinite(r.num) ? Math.round(r.num) : null;
+    if (n === null) return no("too_complex", `「${f.label}」의 수를 알 수 없어요`);
+    if (f.id === "age" && (n < 0 || n > 120)) return no("out_of_range", "나이가 이치에 맞지 않아요");
+    if ((f.id === "served_years_count" || f.id === "served_streak_max") && n < 0) return no("too_complex", "해 수가 이치에 맞지 않아요");
+    if ((f.id === "served_years_count" || f.id === "served_streak_max") && n > span && op !== "<=")
+      return no("out_of_range", leaf.within ? `그 기간은 ${span}해라 ${n}해를 셀 수 없어요`
+        : `사역 기록이 ${v.yearMin}년부터라 ${span}해까지만 셀 수 있어요`);
+    leaf.num = n;
+  } else if (f.value === "year") {
+    let y: number | null = Number.isInteger(r?.year) ? r.year : null;
+    if (y === null && Number.isInteger(r?.years_ago)) y = thisYear - r.years_ago;
+    if (y === null && typeof r?.num === "number" && Number.isFinite(r.num)) y = Math.round(r.num);
+    if (y === null || y < 1900 || y > thisYear + 1) return no("too_complex", "해를 알 수 없어요");
+    if (f.service && op !== "<=" && op !== ">=" && (y < v.yearMin || y > v.yearMax))
+      return no("out_of_range", `사역 기록은 ${v.yearMin}~${v.yearMax}년만 있어요`);
+    if (f.service && v.gaps.some((g) => g.scope === "*" && y! >= g.from && y! <= (g.to ?? v.yearMax)))
+      notices.push(`${y}년은 사역 명단이 일부예요 — 빠진 분이 있을 수 있어요`);
+    leaf.year = y;
+  } else if (f.value === "text") {
+    const t = clean(r?.text ?? (Array.isArray(r?.list) ? r.list[0] : ""));
+    if (f.id === "mok") {
+      if (/^목장\s*없음$/.test(t)) leaf.text = "목장 없음";
+      else if (t && v.mokKeys.includes(mokKey(t))) leaf.text = t;
+      else return no("no_data", `목장 「${str(t, 20)}」을(를) 교인명부에서 찾지 못했어요`);
+    } else if (f.id === "gender") {
+      const g = GENDER[mhKey(t)];
+      if (!g) return no("too_complex", "성별은 남 · 여 가운데서만 찾아요");
+      leaf.text = g;
+    } else if (f.id === "kind") {
+      const k = findName(v.kind, t);
+      if (!k) return no("no_data", `구분 「${str(t, 20)}」이(가) 교인명부에 없어요`);
+      leaf.text = k;
+    }
+  } else if (f.value === "list") {
+    const raw = (Array.isArray(r?.list) && r.list.length ? r.list : r?.text ? [r.text] : []).map((x: unknown) => clean(x)).filter(Boolean);
+    const ok: string[] = [], bad: string[] = [];
+    for (const x of raw) {
+      if (f.id === "gu") {
+        const g = findName(v.gu, x) ?? findName(v.gu, String(x).replace(/교구$/, ""));
+        if (g) { if (!ok.includes(g)) ok.push(g); } else bad.push(x);
+      } else if (f.id === "position") {
+        let p: string | null = null;
+        if (POSITIONS.includes(x)) p = x;
+        else if (/^(성도|없음|평신도|직분없음)$/.test(mhKey(x))) p = "직분 없음";
+        else { const b = positionBucket(x); p = b === "모름" ? null : b; }
+        if (p) { if (!ok.includes(p)) ok.push(p); } else bad.push(x);
+      }
+    }
+    if (!ok.length) return no("no_data", `「${str(raw.join(", ") || f.label, 30)}」을(를) ${f.label} 목록에서 찾지 못했어요`);
+    if (bad.length) notices.push(`${f.label} 「${bad.join(", ")}」은(는) 목록에 없어 뺐어요`);
+    leaf.list = ok;
+  }
+  return { ok: true, leaf, notices };
+}
+
+export function checkTree(raw: any, v: AskVocab, thisYear: number): Checked {
+  const tree: Tree = { all: [], any: [], none: [] };
+  const unsupported: Unsup[] = [], notices: string[] = [];
+  let leaves = 0;
+  for (const g of GROUPS) {
+    const arr = Array.isArray(raw?.[g]) ? raw[g] : [];
+    for (const r of arr) {
+      const c = checkLeaf(r, v, thisYear);
+      if (!c.ok) { unsupported.push(c.unsup); continue; }
+      if (leaves >= ASK_MAX_LEAVES) { unsupported.push({ text: c.leaf.from_text, kind: "too_complex", note: `조건은 ${ASK_MAX_LEAVES}개까지만 써요` }); continue; }
+      (tree as any)[g].push(c.leaf); leaves++;
+      for (const n of c.notices) if (!notices.includes(n)) notices.push(n);
+    }
+  }
+  // 「또는」이 하나뿐이면 「그리고」와 같다
+  if (tree.any.length === 1) { tree.all.push(tree.any[0]); tree.any = []; }
+  for (const u of Array.isArray(raw?.unsupported) ? raw.unsupported : []) {
+    const text = str(u?.text, 100);
+    if (!text) continue;
+    unsupported.push({ text, kind: UNSUP_KINDS.includes(u?.kind) ? u.kind : "too_complex", note: str(u?.note, 120) });
+  }
+  const alternatives = (Array.isArray(raw?.alternatives) ? raw.alternatives : []).map((a: unknown) => str(a, 120)).filter(Boolean).slice(0, 3);
+  return { tree, unsupported, notices, alternatives };
+}
+
+export const leafCount = (t: Tree): number => t.all.length + t.any.length + t.none.length;
+// 세 갈래 — ok 모두 됨 · partial 섞임(멈추고 여쭙기) · none 하나도 못 함
+export function statusOf(c: Checked): "ok" | "partial" | "none" {
+  if (!leafCount(c.tree)) return "none";
+  return c.unsupported.length ? "partial" : "ok";
+}
+
+// ---------- 셈 ----------
+const cmp = (a: number, op: string, b: number): boolean => (op === ">=" ? a >= b : op === "<=" ? a <= b : a === b);
+
+function deptHit(s: Seat, d: { level: string; name: string } | null): boolean {
+  if (!d) return true;
+  return d.level === "big" ? s.big === d.name : d.level === "family" ? s.family === d.name : d.level === "mid" ? s.mid === d.name : s.team === d.name;
+}
+// 그 잎이 보는 해 — 부서 · 기간으로 거른 사역 이력의 서로 다른 해
+function yearsFor(p: AskPerson, l: Leaf, d: AskData): Set<number> {
+  const out = new Set<number>();
+  for (const s of d.seats.get(p.id) ?? []) {
+    if (!deptHit(s, l.dept)) continue;
+    if (l.within && (s.year < l.within.from || s.year > l.within.to)) continue;
+    out.add(s.year);
+  }
+  return out;
+}
+// 명단이 일부인 해 — 전체(*)는 늘, 큰 분류(g:)·계열(f:)은 부서를 그쪽으로 걸었을 때만(ministry_list_gaps)
+export function gapYears(dept: { level: string; name: string } | null, v: AskVocab): Set<number> {
+  const bigs = new Set<string>(), fams = new Set<string>();
+  if (dept) for (const r of v.rows) if (deptHit({ year: 0, ...r }, dept)) { bigs.add(r.big); fams.add(r.family); }
+  const out = new Set<number>();
+  for (const g of v.gaps) {
+    const on = g.scope === "*" || (g.scope.startsWith("g:") && bigs.has(g.scope.slice(2))) || (g.scope.startsWith("f:") && fams.has(g.scope.slice(2)));
+    if (!on) continue;
+    for (let y = g.from; y <= (g.to ?? v.yearMax); y++) out.add(y);
+  }
+  return out;
+}
+// 잇따라 섬긴 가장 긴 해 수 — 명단이 일부인 해는 끊긴 것으로 보지 않는다(세지도 않는다)
+export function streakOf(years: Set<number>, gaps: Set<number>): number {
+  if (!years.size) return 0;
+  const lo = Math.min(...years), hi = Math.max(...years);
+  let run = 0, best = 0;
+  for (let y = lo; y <= hi; y++) {
+    if (years.has(y)) { run++; best = Math.max(best, run); }
+    else if (!gaps.has(y)) run = 0;
+  }
+  return best;
+}
+
+function leafTrue(l: Leaf, p: AskPerson, d: AskData): boolean {
+  switch (l.field) {
+    case "gu": return l.list.includes(p.gu);
+    case "mok": return l.text === "목장 없음" ? p.mokKey === "" : mokKey(l.text) === p.mokKey;
+    case "position": return l.list.includes(p.pos);
+    case "gender": return p.gender === l.text;
+    case "age": return p.age !== null && cmp(p.age, l.op, l.num!);
+    case "kind": return mhKey(p.kind) === mhKey(l.text);
+    case "registered_year": return p.regYear !== null && cmp(p.regYear, l.op, l.year!);
+  }
+  const ys = yearsFor(p, l, d);
+  switch (l.field) {
+    case "served_years_count":
+      // 「N해 이하」는 섬긴 적 있는 분 중에서 · 「= 0」은 한 번도 안 섬긴 분
+      return l.op === "<=" ? ys.size >= 1 && ys.size <= l.num! : cmp(ys.size, l.op, l.num!);
+    case "served_in_year": return ys.has(l.year!);
+    case "first_served_year": return ys.size > 0 && cmp(Math.min(...ys), l.op, l.year!);
+    case "last_served_year": return ys.size > 0 && cmp(Math.max(...ys), l.op, l.year!);
+    case "served_streak_max": {
+      const n = streakOf(ys, gapYears(l.dept, d.vocab));
+      return l.op === "<=" ? n >= 1 && n <= l.num! : cmp(n, l.op, l.num!);
+    }
+  }
+  return false;
+}
+
+export function runTree(t: Tree, d: AskData): AskPerson[] {
+  if (!leafCount(t)) return [];
+  return d.people.filter((p) => t.all.every((l) => leafTrue(l, p, d))
+    && (t.any.length === 0 || t.any.some((l) => leafTrue(l, p, d)))
+    && !t.none.some((l) => leafTrue(l, p, d)));
+}
+
+// 화면 줄 — 이름 · 직분 · 교구 · 목장 · 나이 · 섬긴 해 · 처음~마지막 · 주로 섬긴 곳. 연락처 · 주소 · 교인ID 는 싣지 않는다.
+export function rowOut(p: AskPerson, d: AskData) {
+  const seats = d.seats.get(p.id) ?? [];
+  const years = [...new Set(seats.map((s) => s.year))].sort((a, b) => a - b);
+  const where = new Map<string, Set<number>>();
+  for (const s of seats) {
+    const k = s.family === s.big ? (s.mid || s.team) : s.family;
+    if (!where.has(k)) where.set(k, new Set());
+    where.get(k)!.add(s.year);
+  }
+  const main = [...where.entries()].sort((a, b) => b[1].size - a[1].size || (a[0] < b[0] ? -1 : 1))[0];
+  return { name: p.name, position: p.position, gu: p.gu, mok: p.mok, age: p.age, served: years.length,
+    first: years[0] ?? null, last: years.length ? years[years.length - 1] : null, main: main ? main[0] : "" };
+}
+const rowCmp = (a: ReturnType<typeof rowOut>, b: ReturnType<typeof rowOut>) =>
+  b.served - a.served || (b.last ?? 0) - (a.last ?? 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+// ---------- 칩 글 ----------
+const NUM_WORD: Record<string, string> = { ">=": " 이상", "<=": " 이하", "=": "" };
+const YEAR_WORD: Record<string, string> = { ">=": " 이후", "<=": " 이전", "=": "" };
+export function describeLeaf(l: Leaf): string {
+  let s = "";
+  switch (l.field) {
+    case "gu": s = `교구 ${l.list.join("·")}`; break;
+    case "mok": s = `목장 ${l.text}`; break;
+    case "position": s = `직분 ${l.list.join("·")}`; break;
+    case "gender": s = `성별 ${l.text}`; break;
+    case "kind": s = `구분 ${l.text}`; break;
+    case "age": s = `나이 ${l.num}${NUM_WORD[l.op]}`; break;
+    case "registered_year": s = `등록 ${l.year}년${YEAR_WORD[l.op]}`; break;
+    case "served_years_count": s = l.op === "=" && l.num === 0 ? "사역한 적 없음" : `섬긴 해 ${l.num}해${NUM_WORD[l.op]}`; break;
+    case "served_in_year": s = `${l.year}년 사역`; break;
+    case "first_served_year": s = `처음 섬긴 해 ${l.year}년${YEAR_WORD[l.op]}`; break;
+    case "last_served_year": s = `마지막 섬긴 해 ${l.year}년${YEAR_WORD[l.op]}`; break;
+    case "served_streak_max": s = `잇따라 섬긴 해 ${l.num}해${NUM_WORD[l.op]}`; break;
+    default: s = l.field;
+  }
+  if (l.within) s += ` · ${l.within.from}~${l.within.to}년`;
+  if (l.dept) s += ` · ${l.dept.name}`;
+  return s;
+}
+
+// ---------- 질문 · 응답 ----------
+export function askQuestion(q: unknown): { ok: true; q: string } | { ok: false; error: string } {
+  const t = String(q ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
+  if (!t) return { ok: false, error: "no-question" };
+  if (t.length > ASK_Q_MAX) return { ok: false, error: "question-too-long" };
+  return { ok: true, q: t };
+}
+
+// AI 답(또는 화면이 고친 트리)을 검사하고, 갈래에 따라 센다.
+//   fromAi: AI 에서 온 첫 답이면 partial 일 때 세지 않고 멈춘다(「나머지 조건으로만 찾기」를 누르면 화면이 askPeopleRun 으로 다시 부른다).
+export function askOut(raw: any, d: AskData, today: string, fromAi: boolean) {
+  const thisYear = Number(today.slice(0, 4));
+  const c = checkTree(raw, d.vocab, thisYear);
+  const status = statusOf(c);
+  const out = {
+    status, tree: c.tree,
+    chips: { all: c.tree.all.map(describeLeaf), any: c.tree.any.map(describeLeaf), none: c.tree.none.map(describeLeaf) },
+    unsupported: c.unsupported.map((u) => ({ ...u, label: UNSUP_LABEL[u.kind] ?? UNSUP_LABEL.too_complex })),
+    alternatives: c.alternatives, notices: c.notices,
+    total: null as number | null, rows: [] as ReturnType<typeof rowOut>[], truncated: false,
+    source: { people: d.people.length, years: `${d.vocab.yearMin}~${d.vocab.yearMax}`, linked: d.linked, histRows: d.histRows },
+  };
+  if (status === "none" || (status === "partial" && fromAi)) return out;
+  const rows = runTree(c.tree, d).map((p) => rowOut(p, d)).sort(rowCmp);
+  out.total = rows.length;
+  out.rows = rows.slice(0, ASK_ROW_MAX);
+  out.truncated = rows.length > ASK_ROW_MAX;
+  return out;
+}
