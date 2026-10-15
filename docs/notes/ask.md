@@ -13,7 +13,9 @@
 3. 돌아온 조건을 `checkTree` 가 검사 — 필드 목록에 없거나 범위 밖 · 명부에 없는 값은 `unsupported`(까닭 다섯: no_data · out_of_range · not_allowed · judgment · too_complex).
 4. 갈래: `ok` → 셈 · `partial` → **세지 않고 멈춘다**(화면 「나머지 조건으로만 찾기」 → `askPeopleRun`) · `none` → 「찾을 수 있는 조건이 없어요」.
 5. 칩의 × · 「나머지 조건으로만」은 `askPeopleRun {tree}` — **AI 를 다시 부르지 않고** 같은 검사를 다시 거쳐 센다(화면을 믿지 않는다).
-6. 기록: `people.ask {q(앞 120자), status, total}` · `people.ask.run {status, total, dropped}` — 「바꾼 기록」의 교인명부 기록.
+6. 명단의 이름(단추)을 누르면 교인명부 「자세히」 창(`people/search.js openPerson` — 교적 · 사역 · 성경필사 · 교육 탭 · `peoplePerson` 이 `people.view` 를 남긴다).
+   그래서 줄에 교인ID(`id`)를 싣는다 — 총괄 응답이라 괜찮다. ⚠️ 담임목사 역할로 열 때는 그 역할이 `peoplePerson`(교인명부 directory)도 부를 수 있어야 창이 열린다.
+7. 기록: `people.ask {q(앞 120자), status, total}` · `people.ask.run {status, total, dropped}` — 「바꾼 기록」의 교인명부 기록.
 
 ## ⚠️ 함정
 - **AI 에게 가는 글은 `askSystemPrompt` · `askSchema` 둘뿐이다.** 사람 자료(이름 · 교인ID · 나이 · 목장 이름)를 넣지 말 것 — `tests/ask-people.test.mjs` 가 지시문에 이름·목장이 없는지 본다. 지시문의 예시에도 실제 있을 법한 목장 이름을 쓰지 않는다.
