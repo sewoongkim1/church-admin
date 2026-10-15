@@ -1645,7 +1645,9 @@ async function askClaude(question: string, data: AskData, today: string):
     }
   } catch (e) {
     console.error("askClaude", e);
-    return { ok: false, error: "ask-ai", code: String((e as any)?.status ?? "net") };
+    // 까닭 한 줄(API 오류 문장 — 키·사람 자료는 들어 있지 않다)을 함께 — 총괄만 보는 응답이다
+    const msg = String((e as any)?.error?.error?.message ?? (e as any)?.message ?? "").slice(0, 200);
+    return { ok: false, error: "ask-ai", code: String((e as any)?.status ?? "net"), msg };
   }
   if (res?.stop_reason === "refusal") return { ok: false, error: "ask-refused" };
   if (res?.stop_reason === "max_tokens") return { ok: false, error: "ask-cut" };
