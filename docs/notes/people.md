@@ -44,7 +44,7 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
   ⚠️ 약속이 문서(개인정보 안내 6번 · 성경암송 `privacy/` · 성경암송 `app.js` 세 곳 — 개인정보 화면·도움말·사역 신청서 안내)와 코드 두 곳이다 — 예약이 실제로 도는지 `cron.job_run_details` 로 본다. 옛 성경암송 관리 화면(얼림)은 결정 때 바로 지운다(더 엄격하니 둔다).
   ⚠️ 180일 자동도 **지금 결정 상태인 줄만**(`status in DECIDED` + `decided_at` · 2026-10-02) — 결정에서 되돌려도 `decided_at` 은 남는다(`statusPatch`). 단추와 같은 셈이다 · 목록은 `ministry.ts DECIDED` 와 같아야 한다(`tests/ministry.test.mjs` 가 SQL 을 읽어 맞댄다).
 - 다음 명단(12월 무렵) 전에 할 다듬기: v2 계획서 끝의 최종 검토 「나중」 목록(옛 기준일 폴더로 덮어쓰기 막기 · 깨진 글자 멈춤 · 씨앗 사진 원자 복사 등).
-- **✍️ 성경필사 「이분 것」은 같은 교구 기록을 한 번에(2026-10-15 친구 「교구가 같으면 한번 이을 때 다 같이」)** — `person-history.js` `sameGroupSignups`(순수 · 시험 `tests/person-history.test.mjs`) · `person-tabs.js` `link`.
+- **✍️ 성경필사 「이분 것」은 같은 교구 기록을 한 번에(2026-10-15 친구 「교구가 같으면 한번 이을 때 다 같이」 · 같은 날 운영에서 실사용 확인 — 친구)** — `person-history.js` `sameGroupSignups`(순수 · 시험 `tests/person-history.test.mjs`) · `person-tabs.js` `link`.
   누른 줄과 **구분(who_type) · 교구/부서(group)가 같고 아직 안 이어진** 성경필사 줄을 함께 잇는다(목장 · 학년은 안 본다). 단추는 「이분 것 · N건」 + 목록 위 안내 한 줄.
   서버는 **줄마다 따로** `peopleLink`(manual) — 이름 확인 · 기록(`people.link`)이 줄마다 그대로 · 하나가 안 돼도 나머지는 계속(알림에 「N건은 잇지 못했어요」).
   ⚠️ 「이분 아님」으로 둔 줄은 함께 잇지 않는다(사람이 정한 것) · 교구가 빈 줄은 묶지 않는다 · 사역 탭은 묶지 않는다(친구 요청은 성경필사).
