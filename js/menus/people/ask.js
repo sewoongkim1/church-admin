@@ -4,6 +4,8 @@
 //   칩 글은 서버가 검사를 통과한 조건에서 만든 것이다(AI 글이 아니다) — 보이는 조건 = 실제로 돈 조건.
 //   설계 v2 docs/superpowers/specs/2026-10-15-pastor-ai-ask-design.md · 서버 규약 supabase/functions/church-admin/ask-people.ts
 import { esc, busy, errorText, toast } from "../../core/ui.js";
+// 이름을 누르면 교인명부 「자세히」 창(교적 · 🤝 사역 · ✍️ 성경필사 · 🎓 교육 탭) — 교인 찾기와 같은 창 · 서버 peoplePerson 이 people.view 를 남긴다
+import { openPerson } from "./search.js";
 
 const TITLE = `<h2 class="page-title">🤖 성도 묻기 <span class="badge">시험판</span></h2>`;
 const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b>와 <b>사역 이력</b>에서 찾아 드려요.
@@ -76,7 +78,7 @@ function rowsHtml(r, dropped) {
       <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th></tr></thead><tbody>` +
     r.rows.map((x) => `<tr><td>${esc(x.name)}</td><td>${esc(x.position || "—")}</td><td>${esc(x.gu || "—")}</td><td>${esc(x.mok || "—")}</td>` +
       `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td></tr>`).join("") +
-    `</tbody></table></div>`;
+    `</tbody></table></div><p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창(교적 · 사역 · 성경필사 · 교육)이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
 }
 
 function resultHtml(r, st) {
@@ -124,6 +126,12 @@ export async function render(el, { call }) {
     const ex = e.target.closest("button[data-ex]");
     if (ex && el.contains(ex)) { qEl.value = EXAMPLES[Number(ex.dataset.ex)] || ""; ask(); return; }
     if (!st) return;
+    const nb = e.target.closest("button[data-pid]");
+    if (nb && el.contains(nb)) {
+      // 「👪 가족 모두 목록으로」는 이 메뉴에 가족 목록이 없어 알림 한 줄(창은 그대로 · 성경필사 이름 창과 같다)
+      openPerson(call, Number(nb.dataset.pid), () => toast("가족 모두 보기는 🔎 교인 찾기에서 할 수 있어요"), nb);
+      return;
+    }
     const x = e.target.closest("button[data-x]");
     if (x && el.contains(x)) {
       const [g, i] = x.dataset.x.split(":");

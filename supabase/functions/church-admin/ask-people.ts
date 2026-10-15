@@ -459,7 +459,9 @@ export function runTree(t: Tree, d: AskData): AskPerson[] {
     && !t.none.some((l) => leafTrue(l, p, d)));
 }
 
-// 화면 줄 — 이름 · 직분 · 교구 · 목장 · 나이 · 섬긴 해 · 처음~마지막 · 주로 섬긴 곳. 연락처 · 주소 · 교인ID 는 싣지 않는다.
+// 화면 줄 — 교인ID(이름을 누르면 교인명부 「자세히」 창 — peoplePerson) · 이름 · 직분 · 교구 · 목장 · 나이 · 섬긴 해 · 처음~마지막 · 주로 섬긴 곳.
+//   연락처 · 주소는 싣지 않는다(「자세히」 창이 peoplePerson 으로 따로 읽고 people.view 를 남긴다).
+//   ⚠️ 교인ID 는 교인명부 · 총괄 응답에만 — 이 액션이 총괄 밖으로 열리면(담임목사 역할) 그 역할이 교인명부도 볼 수 있는지부터 정할 것.
 export function rowOut(p: AskPerson, d: AskData) {
   const seats = d.seats.get(p.id) ?? [];
   const years = [...new Set(seats.map((s) => s.year))].sort((a, b) => a - b);
@@ -470,7 +472,7 @@ export function rowOut(p: AskPerson, d: AskData) {
     where.get(k)!.add(s.year);
   }
   const main = [...where.entries()].sort((a, b) => b[1].size - a[1].size || (a[0] < b[0] ? -1 : 1))[0];
-  return { name: p.name, position: p.position, gu: p.gu, mok: p.mok, age: p.age, served: years.length,
+  return { id: p.id, name: p.name, position: p.position, gu: p.gu, mok: p.mok, age: p.age, served: years.length,
     first: years[0] ?? null, last: years.length ? years[years.length - 1] : null, main: main ? main[0] : "" };
 }
 const rowCmp = (a: ReturnType<typeof rowOut>, b: ReturnType<typeof rowOut>) =>

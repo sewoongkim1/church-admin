@@ -157,7 +157,9 @@ test("세 갈래 — partial 은 AI 첫 답이면 세지 않고 멈춘다 · 화
   assert.equal(again.rows[0].name, "시험-가");
   assert.equal(again.rows[0].served, 12);
   assert.equal(again.rows[0].main, "찬양대");
-  assert.deepEqual(Object.keys(again.rows[0]).sort(), ["age", "first", "gu", "last", "main", "mok", "name", "position", "served"]);
+  // 교인ID(id)는 이름을 누르면 「자세히」 창을 열려고 — 연락처 · 주소는 없다
+  assert.deepEqual(Object.keys(again.rows[0]).sort(), ["age", "first", "gu", "id", "last", "main", "mok", "name", "position", "served"]);
+  assert.equal(again.rows[0].id, 1);
 });
 
 test("화면이 돌려보낸 트리(해가 이미 풀린 꼴)도 같은 검사로", () => {
