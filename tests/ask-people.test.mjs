@@ -203,6 +203,9 @@ test("AI 에게 가는 것 — 지시문에 사람 자료(이름 · 목장 이�
   assert.ok(p.includes("시온찬양대"));
   assert.ok(p.includes("2010~2026년"));
   assert.ok(p.includes("2021년은 명단이 일부"));
+  // 기록 범위 밖의 일부 해는 말하지 않는다
+  const v2 = { ...D.vocab, yearMin: 2024, yearMax: 2026 };
+  assert.ok(!askSystemPrompt(v2, TODAY).includes("2021년은 명단이 일부"));
 });
 
 test("AI 가 「안 씀」을 정해 둔 값(num -1 · years_ago -1 · text \"\" · within 0 · dept none)으로 보내면 없음으로 읽는다", () => {

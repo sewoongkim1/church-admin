@@ -191,7 +191,9 @@ export function askSchema(): any {
 const VALUE_HINT: Record<string, string> = { num: "num", year: "num(해) 또는 years_ago", text: "text", list: "list" };
 export function askSystemPrompt(v: AskVocab, today: string): string {
   const y = Number(today.slice(0, 4));
-  const partial = v.gaps.filter((g) => g.scope === "*").map((g) => (g.to === null || g.to === g.from ? `${g.from}` : `${g.from}~${g.to}`));
+  // 명단이 일부인 해 — 기록이 있는 해 안의 것만(범위 밖 해를 말하면 AI 가 그 해를 기록이 있는 해로 오해한다 · 2026-10-15 개발에서 봄)
+  const partial = v.gaps.filter((g) => g.scope === "*" && g.from <= v.yearMax && (g.to ?? v.yearMax) >= v.yearMin)
+    .map((g) => (g.to === null || g.to === g.from ? `${g.from}` : `${g.from}~${g.to}`));
   return [
     "너는 교회 관리 화면의 「조건 만들기」다. 담임목사님이 말로 물은 것을 아래 [필드 목록]의 조건으로만 바꾼다.",
     "명단을 찾거나 사람을 지어내지 않는다 — 조건만 만든다. 사람을 평가하지 않는다.",
