@@ -21,6 +21,8 @@ import { pickMany } from "../../core/picker.js";
 // 「자세히」 창의 사역·성경필사 탭(2026-10-01) — 손잡이는 person-tabs.js · 마지막 창이 보던 탭(detailTab)은 person-popup.js 도 쓴다
 import { bindPersonTabs, detailTab } from "./person-tabs.js";
 export { detailTab } from "./person-tabs.js";
+// 🏠 심방자료 단추(2026-10-15 · 총괄만) — 이 창을 닫고 심방 카드를 연다(창 위에 창을 띄우지 않는다) · visit-card.js 도 이 파일을 부른다(돌아가는 import — 둘 다 누를 때만 쓴다)
+import { openVisitCard } from "./visit-card.js";
 
 const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
 // 앞 「자세히」 창을 아직 여는 중(peoplePerson 을 기다림)에 또 누르면 — 말없이 버리지 않는다(FE1-M2)
@@ -131,12 +133,13 @@ export async function openPerson(call, id, onFamily, back, opts = {}) {
     const okBtn = dlg.querySelector('[data-v="1"]');
     okBtn.focus();                        // 초점이 줄에 남으면 Enter 한 번에 같은 분 창이 또 뜬다
     dlg.addEventListener("click", (e) => {
-      const f = e.target.closest("[data-fam]"), all = e.target.closest("[data-fam-all]");
-      if (!f && !all) return;
+      const f = e.target.closest("[data-fam]"), all = e.target.closest("[data-fam-all]"), visit = e.target.closest("[data-pd-visit]");
+      if (!f && !all && !visit) return;
       handedOff = true;
       okBtn.click();                                                // 이 창을 닫고
-      opening = false;                                              // 다음 창(가족)은 새로 연다
-      if (f) openPerson(call, f.dataset.fam, onFamily, back, { tab: detailTab() });
+      opening = false;                                              // 다음 창(가족 · 심방 카드)은 새로 연다
+      if (visit) openVisitCard(call, Number(visit.dataset.pdVisit), back);
+      else if (f) openPerson(call, f.dataset.fam, onFamily, back, { tab: detailTab() });
       else onFamily(Number(all.dataset.famAll), p.household_head || "");
     });
     await closed;

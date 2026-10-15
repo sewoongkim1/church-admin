@@ -2239,3 +2239,30 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .vc-empty{margin:0;color:var(--gray);font-size:13px}
 .ak-visit{min-height:32px;padding:0 12px;border:1px solid var(--border);border-radius:999px;background:var(--light);font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
 .ak-visit:hover{background:#fff}
+
+/* 📖 성경암송 탭 · 🏠 심방자료 단추(2026-10-15 · 총괄만 — person-history.js memoPanelHtml · person-detail.js) · 탭이 다섯(.pd-tabs5)이면 폰에서 세 칸 */
+.dlg.pd .pd-visits{grid-column:1/-1;margin-top:8px}
+.dlg.pd .pd-visit{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;min-height:var(--tap);padding:0 14px;
+  border-radius:999px;border:1px solid var(--gold);background:#fff8e6;color:var(--navy-dark);font:inherit;font-size:15px;font-weight:800;cursor:pointer}
+.dlg.pd .pd-visit:hover{border-color:var(--navy)}
+@container (max-width:479px){
+  .dlg.pd .pd-tabs5{grid-template-columns:repeat(3,1fr)}
+}
+.dlg.pd .pd-hl-m .pd-hr{grid-template-columns:minmax(0,1fr) auto}
+.dlg.pd .pd-md{font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.dlg.pd .pd-memo{margin:12px 0}
+.dlg.pd .pd-panel[data-pd-panel="memo"] .pd-eh{margin-top:4px}
+@container (min-width:720px){
+  .dlg.pd .pd-panel[data-pd-panel="memo"]{display:block;contain:size;overflow-y:auto;overscroll-behavior:contain}
+  .dlg.pd .pd-panel[data-pd-panel="memo"][data-off]{display:none}
+}
+/* 🏠 심방 카드의 가족 줄(2026-10-15) — 관계 · 이름(누르면 그분 심방자료) · 직분 나이 / 기록 조각들 */
+.vc-fams{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.vc-fam{padding:6px 0;border-top:1px dashed var(--border)}
+.vc-fam:first-child{border-top:0;padding-top:0}
+.vc-fam-h{margin:0;font-size:14.5px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}
+.vc-fam-h b{color:var(--navy);font-weight:800}
+.vc-fam-n{border:0;background:none;padding:0;font:inherit;font-weight:800;color:var(--navy-dark);text-decoration:underline;text-underline-offset:3px;cursor:pointer;min-height:28px}
+.vc-fam-w{color:var(--ink-2);font-size:13px}
+.vc-fam-s{margin:4px 0 0;display:flex;flex-wrap:wrap;gap:4px 6px}
+.vc-fam-s span{padding:1px 8px;border-radius:999px;background:var(--light);border:1px solid var(--border);font-size:12.5px;color:var(--ink)}

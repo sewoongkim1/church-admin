@@ -10,7 +10,7 @@
 // 🎓 교육 탭(4단계 B · 2026-10-06) — 탭 목록은 tabsFor(history)(교육 칸이 있을 때만 넷) · 교육 탭은 읽기만이라
 //    「아직 안 이어진 기록」을 부르지 않는다(linksTab) · 잇기 뒤 서버 답에 교육 칸이 빠졌으면 보던 교육 칸을 그대로 둔다(keepEdu).
 import { toast, busy, errorText } from "../../core/ui.js";
-import { tabsFor, tabOf, tabsHtml, histPanelHtml, rowKey, linkDoneText, linksTab, keepEdu, sameGroupSignups } from "./person-history.js";
+import { tabsFor, tabOf, tabsHtml, histPanelHtml, rowKey, linkDoneText, linksTab, keepEdu, keepMemo, sameGroupSignups } from "./person-history.js";
 
 let lastTab = "church";
 // 마지막 「자세히」 창이 보던 탭 — 가족으로 넘어갈 때 그대로 연다(search.js 가 다시 내보내고 person-popup.js 가 쓴다).
@@ -67,7 +67,7 @@ export function bindPersonTabs({ dlg, call, personId, history, tab }) {
     });
     if (!dlg.isConnected) return;
     if (!r || !r.ok) { toast(errorText(r)); return; }
-    if (r.history) s.history = keepEdu(s.history, r.history);   // 없으면(서버가 탭 자료 다시 읽기에 실패 · 쓰기는 됐다) 옛 탭 그대로 — 알림이 「다시 열면」을 덧붙인다
+    if (r.history) s.history = keepMemo(s.history, keepEdu(s.history, r.history));   // 📖 성경암송 칸은 잇기 응답에 없다 — 보던 것 그대로   // 없으면(서버가 탭 자료 다시 읽기에 실패 · 쓰기는 됐다) 옛 탭 그대로 — 알림이 「다시 열면」을 덧붙인다
     const again = how === "auto" && r.relinked;
     s.confirm = again ? { key: rowKey(kind, row), relinked: true } : null;
     toast(linkDoneText(how, r) + (together ? ` · 같은 교구 ${together}건도 함께 이었어요` : "") + (missed ? ` · ${missed}건은 잇지 못했어요` : ""));

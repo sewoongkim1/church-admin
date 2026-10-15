@@ -85,6 +85,8 @@ import { ASK_CONTRACT, askOut, askQuestion, askSchema, askSystemPrompt, buildAsk
 // 견주기(askEval)가 더 쓰는 이름 · 🏠 심방 준비 한 장(2026-10-15)
 import { checkTree, describeLeaf, statusOf } from "./ask-people.ts";
 import { visitCard, visitFacts, visitPointsOut, visitSchema, VISIT_SYSTEM } from "./visit-card.ts";
+// 📖 성경암송 기록(2026-10-15) — 교인카드 탭 · 심방 카드(본인 · 가족) · 총괄만
+import { doneVerseNos, memoAccountsFor, memoSummary, withMemoTab, type MemoPin, type MemoSummary } from "./memo-rec.ts";
 import Anthropic from "npm:@anthropic-ai/sdk@0.131.0";
 
 const cors = {
@@ -1477,12 +1479,15 @@ async function peoplePerson(ctx: Ctx, b: any) {
   }
   // 사역·성경필사 탭(2026-10-01) — 칸 지도로만(people-links.ts historyTabs) · 기록은 people.view 한 줄 그대로
   // ⚠️ 탭은 덧붙는 기능 — 읽기가 실패하면 history 를 빼고 예전 창(탭 없이)으로 연다(창 전체를 500 으로 만들지 않는다 · personHistorySafe)
-  const history = await personHistorySafe(id);
+  // 📖 성경암송 탭 · 🏠 심방자료 단추(2026-10-15)는 **총괄만** — 성경암송 방침 「암송 기록은 본인과 운영진이 봅니다」(memo-rec.ts 머리)
+  const isSuper = ctx.roles.includes("super");
+  const [history0, memo] = await Promise.all([personHistorySafe(id), isSuper ? memoSafe([{ person_id: id, name: data.name }]) : null]);
+  const history = withMemoTab(history0, memo ? memo.get(id) : null);
   await audit(ctx, "people.view", String(id), { name: data.name });
   // 교적 맞대기(2026-10-08 · Plan 4 Task 4) — 이 교인에 성경암송 확인 번호로 이어진 계정이 있나(있음/없음만).
   const conf = await db.from("life_pins").select("user_id").eq("person_id", id).in("person_how", ["auto", "staff"]).limit(1);
   const lifeConfirmed = !!(conf.data && conf.data.length);
-  return withHistory({ ok: true, person: { ...data, photo: urls.get(id) ?? "", lifeConfirmed }, family }, history);
+  return withHistory({ ok: true, person: { ...data, photo: urls.get(id) ?? "", lifeConfirmed, canVisit: isSuper }, family }, history);
 }
 
 async function peopleStats() {
@@ -1725,11 +1730,76 @@ async function askEval(_ctx: Ctx, b: any) {
     unsupported: c.unsupported, alternatives: c.alternatives };
 }
 
+// ---------- 📖 성경암송 기록(2026-10-15 · 총괄만 — memo-rec.ts) ----------
+// 같은 Supabase 프로젝트의 성경암송 표(users · progress · daily_activity · verses · life_pins)를 읽기만 한다.
+// ⚠️ user_id 는 메모리에만 — 응답에는 memoSummary 칸(이름 · 소속 · 찾은 방법 · 날짜 · 수 · 출처)만 간다.
+const MEMO_USER_COLS = "id,name,type,gu,mok,bu,grade,created_at,last_seen_at";
+let memoUserCache: { at: number; rows: any[] } | null = null;
+async function memoUsers(): Promise<any[]> {       // 앱 계정 전부(수백 줄) — 5분 담아 둔다(가족 여럿을 한 번에 맞대려고)
+  if (memoUserCache && Date.now() - memoUserCache.at < 5 * 60_000) return memoUserCache.rows;
+  const rows = await allRows(() => db.from("users").select(MEMO_USER_COLS).order("id", { ascending: true }));
+  memoUserCache = { at: Date.now(), rows };
+  return rows;
+}
+async function pinsWhere(col: "person_id" | "user_id", vals: (number | string)[]): Promise<MemoPin[]> {
+  if (!vals.length) return [];
+  const { data, error } = await db.from("life_pins").select("user_id,person_id,person_how").in(col, vals);
+  if (missingTable(error)) return [];             // 확인 번호 표가 없는 DB — 이름 · 소속으로만 찾는다
+  if (error) throw error;
+  return (data ?? []) as MemoPin[];
+}
+async function memoOf(people: { person_id: number; name: string }[]): Promise<Map<number, MemoSummary>> {
+  const list = (people ?? []).filter((p) => Number.isSafeInteger(Number(p?.person_id)) && Number(p.person_id) > 0);
+  const out = new Map<number, MemoSummary>();
+  if (!list.length) return out;
+  const keys = lookupKeys(list.map((p) => p.name));
+  const users = (await memoUsers()).filter((u) => keys.includes(nameKey(u.name)));
+  const [candRows, pinsP, pinsU] = await Promise.all([
+    keys.length ? allRows(() => db.from("church_people").select("person_id,name_key,mok1,mok3,school_dept,phone_digits,kind2")
+      .in("name_key", keys).order("person_id", { ascending: true })) : Promise.resolve([]),
+    pinsWhere("person_id", list.map((p) => Number(p.person_id))),
+    pinsWhere("user_id", users.map((u) => u.id)),
+  ]);
+  // 확인 번호로 이어진 계정은 이름이 달라도(앱에서 이름을 고쳤어도) 가져온다
+  const pins = [...pinsP, ...pinsU];
+  const pinIds = [...new Set(pinsP.map((x) => String(x.user_id)))].filter((uid) => !users.some((u) => String(u.id) === uid));
+  if (pinIds.length) users.push(...(await memoUsers()).filter((u) => pinIds.includes(String(u.id))));
+  const cands = candRows.map(toLinkCand);
+  const accounts = new Map<number, { user: any; how: string }[]>();
+  for (const p of list) {
+    const k = nameKey(p.name);
+    accounts.set(Number(p.person_id), memoAccountsFor({ person_id: Number(p.person_id), name: p.name },
+      users, cands.filter((c, i) => String(candRows[i].name_key) === k), pins));
+  }
+  const uids = [...new Set([...accounts.values()].flat().map((a) => String(a.user.id)))];
+  const [prog, act] = uids.length ? await Promise.all([
+    allRows(() => db.from("progress").select("user_id,verse_no,stage,updated_at").in("user_id", uids)
+      .order("user_id", { ascending: true }).order("verse_no", { ascending: true })),
+    allRows(() => db.from("daily_activity").select("day,user_id,mode,cnt").in("user_id", uids)
+      .order("day", { ascending: true }).order("user_id", { ascending: true }).order("mode", { ascending: true })),
+  ]) : [[], []];
+  const refs = new Map<number, string>();
+  const nos = doneVerseNos(prog);
+  for (let i = 0; i < nos.length; i += 300) {
+    const { data, error } = await db.from("verses").select("no,ref_short,ref").in("no", nos.slice(i, i + 300));
+    if (error) throw error;
+    for (const v of (data ?? []) as any[]) refs.set(Number(v.no), String(v.ref_short || v.ref || ""));
+  }
+  const today = kstToday();
+  for (const [pid, acc] of accounts) out.set(pid, memoSummary(acc, prog, act, refs, today));
+  return out;
+}
+// 실패하면 null — 교인카드는 성경암송 탭만 빠지고 · 심방 카드는 그 칸만 「불러오지 못함」(오류는 서버 기록에만)
+const memoSafe = (people: { person_id: number; name: string }[]) =>
+  historyOrNull(() => memoOf(people), (e) => console.error("memoOf", e));
+
 // ---------- 🏠 심방 준비 한 장(시험판 · 2026-10-15 · 총괄만) ----------
 // 재료는 교인명부 「자세히」와 같다(church_people 한 줄 · 같은 가구 · personHistory) — 묶는 일은 visit-card.ts(순수).
 // ⚠️ 카드에는 연락처 · 주소 · 생년월일을 싣지 않는다 · AI 에게는 visitFacts(이름 없음)만.
 const VISIT_COLS = "person_id,name,position,gender,age,mok1,mok3,kind2,registered,registered_date,household_id,household_rel";
-async function visitData(id: number): Promise<{ person: any; family: any[]; history: any } | null> {
+// 가족(같은 가구)도 한 분씩 사역 · 성경필사 · 교육(personHistorySafe)과 성경암송(memoOf 한 번에)을 붙인다(2026-10-15 친구 「가족에 대한 부분도」).
+//   memo — 본인 것(없으면 null) · memoOk — 성경암송 읽기가 됐나(실패하면 카드에 그 칸만 「불러오지 못함」).
+async function visitData(id: number): Promise<{ person: any; family: any[]; history: any; memo: MemoSummary | null; memoOk: boolean } | null> {
   if (!Number.isSafeInteger(id) || id <= 0) return null;
   const { data: person, error } = await db.from("church_people").select(VISIT_COLS).eq("person_id", id).maybeSingle();
   if (error) throw error;
@@ -1741,17 +1811,22 @@ async function visitData(id: number): Promise<{ person: any; family: any[]; hist
     if (e2) throw e2;
     family = fam ?? [];
   }
-  const history = await personHistorySafe(id);   // 실패하면 null — 카드는 사역 · 성경필사 · 교육 없이 선다
-  return { person, family, history };
+  const [history, famHist, memo] = await Promise.all([
+    personHistorySafe(id),   // 실패하면 null — 카드는 사역 · 성경필사 · 교육 없이 선다
+    Promise.all(family.map((f) => personHistorySafe(Number(f.person_id)))),
+    memoSafe([person, ...family]),
+  ]);
+  family = family.map((f, i) => ({ ...f, history: famHist[i], memo: memo ? memo.get(Number(f.person_id)) ?? null : null }));
+  return { person, family, history, memo: memo ? memo.get(id) ?? null : null, memoOk: !!memo };
 }
 
 async function visitCardAct(ctx: Ctx, b: any) {
   const id = Number(b.id) || 0;
   const v = await visitData(id);
   if (!v) return { ok: false, error: "not-found" };
-  const card = visitCard(v.person, v.family, v.history, kstToday());
+  const card = visitCard(v.person, v.family, v.history, kstToday(), v.memo);
   await audit(ctx, "people.visit", String(id), { name: card.head.name });
-  return { ok: true, id, card, historyOk: !!v.history };
+  return { ok: true, id, card, historyOk: !!v.history, memoOk: v.memoOk };
 }
 
 // 나눌 이야깃거리 — 서버가 재료를 다시 읽어 사실 목록(이름 없음)을 만들고 Claude 에 묻는다(화면이 보낸 글을 믿지 않는다)
@@ -1760,7 +1835,7 @@ async function visitPoints(_ctx: Ctx, b: any) {
   const v = await visitData(id);
   if (!v) return { ok: false, error: "not-found" };
   const today = kstToday();
-  const facts = visitFacts(visitCard(v.person, v.family, v.history, today), today);
+  const facts = visitFacts(visitCard(v.person, v.family, v.history, today, v.memo), today);
   const ai = await claudeJson(VISIT_SYSTEM, "[사실]\n" + facts.join("\n"), visitSchema());
   if (!ai.ok) return ai;
   return { ok: true, points: visitPointsOut(ai.raw), model: ai.model, usage: ai.usage };

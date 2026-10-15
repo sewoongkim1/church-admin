@@ -6,7 +6,7 @@
 import { esc } from "../../core/ui.js";
 import { affText, initialOf, detailSections } from "./people-logic.js";
 // 사역·성경필사 탭(2026-10-01) — 서버가 history 를 줄 때만(옛 서버면 예전 창 그대로) · 🎓 교육 탭(2026-10-06)은 history.education 이 있을 때만
-import { tabsHtml, histPanelHtml, histTotal, tabOf, hasEdu } from "./person-history.js";
+import { tabsHtml, histPanelHtml, histTotal, tabOf, hasEdu, hasMemo } from "./person-history.js";
 
 const has = (v) => v !== undefined && v !== null && String(v).trim() !== "";
 const t = (v) => esc(String(v ?? "").replace(/[\r\n]+/g, " ").trim());
@@ -44,7 +44,8 @@ function mainHtml(secHtml, hist, on) {
     `data-pd-panel="${k}" tabindex="0"${k === on ? "" : " data-off"}>${inner}</div>`;
   return tabsHtml(hist, on) + `<div class="pd-panels">${panel("church", church)}` +
     `${panel("ministry", histPanelHtml("ministry", hist, null))}${panel("bible", histPanelHtml("bible", hist, null))}` +
-    `${hasEdu(hist) ? panel("education", histPanelHtml("education", hist, null)) : ""}</div>`;
+    `${hasEdu(hist) ? panel("education", histPanelHtml("education", hist, null)) : ""}` +
+    `${hasMemo(hist) ? panel("memo", histPanelHtml("memo", hist, null)) : ""}</div>`;
 }
 
 function familyHtml(p, family) {
@@ -97,6 +98,10 @@ export function personDetailHtml(p, family = [], history = null, tab = "church")
     (aff ? `<p class="pd-aff">${t(aff)}</p>` : "") +
     (age ? `<p class="pd-age">${t(age)}</p>` : "") +
     (p.lifeConfirmed ? `<p class="pd-life" title="이 교인에 성경암송 앱에서 본인 확인(확인 번호)을 마친 계정이 이어져 있어요">🔐 성경암송 본인 확인됨</p>` : "") +
-    `</div><div class="pd-tels">${tels || `<p class="pd-none">연락처 없음</p>`}</div></div>` +
+    `</div><div class="pd-tels">${tels || `<p class="pd-none">연락처 없음</p>`}</div>` +
+    // 🏠 심방자료(2026-10-15) — 서버가 총괄에게만 canVisit 을 준다 · 누르면 search.js openPerson 이 이 창을 닫고 심방 카드를 연다(data-v 금지 — dialog 가 「닫기」로 읽는다)
+    //   전화 줄(.pd-tels) 밖에 둔다 — 안에 두면 번호가 하나일 때의 모양(:only-child)이 깨진다
+    (p.canVisit ? `<div class="pd-visits"><button type="button" class="pd-visit" data-pd-visit="${t(p.person_id)}"><span aria-hidden="true">🏠</span> 심방자료</button></div>` : "") +
+    `</div>` +
     `<div class="pd-main">${mainHtml(secHtml, hist, tabOf(tab, hist))}</div></div>`;
 }

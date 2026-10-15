@@ -14,11 +14,15 @@ import { whoText } from "../bibleevent/roster-logic.js";
 export const HIST_TABS = [["church", "교적"], ["ministry", "🤝 사역"], ["bible", "✍️ 성경필사"]];
 export const EDU_TAB = ["education", "🎓 교육"];
 export const hasEdu = (h) => Array.isArray(h?.education);
-// 이 창의 탭들 — 교육 칸이 있으면 넷(교적 · 사역 · 성경필사 · 교육)
-export const tabsFor = (h) => (hasEdu(h) ? [...HIST_TABS, EDU_TAB] : HIST_TABS);
+// 📖 성경암송 탭(2026-10-15 친구) — 서버가 **총괄에게만** history.memo(memo-rec.ts MemoSummary)를 준다(성경암송 방침 「운영진이 봅니다」).
+//   읽기만(잇기 · 풀기 없음) · 수는 「다 마친 말씀」(counts.memo).
+export const MEMO_TAB = ["memo", "📖 성경암송"];
+export const hasMemo = (h) => !!h?.memo && typeof h.memo === "object" && Array.isArray(h.memo.accounts);
+// 이 창의 탭들 — 교육 칸 · 성경암송 칸이 있으면 덧붙는다(교적 · 사역 · 성경필사 · 교육 · 성경암송)
+export const tabsFor = (h) => [...HIST_TABS, ...(hasEdu(h) ? [EDU_TAB] : []), ...(hasMemo(h) ? [MEMO_TAB] : [])];
 const KEYS = HIST_TABS.map(([k]) => k);
-// 고를 수 있는 탭인가 — 교육은 그 창에 교육 칸이 있을 때만(가족으로 넘어가며 보던 탭이 교육인데 그분 창엔 없으면 교적)
-export const tabOf = (v, h) => (KEYS.includes(v) || (v === EDU_TAB[0] && hasEdu(h)) ? v : "church");
+// 고를 수 있는 탭인가 — 교육 · 성경암송은 그 창에 그 칸이 있을 때만(가족으로 넘어가며 보던 탭이 없는 창이면 교적)
+export const tabOf = (v, h) => (KEYS.includes(v) || (v === EDU_TAB[0] && hasEdu(h)) || (v === MEMO_TAB[0] && hasMemo(h)) ? v : "church");
 // 「아직 안 이어진 기록」을 불러올 탭 — 사역·성경필사만(교육 줄은 잇는 길이 없다)
 export const linksTab = (k) => k === "ministry" || k === "bible";
 export const rowKey = (kind, row) => `${kind}:${row}`;
@@ -35,6 +39,12 @@ export function linkDoneText(how, r) {
   const base = how === "auto" && r?.relinked ? "규칙이 다시 이분께 이었어요 — 이분 기록이 아니면 「이분 아님」을 눌러 주세요"
     : LINK_DONE[how] || "저장했어요";
   return r?.history ? base : base + LINK_STALE;
+}
+
+// 잇기·풀기 응답의 탭 자료에는 성경암송 칸이 없다(peopleLink 는 personHistory 만 다시 읽는다) — 보던 칸을 그대로 둔다(잇기는 성경암송을 바꾸지 않는다)
+export function keepMemo(prev, next) {
+  if (!next || hasMemo(next) || !hasMemo(prev)) return next;
+  return { ...next, counts: { ...(next.counts || {}), memo: Number(prev.counts?.memo) || 0 }, memo: prev.memo };
 }
 
 // 잇기·풀기 뒤 서버가 다시 준 탭 자료(next)에 교육 칸이 없으면(그때 교육 읽기만 실패) 보던 교육 칸을 그대로 둔다 —
@@ -58,8 +68,9 @@ export function tabsHtml(history, tab) {
   const on = tabOf(tab, history);
   const list = tabsFor(history);
   const n = { ministry: Number(history?.counts?.ministry) || 0, bible: Number(history?.counts?.bible) || 0,
-    education: Number(history?.counts?.education) || 0 };
-  return `<div class="pd-tabs${list.length > 3 ? " pd-tabs4" : ""}" role="tablist" aria-label="${list.length > 3 ? "교적 · 사역 · 성경필사 · 교육" : "교적 · 사역 · 성경필사"}">` +
+    education: Number(history?.counts?.education) || 0, memo: Number(history?.counts?.memo) || 0 };
+  const names = list.map(([, label]) => label.replace(/^\S+\s/, "")).join(" · ");   // 그림 글자 빼고 「교적 · 사역 · 성경필사 …」
+  return `<div class="pd-tabs${list.length > 3 ? " pd-tabs4" : ""}${list.length > 4 ? " pd-tabs5" : ""}" role="tablist" aria-label="${names}">` +
     list.map(([k, label]) => {
     const sel = k === on;
     return `<button type="button" class="pd-tab${sel ? " on" : ""}" role="tab" id="pd-tab-${k}" data-pd-tab="${k}" ` +
@@ -136,9 +147,35 @@ export function eduPanelHtml(items) {
     `<ul class="pd-hl pd-hl-e">${g.rows.map(eduRow).join("")}</ul></div>`).join("");
 }
 
+// ---------- 📖 성경암송 칸(2026-10-15) — 서버 memo-rec.ts MemoSummary ----------
+// 「찾은 방법」 — 본인 확인(확인 번호) · 이름 · 소속이 같음(교인명부와 앱의 이름 · 교구 · 목장이 같아 이은 것 — 사람이 확인한 것은 아니다)
+const memoField = (label, value) => `<div class="pd-f"><dt>${t(label)}</dt><dd>${t(value)}</dd></div>`;
+export function memoPanelHtml(m) {
+  if (!m || !Array.isArray(m.accounts)) return `<p class="pd-none">성경암송 기록을 불러오지 못했어요</p>`;
+  if (!m.accounts.length) {
+    return `<p class="pd-none">성경암송 앱에서 이분 계정을 찾지 못했어요</p>` +
+      `<p class="pd-un-sub">앱의 이름 · 교구 · 목장(교회학교는 부서)이 교인명부와 같아야 찾아요 — 같은 소속에 같은 이름이 둘이면 못 찾아요</p>`;
+  }
+  const acc = m.accounts.map((a) => `<li class="pd-hr"><span class="pd-ht">${t(join(a.name, a.who))}` +
+    `<small class="pd-hm">${t(a.how)}</small></span><span class="pd-em">${t(join(a.joined ? `가입 ${a.joined}` : "", a.lastSeen ? `마지막 접속 ${a.lastSeen}` : ""))}</span></li>`).join("");
+  const kinds = join(m.doneWeekly ? `주간 ${m.doneWeekly}` : "", m.doneNavi ? `주제별 ${m.doneNavi}` : "", m.donePsalm ? `쉴만한 물가 ${m.donePsalm}` : "");
+  const grid = [
+    memoField("다 마친 말씀", `${m.done}구절${kinds ? ` (${kinds})` : ""}`),
+    memoField("시작한 말씀", `${m.started}구절`),
+    memoField("활동한 날", `모두 ${m.days}일 · 최근 30일 ${m.days30}일`),
+    memoField("횟수", `암송 ${m.learn}번 · 도전 ${m.challenge}번`),
+    m.firstDay ? memoField("처음 · 마지막", `${m.firstDay} ~ ${m.lastDay}`) : "",
+  ].join("");
+  const recent = Array.isArray(m.recent) && m.recent.length
+    ? `<p class="pd-eh">최근 다 마친 말씀</p><ul class="pd-hl pd-hl-m">${m.recent.map((r) => `<li class="pd-hr"><span class="pd-ht">${t(r.ref)}</span><small class="pd-md">${t(r.day)}</small></li>`).join("")}</ul>`
+    : "";
+  return `<p class="pd-eh">앱 계정</p><ul class="pd-hl pd-hl-m">${acc}</ul><dl class="pd-grid pd-memo">${grid}</dl>${recent}`;
+}
+
 // 사역·성경필사 칸 하나 — 이어진 줄(사역은 해 내림차순 · 같은 해는 해 칸을 비운다) + 「아직 안 이어진 기록」 · 교육 칸은 eduPanelHtml(읽기만)
 export function histPanelHtml(tab, history, ui) {
   if (tab === EDU_TAB[0]) return eduPanelHtml(history?.education);
+  if (tab === MEMO_TAB[0]) return memoPanelHtml(history?.memo);
   const items = (tab === "ministry" ? history?.ministry : history?.bible) || [];
   let prev = null;
   const rows = items.map((r) => {
