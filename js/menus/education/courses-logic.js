@@ -55,6 +55,20 @@ export function periodSummary(course, list) {
   return sessionsSummary(list);
 }
 
+// 강좌 관리 목록 차례(2026-10-16 친구 「교육일자 역순으로」) — 교육 시작일(startsOn · 없으면 첫 회차 날짜)이 늦은 강좌부터.
+//   날짜가 아직 없는 강좌(막 만든 · 회차 없음)는 맨 위(만드는 중인 것) · 같은 날이면 서버가 준 차례(만든 때 최근 먼저) 그대로.
+//   sessionsById — 강좌 id → 회차 배열(eduSessions · 못 불러왔으면 없음).
+export function eduDateKey(course, sessions) {
+  if (course?.startsOn) return String(course.startsOn);
+  const ds = (sessions || []).map((s) => String(s?.on_date || "")).filter(Boolean).sort();
+  return ds[0] || "";
+}
+export function sortCoursesByEduDate(courses, sessionsById) {
+  const keyed = (courses || []).map((c, i) => ({ c, i, k: eduDateKey(c, (sessionsById || {})[c?.id]) }));
+  keyed.sort((a, b) => (!a.k !== !b.k ? (a.k ? 1 : -1) : a.k !== b.k ? (a.k < b.k ? 1 : -1) : a.i - b.i));
+  return keyed.map((x) => x.c);
+}
+
 export function sessionsSummary(list) {
   if (!list || !list.length) return "회차 없음";
   const s = [...list].sort((a, b) => a.no - b.no);

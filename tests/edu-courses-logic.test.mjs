@@ -269,3 +269,20 @@ test("회차 창 — 받은 회차는 id 를 품고 · 새 줄은 id 없이 · �
   assert.ok(sessionsPayload(makeSessionRows("2027-03-03", 3, 7)).every((s) => !("id" in s)));
   assert.deepEqual(sessionsPayload(null), []);
 });
+
+// 강좌 관리 목록 차례(2026-10-16 친구 「교육일자 역순으로」)
+test("sortCoursesByEduDate — 교육 시작일(없으면 첫 회차) 늦은 강좌부터 · 날짜 없는 강좌는 맨 위 · 같은 날은 받은 차례", async () => {
+  const { sortCoursesByEduDate, eduDateKey } = await import("../js/menus/education/courses-logic.js");
+  const C = [
+    { id: "a", title: "2차", startsOn: "2026-06-14" },
+    { id: "b", title: "1차", startsOn: null },
+    { id: "c", title: "3차", startsOn: "2026-11-08" },
+    { id: "d", title: "새 강좌", startsOn: null },
+    { id: "e", title: "같은 날", startsOn: "2026-06-14" },
+  ];
+  const S = { b: [{ on_date: "2026-04-26" }, { on_date: "2026-04-12" }], d: [] };
+  assert.equal(eduDateKey(C[1], S.b), "2026-04-12");
+  assert.equal(eduDateKey(C[3], S.d), "");
+  assert.deepEqual(sortCoursesByEduDate(C, S).map((c) => c.title), ["새 강좌", "3차", "2차", "같은 날", "1차"]);
+  assert.deepEqual(sortCoursesByEduDate([], {}), []);
+});

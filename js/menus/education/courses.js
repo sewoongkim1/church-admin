@@ -16,7 +16,7 @@ import {
   KIND_OPTIONS, MODE_OPTIONS, STATUS_OPTIONS, WAITLIST_OPTIONS,
   formToCourse, courseToForm, checkFormNumbers, sessionsSummary, periodSummary, makeSessionRows, sessionRowsFrom, sessionsPayload, sessionErrorText, courseErrorText, sessionHeadLine,
   courseSavedText, staffBits, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND, STALE_MARK,
-  teacherBits, TEACHER_NO_CAND, TEACHER_ROLE_HINTS, TEACHER_BAD_MEMBER,
+  teacherBits, TEACHER_NO_CAND, TEACHER_ROLE_HINTS, TEACHER_BAD_MEMBER, sortCoursesByEduDate,
 } from "./courses-logic.js";
 
 const TITLE = `<h2 class="page-title">📚 강좌 관리</h2>`;
@@ -355,6 +355,10 @@ export async function render(el, { call }) {
     const all = await Promise.all(data.courses.map((c) => call("eduSessions", { course_id: c.id })));
     sess = {};
     data.courses.forEach((c, i) => { sess[c.id] = c.startsOn || c.endsOn ? periodSummary(c, all[i].ok ? all[i].sessions : []) : all[i].ok ? sessionsSummary(all[i].sessions) : "회차를 불러오지 못했어요"; });
+    // 교육 날짜가 늦은 강좌부터(2026-10-16 친구 「교육일자 역순으로」 · courses-logic.js sortCoursesByEduDate)
+    const byId = {};
+    data.courses.forEach((c, i) => { byId[c.id] = all[i].ok ? all[i].sessions : []; });
+    data.courses = sortCoursesByEduDate(data.courses, byId);
     return true;
   };
   const draw = () => {
