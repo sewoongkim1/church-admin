@@ -78,3 +78,67 @@ export const dupBadge = (e) => (e && e.maybeDup ? `<span class="badge dup" title
 
 // 직접 입력(새가족) 세부 칸 아래 안내 — 같은 이름·소속·세부면 같은 분으로 본다(신원 키 staff|구분|소속|세부|이름)
 export const TYPED_SUB_HINT = "같은 이름의 새가족이 있으면 세부(예: 연락할 분·반)를 적어 주세요";
+
+// ---------- 여러 명 한꺼번에 대신 등록(2026-10-16 친구 「여러 명 한꺼번에 등록」) ----------
+// 붙여 넣은 명단 → 이름마다 교인명부에서 찾기(eduPeopleLookup) → 한 분이면 저절로 고름 → 「고른 N명 등록」은 한 분씩 eduEnrollAdd
+//   (서버 길은 「교인명부에서 찾기」와 똑같다 — 교인ID 는 화면에 없고 서버가 같은 찾기를 다시 돌려 확인한다).
+// 같은 이름이 여럿이면 이름 뒤의 힌트로 고른다 — 「김경희 섬김-18」 · 「김경희(섬김 18목장)」 · 「김경희 권사」.
+export const BULK_MAX = 60;   // 한 번에 찾는 이름 수(찾기 한 번이 열람 기록 한 줄이다)
+const POS_WORD = /(안수집사|권사|집사|장로)/;
+// 붙여 넣은 글 → { items: [{ name, hint }], skipped: [글 조각] } — 줄 · 쉼표로 나눈다(빈칸 하나는 이름과 힌트 사이)
+//   이름 꼴(한글 2~5자)이 아니면 건너뛴다(「2대」 · 제목 줄) · 줄 끝 인원 수(「김정화  8」)는 뗀다 · 같은 이름 · 힌트는 한 번만
+export function parseNameList(text) {
+  const items = [], skipped = [], seen = new Set();
+  const chunks = String(text ?? "").normalize("NFC").split(/[\r\n,，、;\t]+/).map((s) => s.trim()).filter(Boolean);
+  for (const raw of chunks) {
+    const c = raw.replace(/(?:\s{2,}\d+|\s+\d+\s*명)\s*$/, "").trim();   // 빈칸 둘 이상 뒤의 수 · 「8명」만 인원 수(「김경희 18」의 18 은 목장 힌트)
+    const m = /^([가-힣]{2,5})(?:\s*\(([^)]*)\)|\s+(.+))?$/.exec(c);
+    if (!m) { skipped.push(raw); continue; }
+    const hint = String(m[2] ?? m[3] ?? "").trim();
+    const key = m[1] + "|" + hint;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ name: m[1], hint: /[가-힣\d]/.test(hint) ? hint : "" });
+  }
+  return { items, skipped };
+}
+// 「섬김-18목장」 · 「섬김 18」 · 「섬김교구 18목장 권사」 → { gu, num, pos } (없는 칸은 "" · null)
+export function hintOf(text) {
+  const t = String(text ?? "").normalize("NFC");
+  const pos = (POS_WORD.exec(t) || [])[1] || "";
+  const rest = t.replace(/(시무|명예|은퇴|협동)?(안수집사|권사|집사|장로)/g, " ").replace(/(\d+)/g, " $1 ");
+  const words = rest.split(/[\s\-·()]+/).map((w) => w.replace(/(교구|목장)$/, "")).filter(Boolean);
+  const gu = words.find((w) => /^[가-힣]+$/.test(w)) || "";
+  const n = words.find((w) => /^\d+$/.test(w));
+  return { gu, num: n ? Number(n) : null, pos };
+}
+// 찾은 후보(lookupCandOut 칸)가 힌트와 맞나 — 교적 목장(church_mok)을 먼저, 없으면 앱 꼴 소속(group · sub)
+export function candFits(p, hint) {
+  const h = typeof hint === "string" ? hintOf(hint) : hint;
+  if (!h || (!h.gu && h.num === null && !h.pos)) return true;
+  const c = hintOf(p?.church_mok || "");
+  const gu = c.gu || String(p?.group ?? "").trim();
+  const num = c.num ?? (/(\d+)/.exec(String(p?.sub ?? "")) ? Number(/(\d+)/.exec(String(p.sub))[1]) : null);
+  if (h.gu && gu !== h.gu && String(p?.group ?? "").trim() !== h.gu) return false;
+  if (h.num !== null && num !== h.num) return false;
+  if (h.pos && !String(p?.position ?? "").includes(h.pos)) return false;
+  return true;
+}
+// 저절로 고르기 — { pick: 후보 차례 | null, why } · why: one(한 분뿐) · hint(힌트로 한 분) · many(골라 주세요) · none(명부에 없음) · hint-none(힌트에 맞는 분 없음)
+export function autoPick(cands, hint) {
+  const list = Array.isArray(cands) ? cands : [];
+  if (!list.length) return { pick: null, why: "none" };
+  const fit = list.map((p, i) => (candFits(p, hint) ? i : -1)).filter((i) => i >= 0);
+  const hinted = !!String(hint ?? "").trim();
+  if (fit.length === 1) return { pick: fit[0], why: hinted && list.length > 1 ? "hint" : "one" };
+  if (!fit.length) return { pick: null, why: "hint-none" };
+  return { pick: null, why: "many" };
+}
+const WHY_TEXT = { one: "한 분", hint: "목장으로 고름", many: "여러 분 — 골라 주세요", none: "교인명부에 없어요", "hint-none": "적은 목장과 맞는 분이 없어요 — 골라 주세요" };
+export const bulkWhyText = (why) => WHY_TEXT[why] || "";
+// 등록 결과 한 줄 — eduEnrollAdd 응답(반려했던 분은 한꺼번에 되살리지 않는다 — 하나씩 찾기에서 확인 뒤)
+export function bulkDoneText(r) {
+  if (r && r.ok) return addDoneText(r) + (r.status === "waitlisted" ? " · 대기" : r.status === "confirmed" ? " · 확정" : "");
+  if (r && r.error === "was-declined") return "반려했던 분이에요 — 「교인명부에서 찾기」에서 하나씩 넣어 주세요";
+  return "";
+}

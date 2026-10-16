@@ -2266,3 +2266,17 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .vc-fam-w{color:var(--ink-2);font-size:13px}
 .vc-fam-s{margin:4px 0 0;display:flex;flex-wrap:wrap;gap:4px 6px}
 .vc-fam-s span{padding:1px 8px;border-radius:999px;background:var(--light);border:1px solid var(--border);font-size:12.5px;color:var(--ink)}
+
+/* 📝 대신 등록 — 여러 명 한꺼번에(2026-10-16 · enrollments.js bulkRowHtml) */
+.ee-bulk-sum{margin:4px 0 8px;font-weight:700;color:var(--navy)}
+.ee-bulk-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}
+.ee-bulk-st{margin-left:auto;font-size:13px;color:var(--ink-2)}
+.ee-bulk-st.ok{color:#18794e;font-weight:700}
+.ee-bulk-st.need{color:#b25e09;font-weight:700}
+.ee-bulk-st.bad{color:var(--error)}
+.ee-bulk-c{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.ee-bp{min-height:34px;padding:0 12px;border-radius:999px;border:1px solid var(--border);background:#fff;font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
+.ee-bp.on{background:var(--navy);border-color:var(--navy);color:#fff;font-weight:700}
+.ee-bp.skip.on{background:var(--light);border-color:var(--border);color:var(--ink-2)}
+.ee-bp:disabled{opacity:.6;cursor:default}
+.ee-bulk-go{margin:8px 0 4px}

@@ -30,3 +30,12 @@
   화면(2026-10-05 · 개발만) 🎓 **수료**(`certs.js` · 역할 education·educourse — 강사 없음) · 수료증 한 장은 `cert-template.js` 하나(인쇄·인쇄 미리보기·설정 미리보기) — 자리 `CERT_GEOM`(cqw)은 성경암송 `js/edu.js` `EDU_CERT_GEOM`(앱 캔버스)과 **같은 값**(두 시험 지문) · 인쇄 `@page`(A4 가로·여백 0)는 인쇄 판을 연 동안만 `<style>` 로 · 명조는 그때 구글 글꼴로(이름을 `text=` 로 보내지 않는다) · 직인은 화면이 600px·흰 바탕 투명·GIF→PNG·300KB 안으로 다듬어 보낸다 · 「⚙️ 수료증 설정」 단추는 총괄(education·super)에게만.
 - **확정 알림(4단계 · 2026-10-05 · 개발만):** `eduEnrollSet`(확정 → 그 줄 · 다른 op 의 `promoted` → 「자리가 나서」 · `edu_staff_set` 이 `already`(이미 그 상태 — 낡은 화면에서 다시 누름)면 부탁하지 않는다 · 2026-10-06)·`eduEnrollAdd`(앱 계정 + 확정 + `already` 아님)·`eduCourseSave`(`edu_course_refill` 의 `ids`)가 **저장·기록이 끝난 뒤** `edu-db.ts` `withNotify` → `index.ts` `notifyEduConfirmed` → 성경암송 api 내부 액션 `internalEduNotify`(서비스 키 `x-internal-key` · 임명 알림과 같은 `appApiInternal` · 8초). ⚠️ 알림이 실패해도 저장은 성공 — 응답에 `notified`·`notifyError` 만 더한다(던지지 않는다). 같은 신청에 한 번·확정·앱 계정 확인과 「교육이 열리기 전(`eduOpen` 이 true 아님)에는 🧪 시험 참여자에게만」은 api(`eduNotifySend` · SQL `edu_notify_claim`) 몫 — 여기서 걸러 내거나 알림 기록을 쓰지 말 것. 배포 차례 v2 SQL(`edu.sql`) → v2 `api` → 이 함수(이 함수가 먼저 나가면 알림만 `notify-failed`). 노트 v2 `docs/notes/education.md` 「앱 알림」.
 - **출석부(2단계 · 2026-10-05)** — 메뉴 ✅ 출석부(역할 `education`·`educourse`·`teacher`) · 강사(`teacher`)는 `edu_course_staff.kind='teacher'` 로 맡은 강좌만 · 신청 현황 액션은 못 부른다 · 출석은 SQL `edu_attendance_set`·`_bulk` 만(확정자만 · 같은 강좌 · 마친 강좌 `course-closed`) · 출석률 `eduAttendRate`(지각=출석 · 공결 뺌) 세 곳 지문 시험 · ⚠️ 회차는 **id 로** 맞춘다(`eduSessionsSave` 가 id 를 품고 보낸다 · 번호는 차례 · 「이대로 채우기」는 일부러 id 없이 — 차례로 id 를 잇지 말 것 · 출석 있는 회차 지우기는 `has-attendance`).
+
+## 대신 등록 — 여러 명 한꺼번에 (2026-10-16 친구)
+「＋ 대신 등록」 창의 셋째 탭 **여러 명 한꺼번에**(`enrollments.js` · 규칙 `enrollments-logic.js` `parseNameList`·`hintOf`·`candFits`·`autoPick` · 시험 `tests/edu-enrollments-logic.test.mjs`).
+- 명단을 붙여 넣으면(줄 · 쉼표) 이름(한글 2~5자)만 골라 이름마다 `eduPeopleLookup`(셋씩 함께 · 찾기마다 `people.lookup` 기록 한 줄) → 한 분이면 저절로 고름 ·
+  같은 이름이 여럿이면 이름 뒤 힌트(「김경희 섬김-18」 · 「최옥주(사랑 30목장)」 · 「… 권사」 — 교적 목장 `church_mok` 을 먼저, 없으면 앱 꼴 소속)로 한 분이 되면 고름 · 아니면 「골라 주세요」.
+- 「고른 N명 등록」(확인 창 한 번) → **한 분씩 `eduEnrollAdd`** — 하나씩 찾기와 같은 서버 길(`pickArgs` · 서버가 같은 찾기를 다시 돌려 `changed` 확인 · 확정 알림도 같다). 서버는 고치지 않았다.
+- 반려했던 분(`was-declined`)은 한꺼번에 되살리지 않는다 — 그 줄에 「하나씩 넣어 주세요」.
+- 건너뛰는 글: 제목 줄 · 「2대」 · 빈칸 둘 이상 뒤의 수(「김정화  8」 — 인원 수) · 「3명」. 빈칸 하나 뒤의 수(「이정미 18」)는 목장 힌트. 한 번에 60명(`BULK_MAX`).
+- `openAddForm` 은 export — 화면 시험(가짜 call 페이지 · playwright)이 창만 띄워 본다.

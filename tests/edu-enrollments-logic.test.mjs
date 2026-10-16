@@ -96,3 +96,43 @@ test("dupBadge — 서버가 maybeDup 을 준 줄에만 「같은 분일 수 있
 test("TYPED_SUB_HINT — 직접 입력 세부 칸 안내", () => {
   assert.equal(TYPED_SUB_HINT, "같은 이름의 새가족이 있으면 세부(예: 연락할 분·반)를 적어 주세요");
 });
+
+// ---------- 여러 명 한꺼번에(2026-10-16) — 붙여 넣은 명단 · 힌트 · 저절로 고르기 ----------
+test("여러 명 — 붙여 넣은 명단에서 이름만(제목 줄 · 「2대」 · 줄 끝 인원 수는 뺀다) · 같은 이름 한 번", async () => {
+  const { parseNameList } = await import("../js/menus/education/enrollments-logic.js");
+  const r = parseNameList("권사제자양육 신청자 - 권사제자양육 신청자\n이양덕,차계섬\n윤여남,김정화  8\n\n2대\n시험가, 시험가\n김경희 섬김-18\n최옥주(사랑 30목장)\n이정미 18\n홍길동 3명");
+  assert.deepEqual(r.items.map((x) => x.name), ["이양덕", "차계섬", "윤여남", "김정화", "시험가", "김경희", "최옥주", "이정미", "홍길동"]);
+  assert.deepEqual(r.items.find((x) => x.name === "김경희").hint, "섬김-18");
+  assert.deepEqual(r.items.find((x) => x.name === "최옥주").hint, "사랑 30목장");
+  assert.deepEqual(r.items.find((x) => x.name === "이정미").hint, "18");     // 빈칸 하나 뒤의 수는 목장 힌트
+  assert.deepEqual(r.items.find((x) => x.name === "김정화").hint, "");       // 빈칸 둘 뒤의 수는 인원 수
+  assert.deepEqual(r.items.find((x) => x.name === "홍길동").hint, "");       // 「3명」도 인원 수
+  assert.deepEqual(r.skipped, ["권사제자양육 신청자 - 권사제자양육 신청자", "2대"]);
+});
+
+test("여러 명 — 힌트 읽기 · 후보 맞추기 · 저절로 고르기", async () => {
+  const { hintOf, candFits, autoPick, bulkWhyText, bulkDoneText } = await import("../js/menus/education/enrollments-logic.js");
+  assert.deepEqual(hintOf("섬김-18목장"), { gu: "섬김", num: 18, pos: "" });
+  assert.deepEqual(hintOf("섬김교구 18목장 시무권사"), { gu: "섬김", num: 18, pos: "권사" });
+  assert.deepEqual(hintOf("화평"), { gu: "화평", num: null, pos: "" });
+  const c = [
+    { church_mok: "섬김-10목장", position: "권사", group: "섬김", sub: "10" },
+    { church_mok: "섬김-18목장", position: "권사", group: "섬김", sub: "18" },
+    { church_mok: "사랑-34목장", position: "", group: "사랑", sub: "34" },
+  ];
+  assert.equal(candFits(c[1], "섬김 18"), true);
+  assert.equal(candFits(c[0], "섬김 18"), false);
+  assert.equal(candFits({ church_mok: "", group: "섬김", sub: "18" }, "섬김-18"), true);   // 교적 목장이 비면 앱 꼴 소속으로
+  assert.deepEqual(autoPick(c, "섬김-18"), { pick: 1, why: "hint" });
+  assert.deepEqual(autoPick(c, ""), { pick: null, why: "many" });
+  assert.deepEqual(autoPick(c, "권사"), { pick: null, why: "many" });                  // 권사가 둘
+  assert.deepEqual(autoPick(c, "사랑"), { pick: 2, why: "hint" });
+  assert.deepEqual(autoPick([c[0]], ""), { pick: 0, why: "one" });
+  assert.deepEqual(autoPick([c[0]], "화평"), { pick: null, why: "hint-none" });          // 한 분이어도 힌트가 다르면 고르지 않는다
+  assert.deepEqual(autoPick([], ""), { pick: null, why: "none" });
+  assert.equal(bulkWhyText("many"), "여러 분 — 골라 주세요");
+  assert.equal(bulkDoneText({ ok: true, status: "confirmed" }), "등록했어요 · 확정");
+  assert.equal(bulkDoneText({ ok: true, already: true, status: "confirmed" }), "이미 명단에 있어요 · 확정");
+  assert.match(bulkDoneText({ ok: false, error: "was-declined" }), /하나씩/);
+  assert.equal(bulkDoneText({ ok: false, error: "full" }), "");
+});

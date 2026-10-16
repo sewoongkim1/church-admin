@@ -10,7 +10,7 @@ import { openForm } from "../../core/modal.js";
 import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { groupByStatus, actionsFor, capacityLine, errorWord, exportFileName, addDoneText, confirmTextFor, hasErrorWord, pickArgs, shortApplied,
-  dupBadge, TYPED_SUB_HINT } from "./enrollments-logic.js";
+  dupBadge, TYPED_SUB_HINT, parseNameList, autoPick, bulkWhyText, bulkDoneText, BULK_MAX } from "./enrollments-logic.js";
 
 const TITLE = `<h2 class="page-title">📝 신청 현황</h2>`;
 const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -59,9 +59,26 @@ const candCard = (p, i) => `<div class="card ee-row" data-cand="${i}">
   ${p.church_mok || p.position ? `<div class="muted">${esc([p.church_mok, p.position].filter(Boolean).join(" · "))}</div>` : ""}
   <div class="ee-acts"><button type="button" class="btn primary" data-reg="${i}">등록</button></div></div>`;
 
-// → 하나라도 등록했으면 true
-async function openAddForm({ call, course }) {
+// 여러 명 한꺼번에(2026-10-16) — 후보 한 분을 짧게: 교적 목장 · 직분(없으면 앱 꼴 소속)
+const bulkCand = (p) => [p.church_mok || [p.group, p.sub].filter(Boolean).join(" ") || p.who_type, p.position].filter(Boolean).join(" · ");
+function bulkRowHtml(r, i, busyNow) {
+  const st = r.state === "loading" ? ["찾는 중…", ""] : r.state === "error" ? [r.msg, "bad"] : r.state === "done" ? [r.msg, "ok"]
+    : r.state === "fail" ? [r.msg, "bad"] : [bulkWhyText(r.why), r.pick === null ? (r.cands.length ? "need" : "bad") : ""];
+  const chips = r.state === "ready" && r.cands.length
+    ? `<div class="ee-bulk-c" role="group" aria-label="${esc(r.name)} — 고르기">${r.cands.map((p, j) =>
+        `<button type="button" class="ee-bp${r.pick === j ? " on" : ""}" data-bp="${i}:${j}" aria-pressed="${r.pick === j}"${busyNow ? " disabled" : ""}>${esc(bulkCand(p))}</button>`).join("")}` +
+      `<button type="button" class="ee-bp skip${r.pick === null ? " on" : ""}" data-bp="${i}:-1" aria-pressed="${r.pick === null}"${busyNow ? " disabled" : ""}>넣지 않음</button></div>`
+    : "";
+  return `<div class="card ee-row ee-bulk-row"><div class="ee-bulk-h"><b>${esc(r.name)}</b>${r.hint ? ` <small class="muted">${esc(r.hint)}</small>` : ""}` +
+    `<span class="ee-bulk-st ${st[1]}">${esc(st[0] || "")}</span></div>${chips}</div>`;
+}
+
+// → 하나라도 등록했으면 true · export 는 화면 시험(가짜 call 로 창만 띄워 본다)이 부른다
+export async function openAddForm({ call, course }) {
   let tab = "pick", added = false, adding = false;
+  // 여러 명 한꺼번에 — 줄마다 { name, hint, cands, pick, why, state(loading·ready·error·done·fail), msg }
+  let bulkRows = [], bulkSkipped = [], bulkBusy = false;
+  const bulkPending = () => bulkRows.some((r) => r.state === "ready" && r.pick !== null);
   let cands = [], searched = "", first = "";
   const typedVals = (root) => ({ name: root.querySelector("[data-t=name]").value, who: root.querySelector("[data-t=who]").value,
     group: root.querySelector("[data-t=group]").value, sub: root.querySelector("[data-t=sub]").value });
@@ -80,7 +97,13 @@ async function openAddForm({ call, course }) {
   return openForm({
     title: `＋ 대신 등록 — ${course.title}`, okLabel: "등록", cancelLabel: "닫기", hideOk: true,   // 찾기 쪽은 카드마다 「등록」이 있다
     html: `<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="pick" class="on">교인명부에서 찾기</button>
+        <button type="button" role="tab" data-tab="bulk">여러 명 한꺼번에</button>
         <button type="button" role="tab" data-tab="typed">직접 입력(새가족 등)</button></div>
+      <div data-panel="bulk" hidden>
+        <label class="field"><span>명단 <small>(줄이나 쉼표로 · 같은 이름이 여럿이면 「김경희 섬김-18」처럼 목장을 함께)</small></span>
+          <textarea data-bulk rows="6" maxlength="4000" placeholder="이양덕, 차계섬, 권정희&#10;김경희 섬김-18"></textarea></label>
+        <button type="button" class="btn ee-find" data-bulk-find>명단 찾기</button>
+        <div data-bulk-res></div></div>
       <div data-panel="pick">
         <label class="field"><span>이름</span><input data-q maxlength="40" autocomplete="off" placeholder="이름을 쓰고 찾기를 눌러 주세요"></label>
         <button type="button" class="btn ee-find" data-find>찾기</button>
@@ -106,16 +129,85 @@ async function openAddForm({ call, course }) {
         res.innerHTML = cands.length ? cands.map(candCard).join("") : `<p class="empty">교인명부에 없어요 — 「직접 입력」으로 넣어 주세요</p>`;
       };
       q.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); find(); } });
+
+      // ── 여러 명 한꺼번에(2026-10-16) — 찾기는 이름마다 eduPeopleLookup(셋씩 함께) · 등록은 한 분씩 eduEnrollAdd(같은 서버 확인)
+      const bres = root.querySelector("[data-bulk-res]"), bta = root.querySelector("[data-bulk]");
+      const bdraw = () => {
+        if (!root.isConnected) return;
+        const skip = bulkSkipped.length ? `<p class="muted ee-hint">이름이 아니라서 건너뛴 줄: ${esc(bulkSkipped.join(" · ").slice(0, 160))}</p>` : "";
+        if (!bulkRows.length) { bres.innerHTML = skip; return; }
+        const n = (f) => bulkRows.filter(f).length;
+        const chosen = n((r) => r.state === "ready" && r.pick !== null), need = n((r) => r.state === "ready" && r.pick === null && r.cands.length);
+        const none = n((r) => (r.state === "ready" && !r.cands.length) || r.state === "error"), done = n((r) => r.state === "done");
+        const loading = n((r) => r.state === "loading");
+        const sum = [`고른 분 ${chosen}명`, need ? `골라야 할 분 ${need}명` : "", none ? `못 찾음 ${none}명` : "", done ? `등록됨 ${done}명` : ""].filter(Boolean).join(" · ");
+        bres.innerHTML = skip + `<p class="ee-bulk-sum" role="status">${esc(loading ? `찾는 중… (${bulkRows.length - loading}/${bulkRows.length})` : sum)}</p>` +
+          bulkRows.map((r, i) => bulkRowHtml(r, i, bulkBusy)).join("") +
+          `<div class="ee-acts ee-bulk-go"><button type="button" class="btn primary" data-bulk-add${chosen && !loading && !bulkBusy ? "" : " disabled"}>` +
+          `${bulkBusy ? "등록하는 중…" : `고른 ${chosen}명 등록`}</button></div>` +
+          (none ? `<p class="muted ee-hint">못 찾은 분은 이름을 확인해 「교인명부에서 찾기」로, 명부에 없는 분은 「직접 입력」으로 넣어 주세요.</p>` : "");
+      };
+      const bulkFind = async () => {
+        if (bulkBusy) return;
+        const { items, skipped } = parseNameList(bta.value);
+        if (!items.length) { bulkRows = []; bulkSkipped = skipped; bdraw(); toast("이름을 찾지 못했어요 — 줄이나 쉼표로 나눠 적어 주세요"); return; }
+        if (items.length > BULK_MAX) { toast(`한 번에 ${BULK_MAX}명까지예요 — 나눠서 찾아 주세요`); return; }
+        bulkSkipped = skipped;
+        bulkRows = items.map((x) => ({ ...x, cands: [], pick: null, why: "", state: "loading", msg: "" }));
+        bulkBusy = true; bdraw();
+        let next = 0;
+        const worker = async () => {
+          while (next < bulkRows.length) {
+            const r = bulkRows[next++];
+            const res = await call("eduPeopleLookup", { name: r.name, course_id: course.id });
+            if (!root.isConnected) return;
+            if (!res.ok) { r.state = "error"; r.msg = failText(res); }
+            else if (res.source === null) { r.state = "error"; r.msg = "교인명부가 없어요"; }
+            else { r.cands = res.people || []; const a = autoPick(r.cands, r.hint); r.pick = a.pick; r.why = a.why; r.state = "ready"; }
+            bdraw();
+          }
+        };
+        try { await Promise.all([worker(), worker(), worker()]); } finally { bulkBusy = false; bdraw(); }
+      };
+      const bulkAdd = async () => {
+        if (bulkBusy || adding) return;
+        const todo = bulkRows.filter((r) => r.state === "ready" && r.pick !== null);
+        if (!todo.length) { toast("고른 분이 없어요"); return; }
+        const yes = await dialog({ title: "여러 명 등록", text: `고른 ${todo.length}명을 「${course.title}」에 등록할까요? 정원 안이면 확정, 넘치면 대기로 들어가요.`, ok: "등록", cancel: "취소" });
+        if (!yes || !root.isConnected) return;
+        bulkBusy = true; adding = true; bdraw();
+        let ok = 0, bad = 0;
+        try {
+          for (const r of todo) {
+            // name 은 찾을 때 넣은 그 글자 · pick 은 그 이름으로 받은 목록의 차례 · check 는 그 후보의 다섯 칸(하나씩 찾기와 같다)
+            const res = await call("eduEnrollAdd", { course_id: course.id, ...pickArgs(r.name, r.pick, r.cands[r.pick]) });
+            if (!root.isConnected) return;
+            if (res.ok) { r.state = "done"; r.msg = bulkDoneText(res); ok++; added = true; }
+            else { r.state = "fail"; r.msg = bulkDoneText(res) || failText(res); bad++; }
+            bdraw();
+          }
+        } finally { bulkBusy = false; adding = false; bdraw(); }
+        toast(`${ok}명 등록했어요${bad ? ` · ${bad}명은 넣지 못했어요` : ""}`);
+      };
       root.addEventListener("click", async (ev) => {
         const t = ev.target.closest("[data-tab]");
         if (t) {
           tab = t.dataset.tab;
           root.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b === t));
           root.querySelectorAll("[data-panel]").forEach((p) => { p.hidden = p.dataset.panel !== tab; });
-          if (tab === "pick") root.dataset.hideOk = "1"; else delete root.dataset.hideOk;
+          if (tab === "typed") delete root.dataset.hideOk; else root.dataset.hideOk = "1";   // 찾기 · 여러 명은 자기 단추가 있다
           return;
         }
         if (ev.target.closest("[data-find]")) { await find(); return; }
+        if (ev.target.closest("[data-bulk-find]")) { await bulkFind(); return; }
+        if (ev.target.closest("[data-bulk-add]")) { await bulkAdd(); return; }
+        const bp = ev.target.closest("[data-bp]");
+        if (bp) {
+          if (bulkBusy) return;
+          const [i, j] = bp.dataset.bp.split(":").map(Number), r = bulkRows[i];
+          if (r && r.state === "ready") { r.pick = j >= 0 && j < r.cands.length ? j : null; bdraw(); }
+          return;
+        }
         const reg = ev.target.closest("[data-reg]");
         if (!reg || adding) return;
         const i = Number(reg.dataset.reg), p = cands[i];
@@ -132,7 +224,7 @@ async function openAddForm({ call, course }) {
         } finally { adding = false; if (reg.isConnected && !done) reg.disabled = false; }
       });
     },
-    isDirty: (root) => JSON.stringify(typedVals(root)) !== first,
+    isDirty: (root) => JSON.stringify(typedVals(root)) !== first || bulkPending(),   // 여러 명 — 골라 두고 아직 안 넣은 분이 있으면
     onSubmit: async (root) => {
       if (adding) return { ok: false };
       const v = typedVals(root);
