@@ -602,3 +602,15 @@ test("certSettingsChanged — 보낸 칸 가운데 지금과 다른 것만(차�
   assert.deepEqual(certSettingsChanged({ ...cur, seal: "data:x" }, { seal: null, issuer: "다른" }), ["issuer", "seal"]);
   assert.deepEqual(certSettingsChanged(null, { issuer: "" }), ["issuer"]);
 });
+
+// 강좌 목록 차례(2026-10-16 친구 「교육일자 역순 · 콤보 박스도」)
+test("sortByEduDateDesc · firstSessionDates — 시작일(없으면 첫 회차) 늦은 강좌부터 · 날짜 없는 강좌는 맨 위 · 같은 날은 받은 차례", async () => {
+  const { sortByEduDateDesc, firstSessionDates } = await import("../supabase/functions/church-admin/edu-rules.ts");
+  const f = firstSessionDates([{ course_id: "b", on_date: "2026-04-26" }, { course_id: "b", on_date: "2026-04-12" }, { course_id: "x", on_date: "" }]);
+  assert.equal(f.get("b"), "2026-04-12");
+  assert.equal(f.has("x"), false);
+  const rows = [{ id: "a", s: "2026-06-14" }, { id: "b", s: "" }, { id: "c", s: "2026-11-08" }, { id: "d", s: "" }, { id: "e", s: "2026-06-14" }];
+  const key = (r) => r.s || f.get(r.id) || "";
+  assert.deepEqual(sortByEduDateDesc(rows, key).map((r) => r.id), ["d", "c", "a", "e", "b"]);
+  assert.deepEqual(sortByEduDateDesc([], key), []);
+});

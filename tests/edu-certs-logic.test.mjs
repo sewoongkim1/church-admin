@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
-  STATUS_RANK, orderCourses, courseLabel, courseHint, courseOptions, initialCourse, ruleText, attendText, candidateOf, countsOf, pendingOf, headLine,
+  orderCourses, courseLabel, courseHint, courseOptions, initialCourse, ruleText, attendText, candidateOf, countsOf, pendingOf, headLine,
   markOf, rowAction, issueLabel, issueAsk, belowAsk, revokeAsk, issueDoneText, revokeDoneText, certErrorText, reloadAfter, printCerts, NO_PRINT,
   ISSUER_MAX, BODY_MAX, BODY_HINT, fillBody, normIssuer, normBody, countText, settingsPatch, SEAL_STEPS, SEAL_MAX_BYTES, fitSize, dataUrlBytes, hasAlpha,
   whiteToAlpha, sealOutType, sealFileError, isChief,
@@ -89,15 +89,15 @@ test("certHtml — 칸이 모두 있고 서버 글자는 esc · 직인은 PNG·J
 
 // ---------- 강좌·한 분 ----------
 const C = (id, status, o = {}) => ({ id, title: "강좌" + id, term: "2026 하반기", status, statusLabel: status, attendPct: 80, checkLabel: null, counts: { confirmed: 3 }, ...o });
-test("강좌 — 진행 중·끝이 위(같은 단계는 서버 차례) · 고르개 글 · 처음 강좌", () => {
+test("강좌 — 서버 차례 그대로(교육 날짜 역순 · 2026-10-16) · 고르개 글 · 처음 강좌", () => {
   const list = [C("a", "draft"), C("b", "done"), C("c", "running"), C("d", "open"), C("e", "running"), C("f", "archived"), C("g", "weird")];
-  assert.deepEqual(orderCourses(list).map((c) => c.id), ["c", "e", "b", "d", "a", "f", "g"]);
+  assert.deepEqual(orderCourses(list).map((c) => c.id), ["a", "b", "c", "d", "e", "f", "g"]);
+  assert.deepEqual(orderCourses([null, C("a", "done")]).map((c) => c.id), ["a"]);
   assert.deepEqual(orderCourses(null), []);
-  assert.equal(STATUS_RANK.running, 0);
   assert.equal(courseLabel({ title: "t", term: "", statusLabel: "진행 중" }), "t · 학기 없음 · 진행 중");
   assert.equal(courseHint(C("a", "running", { checkLabel: "과제" })), "확정 3분 · 수료 기준 80% + 과제");
   assert.equal(courseHint(C("a", "running", { attendPct: null, counts: null })), "확정 0분");
-  assert.deepEqual(courseOptions([C("a", "draft"), C("b", "running")]).map((o) => o.value), ["b", "a"]);
+  assert.deepEqual(courseOptions([C("a", "draft"), C("b", "running")]).map((o) => o.value), ["a", "b"]);
   assert.equal(initialCourse(list, "d").id, "d");
   assert.equal(initialCourse(list, "zz"), null);
   assert.equal(initialCourse([C("a", "done")], "").id, "a");

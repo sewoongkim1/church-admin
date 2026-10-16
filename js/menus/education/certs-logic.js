@@ -4,12 +4,10 @@
 //   ⚠️ 수료번호는 SQL 한 곳(edu_cert_take)이 짓는다 — 화면은 받은 certNo 를 보이기만 한다.
 
 // ---------- 강좌 ----------
-// 고르개 차례 — 진행 중 → 끝 → 모집 끝 → 모집 중 → 준비 중 → 보관(같은 단계 안은 서버가 준 차례 · 수료는 진행 중·끝난 강좌의 일이라 위로)
-export const STATUS_RANK = { running: 0, done: 1, closed: 2, open: 3, draft: 4, archived: 5 };
+// 고르개 차례 — 서버가 준 차례 그대로(교육 날짜가 늦은 강좌부터 · 2026-10-16 친구 「콤보 박스도 시작일 역순」 · edu-rules.ts sortByEduDateDesc).
+//   그전엔 상태 차례(진행 중 → 끝 → 모집 끝 → …)였다.
 export function orderCourses(list) {
-  const a = (Array.isArray(list) ? list : []).filter(Boolean);
-  const rank = (c) => (Object.prototype.hasOwnProperty.call(STATUS_RANK, c.status) ? STATUS_RANK[c.status] : 9);
-  return a.map((c, i) => [c, i]).sort((x, y) => rank(x[0]) - rank(y[0]) || x[1] - y[1]).map((x) => x[0]);
+  return (Array.isArray(list) ? list : []).filter(Boolean);
 }
 // 강좌 단추·고르개 글 — 「구원론 3차 · 2026 하반기 · 진행 중」
 export const courseLabel = (c) => `${c?.title || ""} · ${c?.term || "학기 없음"} · ${c?.statusLabel || ""}`;

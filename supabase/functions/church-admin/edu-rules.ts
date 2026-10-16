@@ -177,6 +177,26 @@ export function staffCandidateOut(m: { id: string; name?: string; type?: string;
 }
 
 // teachers — 강사(계정 · edu_course_staff kind teacher)[{id, name, stale?}] · 화면용 글 teacher(teacher_label)와 별개
+// 강좌 목록 차례(2026-10-16 친구 「교육일자 역순으로」 · 강좌 관리 · 신청 현황 · 출석부 · 수료 고르개 모두) —
+//   교육 시작일(starts_on · 없으면 첫 회차 날짜)이 늦은 강좌부터 · 날짜가 없는 강좌(막 만든 · 회차 없음)는 맨 위 · 같은 날은 받은 차례(만든 때 최근 먼저).
+//   화면 courses-logic.js sortCoursesByEduDate 와 같은 셈(강좌 관리는 화면도 한 번 더 세운다).
+export function sortByEduDateDesc<T>(rows: T[], keyOf: (r: T) => string): T[] {
+  const keyed = (rows || []).map((r, i) => ({ r, i, k: String(keyOf(r) || "") }));
+  keyed.sort((a, b) => (!a.k !== !b.k ? (a.k ? 1 : -1) : a.k !== b.k ? (a.k < b.k ? 1 : -1) : a.i - b.i));
+  return keyed.map((x) => x.r);
+}
+// 강좌마다 첫 회차 날짜 — 회차 줄들(course_id · on_date)에서
+export function firstSessionDates(sessions: { course_id: unknown; on_date: unknown }[]): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const s of sessions || []) {
+    const id = String(s?.course_id ?? ""), d = String(s?.on_date ?? "");
+    if (!id || !d) continue;
+    const cur = m.get(id);
+    if (!cur || d < cur) m.set(id, d);
+  }
+  return m;
+}
+
 export function courseOut(r: any, counts: { confirmed: number; waitlisted: number; applied: number }, staff: { id: string; name: string; stale?: boolean }[] = [],
   teachers: { id: string; name: string; stale?: boolean }[] = []) {
   return {

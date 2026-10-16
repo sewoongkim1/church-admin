@@ -661,9 +661,9 @@ test("출석부 한 장·회차 목록 — 확정자 이름·소속·그 회차 
   assert.equal(l.log.audit.length + l.log.rpc.length + l.log.writes, 0);
 });
 
-test("eduAttendCourses — 강사는 강사 줄이 있는 강좌만(보관 빼고) · 진행 중 먼저 · 총괄은 모든 강좌(담당 줄을 묻지 않음)", async () => {
-  const A = { id: COURSE, title: "구원론", term: "", status: "open", attend_pct: 80 };
-  const B = { id: COURSE_B, title: "새가족반", term: "", status: "running", attend_pct: 80 };
+test("eduAttendCourses — 강사는 강사 줄이 있는 강좌만(보관 빼고) · 교육 날짜 늦은 강좌 먼저(2026-10-16) · 총괄은 모든 강좌(담당 줄을 묻지 않음)", async () => {
+  const A = { id: COURSE, title: "구원론", term: "", status: "running", attend_pct: 80, starts_on: "2026-04-12" };
+  const B = { id: COURSE_B, title: "새가족반", term: "", status: "open", attend_pct: 80, starts_on: "2026-06-14" };
   const t = setup({ staffRows: T_ROWS, applyRes: [], tables: { edu_courses: [A, B], edu_sessions: [{ id: 5, course_id: COURSE, no: 1, on_date: "2999-01-01" }] } });
   const r = await t.edu.eduAttendCourses(TEACHER);
   assert.equal(r.ok, true); assert.equal(r.scope, "assigned");
@@ -678,7 +678,7 @@ test("eduAttendCourses — 강사는 강사 줄이 있는 강좌만(보관 빼�
   const c = setup({ applyRes: [], tables: { edu_courses: [A, B], edu_sessions: [] } });
   const all = await c.edu.eduAttendCourses(CHIEF);
   assert.equal(all.scope, "all");
-  assert.deepEqual(all.courses.map((x) => x.id), [COURSE_B, COURSE], "진행 중 먼저");
+  assert.deepEqual(all.courses.map((x) => x.id), [COURSE_B, COURSE], "교육 날짜 늦은 강좌 먼저(상태와 상관없이)");
   assert.ok(!c.log.q.some((q) => q.table === "edu_course_staff"));
   assert.ok(c.log.q.find((q) => q.table === "edu_courses").c.calls.some((x) => x[0] === "neq" && x[1] === "status" && x[2] === "archived"));
 });

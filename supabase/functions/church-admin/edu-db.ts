@@ -18,7 +18,7 @@ import { attendCounts, attendExportRows, attendKinds, attendSessionOut, attendSu
   checkStaffIds, checkStaffKind, checkTypedIdent, courseOut, eduChief, EDU_STAFF_ROLES, EDU_STATUS_LABEL, EDU_TEACHER_ROLES, enrollOut,
   exportRows, kstDate, maybeDupIds, pickSession, seatsOpened, staffByCourse, staffCandidateOut, staffRolesFor, waitOrder, whoOf,
   certCourseOut, certIssueOrder, certListOut, certPeriod, certPrintPeople, certSettingsChanged, checkCertIds, checkCertSettings, eduCertBody,
-  checkStatsTerm, eduLinkedUserIds, eduNamePattern, eduRowsForPerson, eduTabItems, statsOut } from "./edu-rules.ts";
+  checkStatsTerm, eduLinkedUserIds, eduNamePattern, eduRowsForPerson, eduTabItems, statsOut, firstSessionDates, sortByEduDateDesc } from "./edu-rules.ts";
 import { norm } from "./authz.ts";
 import { nameKey } from "./people-match.ts";
 
@@ -34,7 +34,6 @@ const STAFF_ANY_ROLES = [...new Set([...EDU_STAFF_ROLES, ...EDU_TEACHER_ROLES])]
 // 출석부 강좌 칸(edu_courses 에서 필요한 것만)
 const ATT_COURSE_COLS = "id,title,term,status,place,starts_on,ends_on,attend_pct,created_at";
 // 출석부 강좌 목록 차례 — 진행 중 → 모집 중 → 모집 끝 → 준비 중 → 끝(보관은 목록에 없다)
-const ATT_STATUS_ORDER: Record<string, number> = { running: 0, open: 1, closed: 2, draft: 3, done: 4 };
 const CLOSED = new Set(["done", "archived"]);   // edu_apply(p_staff)·edu_staff_set 이 막는 상태와 같다
 const NOT_ASSIGNED = { ok: false as const, error: "not-assigned" };
 
@@ -144,7 +143,12 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     }
     const terms = [...new Set(rows.map((r) => r.term).filter(Boolean))];
     const want = norm(b?.term);
-    const list = want ? rows.filter((r) => r.term === want) : rows;
+    // 교육 날짜가 늦은 강좌부터(2026-10-16 친구 · edu-rules.ts sortByEduDateDesc — 시작일, 없으면 첫 회차)
+    const picked = want ? rows.filter((r) => r.term === want) : rows;
+    const pids = picked.map((r) => String(r.id));
+    const firsts = pids.length ? firstSessionDates(await deps.allRows(() => db.from("edu_sessions").select("course_id,on_date")
+      .in("course_id", pids).order("course_id").order("on_date").order("id"))) : new Map<string, string>();
+    const list = sortByEduDateDesc(picked, (r: any) => r.starts_on || firsts.get(String(r.id)) || "");
     const counts = await countsOf(list.map((r) => r.id));
     const staff = await staffOf(list.map((r) => r.id));
     return { ok: true, scope: chief ? "all" : "assigned", terms,
@@ -479,9 +483,12 @@ export function makeEdu(db: Db, audit: Audit, deps: {
       return { ...attCourseOut(c), confirmed: counts[c.id]?.confirmed ?? 0, sessionsCount: ss.length,
         nextDate: next ? next.on_date : null, hasToday: ss.some((s) => s.on_date === today) };
     });
-    courses.sort((a, z) => (ATT_STATUS_ORDER[a.status] ?? 9) - (ATT_STATUS_ORDER[z.status] ?? 9)
-      || (a.nextDate ?? "9999").localeCompare(z.nextDate ?? "9999") || a.title.localeCompare(z.title, "ko"));
-    return { ok: true, scope: chief ? "all" : "assigned", today, courses };
+    // 교육 날짜가 늦은 강좌부터(2026-10-16 친구 「콤보 박스도 시작일 역순」 · 그전엔 상태 → 다음 회차 차례) — 오늘 수업이 있는 강좌를 맨 위로
+    //   올리는 것은 화면(attendance-logic.js orderCourses)이 한다.
+    const startOf = new Map<string, string>(rows.map((r) => [String(r.id), String(r.starts_on || "")]));
+    const firsts = firstSessionDates(sess);
+    const sorted = sortByEduDateDesc(courses, (c: any) => startOf.get(String(c.id)) || firsts.get(String(c.id)) || "");
+    return { ok: true, scope: chief ? "all" : "assigned", today, courses: sorted };
   }
 
   // 한 강좌의 회차 — 회차마다 체크한 수(지금 확정된 분 가운데) · 확정 수 · 고를 회차(pick: 오늘 → 다음 → 마지막)
