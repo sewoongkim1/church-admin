@@ -48,15 +48,23 @@ function mainHtml(secHtml, hist, on) {
     `${hasMemo(hist) ? panel("memo", histPanelHtml("memo", hist, null)) : ""}</div>`;
 }
 
+// 가족 줄의 선 아이콘(성경암송 앱 첫 화면 줄 목록과 같은 그림 · app.js HA_ICON user · users · chev) — 폰 모양에서만 보인다(css 「📱 교인카드 폰 모양」)
+const lineSvg = (d, cls = "") => `<svg${cls ? ` class="${cls}"` : ""} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ` +
+  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`;
+const FAM_ONE = lineSvg("M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z");
+const FAM_ALL = lineSvg("M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 20v-2a4 4 0 0 0-3-3.9M16 2.1a4 4 0 0 1 0 7.8");
+const FAM_CHEV = lineSvg("M9 6l6 6-6 6", "pd-chev");
+
+// 가족 단추 — PC 는 알약(이름 · 관계 나이) · 폰은 앱 줄 목록([아이콘 칸] 이름 … 관계 나이 ›) — 아이콘 칸 · › 는 PC 에서 숨긴다(2026-10-17 친구)
 function familyHtml(p, family) {
   if (!has(p.household_id) || !family.length) return "";
   const chips = family.map((f) => {
     const sub = [f.household_rel, ageOf(f)].filter(has).join(" · ");
-    return `<button type="button" class="pd-chip" data-fam="${t(f.person_id)}"><b>${t(f.name)}</b>${
-      sub ? `<small>${t(sub)}</small>` : ""}</button>`;
+    return `<button type="button" class="pd-chip" data-fam="${t(f.person_id)}"><span class="pd-fi" aria-hidden="true">${FAM_ONE}</span><b>${t(f.name)}</b>${
+      sub ? `<small>${t(sub)}</small>` : ""}${FAM_CHEV}</button>`;
   }).join("");
   return `<div class="pd-fams">${chips}<button type="button" class="pd-fam-all" data-fam-all="${t(p.household_id)}">` +
-    `<span aria-hidden="true">👪</span> 가족 모두 목록으로</button></div>`;
+    `<span class="pd-fi" aria-hidden="true">${FAM_ALL}</span><span class="pd-fa-e" aria-hidden="true">👪</span> 가족 모두 목록으로${FAM_CHEV}</button></div>`;
 }
 
 export function personDetailHtml(p, family = [], history = null, tab = "church") {

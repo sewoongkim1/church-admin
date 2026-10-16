@@ -2253,6 +2253,7 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .dlg.pd .pd-hl-m .pd-hr{grid-template-columns:minmax(0,1fr) auto}
 /* 심방자료 단추의 그림 · 작은 이름(2026-10-17) — PC 는 「🏠 심방자료」 한 줄 그대로(작은 이름은 폰 타일에만) */
 .dlg.pd .pd-visit-k{display:none}
+.dlg.pd .pd-fi,.dlg.pd .pd-chev{display:none}   /* 가족 줄의 아이콘 칸 · › — 폰 모양에서만(2026-10-17) */
 .dlg.pd .pd-reach{grid-column:1/-1}
 .dlg.pd .pd-md{font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .dlg.pd .pd-memo{margin:12px 0}
@@ -2280,35 +2281,38 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 }
 @container (max-width:719px){
   .dlg.pd .pd-wrap{gap:14px}
-  /* 머리 카드 */
-  .dlg.pd .pd-side{display:flex;flex-direction:column;align-items:center;gap:0;padding:18px 12px 12px;text-align:center;
-    border:1px solid var(--pd-bd);border-radius:18px;box-shadow:var(--pd-sh);
-    background:linear-gradient(135deg,var(--navy-dark),var(--navy)) 0 0/100% 70px no-repeat,#fff}
-  .dlg.pd .pd-photo{width:88px;height:114px;border:3px solid #fff;border-radius:16px;box-shadow:0 6px 18px rgba(13,27,62,.22)}
-  .dlg.pd .pd-ini{font-size:38px}
-  .dlg.pd .pd-id{display:grid;grid-template-columns:auto auto;justify-content:center;align-items:center;gap:5px 0;margin-top:10px;width:100%}
-  .dlg.pd .pd-id>*{grid-column:1/-1;justify-self:center;margin:0}
-  .dlg.pd .pd-name{font-size:24px;line-height:1.2}
-  .dlg.pd .pd-aff{grid-column:1;justify-self:end;font-size:15px}
-  .dlg.pd .pd-age{grid-column:2;justify-self:start;font-size:15px}
-  .dlg.pd .pd-age::before{content:"·";margin:0 6px;color:var(--gray)}
-  .dlg.pd .pd-id:not(:has(.pd-age)) .pd-aff,.dlg.pd .pd-id:not(:has(.pd-aff)) .pd-age{grid-column:1/-1;justify-self:center}
+  /* 머리 카드 — 남색 신분증 꼴(사진 왼쪽 · 정보 오른쪽) + 아래 흰 띠에 연락 타일.
+     2026-10-17 친구 「사진에서 전화번호까지 너무 많이 차지」 — 가운데 큰 사진(약 390px)을 이 꼴(약 210px)로 줄였다 */
+  .dlg.pd .pd-side{display:grid;grid-template-columns:72px minmax(0,1fr);align-items:center;gap:0 14px;padding:14px 14px 0;text-align:left;
+    border:1px solid var(--navy);border-radius:18px;box-shadow:var(--pd-sh);overflow:hidden;
+    background:linear-gradient(135deg,var(--navy-dark),var(--navy));color:#fff}
+  .dlg.pd .pd-photo{width:72px;height:94px;border:2px solid rgba(255,255,255,.92);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+  .dlg.pd .pd-ini{font-size:30px}
+  .dlg.pd .pd-id{display:grid;grid-template-columns:auto minmax(0,1fr);justify-content:start;align-items:center;gap:4px 0;margin:0;min-width:0}
+  .dlg.pd .pd-id>*{grid-column:1/-1;justify-self:start;margin:0}
+  .dlg.pd .pd-name{font-size:22px;line-height:1.2;color:#fff}
+  .dlg.pd .pd-pos{min-height:22px;padding:1px 9px;background:rgba(255,255,255,.15);color:#fff;font-size:12.5px}
+  .dlg.pd .pd-aff{grid-column:1;font-size:14px;color:#fff}
+  .dlg.pd .pd-age{grid-column:2;font-size:14px;color:rgba(255,255,255,.8)}
+  .dlg.pd .pd-age::before{content:"·";margin:0 5px;color:rgba(255,255,255,.55)}
+  .dlg.pd .pd-id:not(:has(.pd-age)) .pd-aff,.dlg.pd .pd-id:not(:has(.pd-aff)) .pd-age{grid-column:1/-1}
   .dlg.pd .pd-id:not(:has(.pd-aff)) .pd-age::before{content:none}
-  .dlg.pd .pd-life{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;background:#e8f5ec;font-size:12.5px}
-  /* 연락 타일 — 휴대폰 · 전화 · 심방자료가 한 줄(번호 칸을 조금 넓게) */
-  .dlg.pd .pd-reach{display:flex;gap:8px;width:100%;margin-top:14px}
+  .dlg.pd .pd-life{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;background:rgba(120,220,160,.17);
+    color:#aef0c9;font-size:12px}
+  /* 연락 타일 — 카드 아래 흰 띠에 한 줄(휴대폰 · 전화 · 심방자료 · 번호 칸을 조금 넓게) · 타일 안은 [그림 이름] / 번호 두 줄 */
+  .dlg.pd .pd-reach{grid-column:1/-1;display:flex;gap:8px;margin:14px -14px 0;padding:10px 12px 12px;background:#fff}
   .dlg.pd .pd-tels,.dlg.pd .pd-visits{display:contents}
-  .dlg.pd .pd-tel,.dlg.pd .pd-tel:only-child,.dlg.pd .pd-visit{flex:1.25 1 0;min-width:0;width:auto;display:flex;flex-direction:column;
-    align-items:center;justify-content:flex-start;gap:1px;min-height:0;margin:0;padding:10px 2px 9px;border-radius:14px;
-    border:1px solid #dfe7f3;background:#f3f6fb;color:var(--navy)}
+  /* 칸 넷(1fr 그림 이름 1fr) — 번호가 두 칸을 걸쳐도 그림과 이름은 가운데 붙어 있게(양옆 1fr 이 남는 폭을 먹는다) */
+  .dlg.pd .pd-tel,.dlg.pd .pd-tel:only-child,.dlg.pd .pd-visit{flex:1.25 1 0;min-width:0;width:auto;display:grid;grid-template-columns:1fr auto auto 1fr;
+    align-items:center;gap:1px 4px;min-height:0;margin:0;padding:8px 2px;border-radius:12px;
+    border:1px solid #dfe7f3;background:#f3f6fb;color:var(--navy);text-align:center}
   .dlg.pd .pd-visit{flex-grow:1;border-color:#eedfb3;background:#fff8e7}
-  .dlg.pd .pd-reach .pd-none{flex:1;padding:14px 0;border-radius:14px;background:#f6f6f6;text-align:center}
-  .dlg.pd .pd-tel .pd-ico,.dlg.pd .pd-visit-i{box-sizing:border-box;display:flex;align-items:center;justify-content:center;
-    width:32px;height:32px;margin-bottom:4px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(13,27,62,.12)}
-  .dlg.pd .pd-tel .pd-ico{padding:8px}
-  .dlg.pd .pd-visit-i{font-size:16px;line-height:1}
-  .dlg.pd .pd-tel-k,.dlg.pd .pd-visit-k{display:block;font-size:12px;font-weight:600;line-height:1.3;color:var(--ink-2)}
-  .dlg.pd .pd-tel-n,.dlg.pd .pd-visit-l{font-size:14px;font-weight:800;line-height:1.35;color:var(--navy-dark);
+  .dlg.pd .pd-reach .pd-none{flex:1;padding:12px 0;border-radius:12px;background:#f6f6f6;text-align:center}
+  .dlg.pd .pd-tel .pd-ico{grid-column:2;width:14px;height:14px}
+  .dlg.pd .pd-visit-i{grid-column:2;font-size:13px;line-height:1}
+  .dlg.pd .pd-tel-k,.dlg.pd .pd-visit-k{grid-column:3}
+  .dlg.pd .pd-tel-k,.dlg.pd .pd-visit-k{display:block;font-size:12px;font-weight:600;line-height:1.3;color:var(--ink-2);white-space:nowrap}
+  .dlg.pd .pd-tel-n,.dlg.pd .pd-visit-l{grid-column:1/-1;font-size:14px;font-weight:800;line-height:1.35;color:var(--navy-dark);
     font-variant-numeric:tabular-nums;letter-spacing:-.2px}
   /* 탭 — 한 줄 · 이름 아래 수 · 고른 탭은 남색 · 스크롤하면 위에 붙는다 */
   .dlg.pd .pd-tabbed .pd-main{gap:0}
@@ -2338,9 +2342,24 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
   .dlg.pd .pd-eg+.pd-eg{margin-top:16px}
   .dlg.pd .pd-eh{padding:6px 0 6px}
   .dlg.pd .pd-memo{margin:0}
+  /* 가족 — 성경암송 앱 첫 화면의 줄 목록 꼴(2026-10-17 친구 「둥근 상자 대신 앱 스타일로」): [아이콘 칸] 이름 … 관계 · 나이 › */
+  .dlg.pd .pd-fams{display:flex;flex-direction:column;gap:0;margin:0}
+  .dlg.pd .pd-chip,.dlg.pd .pd-fam-all{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;margin:0;padding:8px 0;
+    border:0;border-top:1px solid #f3efe7;border-radius:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;text-align:left}
+  .dlg.pd .pd-chip:hover,.dlg.pd .pd-fam-all:hover{border-top-color:#f3efe7;background:#faf8f3}
+  .dlg.pd .pd-fi{flex:none;display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:#eaf0f9;color:#1e3a6b}
+  .dlg.pd .pd-fi svg{width:21px;height:21px}
+  .dlg.pd .pd-chip b{font-weight:700;color:#1b2333}
+  .dlg.pd .pd-chip small{margin-left:auto;font-size:14px;color:var(--ink-2);white-space:nowrap}
+  .dlg.pd .pd-chev{display:block;flex:none;width:20px;height:20px;color:#6b7280}
+  .dlg.pd .pd-chip b+.pd-chev,.dlg.pd .pd-fam-all .pd-chev{margin-left:auto}
+  .dlg.pd .pd-fam-all{font-weight:700;color:var(--navy)}
+  .dlg.pd .pd-fam-all .pd-fi{background:#fbf1d6;color:#7a5a12}
+  .dlg.pd .pd-fa-e{display:none}
 }
 @container (max-width:329px){
   .dlg.pd .pd-tel-n{font-size:12.5px;letter-spacing:-.4px}
+  .dlg.pd .pd-visit-k{display:none}   /* 좁은 폰(320px)에서는 「심방 준비」가 두 줄로 꺾인다 — 그림 · 「심방자료」만 */
   .dlg.pd .pd-tabs .pd-tab{font-size:12px;letter-spacing:-.5px}
 }
 /* 🏠 심방 카드의 가족 줄(2026-10-15) — 관계 · 이름(누르면 그분 심방자료) · 직분 나이 / 기록 조각들 */
