@@ -73,8 +73,10 @@ export function tabsHtml(history, tab) {
   return `<div class="pd-tabs${list.length > 3 ? " pd-tabs4" : ""}${list.length > 4 ? " pd-tabs5" : ""}" role="tablist" aria-label="${names}">` +
     list.map(([k, label]) => {
     const sel = k === on;
+    const m = /^(\S+)\s(.+)$/.exec(label);   // 「🤝 사역」 → 그림 · 이름(교적은 그림이 없다)
+    const face = m ? `<span class="pd-tab-i" aria-hidden="true">${m[1]}</span><span class="pd-tab-l">${m[2]}</span>` : `<span class="pd-tab-l">${label}</span>`;
     return `<button type="button" class="pd-tab${sel ? " on" : ""}" role="tab" id="pd-tab-${k}" data-pd-tab="${k}" ` +
-      `aria-selected="${sel}" aria-controls="pd-panel-${k}" tabindex="${sel ? 0 : -1}">${label}${k === "church" ? "" : ` <em>${n[k]}</em>`}</button>`;
+      `aria-selected="${sel}" aria-controls="pd-panel-${k}" tabindex="${sel ? 0 : -1}">${face}${k === "church" ? "" : `<em>${n[k]}</em>`}</button>`;
   }).join("") + `</div>`;
 }
 

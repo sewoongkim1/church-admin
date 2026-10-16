@@ -41,8 +41,8 @@ test("personDetailHtml — 모든 값을 esc 한다", () => {
 
 test("personDetailHtml — 전화 단추: 휴대폰·전화 표시 · 수화기는 그림(이모지 아님) · 이름이 없으면 「이름 없음」", () => {
   const html = personDetailHtml({ ...FULL, phone2: "02-2615-0000" }, FAM);
-  assert.ok(html.includes('<small class="pd-tel-k" aria-hidden="true">휴대폰</small>010-0000-0001'));
-  assert.ok(html.includes('<small class="pd-tel-k" aria-hidden="true">전화</small>02-2615-0000'));
+  assert.ok(html.includes('<small class="pd-tel-k" aria-hidden="true">휴대폰</small><span class="pd-tel-n">010-0000-0001</span>'));
+  assert.ok(html.includes('<small class="pd-tel-k" aria-hidden="true">전화</small><span class="pd-tel-n">02-2615-0000</span>'));
   assert.equal(html.includes("📞"), false);
   assert.ok(html.includes('<svg class="pd-ico"'));
   assert.ok(personDetailHtml({ phone1: "010-0000-0000" }, []).includes('aria-label="이름 없음에게 전화 010-0000-0000"'));

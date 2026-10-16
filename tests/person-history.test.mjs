@@ -25,8 +25,10 @@ test("tabsHtml — 셋 · 고른 탭 · 수 · 줄바꿈·data-v·data-fam 없�
   assert.equal((html.match(/role="tab"/g) || []).length, 3);
   assert.ok(html.includes('data-pd-tab="ministry" aria-selected="true"'));
   assert.ok(html.includes('data-pd-tab="church" aria-selected="false"'));
-  assert.ok(html.includes("🤝 사역 <em>2</em>"));
-  assert.ok(html.includes("✍️ 성경필사 <em>1</em>"));
+  assert.ok(html.includes('<span class="pd-tab-i" aria-hidden="true">🤝</span><span class="pd-tab-l">사역</span><em>2</em>'));
+  assert.ok(html.includes('<span class="pd-tab-i" aria-hidden="true">✍️</span><span class="pd-tab-l">성경필사</span><em>1</em>'));
+  assert.ok(html.includes('data-pd-tab="church" aria-selected="false" aria-controls="pd-panel-church" tabindex="-1"><span class="pd-tab-l">교적</span></button>'),
+    "교적은 그림 · 수 없이 이름만(2026-10-17 폰 모양)");
   assert.ok(tabsHtml(H(), undefined).includes('data-pd-tab="church" aria-selected="true"'));
   assert.equal(tabOf("x"), "church");
   assert.equal(histTotal(H([M()], [])), 1);
@@ -176,7 +178,7 @@ test("교육 탭 줄 — 넷이면 pd-tabs4 · 「🎓 교육 N」 · 고른 탭
   assert.ok(html.includes('class="pd-tabs pd-tabs4"'));
   assert.ok(html.includes('aria-label="교적 · 사역 · 성경필사 · 교육"'));
   assert.equal((html.match(/role="tab"/g) || []).length, 4);
-  assert.ok(html.includes("🎓 교육 <em>2</em>"));
+  assert.ok(html.includes('<span class="pd-tab-i" aria-hidden="true">🎓</span><span class="pd-tab-l">교육</span><em>2</em>'));
   assert.ok(html.includes('data-pd-tab="education" aria-selected="true" aria-controls="pd-panel-education" tabindex="0"'));
   assert.ok(tabsHtml(H(), "education").includes('data-pd-tab="church" aria-selected="true"'), "교육 칸이 없으면 교적이 고른 탭");
   assert.equal(tabsHtml(H(), "church").includes("pd-tabs4"), false);

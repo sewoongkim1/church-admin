@@ -24,7 +24,7 @@ function telHtml(phone, name) {
   if (!d) return "";
   const kind = d.startsWith("01") ? "휴대폰" : "전화";
   return `<a class="pd-tel" href="tel:${d}" aria-label="${t(name)}에게 전화 ${t(phone)}">${TEL_SVG}` +
-    `<small class="pd-tel-k" aria-hidden="true">${kind}</small>${t(phone)}</a>`;
+    `<small class="pd-tel-k" aria-hidden="true">${kind}</small><span class="pd-tel-n">${t(phone)}</span></a>`;
 }
 
 // 값 속 「 > 」(교인 구분·교회학교 경로)는 옅은 「›」로 — 본문과 같은 굵기의 꺾쇠는 코드처럼 시끄럽다.
@@ -98,10 +98,12 @@ export function personDetailHtml(p, family = [], history = null, tab = "church")
     (aff ? `<p class="pd-aff">${t(aff)}</p>` : "") +
     (age ? `<p class="pd-age">${t(age)}</p>` : "") +
     (p.lifeConfirmed ? `<p class="pd-life" title="이 교인에 성경암송 앱에서 본인 확인(확인 번호)을 마친 계정이 이어져 있어요">🔐 성경암송 본인 확인됨</p>` : "") +
-    `</div><div class="pd-tels">${tels || `<p class="pd-none">연락처 없음</p>`}</div>` +
+    `</div><div class="pd-reach"><div class="pd-tels">${tels || `<p class="pd-none">연락처 없음</p>`}</div>` +
     // 🏠 심방자료(2026-10-15) — 서버가 총괄에게만 canVisit 을 준다 · 누르면 search.js openPerson 이 이 창을 닫고 심방 카드를 연다(data-v 금지 — dialog 가 「닫기」로 읽는다)
     //   전화 줄(.pd-tels) 밖에 둔다 — 안에 두면 번호가 하나일 때의 모양(:only-child)이 깨진다
-    (p.canVisit ? `<div class="pd-visits"><button type="button" class="pd-visit" data-pd-visit="${t(p.person_id)}"><span aria-hidden="true">🏠</span> 심방자료</button></div>` : "") +
-    `</div>` +
+    //   .pd-reach — 전화 줄과 심방자료를 한 묶음으로(2026-10-17 폰 모양: 한 줄 타일 · PC 는 예전처럼 위아래) · 「심방 준비」 작은 이름은 폰 타일에만 보인다
+    (p.canVisit ? `<div class="pd-visits"><button type="button" class="pd-visit" data-pd-visit="${t(p.person_id)}" aria-label="심방자료">` +
+      `<span class="pd-visit-i" aria-hidden="true">🏠</span><small class="pd-visit-k" aria-hidden="true">심방 준비</small><span class="pd-visit-l">심방자료</span></button></div>` : "") +
+    `</div></div>` +
     `<div class="pd-main">${mainHtml(secHtml, hist, tabOf(tab, hist))}</div></div>`;
 }
