@@ -11,20 +11,21 @@ import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { groupByStatus, actionsFor, capacityLine, errorWord, exportFileName, addDoneText, confirmTextFor, hasErrorWord, pickArgs, shortApplied,
   dupBadge, TYPED_SUB_HINT, parseNameList, autoPick, bulkWhyText, bulkDoneText, BULK_MAX } from "./enrollments-logic.js";
+import { aTitle, lineSvg } from "../../core/icons.js";
 
-const TITLE = `<h2 class="page-title">📝 신청 현황</h2>`;
+const TITLE = aTitle("doc", "신청 현황");   // 성경앱 스타일 머리(2026-10-17)
 const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 // 알려진 말이면 errorWord, 아니면(연결·권한 등) 공용 errorText
 const failText = (r) => (hasErrorWord(r?.error) ? errorWord(r.error) : errorText(r));
 const SECTIONS = [["applied", "승인 기다림"], ["confirmed", "확정"], ["waitlisted", "대기"]];
 const FOLDED = [["cancelled", "취소"], ["declined", "반려"]];
 
-let lastCourseId = "";   // 메뉴를 나갔다 와도 보던 강좌를 기억(모듈 안)
+let lastCourseId = "";   // 메뉴를 나갔다 와도 보던 강좌를 기억(모듈 안) · "" = 전체 강좌(처음 · 2026-10-17)
 
 // ---------- 줄 ----------
 function rowHtml(e) {
   const acts = actionsFor(e).map((a) => `<button type="button" class="btn${a.danger ? " danger" : ""}" data-op="${a.op}">${esc(a.label)}</button>`).join("");
-  return `<div class="card ee-row" data-eid="${esc(e.id)}">
+  return `<div class="ee-row" data-eid="${esc(e.id)}">
     <div class="ee-l1"><div class="ee-who"><b>${esc(e.name)}</b>${e.status === "waitlisted" ? ` <span class="badge">대기 ${esc(e.waitNo || "")}번</span>` : ""} <span class="badge">${e.source === "staff" ? "담당자" : "앱"}</span>${e.maybeDup ? " " + dupBadge(e) : ""}</div>
       <label class="ee-fee"><input type="checkbox" data-fee ${e.feePaid ? "checked" : ""}> 교재비</label></div>
     <div class="ee-l2">${esc(e.who || "")}${e.who ? " · " : ""}${esc(shortApplied(e.appliedAt))}</div>
@@ -32,8 +33,25 @@ function rowHtml(e) {
     <div class="ee-acts"><button type="button" class="btn" data-memo>메모</button>${acts}</div>
   </div>`;
 }
+// 묶음 하나 — 제목(회색) + 흰 카드 한 장 안의 줄(성경앱 스타일 · 2026-10-17)
 const sectionHtml = (list, label) => `<h3 class="ee-h">${esc(label)} <small class="muted">${list.length}명</small></h3>` +
-  (list.length ? list.map(rowHtml).join("") : `<p class="empty">없어요</p>`);
+  (list.length ? `<div class="ee-list">${list.map(rowHtml).join("")}</div>` : `<p class="empty">없어요</p>`);
+
+// 강좌 한 덩이(전체 보기 · 한 강좌 보기 같은 꼴) — 머리 카드(이름 · 상태 · 학기 · 정원 줄 · 엑셀 · 대신 등록) + 승인 기다림 · 확정 · 대기 + 취소·반려(접힘).
+//   전체 보기에서는 0명인 묶음을 그리지 않는다(한 강좌만 볼 때는 「없어요」까지 — 예전 그대로) · 취소·반려가 없으면 접는 줄도 없다.
+function blockHtml(b, all, open) {
+  const c = b.cur, g = groupByStatus(b.list), cid = esc(c.id);
+  const head = `<div class="card ee-ch"><div class="ee-ct"><b>${esc(c.title)}</b><span class="badge ec-st" data-st="${esc(c.status)}">${esc(c.statusLabel)}</span></div>` +
+    `<p class="muted ee-cs">${esc([c.term, c.counts ? capacityLine(c) : ""].filter(Boolean).join(" · "))}</p>` +
+    `<div class="ee-tools"><button type="button" class="btn" data-act="export" data-cid="${cid}">${lineSvg("download", "btn-i")}엑셀로 받기</button>` +
+    `<button type="button" class="btn primary" data-act="add" data-cid="${cid}">＋ 대신 등록</button></div></div>`;
+  if (b.err) return `<section class="ee-course" data-cid="${cid}">${head}<p class="empty">${esc(b.err)}</p></section>`;
+  const secs = SECTIONS.filter(([k]) => !all || (g[k] || []).length).map(([k, l]) => sectionHtml(g[k] || [], l)).join("");
+  const folded = FOLDED.reduce((n, [k]) => n + (g[k] || []).length, 0);
+  return `<section class="ee-course" data-cid="${cid}">${head}${secs || `<p class="empty ee-none">아직 신청한 분이 없어요</p>`}` +
+    (folded ? `<details data-fold="${cid}"${open ? " open" : ""}><summary>취소·반려 ${folded}명</summary>` +
+      `${FOLDED.map(([k, l]) => sectionHtml(g[k] || [], l)).join("")}</details>` : "") + `</section>`;
+}
 
 // ---------- 메모 창 ----------
 function openNoteForm({ call, e }) {
@@ -244,8 +262,10 @@ export async function openAddForm({ call, course }) {
 export async function render(el, { call }) {
   el.classList.add("ee-page");   // PC 에서 읽기 좋은 폭(css .ee-page)
   el.innerHTML = TITLE + `<p class="empty">불러오는 중…</p>`;
-  let courses = [], cur = null, list = [], foldOpen = false, scope = "all";
-  const pending = new Set();   // 같은 줄·같은 단추를 두 번 누르는 것 막기
+  // sel — "" = 전체 강좌(처음 · 강좌마다 덩이 하나) · 강좌 id = 그 강좌만. blocks = 보이는 강좌들 [{cur, list, err?}]
+  let courses = [], scope = "all", sel = lastCourseId, blocks = [];
+  const foldOpen = new Set();   // 취소·반려를 펼친 강좌 id
+  const pending = new Set();    // 같은 줄·같은 단추를 두 번 누르는 것 막기
 
   const loadCourses = async () => {
     const r = await call("eduCourses", {});
@@ -254,75 +274,90 @@ export async function render(el, { call }) {
     scope = r.scope === "assigned" ? "assigned" : "all";
     return true;
   };
-  // 강좌 c 의 명단을 불러와 cur·list 로 — 실패하면 아무것도 바꾸지 않고 그 오류를 돌려준다(보던 강좌가 그대로 남는다)
-  //   → { ok:true } · { ok:false, gone:"강좌를 놓을 까닭" }(그 강좌가 없어졌다 · 담당에서 빠졌다) · { ok:false, error }
+  // 강좌 c 의 명단 — 아무것도 바꾸지 않고 돌려준다 → { ok, block } · { ok:false, gone:"강좌를 놓을 까닭" }(없어졌다 · 담당에서 빠졌다) · { ok:false, error }
   const loadFor = async (c) => {
     const r = await call("eduEnrollList", { course_id: c.id });
     if (!r.ok && r.error === "not-found") return { ok: false, gone: "그 강좌를 찾지 못했어요" };
     if (!r.ok && r.error === "not-assigned") return { ok: false, gone: errorText(r) };   // 그사이 담당에서 빠졌다
     if (!r.ok) return { ok: false, error: r };
-    cur = { ...c, ...r.course }; list = r.enrollments || [];
+    return { ok: true, block: { cur: { ...c, ...r.course }, list: r.enrollments || [] } };
+  };
+  // 보기를 불러온다 — 전체면 강좌마다 나란히(못 불러온 강좌는 그 덩이에 까닭 · 없어진 강좌는 뺀다) · 한 강좌가 없어졌으면 전체로.
+  //   한 강좌를 못 불러왔으면(그 밖의 오류) blocks 를 바꾸지 않고 { error } — 보던 화면이 그대로 남는다.
+  const loadView = async () => {
+    const one = sel ? courses.find((c) => c.id === sel) : null;
+    if (sel && !one) { sel = ""; lastCourseId = ""; }
+    const targets = one ? [one] : courses;
+    const rs = await Promise.all(targets.map(loadFor));
+    if (one && !rs[0].ok) {
+      if (rs[0].gone) { toast(rs[0].gone); sel = ""; lastCourseId = ""; return loadView(); }
+      return { error: rs[0].error };
+    }
+    blocks = rs.map((r, i) => (r.ok ? r.block : r.gone ? null : { cur: targets[i], list: [], err: errorText(r.error) })).filter(Boolean);
     return { ok: true };
   };
-  const refresh = async () => {
-    const r = await loadFor(cur);
-    if (r.gone) { toast(r.gone); cur = null; list = []; lastCourseId = ""; }
-    else if (!r.ok) { toast(errorText(r.error)); return; }
+  // 한 강좌만 다시(줄을 바꾼 뒤) — 없어졌으면 그 덩이를 뺀다(한 강좌 보기였으면 전체로)
+  const refreshCourse = async (cid) => {
+    const i = blocks.findIndex((b) => String(b.cur.id) === String(cid));
+    if (i < 0) return;
+    const r = await loadFor(blocks[i].cur);
+    if (r.ok) blocks[i] = r.block;
+    else if (r.gone) {
+      toast(r.gone); blocks.splice(i, 1);
+      if (sel && String(sel) === String(cid)) { sel = ""; lastCourseId = ""; await loadView(); }
+    } else { toast(errorText(r.error)); return; }
     draw();
+  };
+  const selLabel = () => {
+    const c = sel ? courses.find((x) => x.id === sel) : null;
+    return c ? `${c.title}${c.term ? " · " + c.term : ""} · ${c.statusLabel}` : `전체 강좌 (${courses.length}개)`;
   };
 
   const draw = () => {
+    if (!el.isConnected) return;
     if (!courses.length) {
       el.innerHTML = TITLE + `<p class="empty">${scope === "assigned"
         ? "맡은 강좌가 아직 없어요 — 교육 총괄께 「📚 강좌 관리」에서 담당자로 넣어 달라고 말씀해 주세요"
         : "아직 강좌가 없어요 — 「📚 강좌 관리」에서 먼저 만들어 주세요"}</p>`;
       return;
     }
-    const head = `${TITLE}<div class="ee-top"><button type="button" class="btn wide" data-act="course">${cur ? esc(`${cur.title}${cur.term ? " · " + cur.term : ""} · ${cur.statusLabel}`) : "강좌 고르기"}</button></div>`;
-    if (!cur) { el.innerHTML = head + `<p class="empty">강좌를 골라 주세요</p>`; return; }
-    const g = groupByStatus(list);
-    const folded = FOLDED.reduce((n, [k]) => n + (g[k] || []).length, 0);
-    el.innerHTML = head + `<p class="muted">${esc(capacityLine(cur))}</p>
-      <div class="ee-tools"><button type="button" class="btn" data-act="export">엑셀로 내려받기</button>
-        <button type="button" class="btn primary" data-act="add">＋ 대신 등록</button></div>
-      ${SECTIONS.map(([k, l]) => sectionHtml(g[k] || [], l)).join("")}
-      <details data-fold ${foldOpen ? "open" : ""}><summary>취소·반려 ${folded}명</summary>
-        ${FOLDED.map(([k, l]) => sectionHtml(g[k] || [], l)).join("")}</details>`;
+    el.innerHTML = TITLE + `<div class="ee-top"><button type="button" class="btn wide a-field" data-act="course"><small>강좌</small><b>${esc(selLabel())}</b></button></div>` +
+      (blocks.length ? blocks.map((b) => blockHtml(b, !sel, foldOpen.has(String(b.cur.id)))).join("") : `<p class="empty">보여 드릴 강좌가 없어요</p>`);
   };
 
   if (!(await loadCourses())) return;
-  cur = courses.find((c) => c.id === lastCourseId) || null;
-  if (cur) {
-    const r = await loadFor(cur);
-    if (r.gone) { cur = null; lastCourseId = ""; }
-    else if (!r.ok) { el.innerHTML = TITLE + `<p class="empty">${esc(errorText(r.error))}</p>`; return; }
-  }
+  const v = await loadView();
+  if (v.error) { el.innerHTML = TITLE + `<p class="empty">${esc(errorText(v.error))}</p>`; return; }
   draw();
 
-  el.addEventListener("toggle", (e) => { if (e.target.matches("[data-fold]")) foldOpen = e.target.open; }, true);
+  el.addEventListener("toggle", (e) => {
+    const d = e.target;
+    if (d instanceof Element && d.matches("[data-fold]")) { if (d.open) foldOpen.add(d.dataset.fold); else foldOpen.delete(d.dataset.fold); }
+  }, true);
 
-  async function setStatus(e, op, force) {
+  const blockOf = (eid) => blocks.find((b) => b.list.some((x) => String(x.id) === String(eid)));
+  async function setStatus(b, e, op, force) {
     const r = await busy(el, () => call("eduEnrollSet", { id: e.id, op, ...(force ? { force: true } : {}) }));
     if (!r.ok) {
       if (r.error === "full" && op === "confirm" && !force) {
-        const yes = await dialog({ title: "정원이 찼어요", text: `정원(${cur.capacity}명)이 찼어요. 그래도 확정할까요?`, ok: "넘겨서 확정", cancel: "그만두기" });
-        if (yes) await setStatus(e, op, true);
+        const yes = await dialog({ title: "정원이 찼어요", text: `정원(${b.cur.capacity}명)이 찼어요. 그래도 확정할까요?`, ok: "넘겨서 확정", cancel: "그만두기" });
+        if (yes) await setStatus(b, e, op, true);
         return;
       }
-      toast(failText(r)); await refresh(); return;
+      toast(failText(r)); await refreshCourse(b.cur.id); return;
     }
     toast(r.promoted ? "대기 첫 분이 확정됐어요" : force ? "정원을 넘겨 확정했어요" : "바꿨어요");
-    await refresh();
+    await refreshCourse(b.cur.id);
   }
 
-  async function exportXlsx() {
-    const r = await busy(el, () => call("eduExport", { course_id: cur.id }));
+  async function exportXlsx(c) {
+    const r = await busy(el, () => call("eduExport", { course_id: c.id }));
     if (!r.ok) { toast(failText(r)); return; }
     try {
       const XLSX = await loadXlsx();
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r.rows), "신청 현황");
-      XLSX.writeFile(wb, exportFileName(cur.title, kstToday()));
+      XLSX.writeFile(wb, exportFileName(c.title, kstToday()));
     } catch { toast("엑셀 파일을 만들지 못했어요"); }
   }
 
@@ -331,27 +366,30 @@ export async function render(el, { call }) {
     if (a) {
       const act = a.dataset.act;
       if (act === "course") {
-        const got = await pickOne({ anchor: a, title: "강좌", value: cur ? cur.id : "",
-          options: courses.map((c) => ({ value: c.id, label: `${c.title} · ${c.term || "학기 없음"} · ${c.statusLabel}` })) });
-        if (got === null || (cur && got === cur.id)) return;
-        const next = courses.find((c) => c.id === got);
-        if (!next) return;
-        const r = await busy(el, () => loadFor(next));   // 실패하면 보던 강좌가 그대로 남는다
-        if (r.gone) { toast(r.gone); return; }
-        if (!r.ok) { toast(errorText(r.error)); return; }
-        lastCourseId = cur.id; draw();
+        const got = await pickOne({ anchor: a, title: "강좌", value: sel,
+          options: [{ value: "", label: "전체 강좌", hint: `${courses.length}개 강좌를 한꺼번에` },
+            ...courses.map((c) => ({ value: c.id, label: `${c.title} · ${c.term || "학기 없음"} · ${c.statusLabel}` }))] });
+        if (got === null || got === sel || !el.isConnected) return;
+        const prev = sel;
+        sel = got;
+        const r = await busy(el, loadView);   // 실패하면 보던 화면이 그대로 남는다
+        if (r.error) { sel = prev; toast(errorText(r.error)); return; }
+        lastCourseId = sel; draw();
         return;
       }
-      if (!cur || pending.has(act)) return;
-      pending.add(act);
+      const b = blocks.find((x) => String(x.cur.id) === a.dataset.cid);
+      const key = act + ":" + (a.dataset.cid || "");
+      if (!b || pending.has(key)) return;
+      pending.add(key);
       try {
-        if (act === "export") await exportXlsx();
-        else if (act === "add") { if (await openAddForm({ call, course: cur })) await busy(el, refresh); }
-      } finally { pending.delete(act); }
+        if (act === "export") await exportXlsx(b.cur);
+        else if (act === "add") { if (await openAddForm({ call, course: b.cur })) await busy(el, () => refreshCourse(b.cur.id)); }
+      } finally { pending.delete(key); }
       return;
     }
     const card = ev.target.closest("[data-eid]");
-    const e = card ? list.find((x) => String(x.id) === card.dataset.eid) : null;
+    const b = card ? blockOf(card.dataset.eid) : null;
+    const e = b ? b.list.find((x) => String(x.id) === card.dataset.eid) : null;
     if (!e) return;
     const key = card.dataset.eid;
     const op = ev.target.closest("[data-op]"), memo = ev.target.closest("[data-memo]");
@@ -364,12 +402,12 @@ export async function render(el, { call }) {
           const yes = await dialog({ title: `${op.textContent} — ${e.name}`, text, ok: op.textContent, cancel: "그만두기", danger: o !== "waitlist" });
           if (!yes) return;
         }
-        await setStatus(e, o, false);
+        await setStatus(b, e, o, false);
       } finally { pending.delete(key); }
     } else if (memo) {
       if (pending.has(key)) return;
       pending.add(key);
-      try { if (await openNoteForm({ call, e })) { toast("저장했어요"); await busy(el, refresh); } } finally { pending.delete(key); }
+      try { if (await openNoteForm({ call, e })) { toast("저장했어요"); await busy(el, () => refreshCourse(b.cur.id)); } } finally { pending.delete(key); }
     }
   });
 
@@ -377,7 +415,8 @@ export async function render(el, { call }) {
   el.addEventListener("change", async (ev) => {
     const box = ev.target.closest("input[data-fee]");
     if (!box) return;
-    const card = box.closest("[data-eid]"), e = list.find((x) => String(x.id) === card.dataset.eid);
+    const card = box.closest("[data-eid]"), b = card ? blockOf(card.dataset.eid) : null;
+    const e = b ? b.list.find((x) => String(x.id) === card.dataset.eid) : null;
     if (!e) return;
     const key = "fee" + card.dataset.eid;
     if (pending.has(key)) { box.checked = !box.checked; return; }

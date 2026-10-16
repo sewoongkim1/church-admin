@@ -17,7 +17,7 @@
 | 무엇을 손댈 때 | 읽을 것 |
 |---|---|
 | 교인명부 — 찾기·「자세히」 창 탭·새 명단 올리기·잇기 표 `people_links`·사역 화면의 교적 표시·사역신청 번호 180일 | `docs/notes/people.md` |
-| 🅰 성경앱 스타일(2026-10-17 — 처음 화면 · 교인명부 네 화면 · 교인카드 폰 모양) — 선 아이콘 `js/core/icons.js`(**메뉴를 더하면 `MENU_ICON` 에도**) · CSS 는 `.route-…` 아래에만 | `docs/notes/people.md` 끝 |
+| 🅰 성경앱 스타일(2026-10-17 — 처음 화면 · 교인명부 네 화면 · 교인카드 폰 모양 · 교육 신청 다섯 화면 — `docs/notes/edu.md` 끝) — 선 아이콘 `js/core/icons.js`(**메뉴를 더하면 `MENU_ICON` 에도**) · CSS 는 `.route-…` 아래에만 | `docs/notes/people.md` 끝 |
 | 성경필사(암송) — 회차·명단·올리기·사람별 이력·통계(`js/menus/bibleevent/`) | `docs/notes/bible-events.md` · 옛 동작 `docs/port/event-roster-legacy.md` |
 | 사역 이력 · 📮 정정 신청 · 부서 이음표 · 📊 사역 통계 | `docs/notes/history.md` |
 | 사역신청 다섯 메뉴의 옛 동작(성경암송 관리 화면에서 옮겨 올 때의 원문) | `docs/port/ministry-catalog-legacy.md` · `ministry-paper-legacy.md` · `ministry-status-legacy.md` |

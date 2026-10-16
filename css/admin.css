@@ -2529,3 +2529,96 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
   .route-people-ask .ak-card .ak-visit{flex:none;min-height:38px;padding:0 14px;border-color:#eedfb3;border-radius:12px;background:#fff8e7;
     color:var(--navy-dark);font-weight:700}
 }
+
+/* ── 🅰 성경앱 스타일 — 교육 신청 다섯 화면(2026-10-17 친구 「교육신청 아래 메뉴들도 모바일에 맞게 · 성경앱 스타일로」) ─────────
+   위 「🅰 성경앱 스타일」과 같은 결(흰 카드 · 둥근 16px · 줄 목록 · 회색 묶음 제목 · 선 아이콘). 화면 칸(.route-edu-…) 아래에만.
+   고르개 단추(.a-field — 강좌 · 학기)는 [작은 이름 / 고른 값 ⌄] 흰 칸 — 어느 화면에서든 같은 꼴. */
+.btn.a-field{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:0;min-height:54px;padding:6px 44px 6px 14px;
+  border:1px solid var(--a-bd);border-radius:14px;color:var(--a-tx);text-align:left;font-weight:400;
+  background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231e3a6b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center/18px}
+.btn.a-field:hover{border-color:var(--navy)}
+.btn.a-field small{font-size:12px;font-weight:600;line-height:1.25;color:var(--a-sub)}
+.btn.a-field b{font-size:15px;font-weight:700;line-height:1.35;color:var(--navy-dark);overflow-wrap:anywhere;word-break:keep-all}
+/* 강좌 상태 꼬리표 — 성경암송 앱과 같은 색 결(모집 중 초록 · 모집 끝 빨강 · 진행 중 파랑 · 끝 회청 · 준비 중 · 보관 회색) */
+.badge.ec-st{flex:none;font-weight:700}
+.badge.ec-st[data-st="open"]{background:#e6f4ea;color:#1f6b3a}
+.badge.ec-st[data-st="closed"]{background:#fdecec;color:#b4232f}
+.badge.ec-st[data-st="running"]{background:#eaf0f9;color:#1e3a6b}
+.badge.ec-st[data-st="done"]{background:#e8edf3;color:#475569}
+/* 강좌 카드 안 줄(교육 · 담당 · 강사 · 문의) — 회차 창의 .ec-row(padding 10px 12px)가 여기에도 걸려 줄 사이가 크게 벌어졌다(2026-10-17 친구 「줄간격이 넓어요」) */
+.ec-rows .ec-row{padding:0}
+
+/* 📚 강좌 관리 */
+.route-edu-courses .ec-top{margin-bottom:12px}
+.route-edu-courses .ec-top .btn.primary{border-radius:14px;min-height:54px}
+.route-edu-courses .ec-card{padding:14px 16px 14px;border-color:var(--a-bd);border-radius:16px}
+.route-edu-courses .ec-card .ec-head{margin-bottom:0;font-size:1rem}
+.route-edu-courses .ec-card .ec-head b{font-size:17px;color:var(--navy-dark)}
+.route-edu-courses .ec-card .ec-sub{margin:0 0 10px}
+.route-edu-courses .ec-rows{gap:5px;padding:10px 0 12px;border-top:1px solid var(--a-line)}
+.route-edu-courses .ec-rows .ec-row{gap:12px;font-size:14px;line-height:1.45}
+.route-edu-courses .ec-k{flex:0 0 32px;font-size:13px;line-height:1.55;color:var(--a-sub)}
+.route-edu-courses .ec-chips{gap:5px;margin:0 0 12px}
+.route-edu-courses .ec-chip{min-height:26px;padding:0 10px;background:#f4f1ea;font-size:12.5px}
+.route-edu-courses .ec-card .acts .btn{min-height:40px;border-radius:12px;font-size:14px}
+
+/* 📝 신청 현황 — 강좌마다 머리 카드 + 묶음(승인 기다림 · 확정 · 대기)은 회색 제목 + 흰 카드 한 장 안의 줄 */
+.route-edu-enroll .ee-top{margin-bottom:14px}
+.route-edu-enroll .ee-course{margin-bottom:26px}
+.route-edu-enroll .ee-ch{margin:0;padding:14px 16px;border-color:var(--a-bd);border-radius:16px}
+.ee-ct{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
+.ee-ct b{font-size:17px;line-height:1.35;color:var(--navy-dark)}
+.ee-cs{margin:2px 0 10px;word-break:keep-all}
+.route-edu-enroll .ee-tools{margin:0}
+.route-edu-enroll .ee-tools .btn{min-height:42px;border-radius:12px;font-size:14px}
+.route-edu-enroll .ee-h{margin:16px 4px 6px;font-size:.92rem;color:var(--a-gt)}
+.route-edu-enroll .ee-list{background:#fff;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden}
+.route-edu-enroll .ee-row{margin:0;padding:10px 14px;border:0;border-top:1px solid var(--a-line);border-radius:0;background:transparent}
+.route-edu-enroll .ee-row:first-child{border-top:0}
+.route-edu-enroll .ee-who b{font-size:15.5px;color:var(--a-tx)}
+.route-edu-enroll .ee-acts{margin-top:6px}
+.route-edu-enroll .ee-acts .btn{min-height:36px;padding:0 12px;border-radius:10px;font-size:13.5px}
+.route-edu-enroll .ee-none{padding:16px 0 4px}
+.route-edu-enroll details[data-fold]>summary{margin:14px 4px 0;font-size:.92rem;font-weight:700;color:var(--a-gt);cursor:pointer}
+
+/* ✅ 출석부 — 탭은 한 줄 칸(고른 탭 남색) · 사람 줄은 흰 카드 한 장 안(왼쪽 색 띠는 그대로) */
+.route-edu-attend .ea-tabs{display:flex;gap:2px;margin-bottom:12px;padding:4px;border:1px solid var(--a-bd);border-radius:14px;background:#fff}
+.route-edu-attend .ea-tabs button{flex:1 1 0;min-height:40px;border:0;border-radius:10px;background:transparent}
+.route-edu-attend .ea-tabs button.on{background:var(--navy);color:#fff}
+.route-edu-attend .ea-chip{border-color:var(--a-bd);background:#fff}
+.route-edu-attend .ea-chip.on{background:var(--navy);border-color:var(--navy)}
+.route-edu-attend .ea-bar{border-color:var(--a-bd);border-radius:14px}
+.route-edu-attend .ea-bulk{border-radius:14px}
+.route-edu-attend .ea-list{gap:0;background:#fff;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden}
+.route-edu-attend .ea-row{border-width:1px 0 0 4px;border-style:solid;border-top-color:var(--a-line);border-radius:0;padding:8px 8px 8px 12px}
+.route-edu-attend .ea-row:first-child{border-top-width:0}
+.route-edu-attend .ea-b{border-color:var(--a-bd)}
+.route-edu-attend .ea-plist{gap:0;background:#fff;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden}
+.route-edu-attend .ea-p{border:0;border-top:1px solid var(--a-line);border-radius:0}
+.route-edu-attend .ea-p:first-child{border-top:0}
+.route-edu-attend .ea-p.below{border-left:4px solid var(--error)}
+.route-edu-attend .ea-export{border-radius:12px}
+
+/* 🎓 수료 — 기준 카드 · 사람 줄은 흰 카드 한 장 안(왼쪽 색 띠 그대로) */
+.route-edu-cert .ecert-top{margin-bottom:12px}
+.route-edu-cert .ecert-set-btn{min-height:54px;border-radius:14px}
+.route-edu-cert .ecert-sum{padding:12px 14px;border-color:var(--a-bd);border-radius:16px}
+.route-edu-cert .ecert-tools .btn{border-radius:12px}
+.route-edu-cert .ecert-list{gap:0;background:#fff;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden}
+.route-edu-cert .ecert-row{border-width:1px 0 0 4px;border-top-color:var(--a-line);border-radius:0;padding:10px 10px 10px 12px}
+.route-edu-cert .ecert-row:first-child{border-top-width:0}
+.route-edu-cert .ecert-op{border-radius:10px}
+
+/* 📊 교육 통계 — 학기 고르개 · 강좌 카드 · 교구 표를 둥근 흰 카드로 */
+.route-edu-stats .est-export{min-height:54px;border-radius:14px}
+.route-edu-stats .sec-title{margin:22px 4px 8px;font-size:.95rem;color:var(--a-gt)}
+.route-edu-stats .est-t tr{border-color:var(--a-bd);border-radius:16px}
+.route-edu-stats .est-t tfoot tr{border-color:var(--navy)}
+.route-edu-stats .pp-stat{border-collapse:separate;border-spacing:0;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden}
+.route-edu-stats .pp-stat th,.route-edu-stats .pp-stat td{padding:10px 14px;border-bottom:1px solid var(--a-line);font-size:14.5px;font-variant-numeric:tabular-nums}
+.route-edu-stats .pp-stat thead th{background:#faf8f3;color:var(--a-sub);font-size:12.5px;font-weight:700}
+.route-edu-stats .pp-stat tbody tr:last-child>*{border-bottom:0}
+.route-edu-stats .pp-stat tfoot th,.route-edu-stats .pp-stat tfoot td{border-top:1px solid var(--a-bd);border-bottom:0;background:#faf8f3}
+@media (min-width:720px){
+  .route-edu-stats .est-tw{border-color:var(--a-bd);border-radius:16px}
+}

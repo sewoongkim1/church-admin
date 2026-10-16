@@ -15,8 +15,9 @@ import {
   remaining, bulkLabel, bulkAsk, bulkDoneText, buttonAria, attendErrorText, reloadAfter, summaryHead, belowCount, personCounts, pctText,
   cellsFor, attendFileName, EMPTY_ASSIGNED, EMPTY_ALL, NO_SESSIONS, NO_PEOPLE, NO_SESSIONS_ASSIGNED, NO_PEOPLE_ASSIGNED, CLOSED_NOTE, FUTURE_NOTE,
 } from "./attendance-logic.js";
+import { aTitle } from "../../core/icons.js";
 
-const TITLE = `<h2 class="page-title">✅ 출석부</h2>`;
+const TITLE = aTitle("checkc", "출석부");   // 성경앱 스타일 머리(2026-10-17)
 const LOADING = `<p class="empty">불러오는 중…</p>`;
 const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 const failText = (r) => attendErrorText(r) || errorText(r);
@@ -161,7 +162,7 @@ export async function render(el, { call }) {
   const draw = () => {
     if (!el.isConnected) return;   // 그사이 다른 메뉴로 옮겼다(route 가 새 section 으로 바꿨다)
     if (!courses.length) { el.innerHTML = TITLE + `<p class="empty">${esc(scope === "assigned" ? EMPTY_ASSIGNED : EMPTY_ALL)}</p>`; return; }
-    const head = `${TITLE}<div class="ee-top ea-top"><button type="button" class="btn wide ea-course" data-act="course">${esc(cur ? courseLabel(cur) : "강좌 고르기")}</button></div>`;
+    const head = `${TITLE}<div class="ee-top ea-top"><button type="button" class="btn wide ea-course a-field" data-act="course"><small>강좌</small><b>${esc(cur ? courseLabel(cur) : "강좌 고르기")}</b></button></div>`;
     if (!cur) { el.innerHTML = head + `<p class="empty">강좌를 골라 주세요</p>`; return; }
     el.innerHTML = head + tabsHtml() + `<div class="ea-body">${tab === "sum" ? sumHtml() : sheetHtml()}</div>`;
     centerChip();

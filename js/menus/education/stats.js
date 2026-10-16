@@ -8,8 +8,9 @@ import { pickOne } from "../../core/picker.js";
 import { loadXlsx } from "../../core/xlsx.js";
 import { COURSE_COLS, cellText, courseSub, groupLabel, groupKind, groupRate, groupTotal, nText, pctText, sortGroups, statsFileName, statsSheets,
   termLabel, termOptions, NO_COURSES, NO_GROUPS, NO_TERM_COURSES, STATS_NOTE } from "./stats-logic.js";
+import { aTitle, lineSvg } from "../../core/icons.js";
 
-const TITLE = `<h2 class="page-title">📊 교육 통계</h2>`;
+const TITLE = aTitle("chart", "교육 통계");   // 성경앱 스타일 머리(2026-10-17)
 const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 let lastTerm = "";   // 메뉴를 나갔다 와도 보던 학기(모듈 안) · "" = 전체
 
@@ -49,9 +50,9 @@ export async function render(el, { call }) {
   const draw = () => {
     const d = data;
     const noCourse = !d.courses.length;
-    const top = `${TITLE}<div class="est-top"><button type="button" class="btn est-term" data-act="term" aria-haspopup="dialog">` +
-      `학기 <b>${esc(termLabel(term))}</b></button>` +
-      `<button type="button" class="btn est-export" data-act="export"${noCourse ? " disabled" : ""}>엑셀로 내려받기</button></div>`;
+    const top = `${TITLE}<div class="est-top"><button type="button" class="btn est-term a-field" data-act="term" aria-haspopup="dialog">` +
+      `<small>학기</small><b>${esc(termLabel(term))}</b></button>` +
+      `<button type="button" class="btn est-export" data-act="export"${noCourse ? " disabled" : ""}>${lineSvg("download", "btn-i")}엑셀로 내려받기</button></div>`;
     if (noCourse) {
       el.innerHTML = top + `<p class="empty">${esc(term ? NO_TERM_COURSES : NO_COURSES)}</p>`;
       return;

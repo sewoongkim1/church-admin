@@ -18,8 +18,9 @@ import {
   courseSavedText, staffBits, staffOptions, staffFieldText, sameIds, staffSaveFailText, STAFF_NO_CAND, STALE_MARK,
   teacherBits, TEACHER_NO_CAND, TEACHER_ROLE_HINTS, TEACHER_BAD_MEMBER, sortCoursesByEduDate,
 } from "./courses-logic.js";
+import { aTitle } from "../../core/icons.js";
 
-const TITLE = `<h2 class="page-title">📚 강좌 관리</h2>`;
+const TITLE = aTitle("book", "강좌 관리");   // 성경앱 스타일 머리(2026-10-17)
 const labelOf = (opts, v) => (opts.find((o) => o.value === v) || {}).label || v || "";
 const OPEN_WARN = "저장하면 성경암송 앱(🎓 교육이 보이는 분)에 이 강좌가 바로 보여요.";
 const EVERY = [{ value: "7", label: "매주" }, { value: "14", label: "2주마다" }, { value: "1", label: "매일" }];
@@ -321,10 +322,10 @@ function courseCard(c, sessions) {
   const n = c.counts || {};
   const staff = staffBits(c), teach = teacherBits(c);
   return `<div class="card ec-card" data-id="${esc(c.id)}">
-    <div class="ec-head"><b>${esc(c.title)}</b> <span class="badge">${esc(c.statusLabel)}</span></div>
+    <div class="ec-head"><b>${esc(c.title)}</b> <span class="badge ec-st" data-st="${esc(c.status)}">${esc(c.statusLabel)}</span></div>
     <div class="muted ec-sub">${esc(c.kindLabel)}${c.term ? " · " + esc(c.term) : ""}</div>
     <div class="ec-rows">
-      ${ecRow("교육", esc(sessions))}
+      ${ecRow("교육", esc(String(sessions ?? "").replace(/^교육\s+/, "")))}
       ${ecRow("담당", staff.length ? namesHtml(staff) : "없음")}${teach.length ? ecRow("강사", namesHtml(teach)) : ""}${c.contact ? ecRow("문의", contactHtml(c.contact)) : ""}
     </div>
     <div class="ec-chips"><span class="ec-chip">정원 ${c.capacity == null ? "제한 없음" : esc(c.capacity)}</span>
@@ -362,7 +363,7 @@ export async function render(el, { call }) {
     return true;
   };
   const draw = () => {
-    el.innerHTML = TITLE + `<div class="acts ec-top"><button type="button" class="btn" data-act="term">학기: ${esc(term || "전체")}</button>
+    el.innerHTML = TITLE + `<div class="acts ec-top"><button type="button" class="btn a-field" data-act="term"><small>학기</small><b>${esc(term || "전체")}</b></button>
       <button type="button" class="btn primary" data-act="new">＋ 새 강좌</button></div>
       <div class="ec-list">${data.courses.length ? data.courses.map((c) => courseCard(c, sess[c.id])).join("")
         : `<p class="empty">아직 강좌가 없어요 — 「＋ 새 강좌」로 만들어 주세요</p>`}</div>`;

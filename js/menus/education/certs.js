@@ -19,7 +19,9 @@ import {
 } from "./certs-logic.js";
 import { certHtml, sealSrc } from "./cert-template.js";
 
-const TITLE = `<h2 class="page-title">🎓 수료</h2>`;
+import { aTitle, lineSvg } from "../../core/icons.js";
+const SET_BTN = `<button type="button" class="btn ecert-set-btn" data-act="settings">${lineSvg("gear", "btn-i")}수료증 설정</button>`;
+const TITLE = aTitle("cap", "수료");   // 성경앱 스타일 머리(2026-10-17)
 const LOADING = `<p class="empty">불러오는 중…</p>`;
 const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
@@ -261,19 +263,19 @@ export async function render(el, { me, call }) {
     if (what === "courses") await busy(el, reloadAll); else if (what === "list") await busy(el, reloadList);
   };
 
-  const topHtml = () => `<div class="ecert-top"><button type="button" class="btn wide ea-course" data-act="course">${esc(cur ? courseLabel(cur) : "강좌 고르기")}</button>` +
-    (chief ? `<button type="button" class="btn ecert-set-btn" data-act="settings">⚙️ 수료증 설정</button>` : "") + `</div>`;
+  const topHtml = () => `<div class="ecert-top"><button type="button" class="btn wide ea-course a-field" data-act="course"><small>강좌</small><b>${esc(cur ? courseLabel(cur) : "강좌 고르기")}</b></button>` +
+    (chief ? SET_BTN : "") + `</div>`;
   const headHtml = () => {
     const k = countsOf(people), n = k.candidates;
     return `<div class="ecert-sum"><p class="ecert-rule">수료 기준 · <b>${esc(ruleText(cur))}</b></p><p class="ecert-head" data-head>${esc(headLine(k))}</p></div>` +
       (cur.archived ? `<p class="ea-note">${esc(ARCHIVED_NOTE)}</p>` : "") +
       `<div class="ecert-tools">${cur.archived ? "" : `<button type="button" class="btn primary ecert-all" data-act="issue-all"${n ? "" : " hidden"}>${esc(issueLabel(n))}</button>`}
-        <button type="button" class="btn ecert-print" data-act="print">🖨️ 수료증 인쇄${k.completed ? ` (${k.completed}장)` : ""}</button></div>`;
+        <button type="button" class="btn ecert-print" data-act="print">${lineSvg("print", "btn-i")}수료증 인쇄${k.completed ? ` (${k.completed}장)` : ""}</button></div>`;
   };
   const draw = () => {
     if (!el.isConnected) return;
     if (!courses.length) {
-      el.innerHTML = TITLE + (chief ? `<div class="ecert-top"><button type="button" class="btn ecert-set-btn" data-act="settings">⚙️ 수료증 설정</button></div>` : "") +
+      el.innerHTML = TITLE + (chief ? `<div class="ecert-top">${SET_BTN}</div>` : "") +
         `<p class="empty">${esc(scope === "assigned" ? EMPTY_ASSIGNED : EMPTY_ALL)}</p>`;
       return;
     }
