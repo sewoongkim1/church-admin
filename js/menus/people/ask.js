@@ -8,8 +8,9 @@ import { esc, busy, errorText, toast } from "../../core/ui.js";
 import { openPerson } from "./search.js";
 // 🏠 심방 준비 한 장(2026-10-15) — 줄의 「심방」 단추 · 서버 visitCard · visitPoints
 import { openVisitCard } from "./visit-card.js";
+import { aTitle, lineSvg } from "../../core/icons.js";
 
-const TITLE = `<h2 class="page-title">🤖 성도 묻기 <span class="badge">시험판</span></h2>`;
+const TITLE = aTitle("message", "성도 묻기", ` <span class="badge">시험판</span>`);   // 성경앱 스타일 머리(2026-10-17)
 const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b> · <b>사역 이력</b> · <b>성경필사</b>에서 찾아 드려요.
 AI(Claude)에는 질문과 「물을 수 있는 것」 목록만 가고, 명단은 서버가 직접 찾아요 — 이름은 AI 에게 가지 않아요.
 지금은 총괄에게만 보이는 시험판이에요.</p>`;
@@ -42,7 +43,8 @@ const FORM = `<form class="card ak-form" autocomplete="off">
   <textarea id="ak-q" maxlength="300" placeholder="예: 10년 동안 사역하신 분들 중에 올해는 안 하고 계신 분"></textarea>
   <div class="acts"><button type="submit" class="btn primary">묻기</button></div>
   <div class="ak-exs"><span class="muted">이렇게 물어보세요</span>
-    ${EXAMPLES.map((q, i) => `<button type="button" class="ak-ex" data-ex="${i}">${esc(q)}</button>`).join("")}</div>
+    ${EXAMPLES.map((q, i) => `<button type="button" class="ak-ex" data-ex="${i}"><span class="ak-ex-i" aria-hidden="true">${lineSvg("search")}</span>` +
+      `<span class="ak-ex-t">${esc(q)}</span>${lineSvg("chev", "ak-ex-c")}</button>`).join("")}</div>
 </form>`;
 
 const n = (x) => Number(x || 0).toLocaleString("ko-KR");
@@ -81,7 +83,19 @@ function rowsHtml(r, dropped) {
       <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th><th>성경필사</th><th>심방</th></tr></thead><tbody>` +
     r.rows.map((x) => `<tr><td><button type="button" class="ak-name" data-pid="${Number(x.id)}" aria-label="${esc(x.name)} 자세히">${esc(x.name)}</button></td><td>${esc(x.position || "—")}</td><td>${esc(x.gu || "—")}</td><td>${esc(x.mok || "—")}</td>` +
       `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td><td>${x.pilsa ? x.pilsa + "번" : "—"}</td><td><button type="button" class="ak-visit" data-visit="${Number(x.id)}" aria-label="${esc(x.name)} 심방 준비">준비</button></td></tr>`).join("") +
-    `</tbody></table></div><p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창, 「심방 · 준비」를 누르면 심방 준비 한 장(가족 · 섬김 · 배움 · AI 이야깃거리)이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
+    `</tbody></table></div>` + cardsHtml(r.rows, span) + `<p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창, 「심방 · 준비」를 누르면 심방 준비 한 장(가족 · 섬김 · 배움 · AI 이야깃거리)이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
+}
+
+// 폰 — 같은 명단을 카드 줄로(표는 열이 열 개라 옆으로 밀어야 했다 · 2026-10-17 친구 「모바일에 맞게」).
+//   css 가 폭으로 표 · 카드 줄 가운데 하나만 보인다(.ak-tbl · .ak-cards). 단추는 표와 같은 data-pid · data-visit.
+function cardsHtml(rows, span) {
+  return `<ul class="ak-cards">` + rows.map((x) => `<li class="ak-card"><div class="ak-c-main">` +
+    `<div class="ak-c-top"><button type="button" class="ak-name" data-pid="${Number(x.id)}" aria-label="${esc(x.name)} 자세히">${esc(x.name)}</button>` +
+    `${x.position ? `<em class="mn-pos">${esc(x.position)}</em>` : ""}</div>` +
+    `<div class="ak-c-sub">${esc([x.gu, x.mok].filter(Boolean).join(" ") || "—")}${x.age != null ? ` · ${esc(x.age)}세` : ""}</div>` +
+    `<div class="ak-c-meta">섬긴 해 <b>${x.served ? esc(x.served) + "해" : "—"}</b> · ${esc(span(x))}${x.main ? ` · ${esc(x.main)}` : ""}` +
+    `${x.pilsa ? ` · 성경필사 ${esc(x.pilsa)}번` : ""}</div></div>` +
+    `<button type="button" class="ak-visit" data-visit="${Number(x.id)}" aria-label="${esc(x.name)} 심방 준비">심방</button></li>`).join("") + `</ul>`;
 }
 
 function resultHtml(r, st) {

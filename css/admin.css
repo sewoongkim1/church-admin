@@ -2386,3 +2386,146 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .ee-bp.skip.on{background:var(--light);border-color:var(--border);color:var(--ink-2)}
 .ee-bp:disabled{opacity:.6;cursor:default}
 .ee-bulk-go{margin:8px 0 4px}
+
+/* ── 🅰 성경앱 스타일 — 처음 화면 · 교인명부 네 화면(2026-10-17 친구 「모바일에 맞게 · 성경앱의 스타일로」 · 「첫 화면 메뉴도」) ─────────
+   성경암송 앱 첫 화면 A안(v2 style.css .home-a)과 같은 결: 묶음 제목(회색 굵게) + 흰 카드(테두리 · 둥근 16px) 안의 줄
+   (위 가는 줄 · [아이콘 칸 38px 연파랑] 이름 / 설명 · ›). 선 아이콘은 js/core/icons.js(앱 HA_ICON 과 같은 그림).
+   ⚠️ 다른 메뉴로 새지 않게 화면 칸(.route-…) 아래에만 둔다 — 화면 칸은 main.js 가 메뉴마다 새로 만든다(route-{메뉴 id} · route-home).
+   폰(화면 1024px 아래)은 짜임까지(줄 목록 · 카드 줄) · PC 는 머리 · 아이콘 칸 · 표 모양만(처음 화면 격자 · 교인 찾기 표는 그대로). */
+:root{--a-bd:#e5dfd4;--a-line:#ece6da;--a-ic-bg:#eaf0f9;--a-ic:#1e3a6b;--a-gt:#4a5468;--a-chev:#9aa1ad;--a-tx:#1b2333;--a-sub:#6b7280;--a-hover:#f7f4ee}
+/* 화면 머리 — [아이콘 칸] 제목(core/icons.js aTitle) */
+.page-title.a-title{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;font-size:1.25rem;color:var(--navy-dark);margin:4px 0 14px}
+.a-tic,.a-ic{flex:none;display:flex;align-items:center;justify-content:center;border-radius:10px;background:var(--a-ic-bg);color:var(--a-ic)}
+.a-tic{width:36px;height:36px}
+.a-tic svg{width:20px;height:20px}
+.a-ic{width:38px;height:38px}
+.a-ic svg{width:21px;height:21px}
+.hc-chev,.pp-chev{display:none}
+.pp-tel-i{flex:none;width:15px;height:15px;margin-right:5px}
+.btn-i{flex:none;width:18px;height:18px}
+/* 찾기 칸 앞의 돋보기(선 아이콘 — 자리 글의 🔍 이모지 대신 · 2026-10-17) */
+.search.a-search{padding-left:44px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3'/%3E%3C/svg%3E") no-repeat 14px center/20px}
+.route-member-accounts .ma-dt{white-space:nowrap}
+
+/* 처음 화면 — PC 는 격자 그대로 · 그림만 작은 아이콘 칸 */
+@media (min-width:1024px){
+  .route-home .home-card .hc-ic{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;
+    background:var(--a-ic-bg);color:var(--a-ic)}
+  .route-home .home-card .hc-ic svg{width:16px;height:16px}
+}
+/* 처음 화면 — 폰은 앱 첫 화면 줄 목록: 묶음 제목 + 흰 카드 한 장 · 줄마다 [아이콘 칸] 이름 / 설명 한 줄 › */
+@media (max-width:1023px){
+  .route-home .home>.page-title{font-size:1.35rem;color:var(--navy-dark);margin:4px 2px 2px}
+  .route-home .home-who{margin:0 2px 18px}
+  .route-home .home-sections{display:flex;flex-direction:column;gap:20px}
+  .route-home .home-g,.route-home .home-g:first-of-type{margin:0 0 8px;padding:0 4px;font-size:.92rem;font-weight:800;color:var(--a-gt)}
+  .route-home .home-g>span{display:none}
+  .route-home .home-grid{background:#fff;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden}
+  .route-home a.home-card{display:grid;grid-template-columns:38px minmax(0,1fr) 20px;column-gap:14px;row-gap:1px;align-items:center;
+    min-height:62px;margin:0;padding:10px 14px 10px 16px;border:0;border-top:1px solid var(--a-line);border-radius:0;
+    background:transparent;color:var(--a-tx);text-decoration:none}
+  .route-home a.home-card:first-child{border-top:0}
+  .route-home a.home-card:hover,.route-home a.home-card:active{background:var(--a-hover)}
+  .route-home a.home-card:focus-visible{outline:3px solid var(--navy);outline-offset:-3px}
+  .route-home .home-card .hc-main{display:contents}
+  .route-home .home-card .hc-ic{grid-column:1;grid-row:1/3;display:flex;align-items:center;justify-content:center;width:38px;height:38px;
+    border-radius:10px;background:var(--a-ic-bg);color:var(--a-ic);font-size:19px;line-height:1}
+  .route-home .home-card .hc-ic svg{width:21px;height:21px}
+  .route-home .home-card .hc-t{grid-column:2;grid-row:1;align-self:end;font-size:1rem;font-weight:700;line-height:1.3;color:var(--a-tx)}
+  .route-home .home-card .hc-d{grid-column:2;grid-row:2;align-self:start;display:block;margin:0;font-size:12.5px;line-height:1.4;color:var(--a-sub);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .route-home .hc-chev{display:block;grid-column:3;grid-row:1/3;width:20px;height:20px;color:var(--a-chev)}
+}
+
+/* 🔎 교인 찾기 — 폰: 찾기 칸 · 거르기 · 정렬(한 줄 칸) · 찾은 분은 흰 카드 한 장 안의 줄([사진] 이름 직분 / 소속 / 전화 ›) */
+@media (max-width:1023px){
+  .route-people .search{min-height:50px;padding:0 14px 0 44px;border-color:var(--a-bd);border-radius:14px;font-size:16px}
+  .route-people .pp-pick-b{border-color:var(--a-bd);border-radius:14px;background:#fff}
+  .route-people .pp-pick-b.on{background:var(--ghost-bg)}
+  .route-people .pp-form .acts .btn,.route-people .pp-pager .btn{border-radius:14px}
+  .route-people .pp-sum{margin:16px 4px 8px;font-size:.92rem;color:var(--a-gt)}
+  .route-people .pp-sortbar{flex-wrap:nowrap;align-items:stretch;gap:2px;margin:0 0 12px;padding:4px;border:1px solid var(--a-bd);border-radius:14px;background:#fff}
+  .route-people .pp-sortbar-l{display:flex;align-items:center;margin:0;padding:0 8px 0 10px;font-size:12.5px}
+  .route-people .pp-sort-c{flex:1 1 0;justify-content:center;min-height:38px;padding:0 4px;border:0;border-radius:10px;background:transparent;font-weight:700}
+  .route-people .pp-sort-c.on{background:var(--navy);color:#fff}
+  .route-people .pp-list:has(.pp-card){background:#fff;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden}
+  .route-people .pp-card{display:grid;grid-template-columns:48px minmax(0,1fr) 20px;column-gap:14px;align-items:center;margin:0;
+    padding:12px 14px 12px 16px;border:0;border-top:1px solid var(--a-line);border-radius:0;background:transparent}
+  .route-people .pp-card:first-child{border-top:0}
+  .route-people .pp-card:hover,.route-people .pp-card:active{background:var(--a-hover)}
+  .route-people .pp-card:focus-visible{outline:3px solid var(--navy);outline-offset:-3px}
+  .route-people .pp-card .pp-ph{width:48px;height:62px;border-radius:10px}
+  .route-people .pp-main{gap:1px}
+  .route-people .pp-main b{font-size:16px;color:var(--a-tx)}
+  .route-people .pp-aff{font-size:13.5px;color:var(--a-sub)}
+  .route-people .pp-tel{min-height:30px;padding:0;margin:0;font-size:14px;color:var(--navy)}
+  .route-people .pp-chev{display:block;width:20px;height:20px;color:var(--a-chev)}
+}
+
+/* 📊 교인 현황 — 교구 칸 · 표를 흰 카드로(둥근 모서리 · 머리 줄 옅게 · 숫자 고른 폭) · 표 제목은 묶음 제목 꼴 */
+.route-people-stats .pp-gucards .pp-gucard{border-color:var(--a-bd);border-radius:14px}
+.route-people-stats .pp-gucard-g{font-weight:700;color:var(--a-gt)}
+.route-people-stats .sec-title{margin:24px 4px 8px;font-size:.95rem;color:var(--a-gt)}
+.route-people-stats .pp-sfilters .pp-pick-b{border-color:var(--a-bd);border-radius:14px;background:#fff}
+.route-people-stats .pp-sfilters .pp-pick-b.on{background:var(--ghost-bg)}
+.route-people-stats .pp-stat{border-collapse:separate;border-spacing:0;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden;margin-bottom:4px}
+.route-people-stats .pp-stat th,.route-people-stats .pp-stat td{padding:10px 14px;border-bottom:1px solid var(--a-line);font-size:14.5px;font-variant-numeric:tabular-nums}
+.route-people-stats .pp-stat thead th{background:#faf8f3;color:var(--a-sub);font-size:12.5px;font-weight:700}
+.route-people-stats .pp-stat tbody tr:last-child>*{border-bottom:0}
+.route-people-stats .pp-stat tfoot th,.route-people-stats .pp-stat tfoot td{border-top:1px solid var(--a-bd);border-bottom:0;background:#faf8f3}
+.route-people-stats .pp-linksync{margin-top:24px;border-color:var(--a-bd);border-radius:16px}
+.route-people-stats .pp-linksync .sec-title{margin-top:0}
+
+/* 👤 성도 계정 — 찾기 칸과 단추를 한 줄 · 찾은 계정은 흰 카드 한 장 안의 줄 · 고치는 칸은 둥근 카드 */
+.route-member-accounts #ma-search{display:flex;align-items:flex-start;gap:8px}
+.route-member-accounts #ma-search .search{flex:1;min-width:0;min-height:50px;margin:0;padding:0 14px 0 44px;border-color:var(--a-bd);border-radius:14px;font-size:16px}
+.route-member-accounts #ma-search .acts{flex:none}
+.route-member-accounts #ma-search .btn{min-height:50px;padding:0 20px;border-radius:14px}
+.route-member-accounts #ma-sstatus{margin:12px 4px 8px;font-size:.92rem;font-weight:700;color:var(--a-gt)}
+.route-member-accounts .ma-list{margin-bottom:14px;background:#fff;border:1px solid var(--a-bd);border-radius:16px;overflow:hidden}
+.route-member-accounts .ma-res{padding:12px 14px 12px 16px;border-top:1px solid var(--a-line)}
+.route-member-accounts .ma-res:first-child{border-top:0}
+.route-member-accounts .ma-res b{color:var(--a-tx);font-size:15.5px}
+.route-member-accounts .ma-res .btn{min-height:38px;padding:0 14px;border-radius:12px}
+.route-member-accounts .ma-edit{border-color:var(--a-bd);border-radius:16px}
+.route-member-accounts .ma-sel{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid var(--a-line)}
+.route-member-accounts .ma-sel small{display:block;font-size:12px}
+.route-member-accounts .ma-sel b{display:block;font-size:16px;color:var(--a-tx)}
+.route-member-accounts .field input,.route-member-accounts .field select{border-color:var(--a-bd);border-radius:12px}
+.route-member-accounts .ma-save{border-radius:14px}
+.route-member-accounts .ma-hist{margin-top:20px}
+.route-member-accounts .ma-hist h3{font-size:.92rem;color:var(--a-gt)}
+.route-member-accounts .ma-hist-item{border-top-color:var(--a-line)}
+
+/* 🤖 성도 묻기 — 안내는 옅은 파랑 칸 · 묻는 칸 · 예시는 줄 목록([찾기 칸] 질문 ›) · 폰(720px 아래)은 명단을 카드 줄로 */
+.route-people-ask .ak-intro{padding:12px 14px;border-radius:14px;background:var(--a-ic-bg);color:#2b3a55}
+.route-people-ask .ak-form,.route-people-ask .ak-res{border-color:var(--a-bd);border-radius:16px}
+.route-people-ask .ak-form textarea{border:1px solid var(--a-bd);border-radius:12px}
+.route-people-ask .ak-form .btn{border-radius:14px}
+.route-people-ask .ak-exs{display:block;margin-top:10px}
+.route-people-ask .ak-exs>.muted{display:block;margin:0 2px 4px;font-size:.92rem;font-weight:800;color:var(--a-gt)}
+.route-people-ask .ak-ex{display:flex;align-items:center;gap:12px;width:100%;min-height:54px;padding:8px 2px;border:0;border-top:1px solid var(--a-line);
+  border-radius:0;background:transparent;font-size:14.5px;line-height:1.4;color:var(--a-tx)}
+.route-people-ask .ak-ex:first-of-type{border-top:0}
+.route-people-ask .ak-ex:hover{background:var(--a-hover)}
+.route-people-ask .ak-ex-i{flex:none;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--a-ic-bg);color:var(--a-ic)}
+.route-people-ask .ak-ex-i svg{width:18px;height:18px}
+.route-people-ask .ak-ex-t{flex:1;min-width:0;word-break:keep-all}
+.route-people-ask .ak-ex-c{flex:none;width:18px;height:18px;color:var(--a-chev)}
+.route-people-ask .ak-tbl .pp-stat{border-collapse:separate;border-spacing:0;border:1px solid var(--a-bd);border-radius:14px;overflow:hidden}
+.route-people-ask .ak-tbl .pp-stat thead th{background:#faf8f3}
+.ak-cards{display:none}
+@media (max-width:719px){
+  .route-people-ask .ak-tbl{display:none}
+  .route-people-ask .ak-cards{display:block;list-style:none;margin:6px 0 0;padding:0}
+  .route-people-ask .ak-card{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--a-line)}
+  .route-people-ask .ak-card:first-child{border-top:0}
+  .route-people-ask .ak-c-main{flex:1;min-width:0}
+  .route-people-ask .ak-c-top{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
+  .route-people-ask .ak-c-top .ak-name{min-height:28px;font-size:16px}
+  .route-people-ask .ak-c-sub{font-size:13.5px;color:var(--a-sub)}
+  .route-people-ask .ak-c-meta{margin-top:2px;font-size:13px;line-height:1.45;color:var(--ink-2);word-break:keep-all}
+  .route-people-ask .ak-c-meta b{color:var(--navy-dark)}
+  .route-people-ask .ak-card .ak-visit{flex:none;min-height:38px;padding:0 14px;border-color:#eedfb3;border-radius:12px;background:#fff8e7;
+    color:var(--navy-dark);font-weight:700}
+}

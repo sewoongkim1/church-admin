@@ -16,8 +16,9 @@ import { esc, errorText, dialog, toast, busy } from "../../core/ui.js";
 import { sourceLine, pickSummary, sameSet } from "./people-logic.js";
 import { guTable, positionTable, ageTable, pickOptions, statsChoices, guCardRows, linkSyncText } from "./stats-logic.js";
 import { pickMany } from "../../core/picker.js";
+import { aTitle } from "../../core/icons.js";
 
-const TITLE = `<h2 class="page-title">📊 교인 현황</h2>`;
+const TITLE = aTitle("chart", "교인 현황");   // 성경앱 스타일 머리(2026-10-17)
 const n = (x) => Number(x || 0).toLocaleString("ko-KR");
 const pairTable = (title, head, pairs) => !pairs.length ? "" :
   `<h3 class="sec-title">${esc(title)}</h3><table class="pp-stat"><thead><tr><th>${esc(head)}</th><th>인원</th></tr></thead>` +

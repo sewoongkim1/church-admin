@@ -1,11 +1,15 @@
 // 처음 화면(홈) 그리기 — 순수 함수. 로그인 없이 시험·화면 확인을 하려고 main.js 에서 떼어 냈다.
 import { esc, affiliation } from "./core/ui.js";
 import { menuGroups } from "./menus/registry.js";
+import { lineSvg, MENU_ICON } from "./core/icons.js";
 
 // 메뉴 카드 하나 — PC 는 대분류 구역 안에서 테두리 없는 간결한 메뉴 단추로 바뀐다.
+//   폰은 성경암송 앱 첫 화면 줄 목록 꼴(2026-10-17 친구 「성경앱 형식으로」) — [아이콘 칸] 이름 / 설명 한 줄 › (css 「🅰 성경앱 스타일」).
+//   그림은 선 아이콘(core/icons.js MENU_ICON) · 없는 메뉴는 그림 글자 그대로 · › 는 폰에서만 보인다.
+const icHtml = (m) => (MENU_ICON[m.id] ? lineSvg(MENU_ICON[m.id]) : m.icon);
 const cardHtml = (m) => `<a class="card home-card" href="#/${esc(m.id)}" title="${esc(m.desc)}">` +
-  `<span class="hc-main"><span class="hc-ic" aria-hidden="true">${m.icon}</span><b class="hc-t">${esc(m.label)}</b></span>` +
-  `<span class="muted hc-d">${esc(m.desc)}</span></a>`;
+  `<span class="hc-main"><span class="hc-ic" aria-hidden="true">${icHtml(m)}</span><b class="hc-t">${esc(m.label)}</b></span>` +
+  `<span class="muted hc-d">${esc(m.desc)}</span>${lineSvg("chev", "hc-chev")}</a>`;
 
 // member·rolesInfo([{label}])·roles(역할 글자들)·menus(menusFor 결과) → 홈 HTML
 export function homeHtml({ member, rolesInfo, roles, menus }) {

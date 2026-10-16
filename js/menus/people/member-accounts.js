@@ -4,8 +4,9 @@
 //   ⚠️ 응답에 user_id 가 담기지만(수정·이력용) 화면에만 쓰고 어디에도 내보내지 않는다.
 //   스타일은 church-admin 표준(.card·.field·.search·.acts·.btn) + css/admin.css 의 「.ma-*」 섹션.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
+import { aTitle, lineSvg } from "../../core/icons.js";
 
-const TITLE = `<h2 class="page-title">👤 성도 계정</h2>`;
+const TITLE = aTitle("user", "성도 계정");   // 성경앱 스타일 머리(2026-10-17)
 const norm = (v) => String(v || "").trim().replace(/\s+/g, " ");
 const label = (u) => u.type === "교구"
   ? `${u.name} · ${u.gu}교구 ${u.mok}목장`
@@ -20,7 +21,7 @@ export async function render(el, { me, call }) {
   el.innerHTML = TITLE + `
     <p class="muted">앱에 로그인하는 성도 계정이에요. 교적(교인명부)과는 다른 자료예요.</p>
     <form id="ma-search" autocomplete="off">
-      <input id="ma-q" type="search" class="search" placeholder="🔍 이름으로 찾기" maxlength="80" aria-label="이름으로 찾기">
+      <input id="ma-q" type="search" class="search a-search" placeholder="이름으로 찾기" maxlength="80" aria-label="이름으로 찾기">
       <div class="acts"><button class="btn primary" type="submit">찾기</button></div>
     </form>
     <p id="ma-sstatus" class="muted"></p>
@@ -37,11 +38,12 @@ export async function render(el, { me, call }) {
     const d = await call("memberFind", { query: q });
     if (!d.ok) { setStatus("ma-sstatus", errorText(d)); return; }
     setStatus("ma-sstatus", d.more ? "50명까지만 보여요 — 이름을 더 좁혀 주세요." : `${d.users.length}명`);
-    $("ma-results").innerHTML = d.users.map((u) =>
-      `<div class="card ma-res" data-u='${esc(JSON.stringify(u))}'>
-        <div><b>${esc(label(u))}</b><div class="muted">등록 ${day(u.created_at)} · 최근 ${day(u.last_seen_at)}</div></div>
+    // 찾은 계정 — 흰 카드 한 장 안의 줄(성경앱 스타일 · 2026-10-17): [사람 칸] 이름 · 소속 / 등록 · 최근 [수정]
+    $("ma-results").innerHTML = d.users.length ? `<div class="ma-list">` + d.users.map((u) =>
+      `<div class="ma-res" data-u='${esc(JSON.stringify(u))}'><span class="a-ic" aria-hidden="true">${lineSvg("user")}</span>
+        <div><b>${esc(label(u))}</b><div class="muted"><span class="ma-dt">등록 ${day(u.created_at)}</span> · <span class="ma-dt">최근 ${day(u.last_seen_at)}</span></div></div>
         <button type="button" class="btn" data-act="edit">수정</button>
-      </div>`).join("");
+      </div>`).join("") + `</div>` : "";
     $("ma-results").querySelectorAll('[data-act="edit"]').forEach((btn) =>
       btn.addEventListener("click", () => openEdit(JSON.parse(btn.closest(".ma-res").dataset.u))));
   }
@@ -50,8 +52,8 @@ export async function render(el, { me, call }) {
     selected = u;
     const district = u.type === "교구";
     $("ma-editor").innerHTML = `
-      <div class="card">
-        <div class="muted" style="margin-bottom:10px">선택: ${esc(label(u))}</div>
+      <div class="card ma-edit">
+        <div class="ma-sel"><span class="a-ic" aria-hidden="true">${lineSvg("pen")}</span><div><small class="muted">고치는 계정</small><b>${esc(label(u))}</b></div></div>
         <form id="ma-edit" autocomplete="off">
           <div class="ma-grid">
             <label class="field"><span>구분</span><select id="ma-type"><option value="교구"${district ? " selected" : ""}>교구</option><option value="교회학교"${!district ? " selected" : ""}>교회학교</option></select></label>

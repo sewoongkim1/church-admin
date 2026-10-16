@@ -83,3 +83,11 @@ dimode(교적 프로그램) 교인목록·사진을 역할 `directory`(교인명
 - ⚠️ 탭 줄이 붙는 자리는 창 위 여백 안쪽부터 잰다 — `top:calc(8px - var(--pd-pt))`. 창 위 여백(`.dlg.pd` padding)을 바꾸면 `--pd-pt` 도 같이. 둘레는 창 바탕색(`--pd-sheet`) 고리가 가린다.
 - ⚠️ 탭 글은 `person-history.js tabsHtml` 이 그림 · 이름 · 수를 따로 감싼다(`.pd-tab-i`·`.pd-tab-l`·`em`) — 폰은 그림을 숨기고 이름 아래 수, PC 는 예전처럼 「🤝 사역 4」.
 - 가족 단추는 폰에서 성경암송 앱 첫 화면의 줄 목록 꼴([아이콘 칸] 이름 … 관계 · 나이 ›) — 아이콘 칸(`.pd-fi`) · ›(`.pd-chev`)는 PC 에서 숨겨 예전 알약 그대로(2026-10-17 친구).
+
+## 🅰 성경앱 스타일 — 처음 화면 · 교인명부 네 화면 (2026-10-17 친구 「모바일에 맞게 · 성경앱의 스타일로」 · 「첫 화면 메뉴도」)
+- 성경암송 앱 첫 화면 A안과 같은 결: 묶음 제목(회색 굵게) + 흰 카드 한 장 안의 줄(위 가는 줄 · [아이콘 칸 38px 연파랑] 이름 / 설명 · ›).
+- 선 아이콘은 `js/core/icons.js`(앱 `app.js HA_ICON` 과 같은 그림 · `lineSvg` · 화면 머리 `aTitle`). **메뉴를 더하면 `MENU_ICON` 에도 한 줄** — 빠지면 `tests/home-view.test.mjs` 가 잡는다(빠져도 화면은 그림 글자로 나온다).
+- CSS 는 `css/admin.css` 끝 「🅰 성경앱 스타일」 묶음 — ⚠️ 다른 메뉴로 새지 않게 화면 칸(`.route-home` · `.route-people` · `.route-people-stats` · `.route-member-accounts` · `.route-people-ask` — main.js 가 메뉴마다 만든다) 아래에만.
+- 폰(화면 1024px 아래)은 짜임까지 바꾼다 — 처음 화면은 줄 목록(PC 는 격자 그대로 · 그림만 작은 아이콘 칸) · 🔎 찾은 분은 흰 카드 한 장 안의 줄(PC 표 그대로) · 정렬은 한 줄 칸 · 👤 찾은 계정은 줄 · 🤖 예시는 줄 목록 · 명단은 720px 아래에서 카드 줄(`ask.js cardsHtml` — 표와 같은 `data-pid` · `data-visit`).
+- 찾기 칸의 돋보기는 CSS 배경 그림(`.search.a-search`) — 자리 글에 🔍 를 다시 넣지 말 것(둘이 겹친다).
+

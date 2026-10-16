@@ -23,8 +23,10 @@ import { bindPersonTabs, detailTab } from "./person-tabs.js";
 export { detailTab } from "./person-tabs.js";
 // 🏠 심방자료 단추(2026-10-15 · 총괄만) — 이 창을 닫고 심방 카드를 연다(창 위에 창을 띄우지 않는다) · visit-card.js 도 이 파일을 부른다(돌아가는 import — 둘 다 누를 때만 쓴다)
 import { openVisitCard } from "./visit-card.js";
+// 성경앱 스타일(2026-10-17) — 화면 머리 · 줄의 › · 전화 그림
+import { aTitle, lineSvg } from "../../core/icons.js";
 
-const TITLE = `<h2 class="page-title">🔎 교인 찾기</h2>`;
+const TITLE = aTitle("search", "교인 찾기");
 // 앞 「자세히」 창을 아직 여는 중(peoplePerson 을 기다림)에 또 누르면 — 말없이 버리지 않는다(FE1-M2)
 const OPENING_NOTE = "앞 창을 여는 중이에요 — 잠시 뒤 다시 눌러 주세요";
 // 찾기 조건은 메뉴를 옮겨 다녀도 남는다(임명현황과 같게) — 정렬(sort·dir)도. household = 가족 보기(세대주 교인ID)
@@ -44,7 +46,7 @@ const photoHtml = (p, cls) => p.photo
   : iniHtml(p.name, cls);
 const telHtml = (phone) => {
   const d = String(phone || "").replace(/\D/g, "");
-  return d ? `<a class="pp-tel" href="tel:${d}">📞 ${esc(phone)}</a>` : `<span class="muted">번호 없음</span>`;
+  return d ? `<a class="pp-tel" href="tel:${d}">${lineSvg("phone", "pp-tel-i")}${esc(phone)}</a>` : `<span class="muted">번호 없음</span>`;
 };
 const ageText = (p) => [p.gender, p.age != null && p.age !== "" ? `${p.age}세` : ""].filter(Boolean).join(" · ");
 const posHtml = (p) => (p.position ? `<em class="mn-pos">${esc(p.position)}</em>` : "");
@@ -55,7 +57,7 @@ const relHtml = (p) => (state.household && p.household_rel ? `<span class="pp-re
 const cardsHtml = (rows) => rows.map((p) => `<div class="pp-card" data-id="${esc(p.person_id)}" role="button" tabindex="0">
     ${photoHtml(p, "pp-ph")}
     <div class="pp-main"><div>${relHtml(p)}<b>${esc(p.name)}</b>${posHtml(p)} <span class="muted">${esc(ageText(p))}</span></div>
-      <div class="pp-aff">${esc(affText(p))}</div><div>${telHtml(p.phone1)}</div></div>
+      <div class="pp-aff">${esc(affText(p))}</div><div>${telHtml(p.phone1)}</div></div>${lineSvg("chev", "pp-chev")}
   </div>`).join("");
 
 // 정렬 표시 — 지금 정렬이면 ▲(오름)/▼(내림), 아니면 옅은 ⇅. 자리는 늘 같은 폭(1em)이라 옮겨 가도 열 폭이 안 흔들린다.
@@ -164,12 +166,12 @@ export async function render(el, { call, query }) {
   }
   el.innerHTML = TITLE + `<p class="pp-src muted"></p><p class="pp-famon" hidden></p>
     <form class="pp-form" autocomplete="off">
-      <input type="search" class="search" name="q" placeholder="🔍 이름 또는 전화 뒷자리 4개" aria-label="찾기">
+      <input type="search" class="search a-search" name="q" placeholder="이름 또는 전화 뒷자리 4개" aria-label="찾기">
       <div class="pp-filters">${PICKS.map(([k, l]) => pickHtml(k, l)).join("")}
         <button type="button" class="pp-nophoto" data-act="nophoto-off" hidden
           aria-label="사진 없는 분만 보는 중 — 눌러서 풀기"><span class="pp-np-i" aria-hidden="true">📷</span> 사진 없는 분만 <span class="pp-np-x" aria-hidden="true">✕</span></button></div>
       <div class="acts"><button type="submit" class="btn primary">찾기</button>
-        <button type="button" class="btn" data-act="csv">⬇️ 내려받기</button></div>
+        <button type="button" class="btn" data-act="csv">${lineSvg("download", "btn-i")}내려받기</button></div>
     </form>
     <p class="muted pp-sum"></p><div class="pp-sortbar" role="group" aria-labelledby="pp-sortbar-l" hidden></div><div class="pp-list"></div>
     <div class="acts pp-pager" hidden><button type="button" class="btn" data-act="prev">← 앞</button>
