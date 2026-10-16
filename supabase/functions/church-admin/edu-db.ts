@@ -745,14 +745,18 @@ export function makeEdu(db: Db, audit: Audit, deps: {
     ]);
     const rows = eduRowsForPerson(pid, [...byUser, ...byKey], linked);
     if (!rows.length) return [];
-    const [courses, att] = await Promise.all([
-      inChunks([...new Set(rows.map((r) => String(r.course_id)))], (part) =>
-        deps.allRows(() => db.from("edu_courses").select("id,title,term,starts_on,created_at").in("id", part)
+    const cids = [...new Set(rows.map((r) => String(r.course_id)))];
+    const [courses, att, sess] = await Promise.all([
+      inChunks(cids, (part) =>
+        deps.allRows(() => db.from("edu_courses").select("id,title,term,starts_on,ends_on,status,created_at").in("id", part)
           .neq("status", "archived").order("id"))),   // 보관한 강좌(시험용으로 치운 것)는 빼고 — 통계 edu_stats 와 같다(검토 2026-10-06)
       inChunks(rows.map((r) => Number(r.id)), (part) =>
         deps.allRows(() => db.from("edu_attendance").select("enrollment_id,state").in("enrollment_id", part).order("enrollment_id").order("session_id"))),
+      // 회차 날짜 — 끝난 강좌의 확정을 「교육 완료」로(2026-10-17 친구 · edu-rules.ts eduTabItems)
+      inChunks(cids, (part) =>
+        deps.allRows(() => db.from("edu_sessions").select("course_id,on_date").in("course_id", part).order("course_id").order("on_date").order("id"))),
     ]);
-    return eduTabItems(rows, courses, att);
+    return eduTabItems(rows, courses, att, sess, kstDate());
   }
 
   // ---------- 📊 교육 통계(4단계 C · 2026-10-06) — 교육 총괄만(문 ACTION_ROLES "education" · 여기서도 eduChief — 수료증 설정과 같다) ----------

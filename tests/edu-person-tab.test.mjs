@@ -8,7 +8,7 @@ import { makeEdu } from "../supabase/functions/church-admin/edu-db.ts";
 import { personIdOfKey, eduNamePattern, eduLinkedUserIds, eduRowsForPerson, eduTabItems } from "../supabase/functions/church-admin/edu-rules.ts";
 import { withEduTab } from "../supabase/functions/church-admin/people-links.ts";
 
-const ITEM_KEYS = ["attendPct", "certNo", "certRevoked", "status", "statusLabel", "term", "title"];
+const ITEM_KEYS = ["attendPct", "certNo", "certRevoked", "finished", "status", "statusLabel", "term", "title"];
 const U = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const C = (n) => `c0000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
@@ -162,10 +162,11 @@ test("eduTabItems — 칸 지도 일곱 · 학기 새것부터(학기 안에서 
   const items = eduTabItems(rows, COURSES, ATT);
   for (const it of items) assert.deepEqual(Object.keys(it).sort(), ITEM_KEYS);
   assert.deepEqual(items.map((x) => [x.term, x.title]), [["2027 상반기", "제자훈련 1단계"], ["2027 상반기", "교사 대학"],
-    ["2026 하반기", "교사 연수"], ["", "새가족반"]]);
-  assert.deepEqual(items.map((x) => [x.status, x.statusLabel]), [["confirmed", "확정"], ["waitlisted", "대기"], ["confirmed", "확정"], ["cancelled", "취소"]]);
-  assert.deepEqual(items.map((x) => x.attendPct), [80, null, 0, 100]);
-  assert.deepEqual(items.map((x) => [x.certNo, x.certRevoked]), [["고척-2027-0001", false], [null, false], [null, false], ["고척-2025-0007", true]]);
+    ["2026 하반기", "교사 연수"]], "취소한 줄(104 새가족반)은 뺀다(2026-10-17)");
+  assert.deepEqual(items.map((x) => [x.status, x.statusLabel]), [["confirmed", "확정"], ["waitlisted", "대기"], ["confirmed", "확정"]]);
+  assert.deepEqual(items.map((x) => x.attendPct), [80, null, 0]);
+  assert.deepEqual(items.map((x) => [x.certNo, x.certRevoked]), [["고척-2027-0001", false], [null, false], [null, false]]);
+  assert.deepEqual(items.map((x) => x.finished), [false, false, false], "회차·끝 날이 없으면 끝나지 않은 것");
   const s = JSON.stringify(items);
   for (const leak of [SECRET, "신청자이름", "person|", "교구|", U(1), U(2), U(3), "user_id", "ident_key", "staff_note"]) assert.ok(!s.includes(leak), leak);
   assert.deepEqual(eduTabItems([], COURSES, ATT), []);
@@ -173,6 +174,27 @@ test("eduTabItems — 칸 지도 일곱 · 학기 새것부터(학기 안에서 
   // 반려 상태 · 같은 날·같은 학기면 제목 → 신청 번호 큰 것부터
   const tie = eduTabItems([enr(7, 1, 1, "x", "declined"), enr(9, 1, 1, "y", "applied")], COURSES, []);
   assert.deepEqual(tie.map((x) => x.statusLabel), ["신청", "반려"]);
+});
+
+test("eduTabItems — 끝난 강좌의 확정은 「교육 완료」(끝 · 마지막 회차 · 회차 없으면 종료일이 오늘 앞) · 신청·대기는 그대로 · 취소 줄은 빠진다(2026-10-17 친구)", () => {
+  const cs = [{ id: C(1), title: "구원론 2차", term: "2026년 봄학기", starts_on: "2026-04-12", status: "done" },
+    { id: C(2), title: "회차로 끝남", term: "2026년 봄학기", starts_on: "2026-05-03", status: "running" },
+    { id: C(3), title: "종료일로 끝남", term: "2026년 봄학기", starts_on: "2026-06-07", ends_on: "2026-06-28", status: "running" },
+    { id: C(4), title: "오늘이 마지막", term: "구원론 가을학기", starts_on: "2026-10-04", status: "running" },
+    { id: C(5), title: "구원론 3차", term: "구원론 가을학기", starts_on: "2026-11-08", status: "closed" }];
+  const ss = [{ course_id: C(2), on_date: "2026-05-03" }, { course_id: C(2), on_date: "2026-05-24" }, { course_id: C(4), on_date: "2026-10-17" },
+    { course_id: C(5), on_date: "2026-11-08" }];
+  const rows = [enr(1, 1, 1, "x", "confirmed", { cert_no: "고척-2026-0023" }), enr(2, 2, 1, "x"), enr(3, 3, 1, "x"), enr(4, 4, 1, "x"),
+    enr(5, 5, 1, "x", "cancelled"), enr(6, 2, 1, "y", "waitlisted"), enr(7, 1, 1, "y", "applied")];
+  const items = eduTabItems(rows, cs, [], ss, "2026-10-17");
+  assert.deepEqual(items.map((x) => [x.title, x.statusLabel, x.finished]), [
+    ["오늘이 마지막", "확정", false],
+    ["종료일로 끝남", "교육 완료", true], ["회차로 끝남", "대기", false], ["회차로 끝남", "교육 완료", true],
+    ["구원론 2차", "신청", false], ["구원론 2차", "교육 완료", true]]);   // 같은 강좌는 신청 번호가 큰 것부터
+  assert.ok(!items.some((x) => x.title === "구원론 3차"), "취소한 구원론 3차는 안 보인다");
+  assert.equal(items.find((x) => x.certNo).certNo, "고척-2026-0023", "수료번호는 그대로");
+  assert.equal(eduTabItems(rows, cs, [], ss).filter((x) => x.finished).length, 1, "오늘을 모르면 「끝」 강좌만");
+  for (const it of items) assert.deepEqual(Object.keys(it).sort(), ITEM_KEYS);
 });
 
 test("withEduTab — 배열이면 education 칸과 counts.education · 아니면(교육 읽기 실패 null) 그대로(사역·성경필사 탭은 남는다)", () => {
@@ -188,8 +210,8 @@ test("withEduTab — 배열이면 education 칸과 counts.education · 아니면
 test("eduPersonTab — 홍길동(11): 이어진 두 계정의 줄 + person|11 줄만 · 12 의 계정에 붙은 person|11 줄도 · 11 계정에 붙은 person|12 줄은 아님", async () => {
   const { edu, db, audits } = setup(TABLES());
   const items = await edu.eduPersonTab(11);
-  assert.deepEqual(items.map((x) => x.title), ["제자훈련 1단계", "교사 대학", "교사 연수", "새가족반"], "보관한 강좌(116)는 안 보인다");
-  assert.deepEqual(items.map((x) => x.attendPct), [80, null, 0, 100], "출석 칸이 쪽(5줄)을 넘어도 다 센다");
+  assert.deepEqual(items.map((x) => x.title), ["제자훈련 1단계", "교사 대학", "교사 연수"], "보관한 강좌(116) · 취소한 줄(104)은 안 보인다");
+  assert.deepEqual(items.map((x) => x.attendPct), [80, null, 0], "출석 칸이 쪽(5줄)을 넘어도 다 센다");
   assert.equal(audits.length, 0, "기록 없음 — 창을 연 people.view 가 이미 있다");
   assert.deepEqual(db.log.unpaged, [], "쪽 넘기기 없이 물은 표가 있다(1,000줄 함정)");
   assert.deepEqual(db.log.rpc, []);

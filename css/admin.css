@@ -337,6 +337,7 @@ a.mn-tel.sm{padding:2px 8px}
 .mn-rowi-st.s2{background:#fdf6e3;color:#7a5f16}
 .mn-rowi-st.s3{background:#eaf6ee;color:#1f5c3a}
 .mn-rowi-st.s4{background:#f1f3f7;color:#5a6273}
+.mn-rowi-st.s5{background:#e6ecf3;color:#3d4c63}   /* 교육 완료(끝난 강좌의 확정 · 2026-10-17 · person-history.js eduChip) */
 .mn-rowi.s4 .mn-rowi-t{opacity:.55}
 /* 펼친 묶음 — 머리를 짙게 칠해 「이 묶음 안」이 한눈에. 머리의 줄 목록은 숨기고 카드가 대신한다 */
 .mn-grp[open]{background:#fff;border-color:var(--navy)}

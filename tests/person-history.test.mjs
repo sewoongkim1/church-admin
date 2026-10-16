@@ -199,6 +199,8 @@ test("교육 칸 — 학기마다 머리 · 과정 · 상태 칩(신청 파랑·
   assert.equal((html.match(/pd-er off/g) || []).length, 2, "취소·반려 줄은 흐리게");
   assert.equal(/data-pd-act/.test(html), false, "교육 줄에는 잇기·풀기 단추가 없다");
   assert.equal(eduChip("applied", "신청"), '<span class="mn-rowi-st s1">신청</span>');
+  assert.equal(eduChip("confirmed", "교육 완료", true), '<span class="mn-rowi-st s5">교육 완료</span>', "끝난 강좌의 확정 — 회청색(2026-10-17)");
+  assert.ok(eduPanelHtml([E({ statusLabel: "교육 완료", finished: true })]).includes('<span class="mn-rowi-st s5">교육 완료</span>'));
   assert.ok(histPanelHtml("education", HE([]), null).includes("이어진 교육 기록이 없어요"));
   assert.ok(eduPanelHtml(undefined).includes("이어진 교육 기록이 없어요"));
   const bad = eduPanelHtml([E({ title: '<img src=x onerror="1">', term: "<b>학기</b>", certNo: '"><script>' })]);

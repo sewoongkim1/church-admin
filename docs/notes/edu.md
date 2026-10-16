@@ -39,3 +39,8 @@
 - 반려했던 분(`was-declined`)은 한꺼번에 되살리지 않는다 — 그 줄에 「하나씩 넣어 주세요」.
 - 건너뛰는 글: 제목 줄 · 「2대」 · 빈칸 둘 이상 뒤의 수(「김정화  8」 — 인원 수) · 「3명」. 빈칸 하나 뒤의 수(「이정미 18」)는 목장 힌트. 한 번에 60명(`BULK_MAX`).
 - `openAddForm` 은 export — 화면 시험(가짜 call 페이지 · playwright)이 창만 띄워 본다.
+
+## 교인카드 「🎓 교육」 탭 — 취소 줄 빼기 · 「교육 완료」 (2026-10-17 친구)
+- 취소한 신청(`cancelled`)은 탭에서 뺀다 — 탭 수 · 심방 카드(`visit-card.ts eduOf`)도 함께 빠진다. 반려(`declined`)는 남긴다.
+- 확정 줄인데 강좌가 끝났으면(강좌 `done` · 또는 마지막 회차 — 회차가 없으면 `ends_on` — 가 오늘 앞) 상태 「교육 완료」(`finished:true` · 칩 `s5` 회청색). 수료번호는 그대로 같이 보인다. 셈은 성경암송 api `eduMineOut finished` 와 같다(`edu-rules.ts eduTabItems`).
+

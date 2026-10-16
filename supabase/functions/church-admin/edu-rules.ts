@@ -617,17 +617,32 @@ export function eduRowsForPerson(personId: number, rows: any[], linked: Set<stri
   return out;
 }
 
-// 탭 한 줄 — 학기 · 과정 · 상태(신청·확정·대기·취소·반려) · 출석률(eduAttendRate · 체크한 회차가 없으면 null — 화면 「—」) ·
-//   수료번호(수료를 취소한 줄도 번호는 남는다 — certRevoked:true 면 화면이 「(취소됨)」)
+// 탭 한 줄 — 학기 · 과정 · 상태(신청·확정·대기·반려 — 취소 줄은 뺀다) · 출석률(eduAttendRate · 체크한 회차가 없으면 null — 화면 「—」) ·
+//   수료번호(수료를 취소한 줄도 번호는 남는다 — certRevoked:true 면 화면이 「(취소됨)」) ·
+//   finished — 확정 줄인데 강좌가 끝났다(2026-10-17 친구 「구원론 2차는 교육 완료」 · 그때 statusLabel 「교육 완료」 · 화면 칩 회청색)
 export type EduTabItem = { term: string; title: string; status: string; statusLabel: string; attendPct: number | null;
-  certNo: string | null; certRevoked: boolean };
+  certNo: string | null; certRevoked: boolean; finished: boolean };
 const cmpCode = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);   // 코드 포인트 차례(localeCompare 는 ICU 에 따라 다르다)
-// rows = 이분의 신청 줄 {id, course_id, status, cert_no, cert_revoked} · courses = {id, title, term, starts_on, created_at} ·
-//   att = 그 줄들의 출석 칸 {enrollment_id, state} — 출석률은 그 줄의 출석 칸 전부로(성경암송 앱 「내 강좌」의 출석과 같은 셈 · 지각 = 출석 · 공결 뺌).
+// rows = 이분의 신청 줄 {id, course_id, status, cert_no, cert_revoked} · courses = {id, title, term, starts_on, ends_on, status, created_at} ·
+//   att = 그 줄들의 출석 칸 {enrollment_id, state} — 출석률은 그 줄의 출석 칸 전부로(성경암송 앱 「내 강좌」의 출석과 같은 셈 · 지각 = 출석 · 공결 뺌) ·
+//   sessions = 그 강좌들의 회차 {course_id, on_date} · today = 오늘(KST YYYY-MM-DD).
+// 취소한 줄(cancelled)은 뺀다(2026-10-17 친구 「교육 중 취소한 것은 빼 주세요」 — 탭 수 · 심방 카드도 함께 빠진다).
+// 끝난 강좌 = 강좌가 「끝」(done)이거나 마지막 날(마지막 회차 · 회차가 없으면 교육 종료일)이 오늘 앞 — 성경암송 api eduMineOut finished 와 같은 셈.
 // 차례(학기 새것부터): 학기마다 그 학기 강좌의 날(시작일 — 없으면 만든 날) 가운데 가장 늦은 날이 늦은 학기부터 → 학기 글자 →
 //   같은 학기 안에서는 강좌 날이 늦은 것부터 → 제목 → 신청 번호가 큰 것부터. 강좌를 못 찾은 줄은 뺀다(on delete restrict 라 없다).
-export function eduTabItems(rows: any[], courses: any[], att: { enrollment_id: unknown; state: unknown }[]): EduTabItem[] {
+export function eduTabItems(rows: any[], courses: any[], att: { enrollment_id: unknown; state: unknown }[],
+  sessions: { course_id: unknown; on_date: unknown }[] = [], today = ""): EduTabItem[] {
   const cBy = new Map<string, any>((courses || []).map((c) => [String(c?.id), c]));
+  const lastOf = new Map<string, string>();
+  for (const s of sessions || []) {
+    const id = String(s?.course_id ?? ""), d = String(s?.on_date ?? "");
+    if (id && DATE_RE.test(d) && (lastOf.get(id) ?? "") < d) lastOf.set(id, d);
+  }
+  const ended = (c: any): boolean => {
+    if (c?.status === "done") return true;
+    const last = lastOf.get(String(c?.id)) || (DATE_RE.test(String(c?.ends_on ?? "")) ? String(c.ends_on) : "");
+    return !!last && DATE_RE.test(today) && last < today;
+  };
   const k = new Map<number, Record<string, number>>();
   for (const a of att || []) {
     const st = String(a?.state ?? "");
@@ -640,16 +655,18 @@ export function eduTabItems(rows: any[], courses: any[], att: { enrollment_id: u
   const dayOf = (c: any) => String(c?.starts_on || c?.created_at || "").slice(0, 10);
   const list = (rows || []).flatMap((r) => {
     const c = cBy.get(String(r?.course_id));
-    return c ? [{ r, c, day: dayOf(c), term: norm(c.term), title: norm(c.title) }] : [];
+    return c && r?.status !== "cancelled" ? [{ r, c, day: dayOf(c), term: norm(c.term), title: norm(c.title) }] : [];
   });
   const termDay = new Map<string, string>();
   for (const x of list) if ((termDay.get(x.term) ?? "") < x.day) termDay.set(x.term, x.day);
   list.sort((a, b) => cmpCode(termDay.get(b.term) ?? "", termDay.get(a.term) ?? "") || cmpCode(b.term, a.term) ||
     cmpCode(b.day, a.day) || cmpCode(a.title, b.title) || Number(b.r.id) - Number(a.r.id));
-  return list.map(({ r, term, title }) => {
+  return list.map(({ r, c, term, title }) => {
     const certNo = r.cert_no ? String(r.cert_no) : null;
-    return { term, title, status: String(r.status ?? ""), statusLabel: ENROLL_STATUS_LABEL[r.status] || String(r.status ?? ""),
-      attendPct: eduAttendRate(k.get(Number(r.id))).pct, certNo, certRevoked: certNo !== null && r.cert_revoked === true };
+    const finished = r.status === "confirmed" && ended(c);
+    return { term, title, status: String(r.status ?? ""),
+      statusLabel: finished ? "교육 완료" : ENROLL_STATUS_LABEL[r.status] || String(r.status ?? ""),
+      attendPct: eduAttendRate(k.get(Number(r.id))).pct, certNo, certRevoked: certNo !== null && r.cert_revoked === true, finished };
   });
 }
 

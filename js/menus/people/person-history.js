@@ -114,12 +114,13 @@ function linkedRow(tab, r, year, ui) {
 
 const EMPTY = { ministry: "이어진 사역 기록이 없어요", bible: "이어진 성경필사 기록이 없어요", education: "이어진 교육 기록이 없어요" };
 
-// ---------- 🎓 교육 칸(4단계 B · 2026-10-06) — 서버 칸 지도 eduTabItems {term, title, status, statusLabel, attendPct, certNo, certRevoked} ----------
+// ---------- 🎓 교육 칸(4단계 B · 2026-10-06) — 서버 칸 지도 eduTabItems {term, title, status, statusLabel, attendPct, certNo, certRevoked, finished} ----------
 // 상태 칩 색은 사역 칩과 같은 넷(mn-rowi-st): 신청 s1(파랑) · 대기 s2(노랑) · 확정 s3(초록) · 취소·반려 s4(회색)
+//   + 끝난 강좌의 확정 「교육 완료」 s5(회청색 · 2026-10-17 친구 · 성경암송 앱 「교육 완료」와 같은 색 결) · 취소 줄은 서버가 뺀다(2026-10-17)
 const EDU_CLS = { applied: "s1", waitlisted: "s2", confirmed: "s3", cancelled: "s4", declined: "s4" };
-export function eduChip(status, label) {
+export function eduChip(status, label, finished = false) {
   const s = String(status ?? "");
-  return `<span class="mn-rowi-st ${EDU_CLS[s] || "s1"}">${t(label || s)}</span>`;
+  return `<span class="mn-rowi-st ${finished === true ? "s5" : EDU_CLS[s] || "s1"}">${t(label || s)}</span>`;
 }
 // 「출석률 92% · 수료번호 고척-2027-0001」 — 체크한 회차가 없으면 「출석률 —」 · 수료를 취소한 번호는 「(취소됨)」 · 번호가 없으면 수료 칸을 안 쓴다
 export function eduMeta(r) {
@@ -130,7 +131,7 @@ export function eduMeta(r) {
 }
 function eduRow(r) {
   const off = r?.status === "cancelled" || r?.status === "declined";
-  return `<li class="pd-hr pd-er${off ? " off" : ""}"><span class="pd-ht">${t(r?.title)}</span>${eduChip(r?.status, r?.statusLabel)}` +
+  return `<li class="pd-hr pd-er${off ? " off" : ""}"><span class="pd-ht">${t(r?.title)}</span>${eduChip(r?.status, r?.statusLabel, r?.finished)}` +
     `<span class="pd-em">${t(eduMeta(r))}</span></li>`;
 }
 // 교육 칸 — 학기마다 한 묶음(학기 이름을 머리로 · 서버가 학기 새것부터 세운 차례 그대로 붙어 있는 같은 학기를 묶는다)
