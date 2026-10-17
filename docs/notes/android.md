@@ -13,7 +13,8 @@
 - `manifest.webmanifest` + `index.html` 의 `<link rel="manifest">` · `<meta name="theme-color">` · 아이콘 `img/app-icon-192.png` · `img/app-icon-512.png`(any · maskable).
 - `.well-known/assetlinks.json` — 앱이 이 주소를 「내 사이트」로 믿게 하는 파일. ⚠️ 지문이 맞지 않으면 앱 위에 **주소창이 뜬다**(그래도 쓸 수는 있다).
   - 지금 들어 있는 것: 업로드 키 「- New」 `3A:17…`(성경암송 앱과 같은 키 · 이 PC 에서 뽑은 판 · 직접 설치한 apk 용).
-  - ⏳ **구글 앱 서명 키 지문을 더해야 한다** — Play Console 에 첫 .aab 를 올리면 「테스트 및 출시 → 설정 → 앱 서명」(앱 무결성)에 「앱 서명 키 인증서 · SHA-256」이 생긴다. 플레이에서 받은 앱은 그 키로 서명돼 있다 → 그 지문을 이 파일 배열에 **더한다**(3A:17 은 지우지 않는다).
+  - ✅ 구글 앱 서명 키 `9A:44:7A:9A…`(2026-10-17 친구가 Play Console 「Play 앱 서명」에서 알려 줌 · 플레이에서 받은 앱은 이 키) — 더했다.
+  - (지난 줄) **구글 앱 서명 키 지문을 더해야 한다** — Play Console 에 첫 .aab 를 올리면 「테스트 및 출시 → 설정 → 앱 서명」(앱 무결성)에 「앱 서명 키 인증서 · SHA-256」이 생긴다. 플레이에서 받은 앱은 그 키로 서명돼 있다 → 그 지문을 이 파일 배열에 **더한다**(3A:17 은 지우지 않는다).
 - `.github/workflows/deploy.yml` 이 `manifest.webmanifest` · `.well-known` 을 사이트에 올린다(목록에 없으면 안 나간다).
 
 ## 빌드
