@@ -44,9 +44,11 @@ export const ICON = {
   plus: "M12 5v14M5 12h14",
 };
 
+// ⚠️ width · height(20)를 늘 박는다 — 크기는 CSS 가 정하지만, 열어 둔 창에서 메뉴를 옮기면 화면 코드는 새것 · CSS 는 옛것일 수 있다
+//   (Pages 는 ?v= 를 보지 않고 늘 지금 파일을 준다 · 2026-10-17 「교인 현황」 제목 아이콘이 화면 가득 커졌다). 그때도 아이콘 크기로 남게.
 export function lineSvg(name, cls = "") {
   const d = ICON[name] || ICON.chev;
-  return `<svg${cls ? ` class="${cls}"` : ""} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ` +
+  return `<svg${cls ? ` class="${cls}"` : ""} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ` +
     `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`;
 }
 

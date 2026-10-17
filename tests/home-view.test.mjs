@@ -21,6 +21,7 @@ test("메뉴마다 선 아이콘(core/icons.js MENU_ICON) · 줄 끝 › — 메
   for (const [id, name] of Object.entries(MENU_ICON)) assert.ok(ICON[name], `${id} → ${name} 그림이 없다`);
   const h = homeHtml({ member, rolesInfo: [], roles: ["super"], menus: menusFor(["super"]) });
   assert.equal((h.match(/class="hc-chev"/g) || []).length, (h.match(/home-card/g) || []).length);
+  assert.equal((h.match(/<svg /g) || []).length, (h.match(/<svg [^>]*width="20" height="20"/g) || []).length, "그림마다 크기를 박는다(CSS 가 옛것이어도 화면 가득 커지지 않게)");
 });
 test("super 는 모든 묶음 · 빈 상태 두 글", () => {
   const h = homeHtml({ member, rolesInfo: [], roles: ["super"], menus: menusFor(["super"]) });

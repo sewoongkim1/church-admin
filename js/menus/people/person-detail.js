@@ -49,7 +49,7 @@ function mainHtml(secHtml, hist, on) {
 }
 
 // 가족 줄의 선 아이콘(성경암송 앱 첫 화면 줄 목록과 같은 그림 · app.js HA_ICON user · users · chev) — 폰 모양에서만 보인다(css 「📱 교인카드 폰 모양」)
-const lineSvg = (d, cls = "") => `<svg${cls ? ` class="${cls}"` : ""} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ` +
+const lineSvg = (d, cls = "") => `<svg${cls ? ` class="${cls}"` : ""} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ` +   // 크기 박음 — core/icons.js lineSvg 머리 ⚠️
   `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`;
 const FAM_ONE = lineSvg("M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z");
 const FAM_ALL = lineSvg("M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 20v-2a4 4 0 0 0-3-3.9M16 2.1a4 4 0 0 1 0 7.8");
