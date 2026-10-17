@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "kr.onlybible.admin",
+      "sha256_cert_fingerprints": [
+        "3A:17:3C:B2:0A:BB:A8:2C:AC:FF:AD:CA:51:C1:0C:4E:D2:D4:2D:13:22:93:35:1F:4E:E0:91:C3:13:8E:A1:20"
+      ]
+    }
+  }
+]

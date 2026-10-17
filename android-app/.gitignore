@@ -1,0 +1,19 @@
+# Gradle·빌드 결과
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+*.idsig
+# 이 PC 에만 있는 설정 — SDK 경로(local.properties), 서명 경로·비밀번호(keystore.properties)
+local.properties
+keystore.properties
+# 서명 키 — 절대 커밋 금지(저장소 공개 · 사이트가 저장소 전체를 배포한다)
+*.keystore
+*.jks
+# 생성기 꾸러미
+tools/node_modules/
+tools/package-lock.json
+# 편집기
+.idea/
+*.iml

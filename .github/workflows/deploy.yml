@@ -36,7 +36,9 @@ jobs:
       - name: 올릴 것만 모으기
         run: |
           mkdir _site
-          cp -r index.html privacy.html favicon.png apple-touch-icon.png img js css files vendor _site/
+          cp -r index.html privacy.html favicon.png apple-touch-icon.png manifest.webmanifest img js css files vendor _site/
+          # 안드로이드 앱(TWA)이 이 주소를 「내 사이트」로 믿게 하는 파일(2026-10-17 · docs/notes/android.md) — 빠지면 앱 위에 주소창이 뜬다
+          cp -r .well-known _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: "_site"

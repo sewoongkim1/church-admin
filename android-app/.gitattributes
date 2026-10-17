@@ -1,0 +1,4 @@
+# 이 PC 의 git 은 받을 때 줄바꿈을 CRLF 로 바꾼다(core.autocrlf). 그러면 셸 스크립트 gradlew 가
+# 「$'\r': command not found」로 멈춘다 — 셸 스크립트는 늘 LF, 윈도 배치 파일은 늘 CRLF 로 둔다.
+gradlew text eol=lf
+*.bat text eol=crlf
