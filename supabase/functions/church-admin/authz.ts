@@ -31,10 +31,11 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   //   apply:true 가 아니면 세기만 한다(시험 PROBE 가 아무것도 안 바꾸게). 기록 people.linksync(수만).
   peopleLinkSync: "super",
   // 🤖 성도 묻기(시험판 · 2026-10-15) — 말로 물으면 교인명부 · 사역 이력에서 찾는다. AI(Claude)에는 질문과 필드 목록만 가고 명단은 서버가 거른다.
-  //   askPeopleRun 은 화면이 고친 조건으로 다시 세기(AI 안 부름). 시험판이라 총괄만 — 담임목사 역할은 교회가 정한 뒤
-  //   (설계 v2 docs/superpowers/specs/2026-10-15-pastor-ai-ask-design.md). 기록 people.ask · people.ask.run(질문 앞 120자 · 수만).
-  askPeople: "super",
-  askPeopleRun: "super",
+  //   askPeopleRun 은 화면이 고친 조건으로 다시 세기(AI 안 부름). 2026-10-17 친구 「성도 묻기도 교인명부 권한에」 — 교인명부(directory)도
+  //   (처음엔 총괄만 · 설계 v2 docs/superpowers/specs/2026-10-15-pastor-ai-ask-design.md). 기록 people.ask · people.ask.run(질문 앞 120자 · 수만).
+  //   ⚠️ 줄에 실리는 것(이름 · 직분 · 교구 · 목장 · 나이 · 섬긴 해)은 교인명부 역할이 이미 보는 것뿐 · 🏠 심방 준비(visitCard · visitPoints)는 그대로 총괄만.
+  askPeople: "directory",
+  askPeopleRun: "directory",
   // 🧪 견주기(개발 전용 — 운영 함수는 dev-only 로 막는다) · 🏠 심방 준비 한 장(2026-10-15 · 카드 people.visit 기록 · 이야깃거리는 AI 에 이름 없는 사실만)
   askEval: "super",
   visitCard: "super",

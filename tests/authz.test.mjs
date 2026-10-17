@@ -29,9 +29,19 @@ test("super 액션 × 사람 다섯 가지", () => {
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const superActions = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "super");
-  assert.deepEqual(superActions.sort(), ["askEval", "askPeople", "askPeopleRun", "auditList", "deleteSong", "importSongs", "lifeResetDo", "lifeResetList", "memberMerge", "memberMergePreview", "membersApprove", "membersList", "membersSetRoles", "membersSetStatus",
+  assert.deepEqual(superActions.sort(), ["askEval", "auditList", "deleteSong", "importSongs", "lifeResetDo", "lifeResetList", "memberMerge", "memberMergePreview", "membersApprove", "membersList", "membersSetRoles", "membersSetStatus",
     "ministryTesterFind", "ministryTesterSave", "ministryTesters", "peopleLinkSync", "sermonDelete", "visitCard", "visitPoints"]);
   for (const a of superActions) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
+});
+
+test("성도 묻기 — 교인명부(directory)와 총괄이 부른다 · 다른 역할은 못 부른다 · 심방 준비는 총괄만(2026-10-17)", () => {
+  for (const a of ["askPeople", "askPeopleRun"]) {
+    assert.equal(ACTION_ROLES[a], "directory", a);
+    assert.equal(canCall(a, { status: "active", roles: ["directory"] }), "ok", a);
+    assert.equal(canCall(a, { status: "active", roles: ["super"] }), "ok", a);
+    assert.equal(canCall(a, { status: "active", roles: ["ministry"] }), "forbidden", a);
+  }
+  for (const a of ["visitCard", "visitPoints"]) assert.equal(canCall(a, { status: "active", roles: ["directory"] }), "forbidden", a);
 });
 
 test("knownRoles 는 super 를 늘 담는다", () => {
@@ -70,7 +80,7 @@ test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄�
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "directory");
-  assert.deepEqual(acts.sort(), ["peopleExport", "peopleHistory", "peopleLink", "peoplePerson", "peopleSearch", "peopleStats"]);
+  assert.deepEqual(acts.sort(), ["askPeople", "askPeopleRun", "peopleExport", "peopleHistory", "peopleLink", "peoplePerson", "peopleSearch", "peopleStats"]);
   for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 

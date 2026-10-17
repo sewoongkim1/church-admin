@@ -27,7 +27,7 @@
 | 봉사 당번 — 📅 달력·명단 화면의 자리·공휴일 표 | `docs/notes/duty-calendar.md` |
 | 새가족 — 카드·현황·등록식·통계·함께 쓰는 분 | `docs/notes/newfamily.md` |
 | Edge Function `church-admin` 배포 — `tools/deploy-fn.py` 가드(직접 deploy 금지) | `docs/notes/deploy-guard.md` |
-| 🤖 성도 묻기(시험판 · 총괄만 · 2026-10-15) — AI 는 조건만 · 명단은 서버 · 스키마에 null 갈래 칸 금지 · 지시문에 사람 자료 금지 | `docs/notes/ask.md` |
+| 🤖 성도 묻기(시험판 · 2026-10-15 · 10-17 부터 교인명부 역할도 — 심방 준비는 총괄만) — AI 는 조건만 · 명단은 서버 · 스키마에 null 갈래 칸 금지 · 지시문에 사람 자료 금지 | `docs/notes/ask.md` |
 | 총괄이 카카오 계정을 잃었을 때 · 사람·사역 이력을 지울 때 · 카카오 설정 | 이 문서 맨 아래 「비상 절차」 |
 
 ## 스택

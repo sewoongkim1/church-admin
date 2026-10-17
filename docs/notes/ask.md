@@ -5,7 +5,8 @@
 > 흐름도 v2 `자료/ai-ask/AI-성도조회-흐름도.html`.
 
 말로 물으면 교인명부 · 사역 이력에서 찾는다. **AI(Claude)는 질문을 조건(JSON)으로 바꾸기만** 하고, 명단은 서버가 표에서 직접 거른다.
-지금은 **총괄(super)만** 보인다 — 담임목사 역할 · 무엇을 물을 수 있게 할지(뜻)는 교회가 정한 뒤(Claude Docs 「AI 성도 조회 — 뜻을 정해 주실 것」).
+처음엔 **총괄(super)만** 보였다 — **2026-10-17 친구 「성도 묻기도 교인명부 권한에」로 교인명부 역할(directory)에게도 연다**(서버 `authz.ts askPeople · askPeopleRun: "directory"` · 메뉴 `registry.js` 같은 역할). 🏠 심방 준비(`visitCard` · `visitPoints`)는 그대로 총괄만 — 그 밖의 분 화면에는 「심방」 칸 · 단추를 그리지 않는다(`ask.js canVisit`). 담임목사 역할 · 무엇을 물을 수 있게 할지(뜻)는 교회가 정한 뒤(Claude Docs 「AI 성도 조회 — 뜻을 정해 주실 것」).
+⚠️ AI(Claude) 키는 성경암송 앱과 같은 키 · 같은 한도다 — 쓰는 분이 늘면 한도가 빨리 찬다(2026-10-16 한도에 닿았다 · 11/1 UTC 풀림 · 한도 올리기는 친구).
 
 ## 흐름
 1. 화면 → `askPeople {question}` → 서버가 재료(교인명부 · 사역 이력 · 부서 이음표 `ministry_dept_map` · 명단이 일부인 해 `ministry_list_gaps`)를 읽어 10분 담아 둔다.

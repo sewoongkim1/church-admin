@@ -13,7 +13,7 @@ import { aTitle, lineSvg } from "../../core/icons.js";
 const TITLE = aTitle("message", "성도 묻기", ` <span class="badge">시험판</span>`);   // 성경앱 스타일 머리(2026-10-17)
 const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b> · <b>사역 이력</b> · <b>성경필사</b>에서 찾아 드려요.
 AI(Claude)에는 질문과 「물을 수 있는 것」 목록만 가고, 명단은 서버가 직접 찾아요 — 이름은 AI 에게 가지 않아요.
-지금은 총괄에게만 보이는 시험판이에요.</p>`;
+교인명부 담당자에게 보이는 시험판이에요.</p>`;
 
 // 우리 자료로 답할 수 있는 예(2026-10-15 친구 — 「요즘 예배에 잘 안 나오시는」 예는 빼고 「2026년 성경필사 · 봉사 안 함 · 40대 남자」를 더함)
 export const EXAMPLES = [
@@ -72,6 +72,10 @@ function unsupHtml(r) {
       <button type="button" class="btn" data-act="edit">질문 고치기</button></div>` : "") + `</div>`;
 }
 
+// 🏠 심방 준비(visitCard · visitPoints)는 총괄만(서버 authz) — 그 밖의 교인명부 담당자에게는 「심방」 칸 · 단추를 그리지 않는다(눌러도 막힌다 · 2026-10-17)
+let canVisit = false;
+const visitTd = (x) => (canVisit ? `<td><button type="button" class="ak-visit" data-visit="${Number(x.id)}" aria-label="${esc(x.name)} 심방 준비">준비</button></td>` : "");
+
 function rowsHtml(r, dropped) {
   if (r.total === null || r.total === undefined) return "";
   const banner = dropped.length
@@ -80,10 +84,10 @@ function rowsHtml(r, dropped) {
   const span = (x) => (x.served ? (x.first === x.last ? `${x.first}` : `${x.first}~${x.last}`) : "—");
   return banner + `<p class="ak-total">${n(r.total)}명${r.truncated ? ` <span class="muted">· 앞의 ${n(r.rows.length)}명만 보여요</span>` : ""}</p>
     <div class="ak-tbl"><table class="pp-stat"><thead><tr><th>이름</th><th>직분</th><th>교구</th><th>목장</th><th>나이</th>
-      <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th><th>성경필사</th><th>심방</th></tr></thead><tbody>` +
+      <th>섬긴 해</th><th>처음~마지막</th><th>주로 섬긴 곳</th><th>성경필사</th>${canVisit ? "<th>심방</th>" : ""}</tr></thead><tbody>` +
     r.rows.map((x) => `<tr><td><button type="button" class="ak-name" data-pid="${Number(x.id)}" aria-label="${esc(x.name)} 자세히">${esc(x.name)}</button></td><td>${esc(x.position || "—")}</td><td>${esc(x.gu || "—")}</td><td>${esc(x.mok || "—")}</td>` +
-      `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td><td>${x.pilsa ? x.pilsa + "번" : "—"}</td><td><button type="button" class="ak-visit" data-visit="${Number(x.id)}" aria-label="${esc(x.name)} 심방 준비">준비</button></td></tr>`).join("") +
-    `</tbody></table></div>` + cardsHtml(r.rows, span) + `<p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창, 「심방 · 준비」를 누르면 심방 준비 한 장(가족 · 섬김 · 배움 · AI 이야깃거리)이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
+      `<td>${x.age ?? "—"}</td><td>${x.served ? x.served + "해" : "—"}</td><td>${esc(span(x))}</td><td>${esc(x.main || "—")}</td><td>${x.pilsa ? x.pilsa + "번" : "—"}</td>${visitTd(x)}</tr>`).join("") +
+    `</tbody></table></div>` + cardsHtml(r.rows, span) + `<p class="muted ak-hint">이름을 누르면 교인명부 「자세히」 창${canVisit ? ", 「심방 · 준비」를 누르면 심방 준비 한 장(가족 · 섬김 · 배움 · AI 이야깃거리)" : ""}이 열려요 — 열어 본 것은 교인명부 기록에 남아요.</p>`;
 }
 
 // 폰 — 같은 명단을 카드 줄로(표는 열이 열 개라 옆으로 밀어야 했다 · 2026-10-17 친구 「모바일에 맞게」).
@@ -95,7 +99,7 @@ function cardsHtml(rows, span) {
     `<div class="ak-c-sub">${esc([x.gu, x.mok].filter(Boolean).join(" ") || "—")}${x.age != null ? ` · ${esc(x.age)}세` : ""}</div>` +
     `<div class="ak-c-meta">섬긴 해 <b>${x.served ? esc(x.served) + "해" : "—"}</b> · ${esc(span(x))}${x.main ? ` · ${esc(x.main)}` : ""}` +
     `${x.pilsa ? ` · 성경필사 ${esc(x.pilsa)}번` : ""}</div></div>` +
-    `<button type="button" class="ak-visit" data-visit="${Number(x.id)}" aria-label="${esc(x.name)} 심방 준비">심방</button></li>`).join("") + `</ul>`;
+    (canVisit ? `<button type="button" class="ak-visit" data-visit="${Number(x.id)}" aria-label="${esc(x.name)} 심방 준비">심방</button>` : "") + `</li>`).join("") + `</ul>`;
 }
 
 function resultHtml(r, st) {
@@ -113,7 +117,8 @@ function resultHtml(r, st) {
     status + chipsHtml(r) + alt + unsupHtml(r) + notes + rowsHtml(r, st.dropped) + foot + raw + `</div>`;
 }
 
-export async function render(el, { call }) {
+export async function render(el, { call, me }) {
+  canVisit = !!(me && Array.isArray(me.roles) && me.roles.includes("super"));
   el.innerHTML = TITLE + INTRO + FORM + `<div class="ak-out" aria-live="polite"></div>`;
   const qEl = el.querySelector("#ak-q");
   const out = el.querySelector(".ak-out");
