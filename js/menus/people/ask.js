@@ -9,7 +9,7 @@ import { openPerson } from "./search.js";
 // 🏠 심방 준비 한 장(2026-10-15) — 줄의 「심방」 단추 · 서버 visitCard · visitPoints
 import { openVisitCard } from "./visit-card.js";
 import { aTitle, lineSvg } from "../../core/icons.js";
-// 🎚️ 직분 · 교구 고르기 칸(2026-10-19) — 공용 고르개(「모두 고르기」 allBtn) · 순수 도우미(시험 tests/ask-picks-ui.test.mjs)
+// 🎚️ 직분 · 교구 고르기 칸(2026-10-19) — 공용 고르개(「전체선택」 allBtn) · 순수 도우미(시험 tests/ask-picks-ui.test.mjs)
 import { pickMany } from "../../core/picker.js";
 import { PICK_FROM, picksToSend, pickSummary } from "./ask-logic.js";
 

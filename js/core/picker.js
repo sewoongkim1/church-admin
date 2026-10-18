@@ -262,9 +262,9 @@ export function pickOne({ anchor, title, options = [], value = "", mode, wrap = 
   } });
 }
 
-// 여러 개 고르기 — 체크박스 · 「모두 해제」 · 「확인」 → 고른 values 배열. hint 는 항목 오른쪽의 작은 글자(인원 수 등).
-// 고를 것이 없으면 「고를 것이 없어요」. 「모두 해제」는 켠 것이 하나도 없으면 잠긴다.
-// allBtn(기본 꺼짐 · 2026-10-19 성도 묻기) — 「모두 고르기」를 더한다(다 켜져 있으면 잠긴다).
+// 여러 개 고르기 — 체크박스 · 「전체해제」 · 「확인」 → 고른 values 배열. hint 는 항목 오른쪽의 작은 글자(인원 수 등).
+// 고를 것이 없으면 「고를 것이 없어요」. 「전체해제」는 켠 것이 하나도 없으면 잠긴다.
+// allBtn(기본 꺼짐 · 2026-10-19 성도 묻기) — 「전체선택」를 더한다(다 켜져 있으면 잠긴다).
 export function pickMany({ anchor, title, options = [], values = [], mode, allBtn = false } = {}) {
   const has = new Set((values || []).map(String));
   return openShell({ anchor, title, mode, cls: "pk-many", onBuild: ({ body, foot, close }) => {
@@ -273,8 +273,8 @@ export function pickMany({ anchor, title, options = [], values = [], mode, allBt
       `<span class="pk-opt-t">${esc(o.label ?? o.value)}</span>${o.hint ? `<small class="pk-hint">${esc(o.hint)}</small>` : ""}</label>`).join("")}</div>`
       : `<p class="pk-none">고를 것이 없어요</p>`;
     foot.hidden = false;
-    foot.innerHTML = `<button type="button" class="btn" data-k="clear">모두 해제</button>` +
-      (allBtn && options.length ? `<button type="button" class="btn" data-k="all">모두 고르기</button>` : "") +
+    foot.innerHTML = `<button type="button" class="btn" data-k="clear">전체해제</button>` +
+      (allBtn && options.length ? `<button type="button" class="btn" data-k="all">전체선택</button>` : "") +
       `<button type="button" class="btn primary" data-k="ok">확인</button>`;
     const boxes = () => [...body.querySelectorAll("input[type=checkbox]")];
     const clear = foot.querySelector('[data-k="clear"]');

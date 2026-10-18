@@ -19,7 +19,7 @@
 7. 기록: `people.ask {q(앞 120자), picks{pos,gu}, ai:false(고르기만일 때), cut, status, total}` · `people.ask.run {status, total, dropped}` — 「바꾼 기록」의 교인명부 기록.
 
 ## 🎚️ 직분 · 교구 고르기 칸(2026-10-19 · 설계 성경암송 docs/superpowers/specs/2026-10-19-ask-people-picks-design.md)
-- 화면 질문 칸 위 「직분 ▾」「교구 ▾」(공용 `pickMany` · `allBtn` 「모두 고르기」). 고른 것은 **서버가 바로 거르는 조건** — 질문 조건과 「그리고」 · 같은 칸 안은 「또는」.
+- 화면 질문 칸 위 「직분 ▾」「교구 ▾」(공용 `pickMany` · `allBtn` 「전체선택」). 고른 것은 **서버가 바로 거르는 조건** — 질문 조건과 「그리고」 · 같은 칸 안은 「또는」.
 - **질문 없이 고르기만 하면 AI 를 부르지 않는다**(`askPeople` 이 `askOut(…, fromAi=false)` · 응답 `model ""` · `raw null` · 기록 `ai:false`).
 - 직분은 큰 묶음 「장로 전체 · 안수집사 전체 · 권사 전체 · 집사 전체」 + 세부 직분(`posDetailOf` — 직분상세 → 직분 → 「직분 없음」). 목록은 `askPeopleOptions`(값 · 인원 수만).
 - ⚠️ **세부 직분 잎 `pos_pick` 은 `FIELDS` 밖(`PICK_FIELDS`)** — AI 스키마 · 지시문에 안 간다(시험 `tests/ask-picks.test.mjs` 가 지킨다). `checkLeaf` 만 `CHECK_BY_ID` 로 함께 본다.
