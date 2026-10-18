@@ -18,6 +18,14 @@
    그래서 줄에 교인ID(`id`)를 싣는다 — 총괄 응답이라 괜찮다. ⚠️ 담임목사 역할로 열 때는 그 역할이 `peoplePerson`(교인명부 directory)도 부를 수 있어야 창이 열린다.
 7. 기록: `people.ask {q(앞 120자), status, total}` · `people.ask.run {status, total, dropped}` — 「바꾼 기록」의 교인명부 기록.
 
+## 🎚️ 직분 · 교구 고르기 칸(2026-10-19 · 설계 성경암송 docs/superpowers/specs/2026-10-19-ask-people-picks-design.md)
+- 화면 질문 칸 위 「직분 ▾」「교구 ▾」(공용 `pickMany` · `allBtn` 「모두 고르기」). 고른 것은 **서버가 바로 거르는 조건** — 질문 조건과 「그리고」 · 같은 칸 안은 「또는」.
+- **질문 없이 고르기만 하면 AI 를 부르지 않는다**(`askPeople` 이 `askOut(…, fromAi=false)` · 응답 `model ""` · `raw null` · 기록 `ai:false`).
+- 직분은 큰 묶음 「장로 전체 · 안수집사 전체 · 권사 전체 · 집사 전체」 + 세부 직분(`posDetailOf` — 직분상세 → 직분 → 「직분 없음」). 목록은 `askPeopleOptions`(값 · 인원 수만).
+- ⚠️ **세부 직분 잎 `pos_pick` 은 `FIELDS` 밖(`PICK_FIELDS`)** — AI 스키마 · 지시문에 안 간다(시험 `tests/ask-picks.test.mjs` 가 지킨다). `checkLeaf` 만 `CHECK_BY_ID` 로 함께 본다.
+- 고른 잎의 `from_text` 「고른 직분」·「고른 교구」(`PICK_FROM`)는 서버 · 화면(`js/menus/people/ask-logic.js`) 두 벌 — 글자까지 같게(`tests/ask-picks-ui.test.mjs`). 칩 × 로 빼면 화면이 이 글로 알아보고 그 칸을 비운다.
+- 모두 고름 = 조건 없음 — 화면 `picksToSend` 가 빈 배열로 보낸다.
+
 ## ⚠️ 함정
 - **AI 에게 가는 글은 `askSystemPrompt` · `askSchema` 둘뿐이다.** 사람 자료(이름 · 교인ID · 나이 · 목장 이름)를 넣지 말 것 — `tests/ask-people.test.mjs` 가 지시문에 이름·목장이 없는지 본다. 지시문의 예시에도 실제 있을 법한 목장 이름을 쓰지 않는다.
 - **스키마에 null 갈래 칸(anyOf · 타입 배열)을 두지 말 것.** 갈래 칸이 많으면 API 가 400 「Schemas contains too many parameters with union types」(2026-10-15 개발에서 24칸으로 걸림).
