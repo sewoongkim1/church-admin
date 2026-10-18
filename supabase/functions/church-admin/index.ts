@@ -81,7 +81,7 @@ import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
 // 빠진 사역을 고쳐서 반영 · 목록의 줄 미리 채우기(2026-10-02) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { parseRequestLine, requestKey, requestLineOut, type MissingApply, type ReqLine } from "./history-db.ts";
 // 🤖 성도 묻기(시험판 · 2026-10-15) — 규약·검사·셈은 ask-people.ts(순수) · Claude 는 공식 SDK 로(구조화 출력)
-import { ASK_CONTRACT, askOptions, askOut, askPicks, askQuestion, askSchema, askSystemPrompt, buildAskData, picksToLeaves, withPicks,
+import { ASK_CONTRACT, PICK_MAX, askOptions, askOut, askPicks, askQuestion, askSchema, askSystemPrompt, buildAskData, picksToLeaves, withPicks,
   type AskData } from "./ask-people.ts";
 // 견주기(askEval)가 더 쓰는 이름 · 🏠 심방 준비 한 장(2026-10-15)
 import { checkTree, describeLeaf, statusOf } from "./ask-people.ts";
@@ -1697,9 +1697,12 @@ async function askPeople(ctx: Ctx, b: any) {
   const data = await askData();
   const today = kstToday();
   const leaves = picksToLeaves(picks);
-  const pk = picked ? { picks } : {};   // 기록 — 직분 · 교구 이름(사람 자료 아님)
+  const cut = picks.cut ?? 0;
+  const pk = picked ? { picks: { pos: picks.pos, gu: picks.gu }, cut } : {};   // 기록 — 직분 · 교구 이름(사람 자료 아님) · 잘린 수
+  const cutNote = (o: { notices: string[] }) => { if (cut > 0) o.notices.push(`고른 값이 많아 칸마다 앞의 ${PICK_MAX}개만 썼어요`); };
   if (!question) {
     const out = askOut({ all: leaves, any: [], none: [] }, data, today, false);
+    cutNote(out);
     await audit(ctx, "people.ask", "", { q: "", ...pk, ai: false, status: out.status, total: out.total, contract: ASK_CONTRACT });
     return { ok: true, contract: ASK_CONTRACT, question: "", model: "", usage: null, raw: null, ...out };
   }
@@ -1709,6 +1712,7 @@ async function askPeople(ctx: Ctx, b: any) {
     return ai;
   }
   const out = askOut(withPicks(ai.raw, leaves), data, today, true);
+  cutNote(out);
   await audit(ctx, "people.ask", "", { q: question.slice(0, 120), ...pk, status: out.status, total: out.total, contract: ASK_CONTRACT });
   return { ok: true, contract: ASK_CONTRACT, question, model: ai.model, usage: ai.usage, raw: ai.raw, ...out };
 }

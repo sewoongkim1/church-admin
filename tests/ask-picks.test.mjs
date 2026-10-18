@@ -69,9 +69,8 @@ test("AI 트리 + 고른 잎 — 고른 잎이 「그리고」 맨 앞 · 잎 �
 });
 
 test("askPicks — 문자열만 · 빈 것 빼고 · 겹친 것 하나로 · 칸마다 PICK_MAX 개까지", () => {
-  assert.deepEqual(askPicks({ pos: ["시무장로", "시무장로", 3, "", null, "권사"], gu: "화평" }), { pos: ["시무장로", "권사"], gu: [] });
-  assert.equal(askPicks({ pos: Array.from({ length: 40 }, (_, i) => `직분${i}`) }).pos.length, PICK_MAX);
-  assert.deepEqual(askPicks(null), { pos: [], gu: [] });
+  assert.deepEqual(askPicks({ pos: ["시무장로", "시무장로", 3, "", null, "권사"], gu: "화평" }), { pos: ["시무장로", "권사"], gu: [], cut: 0 });
+  assert.deepEqual(askPicks(null), { pos: [], gu: [], cut: 0 });
 });
 
 test("칩 글 — 고른 직분", () => {
@@ -95,4 +94,29 @@ test("AI 에게 가는 것은 그대로 — 스키마 field 값에 pos_pick 없�
   assert.ok(!fields.includes("pos_pick"));
   const sys = askSystemPrompt(D.vocab, TODAY);
   for (const w of ["pos_pick", "시무장로", "은퇴장로", "시무안수집사", PICK_FROM.pos, PICK_FROM.gu]) assert.ok(!sys.includes(w), w);
+});
+
+test("askPicks — 상한 PICK_MAX(200) 넘으면 앞에서 자르고 cut 에 센다 · 작으면 cut 0 · 40자 넘는 값은 40자로", () => {
+  assert.equal(PICK_MAX, 200);
+  const r = askPicks({ pos: Array.from({ length: PICK_MAX + 5 }, (_, i) => `직분${i}`), gu: ["화평"] });
+  assert.equal(r.pos.length, PICK_MAX);
+  assert.equal(r.cut, 5);
+  assert.equal(r.pos[0], "직분0");
+  assert.equal(askPicks({ pos: ["시무장로"] }).cut, 0);
+  assert.equal(askPicks({ pos: ["가".repeat(50)] }).pos[0].length, 40);
+});
+
+test("집사 큰 묶음 — 「집사 전체」가 목록에 뜨고 세부(서리집사) 사람이 걸린다", () => {
+  const D2 = buildAskData([P(1, "시험-가", "집사", "서리집사", "믿음"), P(2, "시험-나", "장로", "시무장로", "화평")], [], [], [], [], []);
+  const o = askOptions(D2);
+  assert.ok(o.positions.some((x) => x.value === "집사 전체" && x.kind === "group" && x.count === 1));
+  const n = runTree(checkTree({ all: [pick(["집사 전체"])] }, D2.vocab, Y).tree, D2).map((p) => p.name);
+  assert.deepEqual(n, ["시험-가"]);
+});
+
+test("띄어쓰기만 다른 세부 직분 — 정확히 같은 값이 먼저 맞는다", () => {
+  const D3 = buildAskData([P(1, "시험-가", "장로", "시무장로", "믿음"), P(2, "시험-나", "장로", "시무 장로", "화평")], [], [], [], [], []);
+  const nm = (v) => runTree(checkTree({ all: [pick([v])] }, D3.vocab, Y).tree, D3).map((p) => p.name);
+  assert.deepEqual(nm("시무 장로"), ["시험-나"]);
+  assert.deepEqual(nm("시무장로"), ["시험-가"]);
 });

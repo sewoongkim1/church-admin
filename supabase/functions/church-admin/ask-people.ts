@@ -30,7 +30,7 @@ export const PICK_GROUPS = ["장로", "안수집사", "권사", "집사"];      
 export const PICK_ALL = " 전체";
 // 고른 잎의 from_text — ⚠️ 화면 js/menus/people/ask-logic.js 의 PICK_FROM 과 글자까지 같게(tests/ask-picks-ui.test.mjs 가 본다)
 export const PICK_FROM = { pos: "고른 직분", gu: "고른 교구" };
-export const PICK_MAX = 30;                                              // 칸마다 고른 값 상한
+export const PICK_MAX = 200;                                             // 칸마다 고른 값 상한(넘으면 앞에서 자르고 화면에 알린다 — 2026-10-19 결정)
 
 // 필드 목록 — 「물을 수 있는 것」. 이 목록 하나에서 AI 스키마의 field 값 · 지시문의 필드 표 · 검사 · 셈 · 칩 이름이 나온다.
 //   value: num(수) · year(해 — num 에 해, 또는 years_ago) · text(값 하나) · list(값 여럿)
@@ -331,7 +331,9 @@ const pickGroup = (t: string): string | null => PICK_GROUPS.find((g) => t === g 
 // 고르기 칸 직분 값을 목록과 맞대 본다 — 큰 묶음 「X 전체」 또는 명부의 세부 직분. 목록 밖이면 null
 //   (견주기 askEval 은 운영 값 목록 vocab 을 따로 넘기는데 거기엔 posDetail 이 없다 — 비어 있어도 죽지 않게 ?? [])
 function pickToken(v: AskVocab, x: string): string | null {
-  return pickGroup(x) ? x : findName(v.posDetail ?? [], x);
+  if (pickGroup(x)) return x;
+  const d = v.posDetail ?? [];
+  return d.includes(x) ? x : findName(d, x);   // 띄어쓰기만 다른 값이 둘이면 정확히 같은 쪽이 먼저
 }
 // 부서 이름을 이음표에서 찾는다 — 말한 단계에 없으면 다른 단계에서(「찬양」이 big 에도 family 에도 있다)
 function findDept(v: AskVocab, level: unknown, name: unknown): { level: string; name: string } | null {
@@ -650,13 +652,20 @@ export function askOut(raw: any, d: AskData, today: string, fromAi: boolean) {
 }
 
 // ---------- 화면 고르기 칸(2026-10-19) ----------
-export type Picks = { pos: string[]; gu: string[] };
-// 화면이 보낸 picks 를 다듬는다 — 문자열만 · 빈 것 빼고 · 겹친 것 하나로 · 칸마다 PICK_MAX 개까지(넘친 것은 버린다).
+export type Picks = { pos: string[]; gu: string[]; cut?: number };
+// 화면이 보낸 picks 를 다듬는다 — 문자열만 · 빈 것 빼고 · 겹친 것 하나로 · 칸마다 PICK_MAX 개까지(넘친 것은 버리고 cut 에 센다).
 //   「모두 고름」은 화면이 빈 배열로 보낸다(설계 §1-3) — 서버는 그 뜻을 따로 알 필요가 없다(모두 보내와도 같은 명단이다).
 export function askPicks(raw: any): Picks {
-  const one = (a: unknown): string[] =>
-    [...new Set((Array.isArray(a) ? a : []).filter((x) => typeof x === "string").map((x) => str(x, 40)).filter(Boolean))].slice(0, PICK_MAX);
-  return { pos: one(raw?.pos), gu: one(raw?.gu) };
+  let cut = 0;
+  const one = (a: unknown): string[] => {
+    // 무거운 일 전에 먼저 자른다(PICK_MAX 의 두 배까지만 다듬는다 — 겹침·빈 값이 섞여도 PICK_MAX 개는 채울 수 있게)
+    const arr = (Array.isArray(a) ? a : []).slice(0, PICK_MAX * 2);
+    const all = [...new Set(arr.filter((x) => typeof x === "string").map((x) => str(x, 40)).filter(Boolean))];
+    cut += Math.max(0, all.length - PICK_MAX);
+    return all.slice(0, PICK_MAX);
+  };
+  const pos = one(raw?.pos), gu = one(raw?.gu);
+  return { pos, gu, cut };
 }
 // 고른 값 → 조건 잎(검사 전 꼴 — checkTree 가 AI 잎과 같은 검사를 한다). 빈 칸은 잎을 만들지 않는다. 교구는 이미 있는 gu 잎.
 export function picksToLeaves(p: Picks): any[] {

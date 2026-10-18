@@ -9,14 +9,14 @@
 ⚠️ AI(Claude) 키는 성경암송 앱과 같은 키 · 같은 한도다 — 쓰는 분이 늘면 한도가 빨리 찬다(2026-10-16 한도에 닿았다 · 11/1 UTC 풀림 · 한도 올리기는 친구).
 
 ## 흐름
-1. 화면 → `askPeople {question}` → 서버가 재료(교인명부 · 사역 이력 · 부서 이음표 `ministry_dept_map` · 명단이 일부인 해 `ministry_list_gaps`)를 읽어 10분 담아 둔다.
+1. 화면 → `askPeople {question, picks}`(질문 없이 고르기만 하면 AI 를 부르지 않는다) → 서버가 재료(교인명부 · 사역 이력 · 부서 이음표 `ministry_dept_map` · 명단이 일부인 해 `ministry_list_gaps`)를 읽어 10분 담아 둔다.
 2. Claude(`ASK_MODEL` 기본 `claude-haiku-5-5`(2026-10-15 친구 결정 — 비용 · 시크릿 ASK_MODEL 로 코드 없이 바꾼다) · effort low · 구조화 출력 `output_config.format`)에 **질문 + 지시문(필드 목록 · 교구·구분·부서 이름) + 스키마**만 보낸다.
 3. 돌아온 조건을 `checkTree` 가 검사 — 필드 목록에 없거나 범위 밖 · 명부에 없는 값은 `unsupported`(까닭 다섯: no_data · out_of_range · not_allowed · judgment · too_complex).
 4. 갈래: `ok` → 셈 · `partial` → **세지 않고 멈춘다**(화면 「나머지 조건으로만 찾기」 → `askPeopleRun`) · `none` → 「찾을 수 있는 조건이 없어요」.
 5. 칩의 × · 「나머지 조건으로만」은 `askPeopleRun {tree}` — **AI 를 다시 부르지 않고** 같은 검사를 다시 거쳐 센다(화면을 믿지 않는다).
 6. 명단의 이름(단추)을 누르면 교인명부 「자세히」 창(`people/search.js openPerson` — 교적 · 사역 · 성경필사 · 교육 탭 · `peoplePerson` 이 `people.view` 를 남긴다).
    그래서 줄에 교인ID(`id`)를 싣는다 — 총괄 응답이라 괜찮다. ⚠️ 담임목사 역할로 열 때는 그 역할이 `peoplePerson`(교인명부 directory)도 부를 수 있어야 창이 열린다.
-7. 기록: `people.ask {q(앞 120자), status, total}` · `people.ask.run {status, total, dropped}` — 「바꾼 기록」의 교인명부 기록.
+7. 기록: `people.ask {q(앞 120자), picks{pos,gu}, ai:false(고르기만일 때), cut, status, total}` · `people.ask.run {status, total, dropped}` — 「바꾼 기록」의 교인명부 기록.
 
 ## 🎚️ 직분 · 교구 고르기 칸(2026-10-19 · 설계 성경암송 docs/superpowers/specs/2026-10-19-ask-people-picks-design.md)
 - 화면 질문 칸 위 「직분 ▾」「교구 ▾」(공용 `pickMany` · `allBtn` 「모두 고르기」). 고른 것은 **서버가 바로 거르는 조건** — 질문 조건과 「그리고」 · 같은 칸 안은 「또는」.
@@ -24,6 +24,9 @@
 - 직분은 큰 묶음 「장로 전체 · 안수집사 전체 · 권사 전체 · 집사 전체」 + 세부 직분(`posDetailOf` — 직분상세 → 직분 → 「직분 없음」). 목록은 `askPeopleOptions`(값 · 인원 수만).
 - ⚠️ **세부 직분 잎 `pos_pick` 은 `FIELDS` 밖(`PICK_FIELDS`)** — AI 스키마 · 지시문에 안 간다(시험 `tests/ask-picks.test.mjs` 가 지킨다). `checkLeaf` 만 `CHECK_BY_ID` 로 함께 본다.
 - 고른 잎의 `from_text` 「고른 직분」·「고른 교구」(`PICK_FROM`)는 서버 · 화면(`js/menus/people/ask-logic.js`) 두 벌 — 글자까지 같게(`tests/ask-picks-ui.test.mjs`). 칩 × 로 빼면 화면이 이 글로 알아보고 그 칸을 비운다.
+- 상한: 칸마다 `PICK_MAX` = 200개(2026-10-19 친구 결정 「200개로 + 잘리면 알림」). 넘으면 앞에서 자르고 `askPicks` 가 `cut`(잘린 수)을 돌려주며 서버가 알림 「고른 값이 많아 칸마다 앞의 200개만 썼어요」를 `notices` 에 더하고 기록에 `cut` 을 남긴다. 무거운 일 전에 먼저(상한 두 배까지만 다듬음) 자른다.
+- 고르기를 바꾸면 이전 결과를 비운다(`ask.js openPick`) — 집합이 달라졌고 결과가 떠 있으면 `st = null` 하고 「고른 것이 바뀌었어요 — 「묻기」를 눌러 다시 찾아 주세요」. 칩 × · 「나머지 조건으로만」이 지금 고르기와 다른 결과에 작용하지 않게(보이는 것 = 걸린 것).
+- 띄어쓰기만 다른 세부 직분(「시무장로」·「시무 장로」)은 `pickToken` 이 정확히 같은 값을 먼저 맞춘다.
 - 모두 고름 = 조건 없음 — 화면 `picksToSend` 가 빈 배열로 보낸다.
 - 화면(2026-10-19): `js/menus/people/ask.js`(단추 둘 · 목록은 `askPeopleOptions` 한 번 · 받기 전엔 잠금) · 순수 `js/menus/people/ask-logic.js` · 공용 고르개 `pickMany({ allBtn: true })` · CSS `.ak-picks`. 단추 글: 안 고름 「전체」 · 모두 「모두」(둘 다 조건 없음 · on 아님).
 

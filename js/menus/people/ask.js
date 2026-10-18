@@ -144,12 +144,16 @@ export async function render(el, { call, me }) {
     b.setAttribute("aria-label", `${PICK_LABEL[k]}, ${s} — 여러 개 고르기`);
   }
   (async () => {
-    let r;
-    try { r = await call("askPeopleOptions", {}); } catch (_) { return; }
-    if (!el.isConnected || !r || !r.ok) return;
     const hint = (c) => `${n(c)}명`;
-    opts = { pos: r.positions.map((o) => ({ value: o.value, label: o.label, hint: hint(o.count) })),
-      gu: r.gu.map((o) => ({ value: o.value, label: o.value, hint: hint(o.count) })) };
+    let got = null;
+    try {
+      const r = await call("askPeopleOptions", {});
+      if (r && r.ok) got = { pos: r.positions.map((o) => ({ value: o.value, label: o.label, hint: hint(o.count) })),
+        gu: r.gu.map((o) => ({ value: o.value, label: o.value, hint: hint(o.count) })) };
+    } catch (_) { got = null; }
+    if (!el.isConnected) return;
+    if (!got) { for (const k of ["pos", "gu"]) pickBtn(k).title = "목록을 받지 못했어요 — 질문으로는 그대로 찾을 수 있어요"; return; }
+    opts = got;
     for (const k of ["pos", "gu"]) { pickBtn(k).disabled = false; syncPick(k); }
   })();
   async function openPick(b) {
@@ -157,8 +161,11 @@ export async function render(el, { call, me }) {
     if (!opts) return;
     const got = await pickMany({ anchor: b, title: `${PICK_LABEL[k]} — 여러 개 고르기`, options: opts[k], values: picks[k], allBtn: true });
     if (got === null || !el.isConnected) return;
+    const same = got.length === picks[k].length && got.every((v) => picks[k].includes(v));
     picks[k] = [...got];
     syncPick(k);
+    // 고른 것이 바뀌면 이전 결과를 비운다 — 보이는 것 = 걸린 것(칩 × · 나머지 조건으로만 찾기는 지금 고르기로 만든 결과에만)
+    if (!same && st) { st = null; out.innerHTML = `<p class="ak-hint">고른 것이 바뀌었어요 — 「묻기」를 눌러 다시 찾아 주세요.</p>`; }
     if (b.isConnected) b.focus({ preventScroll: true });
   }
 
