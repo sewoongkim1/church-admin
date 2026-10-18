@@ -9,6 +9,9 @@ import { openPerson } from "./search.js";
 // 🏠 심방 준비 한 장(2026-10-15) — 줄의 「심방」 단추 · 서버 visitCard · visitPoints
 import { openVisitCard } from "./visit-card.js";
 import { aTitle, lineSvg } from "../../core/icons.js";
+// 🎚️ 직분 · 교구 고르기 칸(2026-10-19) — 공용 고르개(「모두 고르기」 allBtn) · 순수 도우미(시험 tests/ask-picks-ui.test.mjs)
+import { pickMany } from "../../core/picker.js";
+import { PICK_FROM, picksToSend, pickSummary } from "./ask-logic.js";
 
 const TITLE = aTitle("message", "성도 묻기", ` <span class="badge">시험판</span>`);   // 성경앱 스타일 머리(2026-10-17)
 const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b> · <b>사역 이력</b> · <b>성경필사</b>에서 찾아 드려요.
@@ -26,7 +29,7 @@ export const EXAMPLES = [
 ];
 
 const ERR = {
-  "no-question": "질문을 적어 주세요",
+  "no-question": "질문을 적거나 직분·교구를 골라 주세요",
   "question-too-long": "질문은 300자까지 적을 수 있어요",
   "ask-no-key": "AI 키가 설정되지 않았어요(서버)",
   "ask-ai": "AI 를 부르지 못했어요 — 잠시 뒤 다시 물어 주세요",
@@ -38,9 +41,13 @@ const ERR = {
 const errMsg = (r) => (ERR[r?.error] ? ERR[r.error] + (r.code ? ` (${r.code})` : "") : errorText(r));
 
 const GROUP_LABEL = { all: "그리고", any: "또는(하나 이상)", none: "아님(빼기)" };
+const PICK_LABEL = { pos: "직분", gu: "교구" };
 const FORM = `<form class="card ak-form" autocomplete="off">
   <label class="sec-title" for="ak-q" style="margin-top:0">무엇이 궁금하세요?</label>
-  <textarea id="ak-q" maxlength="300" placeholder="예: 10년 동안 사역하신 분들 중에 올해는 안 하고 계신 분"></textarea>
+  <div class="ak-picks">${["pos", "gu"].map((k) => `<button type="button" class="pp-pick-b" data-pick="${k}" aria-haspopup="dialog" ` +
+    `aria-expanded="false" disabled><span class="pp-pick-l">${PICK_LABEL[k]}</span><span class="pp-pick-v">전체</span>` +
+    `<span class="pk-field-x" aria-hidden="true"></span></button>`).join("")}</div>
+  <textarea id="ak-q" maxlength="300" placeholder="예: 10년 동안 사역하신 분들 중에 올해는 안 하고 계신 분 (직분·교구만 골라도 찾아요)"></textarea>
   <div class="acts"><button type="submit" class="btn primary">묻기</button></div>
   <div class="ak-exs"><span class="muted">이렇게 물어보세요</span>
     ${EXAMPLES.map((q, i) => `<button type="button" class="ak-ex" data-ex="${i}"><span class="ak-ex-i" aria-hidden="true">${lineSvg("search")}</span>` +
@@ -113,7 +120,7 @@ function resultHtml(r, st) {
     · 교인명부에 없는 분(떠난 분)과 교인과 안 이어진 줄은 빠져요 · 이 질문은 「바꾼 기록」의 교인명부 기록에 남아요.</p>`;
   const raw = st.raw ? `<details class="ak-raw"><summary>AI 가 돌려준 조건 보기(JSON)</summary>
     <pre>${esc(JSON.stringify(st.raw, null, 2))}</pre><p class="muted">모델 ${esc(st.model || "")} · 규약 ${esc(r.contract || "")}</p></details>` : "";
-  return `<div class="card ak-res"><p class="ak-qecho">물으신 것: 「${esc(st.question)}」</p>` +
+  return `<div class="card ak-res"><p class="ak-qecho">${st.question ? `물으신 것: 「${esc(st.question)}」` : "고르신 조건으로 찾았어요"}</p>` +
     status + chipsHtml(r) + alt + unsupHtml(r) + notes + rowsHtml(r, st.dropped) + foot + raw + `</div>`;
 }
 
@@ -124,11 +131,44 @@ export async function render(el, { call, me }) {
   const out = el.querySelector(".ak-out");
   let st = null;   // { question, raw, model, tree, unsupported, dropped[] } — 이 화면 안에서만
 
+  // 🎚️ 고르기 칸 — 목록은 서버(askPeopleOptions · 값과 인원 수만)에서 한 번. 받기 전 · 못 받으면 단추를 잠가 둔다(질문은 그대로 된다).
+  //   고른 값은 이 화면 안에서만(질문 칸과 같다).
+  let opts = null;                      // { pos: [{value, label, hint}], gu: [...] }
+  const picks = { pos: [], gu: [] };
+  const pickBtn = (k) => el.querySelector(`.ak-picks [data-pick="${k}"]`);
+  const optValues = (k) => (opts ? opts[k].map((o) => o.value) : []);
+  function syncPick(k) {
+    const b = pickBtn(k), s = pickSummary(picks[k], optValues(k));
+    b.classList.toggle("on", s !== "전체" && s !== "모두");
+    b.querySelector(".pp-pick-v").textContent = s;
+    b.setAttribute("aria-label", `${PICK_LABEL[k]}, ${s} — 여러 개 고르기`);
+  }
+  (async () => {
+    let r;
+    try { r = await call("askPeopleOptions", {}); } catch (_) { return; }
+    if (!el.isConnected || !r || !r.ok) return;
+    const hint = (c) => `${n(c)}명`;
+    opts = { pos: r.positions.map((o) => ({ value: o.value, label: o.label, hint: hint(o.count) })),
+      gu: r.gu.map((o) => ({ value: o.value, label: o.value, hint: hint(o.count) })) };
+    for (const k of ["pos", "gu"]) { pickBtn(k).disabled = false; syncPick(k); }
+  })();
+  async function openPick(b) {
+    const k = b.dataset.pick;
+    if (!opts) return;
+    const got = await pickMany({ anchor: b, title: `${PICK_LABEL[k]} — 여러 개 고르기`, options: opts[k], values: picks[k], allBtn: true });
+    if (got === null || !el.isConnected) return;
+    picks[k] = [...got];
+    syncPick(k);
+    if (b.isConnected) b.focus({ preventScroll: true });
+  }
+
   async function ask() {
     const question = qEl.value.trim();
-    if (!question) { out.innerHTML = `<p class="ak-err">${esc(ERR["no-question"])}</p>`; qEl.focus(); return; }
-    out.innerHTML = `<p class="ak-wait">조건을 만드는 중이에요… AI 가 질문을 읽고 있어요(10초 안팎).</p>`;
-    const r = await busy(el, () => call("askPeople", { question }));
+    const send = { pos: picksToSend(picks.pos, optValues("pos")), gu: picksToSend(picks.gu, optValues("gu")) };
+    if (!question && !send.pos.length && !send.gu.length) { out.innerHTML = `<p class="ak-err">${esc(ERR["no-question"])}</p>`; qEl.focus(); return; }
+    out.innerHTML = question ? `<p class="ak-wait">조건을 만드는 중이에요… AI 가 질문을 읽고 있어요(10초 안팎).</p>`
+      : `<p class="ak-wait">고르신 조건으로 찾는 중이에요…</p>`;
+    const r = await busy(el, () => call("askPeople", { question, picks: send }));
     if (!el.isConnected) return;
     if (!r.ok) { out.innerHTML = `<p class="ak-err">${esc(errMsg(r))}</p>`; return; }
     st = { question: r.question, raw: r.raw, model: r.model, tree: r.tree, unsupported: r.unsupported || [], dropped: [] };
@@ -147,6 +187,8 @@ export async function render(el, { call, me }) {
   el.addEventListener("click", (e) => {
     const ex = e.target.closest("button[data-ex]");
     if (ex && el.contains(ex)) { qEl.value = EXAMPLES[Number(ex.dataset.ex)] || ""; ask(); return; }
+    const pb = e.target.closest(".ak-picks button[data-pick]");
+    if (pb && el.contains(pb)) { openPick(pb); return; }
     if (!st) return;
     const vb = e.target.closest("button[data-visit]");
     if (vb && el.contains(vb)) { openVisitCard(call, Number(vb.dataset.visit), vb); return; }
@@ -165,6 +207,9 @@ export async function render(el, { call, me }) {
       tree[g] = tree[g].filter((_, k) => k !== Number(i));
       const left = tree.all.length + tree.any.length + tree.none.length;
       if (!left) { toast("남은 조건이 없어요 — 질문을 고쳐 주세요"); return; }
+      // 고른 조건을 빼면 그 고르기 칸도 비운다 — 보이는 것 = 걸린 것
+      if (leaf.from_text === PICK_FROM.pos) { picks.pos = []; syncPick("pos"); }
+      if (leaf.from_text === PICK_FROM.gu) { picks.gu = []; syncPick("gu"); }
       rerun(tree, [...st.dropped, leaf.from_text || ""].filter(Boolean));
       return;
     }

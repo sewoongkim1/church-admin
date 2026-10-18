@@ -25,6 +25,7 @@
 - ⚠️ **세부 직분 잎 `pos_pick` 은 `FIELDS` 밖(`PICK_FIELDS`)** — AI 스키마 · 지시문에 안 간다(시험 `tests/ask-picks.test.mjs` 가 지킨다). `checkLeaf` 만 `CHECK_BY_ID` 로 함께 본다.
 - 고른 잎의 `from_text` 「고른 직분」·「고른 교구」(`PICK_FROM`)는 서버 · 화면(`js/menus/people/ask-logic.js`) 두 벌 — 글자까지 같게(`tests/ask-picks-ui.test.mjs`). 칩 × 로 빼면 화면이 이 글로 알아보고 그 칸을 비운다.
 - 모두 고름 = 조건 없음 — 화면 `picksToSend` 가 빈 배열로 보낸다.
+- 화면(2026-10-19): `js/menus/people/ask.js`(단추 둘 · 목록은 `askPeopleOptions` 한 번 · 받기 전엔 잠금) · 순수 `js/menus/people/ask-logic.js` · 공용 고르개 `pickMany({ allBtn: true })` · CSS `.ak-picks`. 단추 글: 안 고름 「전체」 · 모두 「모두」(둘 다 조건 없음 · on 아님).
 
 ## ⚠️ 함정
 - **AI 에게 가는 글은 `askSystemPrompt` · `askSchema` 둘뿐이다.** 사람 자료(이름 · 교인ID · 나이 · 목장 이름)를 넣지 말 것 — `tests/ask-people.test.mjs` 가 지시문에 이름·목장이 없는지 본다. 지시문의 예시에도 실제 있을 법한 목장 이름을 쓰지 않는다.

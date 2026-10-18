@@ -264,7 +264,8 @@ export function pickOne({ anchor, title, options = [], value = "", mode, wrap = 
 
 // 여러 개 고르기 — 체크박스 · 「모두 해제」 · 「확인」 → 고른 values 배열. hint 는 항목 오른쪽의 작은 글자(인원 수 등).
 // 고를 것이 없으면 「고를 것이 없어요」. 「모두 해제」는 켠 것이 하나도 없으면 잠긴다.
-export function pickMany({ anchor, title, options = [], values = [], mode } = {}) {
+// allBtn(기본 꺼짐 · 2026-10-19 성도 묻기) — 「모두 고르기」를 더한다(다 켜져 있으면 잠긴다).
+export function pickMany({ anchor, title, options = [], values = [], mode, allBtn = false } = {}) {
   const has = new Set((values || []).map(String));
   return openShell({ anchor, title, mode, cls: "pk-many", onBuild: ({ body, foot, close }) => {
     body.innerHTML = options.length ? `<div class="pk-list">${options.map((o, i) =>
@@ -273,15 +274,21 @@ export function pickMany({ anchor, title, options = [], values = [], mode } = {}
       : `<p class="pk-none">고를 것이 없어요</p>`;
     foot.hidden = false;
     foot.innerHTML = `<button type="button" class="btn" data-k="clear">모두 해제</button>` +
+      (allBtn && options.length ? `<button type="button" class="btn" data-k="all">모두 고르기</button>` : "") +
       `<button type="button" class="btn primary" data-k="ok">확인</button>`;
     const boxes = () => [...body.querySelectorAll("input[type=checkbox]")];
     const clear = foot.querySelector('[data-k="clear"]');
-    const sync = () => { clear.disabled = !boxes().some((c) => c.checked); };
+    const all = foot.querySelector('[data-k="all"]');
+    const sync = () => {
+      clear.disabled = !boxes().some((c) => c.checked);
+      if (all) all.disabled = boxes().every((c) => c.checked);
+    };
     sync();
     body.addEventListener("change", sync);
     foot.addEventListener("click", (e) => {
       const k = e.target.closest("button[data-k]")?.dataset.k;
       if (k === "clear") { boxes().forEach((c) => { c.checked = false; }); sync(); body.querySelector("input")?.focus({ preventScroll: true }); }
+      if (k === "all") { boxes().forEach((c) => { c.checked = true; }); sync(); foot.querySelector('[data-k="ok"]')?.focus({ preventScroll: true }); }
       if (k === "ok") close(boxes().filter((c) => c.checked).map((c) => options[Number(c.dataset.i)].value));
     });
     return body.querySelector("input") || foot.querySelector('[data-k="ok"]');
