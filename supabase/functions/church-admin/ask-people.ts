@@ -6,6 +6,7 @@
 //      사람 자료(이름·교인ID·나이·목장 이름)는 이 둘에 넣지 않는다(시험이 지킨다). 명단은 AI 를 거치지 않고 runTree 가 거른다.
 //   흐름: 질문 → (Claude) 조건 JSON → checkTree(꼴·뜻 검사 — 못 하는 것은 unsupported 로) → runTree(교인마다 셈) → rowOut(화면 줄).
 import { positionBucket } from "./ministry-stats.ts";
+import { BE_GU } from "./events-rules.ts";   // 교회 정한 교구 차례(고르기 목록 · 2026-10-19)
 
 export const ASK_CONTRACT = "ask-v1";     // 규약 판 — 지시문 · 응답 · 바꾼 기록에 함께 싣는다
 export const ASK_Q_MAX = 300;             // 질문 글자 수 상한
@@ -22,6 +23,14 @@ export const UNSUP_LABEL: Record<string, string> = {
 };
 export const DEPT_LEVELS = ["big", "family", "mid", "team"];       // 큰 분류 · 계열 · 중분류 · 표준 팀(부서 이음표 ministry_dept_map)
 export const POSITIONS = ["장로", "안수집사", "권사", "집사", "그 밖", "직분 없음"];
+// 화면 고르기 칸(2026-10-19 · 설계 성경암송 docs/superpowers/specs/2026-10-19-ask-people-picks-design.md) — **AI 에는 보내지 않는다.**
+//   FIELDS 에 넣지 않는다(AI 스키마의 field 값 · 지시문의 필드 표가 FIELDS 에서 나온다). checkLeaf 만 PICK_FIELDS 를 함께 본다
+//   (칩 × 길 askPeopleRun 의 트리에 이 잎이 있어도 같은 검사를 거쳐야 한다).
+export const PICK_GROUPS = ["장로", "안수집사", "권사", "집사"];          // 「X 전체」로 고르는 큰 묶음
+export const PICK_ALL = " 전체";
+// 고른 잎의 from_text — ⚠️ 화면 js/menus/people/ask-logic.js 의 PICK_FROM 과 글자까지 같게(tests/ask-picks-ui.test.mjs 가 본다)
+export const PICK_FROM = { pos: "고른 직분", gu: "고른 교구" };
+export const PICK_MAX = 30;                                              // 칸마다 고른 값 상한
 
 // 필드 목록 — 「물을 수 있는 것」. 이 목록 하나에서 AI 스키마의 field 값 · 지시문의 필드 표 · 검사 · 셈 · 칩 이름이 나온다.
 //   value: num(수) · year(해 — num 에 해, 또는 years_ago) · text(값 하나) · list(값 여럿)
@@ -52,6 +61,10 @@ export const FIELDS: FieldDef[] = [
     desc: "그 해 성경필사 명단에 있음. 「2026년 성경필사 하신 분」= has num 2026" },
 ];
 const FIELD_BY_ID: Record<string, FieldDef> = Object.fromEntries(FIELDS.map((f) => [f.id, f]));
+export const PICK_FIELDS: FieldDef[] = [
+  { id: "pos_pick", label: "직분", ops: ["in"], value: "list", service: false, desc: "화면 고르기 칸 — 「장로 전체」 꼴 큰 묶음 또는 세부 직분" },
+];
+const CHECK_BY_ID: Record<string, FieldDef> = { ...FIELD_BY_ID, ...Object.fromEntries(PICK_FIELDS.map((f) => [f.id, f])) };
 export const FIELD_IDS = FIELDS.map((f) => f.id);
 
 // ---------- 글자 다듬기 ----------
@@ -78,16 +91,22 @@ function posOf(p: unknown): string {
   return b === "모름" ? "직분 없음" : b;
 }
 
+// 세부 직분 — 직분상세 → 비었으면 직분 → 둘 다 비면(「-」도) 「직분 없음」. 모든 분이 한 값에 든다(고르기 목록 · pos_pick).
+export function posDetailOf(position: unknown, detail: unknown): string {
+  const t = (x: unknown) => { const s = clean(x); return s === "-" ? "" : s; };
+  return t(detail) || t(position) || "직분 없음";
+}
+
 // ---------- 재료 ----------
 export type AskPerson = {
-  id: number; name: string; position: string; pos: string; gender: string; age: number | null;
+  id: number; name: string; position: string; pos: string; posDetail: string; gender: string; age: number | null;
   gu: string; mok: string; mokKey: string; kind: string; regYear: number | null;
 };
 export type Seat = { year: number; big: string; family: string; mid: string; team: string };
 export type DeptRow = { big: string; family: string; mid: string; team: string };
 export type AskGap = { scope: string; from: number; to: number | null };
 export type AskVocab = {
-  gu: string[]; kind: string[]; big: string[]; family: string[]; mid: string[]; team: string[];
+  gu: string[]; kind: string[]; posDetail: string[]; big: string[]; family: string[]; mid: string[]; team: string[];
   mokKeys: string[]; rows: DeptRow[]; yearMin: number; yearMax: number; gaps: AskGap[];
   pilsaSeries: string[]; pilsaMin: number; pilsaMax: number; pilsaEventYears: number[];   // 성경필사 — 이어진 줄이 있는 회차만
 };
@@ -114,15 +133,17 @@ export function pilsaSeriesOf(id: unknown, title: unknown): string {
 export function buildAskData(peopleRows: any[], histRows: any[], mapRows: any[], gapRows: any[], pilsaRows: any[] = [], eventRows: any[] = []): AskData {
   const people: AskPerson[] = [];
   const ids = new Set<number>();
-  const guN = new Map<string, number>(), kindN = new Map<string, number>(), moks = new Set<string>();
+  const guN = new Map<string, number>(), kindN = new Map<string, number>(), posDN = new Map<string, number>(), moks = new Set<string>();
   for (const r of peopleRows ?? []) {
     const id = Number(r?.person_id);
     if (!Number.isSafeInteger(id) || ids.has(id)) continue;
     const ageN = r?.age === null || r?.age === undefined || r?.age === "" ? NaN : Number(r.age);
     const age = Number.isFinite(ageN) && ageN >= 0 && ageN <= 120 ? Math.floor(ageN) : null;
     const gu = clean(r?.mok1), mok = clean(r?.mok3), kind = clean(r?.kind2);
-    people.push({ id, name: clean(r?.name), position: clean(r?.position), pos: posOf(r?.position), gender: clean(r?.gender),
+    const posDetail = posDetailOf(r?.position, r?.position_detail);
+    people.push({ id, name: clean(r?.name), position: clean(r?.position), pos: posOf(r?.position), posDetail, gender: clean(r?.gender),
       age, gu, mok, mokKey: mokKey(mok), kind, regYear: yearOf(r?.registered_date) });
+    posDN.set(posDetail, (posDN.get(posDetail) ?? 0) + 1);
     ids.add(id);
     if (gu) guN.set(gu, (guN.get(gu) ?? 0) + 1);
     if (kind) kindN.set(kind, (kindN.get(kind) ?? 0) + 1);
@@ -184,7 +205,7 @@ export function buildAskData(peopleRows: any[], histRows: any[], mapRows: any[],
     .filter((g: AskGap) => g.scope && Number.isInteger(g.from));
   return {
     people, seats, pilsa, linked, histRows: histN, pilsaLinked,
-    vocab: { gu: byCount(guN), kind: byCount(kindN), big: sortedSet(big), family: sortedSet(family), mid: sortedSet(mid), team: sortedSet(team),
+    vocab: { gu: byCount(guN), kind: byCount(kindN), posDetail: byCount(posDN), big: sortedSet(big), family: sortedSet(family), mid: sortedSet(mid), team: sortedSet(team),
       mokKeys: [...moks], rows, yearMin, yearMax, gaps,
       pilsaSeries: [...series].sort(), pilsaEventYears,
       pilsaMin: pilsaEventYears.length ? Math.min(...pilsaEventYears) : 0, pilsaMax: pilsaEventYears.length ? Math.max(...pilsaEventYears) : 0 },
@@ -305,6 +326,13 @@ function findName(list: string[], name: unknown): string | null {
   if (!k) return null;
   return list.find((x) => mhKey(x) === k) ?? null;
 }
+// 고르기 칸 직분 값 — 「장로 전체」 꼴(큰 묶음)이면 그 묶음 이름, 아니면 null
+const pickGroup = (t: string): string | null => PICK_GROUPS.find((g) => t === g + PICK_ALL) ?? null;
+// 고르기 칸 직분 값을 목록과 맞대 본다 — 큰 묶음 「X 전체」 또는 명부의 세부 직분. 목록 밖이면 null
+//   (견주기 askEval 은 운영 값 목록 vocab 을 따로 넘기는데 거기엔 posDetail 이 없다 — 비어 있어도 죽지 않게 ?? [])
+function pickToken(v: AskVocab, x: string): string | null {
+  return pickGroup(x) ? x : findName(v.posDetail ?? [], x);
+}
 // 부서 이름을 이음표에서 찾는다 — 말한 단계에 없으면 다른 단계에서(「찬양」이 big 에도 family 에도 있다)
 function findDept(v: AskVocab, level: unknown, name: unknown): { level: string; name: string } | null {
   const levels = [String(level), ...DEPT_LEVELS.filter((l) => l !== level)].filter((l) => DEPT_LEVELS.includes(l));
@@ -316,7 +344,7 @@ function findDept(v: AskVocab, level: unknown, name: unknown): { level: string; 
 }
 
 function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
-  const f = FIELD_BY_ID[String(r?.field ?? "")];
+  const f = CHECK_BY_ID[String(r?.field ?? "")];
   const from_text = str(r?.from_text, 80);
   const no = (kind: string, note: string): LeafCheck => ({ ok: false, unsup: { text: from_text || (f ? f.label : "조건"), kind, note } });
   if (!f) return no("no_data", "모르는 조건이에요");
@@ -412,6 +440,9 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
         else if (/^(성도|없음|평신도|직분없음)$/.test(mhKey(x))) p = "직분 없음";
         else { const b = positionBucket(x); p = b === "모름" ? null : b; }
         if (p) { if (!ok.includes(p)) ok.push(p); } else bad.push(x);
+      } else if (f.id === "pos_pick") {
+        const tk = pickToken(v, x);
+        if (tk) { if (!ok.includes(tk)) ok.push(tk); } else bad.push(x);
       }
     }
     if (!ok.length) return no("no_data", `「${str(raw.join(", ") || f.label, 30)}」을(를) ${f.label} 목록에서 찾지 못했어요`);
@@ -504,6 +535,7 @@ function leafTrue(l: Leaf, p: AskPerson, d: AskData): boolean {
     case "gu": return l.list.includes(p.gu);
     case "mok": return l.text === "목장 없음" ? p.mokKey === "" : mokKey(l.text) === p.mokKey;
     case "position": return l.list.includes(p.pos);
+    case "pos_pick": return l.list.some((t) => { const g = pickGroup(t); return g ? p.pos === g : p.posDetail === t; });
     case "gender": return p.gender === l.text;
     case "age": return p.age !== null && cmp(p.age, l.op, l.num!);
     case "kind": return mhKey(p.kind) === mhKey(l.text);
@@ -566,6 +598,7 @@ export function describeLeaf(l: Leaf): string {
     case "gu": s = `교구 ${l.list.join("·")}`; break;
     case "mok": s = `목장 ${l.text}`; break;
     case "position": s = `직분 ${l.list.join("·")}`; break;
+    case "pos_pick": s = `직분 ${l.list.join("·")}`; break;
     case "gender": s = `성별 ${l.text}`; break;
     case "kind": s = `구분 ${l.text}`; break;
     case "age": s = `나이 ${l.num}${NUM_WORD[l.op]}`; break;
@@ -614,4 +647,49 @@ export function askOut(raw: any, d: AskData, today: string, fromAi: boolean) {
   out.rows = rows.slice(0, ASK_ROW_MAX);
   out.truncated = rows.length > ASK_ROW_MAX;
   return out;
+}
+
+// ---------- 화면 고르기 칸(2026-10-19) ----------
+export type Picks = { pos: string[]; gu: string[] };
+// 화면이 보낸 picks 를 다듬는다 — 문자열만 · 빈 것 빼고 · 겹친 것 하나로 · 칸마다 PICK_MAX 개까지(넘친 것은 버린다).
+//   「모두 고름」은 화면이 빈 배열로 보낸다(설계 §1-3) — 서버는 그 뜻을 따로 알 필요가 없다(모두 보내와도 같은 명단이다).
+export function askPicks(raw: any): Picks {
+  const one = (a: unknown): string[] =>
+    [...new Set((Array.isArray(a) ? a : []).filter((x) => typeof x === "string").map((x) => str(x, 40)).filter(Boolean))].slice(0, PICK_MAX);
+  return { pos: one(raw?.pos), gu: one(raw?.gu) };
+}
+// 고른 값 → 조건 잎(검사 전 꼴 — checkTree 가 AI 잎과 같은 검사를 한다). 빈 칸은 잎을 만들지 않는다. 교구는 이미 있는 gu 잎.
+export function picksToLeaves(p: Picks): any[] {
+  const out: any[] = [];
+  if (p.pos.length) out.push({ field: "pos_pick", op: "in", list: p.pos, from_text: PICK_FROM.pos });
+  if (p.gu.length) out.push({ field: "gu", op: "in", list: p.gu, from_text: PICK_FROM.gu });
+  return out;
+}
+// AI 트리 앞에 고른 잎을 둔다(「그리고」 맨 앞 — 잎 상한 ASK_MAX_LEAVES 안에서 고른 잎이 먼저 자리를 차지한다)
+export function withPicks(raw: any, leaves: any[]): any {
+  const r = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return { ...r, all: [...leaves, ...(Array.isArray(r.all) ? r.all : [])] };
+}
+
+// 고르기 목록(askPeopleOptions) — 값과 인원 수만(이름 · 교인ID 없음).
+//   직분: 큰 묶음 넷(「X 전체」 · 사람이 있는 것만) → 세부(큰 묶음 차례 안에서 많은 순 · 「직분 없음」 맨 끝)
+//   교구: 교회 정한 차례(BE_GU) 가운데 명부에 있는 것 → 그 밖(많은 순)
+const POS_ORDER = [...PICK_GROUPS, "그 밖"];
+const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+export function askOptions(d: AskData) {
+  const groupN = new Map<string, number>(), detN = new Map<string, number>(), guN = new Map<string, number>();
+  for (const p of d.people) {
+    if (PICK_GROUPS.includes(p.pos)) groupN.set(p.pos, (groupN.get(p.pos) ?? 0) + 1);
+    detN.set(p.posDetail, (detN.get(p.posDetail) ?? 0) + 1);
+    if (p.gu) guN.set(p.gu, (guN.get(p.gu) ?? 0) + 1);
+  }
+  const rank = (t: string) => (t === "직분 없음" ? 99 : Math.max(0, POS_ORDER.indexOf(positionBucket(t))));
+  const details = [...detN.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || byName(a[0], b[0]));
+  const positions = [
+    ...PICK_GROUPS.filter((g) => groupN.get(g)).map((g) => ({ value: g + PICK_ALL, label: g + PICK_ALL, count: groupN.get(g)!, kind: "group" as const })),
+    ...details.map(([t, n]) => ({ value: t, label: t, count: n, kind: "detail" as const })),
+  ];
+  const known = BE_GU.filter((g) => guN.has(g));
+  const rest = [...guN.entries()].filter(([g]) => !BE_GU.includes(g)).sort((a, b) => b[1] - a[1] || byName(a[0], b[0])).map(([g]) => g);
+  return { people: d.people.length, positions, gu: [...known, ...rest].map((g) => ({ value: g, count: guN.get(g)! })) };
 }
