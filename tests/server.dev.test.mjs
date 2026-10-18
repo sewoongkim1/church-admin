@@ -219,6 +219,8 @@ const PROBE = {
   // 🤖 성도 묻기(시험판 · 2026-10-15) — 빈 질문(no-question) · 트리 없음(bad-tree)이라 재료도 안 읽고 AI 도 안 부르고 기록도 안 남긴다
   askPeople: { question: "" },
   askPeopleRun: { tree: null },
+  // 고르기 칸 목록(2026-10-19) — 읽기만(값 · 인원 수) · 기록 없음
+  askPeopleOptions: {},
   // 견주기 · 심방 준비(2026-10-15) — 빈 질문(no-question) · 없는 교인(not-found)이라 AI 도 안 부르고 기록도 안 남긴다
   askEval: { question: "" },
   visitCard: { id: 0 },
@@ -870,6 +872,31 @@ test("종이 명단: 살펴보기는 안 만든다 · 넣기 → 저장·계정 
   // 8) 바뀐 기록 — ministry.paper 한 줄 이상
   const acts = (await call(people.super.token, "auditList", { limit: 30 })).body.rows.map((r) => r.action);
   assert.ok(acts.includes("ministry.paper"), JSON.stringify(acts));
+});
+
+test("성도 묻기 고르기 칸(2026-10-19): 목록은 값 · 인원만 · 고르기만 하면 AI 없이 센다 · 목록 밖 값 · 둘 다 비면 no-question", async () => {
+  const d = people.directory.token;
+  const o = await call(d, "askPeopleOptions");
+  assert.equal(o.status, 200);
+  assert.equal(o.body.ok, true);
+  assert.ok(o.body.positions.length > 0 && o.body.gu.length > 0);
+  for (const x of o.body.positions) assert.deepEqual(Object.keys(x).sort(), ["count", "kind", "label", "value"]);
+  for (const x of o.body.gu) assert.deepEqual(Object.keys(x).sort(), ["count", "value"]);
+  const det = o.body.positions.find((x) => x.kind === "detail");
+  const gu = o.body.gu[0];
+  const r = await call(d, "askPeople", { question: "", picks: { pos: [det.value], gu: [gu.value] } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.ok, true);
+  assert.equal(r.body.model, "");
+  assert.equal(r.body.raw, null);
+  assert.deepEqual(r.body.tree.all.map((l) => l.field), ["pos_pick", "gu"]);
+  assert.ok(r.body.total <= det.count);
+  assert.ok(r.body.rows.every((x) => x.gu === gu.value));
+  const bad = await call(d, "askPeople", { question: "", picks: { pos: ["ca-test-없는직분"] } });
+  assert.equal(bad.body.status, "none");
+  const empty = await call(d, "askPeople", { question: "", picks: { pos: [], gu: [] } });
+  assert.equal(empty.body.error, "no-question");
+  assert.equal((await call(people.ministry.token, "askPeopleOptions")).status, 403);
 });
 
 test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 · 현황 · 내려받기 · 사진 주소 · 열람 기록은 따로", async () => {

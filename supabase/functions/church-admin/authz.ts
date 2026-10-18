@@ -36,6 +36,7 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   //   ⚠️ 줄에 실리는 것(이름 · 직분 · 교구 · 목장 · 나이 · 섬긴 해)은 교인명부 역할이 이미 보는 것뿐 · 🏠 심방 준비(visitCard · visitPoints)는 그대로 총괄만.
   askPeople: "directory",
   askPeopleRun: "directory",
+  askPeopleOptions: "directory",   // 고르기 칸 목록(값 · 인원 수만 — 이름 없음 · 2026-10-19)
   // 🧪 견주기(개발 전용 — 운영 함수는 dev-only 로 막는다) · 🏠 심방 준비 한 장(2026-10-15 · 카드 people.visit 기록 · 이야깃거리는 AI 에 이름 없는 사실만)
   askEval: "super",
   visitCard: "super",

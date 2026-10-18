@@ -35,7 +35,7 @@ test("super 액션 × 사람 다섯 가지", () => {
 });
 
 test("성도 묻기 — 교인명부(directory)와 총괄이 부른다 · 다른 역할은 못 부른다 · 심방 준비는 총괄만(2026-10-17)", () => {
-  for (const a of ["askPeople", "askPeopleRun"]) {
+  for (const a of ["askPeople", "askPeopleOptions", "askPeopleRun"]) {
     assert.equal(ACTION_ROLES[a], "directory", a);
     assert.equal(canCall(a, { status: "active", roles: ["directory"] }), "ok", a);
     assert.equal(canCall(a, { status: "active", roles: ["super"] }), "ok", a);
@@ -80,7 +80,7 @@ test("directory(교인명부) 액션 × 사람 — 교인명부 역할·총괄�
     [{ status: "active", roles: ["super"] }, "ok"],
   ];
   const acts = Object.keys(ACTION_ROLES).filter((k) => ACTION_ROLES[k] === "directory");
-  assert.deepEqual(acts.sort(), ["askPeople", "askPeopleRun", "peopleExport", "peopleHistory", "peopleLink", "peoplePerson", "peopleSearch", "peopleStats"]);
+  assert.deepEqual(acts.sort(), ["askPeople", "askPeopleOptions", "askPeopleRun", "peopleExport", "peopleHistory", "peopleLink", "peoplePerson", "peopleSearch", "peopleStats"]);
   for (const a of acts) for (const [m, want] of cases) assert.equal(canCall(a, m), want, a);
 });
 

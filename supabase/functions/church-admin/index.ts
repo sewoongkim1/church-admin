@@ -81,7 +81,8 @@ import { applyMissingRequest, undoMissingRequest } from "./history-db.ts";
 // 빠진 사역을 고쳐서 반영 · 목록의 줄 미리 채우기(2026-10-02) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { parseRequestLine, requestKey, requestLineOut, type MissingApply, type ReqLine } from "./history-db.ts";
 // 🤖 성도 묻기(시험판 · 2026-10-15) — 규약·검사·셈은 ask-people.ts(순수) · Claude 는 공식 SDK 로(구조화 출력)
-import { ASK_CONTRACT, askOut, askQuestion, askSchema, askSystemPrompt, buildAskData, type AskData } from "./ask-people.ts";
+import { ASK_CONTRACT, askOptions, askOut, askPicks, askQuestion, askSchema, askSystemPrompt, buildAskData, picksToLeaves, withPicks,
+  type AskData } from "./ask-people.ts";
 // 견주기(askEval)가 더 쓰는 이름 · 🏠 심방 준비 한 장(2026-10-15)
 import { checkTree, describeLeaf, statusOf } from "./ask-people.ts";
 import { visitCard, visitFacts, visitPointsOut, visitSchema, VISIT_SYSTEM } from "./visit-card.ts";
@@ -1610,7 +1611,7 @@ let askCache: { at: number; data: AskData } | null = null;
 async function askData(): Promise<AskData> {
   if (askCache && Date.now() - askCache.at < ASK_TTL) return askCache.data;
   const [ppl, hist, map, gaps, links, signups, evs] = await Promise.all([
-    allRows(() => db.from("church_people").select("person_id,name,position,gender,age,mok1,mok3,kind2,registered_date").order("person_id", { ascending: true })),
+    allRows(() => db.from("church_people").select("person_id,name,position,position_detail,gender,age,mok1,mok3,kind2,registered_date").order("person_id", { ascending: true })),
     allRows(() => db.from("ministry_history").select("id,person_id,year,committee,team").is("deleted_at", null).order("id", { ascending: true })),
     allRows(() => db.from("ministry_dept_map").select("committee_key,team_key,big_group,family,mid,team_std")
       .order("committee_key", { ascending: true }).order("team_key", { ascending: true })),
@@ -1685,19 +1686,36 @@ async function claudeJson(system: string, user: string, schema: any, model?: str
 const askClaude = (question: string, vocab: AskData["vocab"], today: string, model?: string) =>
   claudeJson(askSystemPrompt(vocab, today), question, askSchema(), model);
 
+// 질문(있으면 AI) + 고르기 칸(있으면 서버가 바로 거르는 잎 · 2026-10-19). 질문 없이 고르기만 하면 AI 를 부르지 않는다.
+//   둘 다 비면 no-question — 재료도 안 읽고 AI 도 안 부른다(PROBE).
 async function askPeople(ctx: Ctx, b: any) {
+  const picks = askPicks(b.picks);
+  const picked = picks.pos.length + picks.gu.length > 0;
   const q = askQuestion(b.question);
-  if (!q.ok) return q;                                 // 빈 질문은 재료도 안 읽고 AI 도 안 부른다(PROBE)
+  if (!q.ok && (q.error !== "no-question" || !picked)) return q;
+  const question = q.ok ? q.q : "";
   const data = await askData();
   const today = kstToday();
-  const ai = await askClaude(q.q, data.vocab, today);
+  const leaves = picksToLeaves(picks);
+  const pk = picked ? { picks } : {};   // 기록 — 직분 · 교구 이름(사람 자료 아님)
+  if (!question) {
+    const out = askOut({ all: leaves, any: [], none: [] }, data, today, false);
+    await audit(ctx, "people.ask", "", { q: "", ...pk, ai: false, status: out.status, total: out.total, contract: ASK_CONTRACT });
+    return { ok: true, contract: ASK_CONTRACT, question: "", model: "", usage: null, raw: null, ...out };
+  }
+  const ai = await askClaude(question, data.vocab, today);
   if (!ai.ok) {
-    await audit(ctx, "people.ask", "", { q: q.q.slice(0, 120), error: ai.error });
+    await audit(ctx, "people.ask", "", { q: question.slice(0, 120), ...pk, error: ai.error });
     return ai;
   }
-  const out = askOut(ai.raw, data, today, true);
-  await audit(ctx, "people.ask", "", { q: q.q.slice(0, 120), status: out.status, total: out.total, contract: ASK_CONTRACT });
-  return { ok: true, contract: ASK_CONTRACT, question: q.q, model: ai.model, usage: ai.usage, raw: ai.raw, ...out };
+  const out = askOut(withPicks(ai.raw, leaves), data, today, true);
+  await audit(ctx, "people.ask", "", { q: question.slice(0, 120), ...pk, status: out.status, total: out.total, contract: ASK_CONTRACT });
+  return { ok: true, contract: ASK_CONTRACT, question, model: ai.model, usage: ai.usage, raw: ai.raw, ...out };
+}
+
+// 고르기 칸 목록 — 값과 인원 수만(이름 · 교인ID 없음 · 기록 없음). 재료는 askData 10분 담아 둔 것(먼저 부르면 묻기도 빨라진다).
+async function askPeopleOptions(_ctx: Ctx, _b: any) {
+  return { ok: true, ...askOptions(await askData()) };
 }
 
 // 화면이 고친 조건(칩 빼기 · 「나머지 조건으로만 찾기」)으로 다시 센다 — AI 를 부르지 않는다. 같은 검사를 다시 거친다(화면을 믿지 않는다).
@@ -3184,6 +3202,7 @@ Deno.serve(async (req) => {
       case "peopleLinkSync": return json(await peopleLinkSync(ctx, b));
       case "askPeople":      return json(await askPeople(ctx, b));
       case "askPeopleRun":   return json(await askPeopleRun(ctx, b));
+      case "askPeopleOptions": return json(await askPeopleOptions(ctx, b));
       case "askEval":        return json(await askEval(ctx, b));
       case "visitCard":      return json(await visitCardAct(ctx, b));
       case "visitPoints":    return json(await visitPoints(ctx, b));
