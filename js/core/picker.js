@@ -149,6 +149,30 @@ export function timeScrollTarget({ h = "", mi = "", minutes = [], near = "" } = 
   return { h: nm[1], m };
 }
 
+// 단계 고르기(2026-10-19 성도 묻기) — 줄에 parent(위 단계 값)가 있으면 그 아래 단계다.
+//   위를 켜고 끄면 아래가 모두 따라가고, 아래가 바뀌면 위는 「다 켜짐 = 켬 · 일부 = 반쯤(partial) · 없음 = 끔」.
+//   checked: 켜진 값(문자열) Set · changed: 방금 바뀐 줄의 값(null 이면 위 단계를 아래에 맞춰 다시 셈만). → { checked, partial }
+export function treeCheck(options, checked, changed) {
+  const on = new Set([...checked].map(String));
+  const kids = new Map();
+  for (const o of options) if (o.parent != null) {
+    const p = String(o.parent);
+    if (!kids.has(p)) kids.set(p, []);
+    kids.get(p).push(String(o.value));
+  }
+  if (changed != null && kids.has(String(changed))) {
+    const ks = kids.get(String(changed));
+    if (on.has(String(changed))) ks.forEach((k) => on.add(k)); else ks.forEach((k) => on.delete(k));
+  }
+  const partial = new Set();
+  for (const [p, ks] of kids) {
+    const n = ks.filter((k) => on.has(k)).length;
+    if (n === ks.length) on.add(p); else on.delete(p);
+    if (n > 0 && n < ks.length) partial.add(p);
+  }
+  return { checked: on, partial };
+}
+
 // ───────── 창 (브라우저에서만) ─────────
 
 let current = null;   // 지금 열린 창을 닫는 함수 — 한 번에 하나만
@@ -267,9 +291,20 @@ export function pickOne({ anchor, title, options = [], value = "", mode, wrap = 
 // allBtn(기본 꺼짐 · 2026-10-19 성도 묻기) — 「전체선택」를 더한다(다 켜져 있으면 잠긴다).
 export function pickMany({ anchor, title, options = [], values = [], mode, allBtn = false } = {}) {
   const has = new Set((values || []).map(String));
+  // 단계(2026-10-19) — 옵션에 parent 가 하나라도 있을 때만. 거짓이면 아래 모든 갈래가 전과 같다.
+  const tree = options.some((o) => o.parent != null);
+  let treeState = null;
+  if (tree) {
+    const set = new Set(has);
+    for (const o of options) if (o.parent != null && has.has(String(o.parent))) set.add(String(o.value));
+    treeState = treeCheck(options, set, null);
+  }
+  const isOn = (o) => (tree ? treeState.checked.has(String(o.value)) : has.has(String(o.value)));
+  const parents = new Set(options.filter((o) => o.parent != null).map((o) => String(o.parent)));
+  const rowCls = (o) => (!tree ? "pk-chk" : o.parent != null ? "pk-chk pk-kid" : parents.has(String(o.value)) ? "pk-chk pk-par" : "pk-chk");
   return openShell({ anchor, title, mode, cls: "pk-many", onBuild: ({ body, foot, close }) => {
     body.innerHTML = options.length ? `<div class="pk-list">${options.map((o, i) =>
-      `<label class="pk-chk"><input type="checkbox" data-i="${i}"${has.has(String(o.value)) ? " checked" : ""}>` +
+      `<label class="${rowCls(o)}"><input type="checkbox" data-i="${i}"${isOn(o) ? " checked" : ""}>` +
       `<span class="pk-opt-t">${esc(o.label ?? o.value)}</span>${o.hint ? `<small class="pk-hint">${esc(o.hint)}</small>` : ""}</label>`).join("")}</div>`
       : `<p class="pk-none">고를 것이 없어요</p>`;
     foot.hidden = false;
@@ -283,12 +318,27 @@ export function pickMany({ anchor, title, options = [], values = [], mode, allBt
       clear.disabled = !boxes().some((c) => c.checked);
       if (all) all.disabled = boxes().every((c) => c.checked);
     };
+    // 단계: 상자 모양(켬 · 반쯤)을 treeState 에 맞춘다
+    const paint = () => boxes().forEach((c) => {
+      const v = String(options[Number(c.dataset.i)].value);
+      c.checked = treeState.checked.has(v);
+      c.indeterminate = treeState.partial.has(v);
+    });
+    if (tree) paint();
     sync();
-    body.addEventListener("change", sync);
+    body.addEventListener("change", (e) => {
+      if (tree) {
+        const set = new Set(boxes().filter((c) => c.checked).map((c) => String(options[Number(c.dataset.i)].value)));
+        const t = e.target.closest ? e.target.closest("input[type=checkbox]") : null;
+        treeState = treeCheck(options, set, t ? options[Number(t.dataset.i)].value : null);
+        paint();
+      }
+      sync();
+    });
     foot.addEventListener("click", (e) => {
       const k = e.target.closest("button[data-k]")?.dataset.k;
-      if (k === "clear") { boxes().forEach((c) => { c.checked = false; }); sync(); body.querySelector("input")?.focus({ preventScroll: true }); }
-      if (k === "all") { boxes().forEach((c) => { c.checked = true; }); sync(); foot.querySelector('[data-k="ok"]')?.focus({ preventScroll: true }); }
+      if (k === "clear") { boxes().forEach((c) => { c.checked = false; c.indeterminate = false; }); sync(); body.querySelector("input")?.focus({ preventScroll: true }); }
+      if (k === "all") { boxes().forEach((c) => { c.checked = true; c.indeterminate = false; }); sync(); foot.querySelector('[data-k="ok"]')?.focus({ preventScroll: true }); }
       if (k === "ok") close(boxes().filter((c) => c.checked).map((c) => options[Number(c.dataset.i)].value));
     });
     return body.querySelector("input") || foot.querySelector('[data-k="ok"]');

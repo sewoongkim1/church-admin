@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { monthGrid, timeSlots, fmtDateLabel, fmtTimeLabel, hourLabel, kstToday, addMonth, placePopover, dayAllowed,
-  popHeight, POP_MAX_H, calStart, timeColumns, shiftTime, timeScrollTarget } from "../js/core/picker.js";
+  popHeight, POP_MAX_H, calStart, timeColumns, shiftTime, timeScrollTarget, treeCheck } from "../js/core/picker.js";
 
 test("monthGrid — 일요일 시작 · 앞뒤 빈칸 · 한 주 7칸", () => {
   // 2026년 9월 1일은 화요일
@@ -219,4 +219,34 @@ test("placePopover — 너비 상한이 붙으면 판이 콤보 왼쪽에 맞는
   assert.equal(Math.max(720, Math.min(891, 640)), 720);
   assert.deepEqual(placePopover({ left: 272, top: 124, bottom: 184, right: 992 }, { width: 720, height: 260 }, { width: 1280, height: 860 }),
     { left: 272, top: 190 });
+});
+
+test("treeCheck — 단계 고르기(2026-10-19 성도 묻기): 위 → 아래 전부 · 아래 일부 → 위 반쯤 · 아래 다 → 위 켬", () => {
+  const O = [{ value: "장로 전체" }, { value: "시무장로", parent: "장로 전체" }, { value: "은퇴장로", parent: "장로 전체" }, { value: "직분 없음" }];
+  const a = treeCheck(O, new Set(["장로 전체"]), "장로 전체");
+  assert.deepEqual([...a.checked].sort(), ["시무장로", "은퇴장로", "장로 전체"]);
+  assert.equal(a.partial.size, 0);
+  const b = treeCheck(O, new Set(["장로 전체", "시무장로"]), "은퇴장로");   // 은퇴장로를 끈 뒤
+  assert.deepEqual([...b.checked].sort(), ["시무장로"]);
+  assert.ok(b.partial.has("장로 전체"));
+  const c = treeCheck(O, new Set(["시무장로"]), "시무장로");
+  assert.ok(c.partial.has("장로 전체") && !c.checked.has("장로 전체"));
+  const d = treeCheck(O, new Set(["시무장로", "은퇴장로"]), "은퇴장로");
+  assert.ok(d.checked.has("장로 전체") && d.partial.size === 0);
+});
+test("treeCheck — 위를 끄면 아래도 모두 꺼진다 · changed=null 은 위 단계만 다시 셈 · 단계 없는 줄은 그대로", () => {
+  const O = [{ value: "장로 전체" }, { value: "시무장로", parent: "장로 전체" }, { value: "은퇴장로", parent: "장로 전체" }, { value: "직분 없음" }];
+  const off = treeCheck(O, new Set(["시무장로", "은퇴장로"]).add("직분 없음"), "장로 전체");
+  assert.ok(!off.checked.has("시무장로") && !off.checked.has("은퇴장로") && !off.checked.has("장로 전체"));
+  assert.ok(off.checked.has("직분 없음"));
+  const n = treeCheck(O, new Set(["시무장로", "은퇴장로", "직분 없음"]), null);
+  assert.deepEqual([...n.checked].sort(), ["시무장로", "은퇴장로", "장로 전체", "직분 없음"]);
+  const m = treeCheck(O, new Set(["장로 전체"]), null);   // 위만 켜져 있고 changed 없음 → 아래가 없으니 위도 꺼진다
+  assert.equal(m.checked.size, 0);
+});
+test("treeCheck — 단계 없는 목록이면 넣은 Set 그대로 · partial 빔", () => {
+  const O = [{ value: "믿음" }, { value: "화평" }];
+  const r = treeCheck(O, new Set(["믿음"]), "믿음");
+  assert.deepEqual([...r.checked], ["믿음"]);
+  assert.equal(r.partial.size, 0);
 });

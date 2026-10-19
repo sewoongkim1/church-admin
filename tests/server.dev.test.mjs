@@ -880,7 +880,7 @@ test("성도 묻기 고르기 칸(2026-10-19): 목록은 값 · 인원만 · 고
   assert.equal(o.status, 200);
   assert.equal(o.body.ok, true);
   assert.ok(o.body.positions.length > 0 && o.body.gu.length > 0);
-  for (const x of o.body.positions) assert.deepEqual(Object.keys(x).sort(), ["count", "kind", "label", "value"]);
+  for (const x of o.body.positions) assert.deepEqual(Object.keys(x).sort(), ["count", "group", "kind", "label", "value"]);
   for (const x of o.body.gu) assert.deepEqual(Object.keys(x).sort(), ["count", "value"]);
   const det = o.body.positions.find((x) => x.kind === "detail");
   const gu = o.body.gu[0];

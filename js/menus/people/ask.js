@@ -11,21 +11,21 @@ import { openVisitCard } from "./visit-card.js";
 import { aTitle, lineSvg } from "../../core/icons.js";
 // 🎚️ 직분 · 교구 고르기 칸(2026-10-19) — 공용 고르개(「전체선택」 allBtn) · 순수 도우미(시험 tests/ask-picks-ui.test.mjs)
 import { pickMany } from "../../core/picker.js";
-import { PICK_FROM, picksToSend, pickSummary } from "./ask-logic.js";
+import { PICK_FROM, posPickOptions, picksToSend, pickSummary } from "./ask-logic.js";
 
 const TITLE = aTitle("message", "성도 묻기", ` <span class="badge">시험판</span>`);   // 성경앱 스타일 머리(2026-10-17)
 const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b> · <b>사역 이력</b> · <b>성경필사</b>에서 찾아 드려요.
 AI(Claude)에는 질문과 「물을 수 있는 것」 목록만 가고, 명단은 서버가 직접 찾아요 — 이름은 AI 에게 가지 않아요.
 교인명부 담당자에게 보이는 시험판이에요.</p>`;
 
-// 우리 자료로 답할 수 있는 예(2026-10-15 친구 — 「요즘 예배에 잘 안 나오시는」 예는 빼고 「2026년 성경필사 · 봉사 안 함 · 40대 남자」를 더함)
+// 우리 자료로 답할 수 있는 예(2026-10-19 친구 — 직분·교구는 고르기 칸으로 · 말로는 사역·성경필사·나이·등록)
 export const EXAMPLES = [
-  "10년 동안 사역하신 분들 중에 올해는 안 하고 계신 분",
-  "2026년에 성경필사를 하신 분 중 올해 사역은 안 하시는 분",
-  "최근 10년 중 찬양대에서 5번 이상 섬기신 권사님",
-  "2015년에 교회학교를 섬기셨는데 최근 3년은 쉬고 계신 분",
-  "50대 남자 집사님 중 한 번도 사역하지 않으신 분",
-  "2026년 성경필사 하신 분 중 봉사를 하지 않는 40대 남자",
+  "올해 처음 사역을 시작하신 분",
+  "최근 3년 안에 등록하신 분 중 아직 사역하지 않으신 분",
+  "5년 이상 쉬지 않고 사역하신 분",
+  "찬양대를 섬기다가 최근 2년은 쉬고 계신 분",
+  "성경필사를 3번 이상 하신 분 중 올해 사역은 안 하시는 분",
+  "60대 이상 중 교회학교를 섬기신 적이 있는 분",
 ];
 
 const ERR = {
@@ -50,6 +50,7 @@ const FORM = `<form class="card ak-form" autocomplete="off">
   <textarea id="ak-q" maxlength="300" placeholder="예: 10년 동안 사역하신 분들 중에 올해는 안 하고 계신 분 (직분·교구만 골라도 찾아요)"></textarea>
   <div class="acts"><button type="submit" class="btn primary">묻기</button></div>
   <div class="ak-exs"><span class="muted">이렇게 물어보세요</span>
+    <p class="muted ak-exs-tip">직분·교구는 위에서 고르고, 사역·성경필사·나이·등록은 말로 물어보세요.</p>
     ${EXAMPLES.map((q, i) => `<button type="button" class="ak-ex" data-ex="${i}"><span class="ak-ex-i" aria-hidden="true">${lineSvg("search")}</span>` +
       `<span class="ak-ex-t">${esc(q)}</span>${lineSvg("chev", "ak-ex-c")}</button>`).join("")}</div>
 </form>`;
@@ -136,9 +137,8 @@ export async function render(el, { call, me }) {
   let opts = null;                      // { pos: [{value, label, hint}], gu: [...] }
   const picks = { pos: [], gu: [] };
   const pickBtn = (k) => el.querySelector(`.ak-picks [data-pick="${k}"]`);
-  const optValues = (k) => (opts ? opts[k].map((o) => o.value) : []);
   function syncPick(k) {
-    const b = pickBtn(k), s = pickSummary(picks[k], optValues(k));
+    const b = pickBtn(k), s = pickSummary(picks[k], opts ? opts[k] : []);
     b.classList.toggle("on", s !== "전체" && s !== "모두");
     b.querySelector(".pp-pick-v").textContent = s;
     b.setAttribute("aria-label", `${PICK_LABEL[k]}, ${s} — 여러 개 고르기`);
@@ -148,7 +148,7 @@ export async function render(el, { call, me }) {
     let got = null;
     try {
       const r = await call("askPeopleOptions", {});
-      if (r && r.ok) got = { pos: r.positions.map((o) => ({ value: o.value, label: o.label, hint: hint(o.count) })),
+      if (r && r.ok) got = { pos: posPickOptions(r.positions),
         gu: r.gu.map((o) => ({ value: o.value, label: o.value, hint: hint(o.count) })) };
     } catch (_) { got = null; }
     if (!el.isConnected) return;
@@ -171,7 +171,7 @@ export async function render(el, { call, me }) {
 
   async function ask() {
     const question = qEl.value.trim();
-    const send = { pos: picksToSend(picks.pos, optValues("pos")), gu: picksToSend(picks.gu, optValues("gu")) };
+    const send = { pos: picksToSend(picks.pos, opts ? opts.pos : []), gu: picksToSend(picks.gu, opts ? opts.gu : []) };
     if (!question && !send.pos.length && !send.gu.length) { out.innerHTML = `<p class="ak-err">${esc(ERR["no-question"])}</p>`; qEl.focus(); return; }
     out.innerHTML = question ? `<p class="ak-wait">조건을 만드는 중이에요… AI 가 질문을 읽고 있어요(10초 안팎).</p>`
       : `<p class="ak-wait">고르신 조건으로 찾는 중이에요…</p>`;

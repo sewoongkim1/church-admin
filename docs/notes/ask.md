@@ -29,6 +29,8 @@
 - 띄어쓰기만 다른 세부 직분(「시무장로」·「시무 장로」)은 `pickToken` 이 정확히 같은 값을 먼저 맞춘다.
 - 모두 고름 = 조건 없음 — 화면 `picksToSend` 가 빈 배열로 보낸다.
 - 화면(2026-10-19): `js/menus/people/ask.js`(단추 둘 · 목록은 `askPeopleOptions` 한 번 · 받기 전엔 잠금) · 순수 `js/menus/people/ask-logic.js` · 공용 고르개 `pickMany({ allBtn: true })` · CSS `.ak-picks`. 단추 글: 안 고름 「전체」 · 모두 「모두」(둘 다 조건 없음 · on 아님).
+- 직분은 **단계 고르개**(`pickMany` 옵션 `parent` · `treeCheck`) — 위를 누르면 아래 전부 · 일부면 반쯤 · 다 고른 위 단계는 「X 전체」로 접어 보낸다(「그 밖」은 화면에만 있는 `@그 밖` — 아래 세부를 보낸다). 서버 `askOptions` 줄마다 `group`. 옛 서버(`group` 없음)면 `posPickOptions` 가 한 줄씩으로 돌아간다.
+- 예시는 직분·교구를 빼고 말로 묻는 것(2026-10-19) — 직분·교구는 고르기 칸으로.
 
 ## ⚠️ 함정
 - **AI 에게 가는 글은 `askSystemPrompt` · `askSchema` 둘뿐이다.** 사람 자료(이름 · 교인ID · 나이 · 목장 이름)를 넣지 말 것 — `tests/ask-people.test.mjs` 가 지시문에 이름·목장이 없는지 본다. 지시문의 예시에도 실제 있을 법한 목장 이름을 쓰지 않는다.

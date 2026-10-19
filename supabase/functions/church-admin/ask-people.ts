@@ -695,8 +695,9 @@ export function askOptions(d: AskData) {
   const rank = (t: string) => (t === "직분 없음" ? 99 : Math.max(0, POS_ORDER.indexOf(positionBucket(t))));
   const details = [...detN.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || byName(a[0], b[0]));
   const positions = [
-    ...PICK_GROUPS.filter((g) => groupN.get(g)).map((g) => ({ value: g + PICK_ALL, label: g + PICK_ALL, count: groupN.get(g)!, kind: "group" as const })),
-    ...details.map(([t, n]) => ({ value: t, label: t, count: n, kind: "detail" as const })),
+    ...PICK_GROUPS.filter((g) => groupN.get(g)).map((g) => ({ value: g + PICK_ALL, label: g + PICK_ALL, count: groupN.get(g)!, kind: "group" as const, group: g })),
+    ...details.map(([t, n]) => ({ value: t, label: t, count: n, kind: "detail" as const,
+      group: t === "직분 없음" ? "" : (positionBucket(t) === "모름" ? "그 밖" : positionBucket(t)) })),
   ];
   const known = BE_GU.filter((g) => guN.has(g));
   const rest = [...guN.entries()].filter(([g]) => !BE_GU.includes(g)).sort((a, b) => b[1] - a[1] || byName(a[0], b[0])).map(([g]) => g);

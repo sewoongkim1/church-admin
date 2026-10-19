@@ -81,12 +81,12 @@ test("칩 글 — 고른 직분", () => {
 test("고르기 목록 — 큰 묶음(사람 있는 것만) → 세부(큰 묶음 차례 · 많은 순 · 「직분 없음」 끝) · 교구는 BE_GU 차례 → 그 밖", () => {
   const o = askOptions(D);
   assert.equal(o.people, 7);
-  assert.deepEqual(o.positions.map((x) => [x.value, x.count, x.kind]), [
-    ["장로 전체", 3, "group"], ["안수집사 전체", 1, "group"], ["권사 전체", 1, "group"],
-    ["시무장로", 2, "detail"], ["은퇴장로", 1, "detail"], ["시무안수집사", 1, "detail"], ["권사", 1, "detail"], ["직분 없음", 2, "detail"],
+  assert.deepEqual(o.positions.map((x) => [x.value, x.count, x.kind, x.group]), [
+    ["장로 전체", 3, "group", "장로"], ["안수집사 전체", 1, "group", "안수집사"], ["권사 전체", 1, "group", "권사"],
+    ["시무장로", 2, "detail", "장로"], ["은퇴장로", 1, "detail", "장로"], ["시무안수집사", 1, "detail", "안수집사"], ["권사", 1, "detail", "권사"], ["직분 없음", 2, "detail", ""],
   ]);
   assert.deepEqual(o.gu, [{ value: "믿음", count: 2 }, { value: "화평", count: 3 }, { value: "기쁨", count: 1 }, { value: "임시교구", count: 1 }]);
-  for (const x of o.positions) assert.deepEqual(Object.keys(x).sort(), ["count", "kind", "label", "value"]);
+  for (const x of o.positions) assert.deepEqual(Object.keys(x).sort(), ["count", "group", "kind", "label", "value"]);
 });
 
 test("AI 에게 가는 것은 그대로 — 스키마 field 값에 pos_pick 없음 · 지시문에 pos_pick · 세부 직분 값 없음", () => {
