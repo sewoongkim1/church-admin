@@ -2508,7 +2508,7 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .route-people-ask .ak-form .btn{border-radius:14px}
 .route-people-ask .ak-exs{display:block;margin-top:10px}
 .route-people-ask .ak-exs>.muted{display:block;margin:0 2px 4px;font-size:.92rem;font-weight:800;color:var(--a-gt)}
-.route-people-ask .ak-exs>.ak-exs-tip{margin:0 2px 8px;font-size:.85rem;font-weight:400;color:inherit}
+.route-people-ask .ak-exs>.ak-exs-tip{margin:0 2px 8px;font-size:.85rem;font-weight:400;color:var(--ink-2)}
 .route-people-ask .ak-ex{display:flex;align-items:center;gap:12px;width:100%;min-height:54px;padding:8px 2px;border:0;border-top:1px solid var(--a-line);
   border-radius:0;background:transparent;font-size:14.5px;line-height:1.4;color:var(--a-tx)}
 .route-people-ask .ak-ex:first-of-type{border-top:0}
