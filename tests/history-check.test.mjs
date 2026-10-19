@@ -151,6 +151,14 @@ test("parseRequest — 두 칸(committee_text 가 글자) · 둘 중 하나는 �
   assert.equal(parseRequest({ kind: "find_me", committee_text: "찬양위원회" }).req.committee_text, null);
 });
 
+test("parseRequest — 빠진 사역 연도는 2000년부터 올해까지", () => {
+  const y = (year) => parseRequest({ kind: "missing", year, team_text: "시온성가대" }, 2026);
+  assert.deepEqual(y(1999), { ok: false, error: "bad-year" });
+  assert.equal(y(2000).ok, true);
+  assert.equal(y(2026).ok, true);
+  assert.deepEqual(y(2027), { ok: false, error: "bad-year" });
+});
+
 test("parseRequest — 모르는 종류·긴 설명", () => {
   assert.deepEqual(parseRequest({ kind: "delete_all" }), { ok: false, error: "bad-kind" });
   assert.deepEqual(parseRequest({}), { ok: false, error: "bad-kind" });

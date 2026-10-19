@@ -13,6 +13,7 @@ export const REQ_OPEN = ["신청", "확인 중"];
 export const REQ_DETAIL_MAX = 200;
 export const REQ_TEAM_MAX = 100;
 export const REQ_OPEN_MAX = 20;
+export const REQ_YEAR_MIN = 2000;   // 빠진 사역 연도 — 2000년부터 올해까지(2026-10-19 친구)
 // 직분은 성도님 앱에 보내지 않는다(2026-10-01 친구 요청 · 화면에서도 뺐다).
 export const HISTORY_SELECT = "id,year,committee,team,role_title";
 // committee_text — 빠진 사역 「부서」 칸(2026-10-02 두 칸 · SQL 009) · null 이면 옛 한 칸 신청(team_text 에 「부서·팀」 글)
@@ -53,7 +54,9 @@ export function readLoginWho(x: any): LoginWho | null {
 //   다른 종류는 늘 null.
 export type ReqIn = { history_id: number | null; kind: string; detail: string; year: number | null; committee_text: string | null; team_text: string };
 
-export function parseRequest(b: any): { ok: true; req: ReqIn } | { ok: false; error: string } {
+const kstYear = (): number => Number(new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 4));
+
+export function parseRequest(b: any, thisYear: number = kstYear()): { ok: true; req: ReqIn } | { ok: false; error: string } {
   const kind = tidy(b?.kind);
   if (!REQ_KINDS.includes(kind)) return { ok: false, error: "bad-kind" };
   const detail = tidy(b?.detail);
@@ -66,7 +69,7 @@ export function parseRequest(b: any): { ok: true; req: ReqIn } | { ok: false; er
   }
   if (kind === "missing") {
     const year = Number(tidy(b?.year));
-    if (!Number.isInteger(year) || year < 1950 || year > 2100) return { ok: false, error: "bad-year" };
+    if (!Number.isInteger(year) || year < REQ_YEAR_MIN || year > thisYear) return { ok: false, error: "bad-year" };
     // 두 칸 — committee_text 가 글자일 때만(성경암송 api 가 글자일 때만 넘긴다 · 옛 캐시 앱은 보내지 않는다 → 아래 한 칸)
     if (typeof b?.committee_text === "string") {
       const committee = tidy(b.committee_text), team = tidy(b?.team_text);
