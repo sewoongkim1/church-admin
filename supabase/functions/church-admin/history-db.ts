@@ -169,21 +169,31 @@ async function candidatesFor(db: Db, row: any) {
   const tk = teamKey(row.team);
   const ids = people.map((p) => Number(p.person_id));
   const served = new Map<number, number>();
+  // 후보마다 이어진 사역 이력(가까운 해부터 5줄) — 누구인지 가리는 근거로 창에 함께 보인다(지문에는 넣지 않는다)
+  const ministry = new Map<number, { year: number; text: string }[]>();
   if (ids.length) {
-    const hist = await all(() => db.from("ministry_history").select("id,year,team,person_id")
+    const hist = await all(() => db.from("ministry_history").select("id,year,committee,team,position,role_title,person_id")
       .in("person_id", ids).is("deleted_at", null).order("id", { ascending: true }));
-    for (const h of hist) if (h.year !== row.year && teamKey(h.team) === tk) served.set(h.person_id, (served.get(h.person_id) ?? 0) + 1);
+    for (const h of hist) {
+      if (h.year !== row.year && teamKey(h.team) === tk) served.set(h.person_id, (served.get(h.person_id) ?? 0) + 1);
+      const text = [h.committee, h.team].filter(Boolean).join(" ") + (h.position ? ` · ${h.position}` : "") + (h.role_title ? ` · ${h.role_title}` : "");
+      const l = ministry.get(h.person_id) ?? []; l.push({ year: Number(h.year), text }); ministry.set(h.person_id, l);
+    }
   }
-  const list = people.map((p) => ({
-    person_id: Number(p.person_id), name: nfc(p.name), label: personLabel(p), position: positionFromChurch(p),
-    church_mok: churchMok(p), served: served.get(Number(p.person_id)) ?? 0,
-  }));
+  const list = people.map((p) => {
+    const m = (ministry.get(Number(p.person_id)) ?? []).sort((a, b) => b.year - a.year);
+    return {
+      person_id: Number(p.person_id), name: nfc(p.name), label: personLabel(p), position: positionFromChurch(p),
+      church_mok: churchMok(p), served: served.get(Number(p.person_id)) ?? 0,
+      ministry: m.slice(0, 5).map((x) => `${x.year}년 · ${x.text}`), ministryTotal: m.length,
+    };
+  });
   const fp = candFp(list.map((c) => [c.name, c.label, c.position, c.church_mok].join("|")));
   return { list, fp, extra };
 }
 const candOut = (c: any, full: boolean, current: number | null) => {
   const o: Record<string, unknown> = { name: c.name, label: c.label, position: c.position, church_mok: c.church_mok,
-    served: c.served, current: current !== null && c.person_id === current };
+    served: c.served, ministry: c.ministry ?? [], ministryTotal: c.ministryTotal ?? 0, current: current !== null && c.person_id === current };
   if (full) o.person_id = c.person_id;
   return o;
 };

@@ -94,6 +94,8 @@ function candHtml(d) {
     `<b>${esc(c.name)}</b> ${esc(c.label)}${c.position ? ` · ${esc(c.position)}` : ""}` +
     (c.church_mok ? `<span class="be-cand-mok">교적: ${esc(c.church_mok)}</span>` : "") +
     (c.served ? `<span class="mh-served">다른 해에 이 팀 ${c.served}번</span>` : "") +
+    (c.ministry && c.ministry.length ? `<span class="be-cand-mok">사역: ${c.ministry.map(esc).join(" / ")}${c.ministryTotal > c.ministry.length ? ` 외 ${c.ministryTotal - c.ministry.length}건` : ""}</span>`
+      : `<span class="be-cand-mok">사역: 이어진 이력 없음</span>`) +
     (d.full ? `<span class="mh-pid">교인ID ${c.person_id}</span>` : "") + `</button>` +
     (d.full ? `<button type="button" class="btn mh-detail" data-detail="${i}" aria-label="${esc(c.name)} 자세히">🔎 자세히</button>` : "")).join("");
   return `<h4 class="mh-h">교인명부의 같은 이름 ${list.length}명 <small>— 이분이면 눌러 고른 뒤 「저장」</small></h4>` +
