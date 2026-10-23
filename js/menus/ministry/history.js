@@ -9,7 +9,7 @@ import { loadXlsx } from "../../core/xlsx.js";
 import { fileErrorText } from "../bibleevent/upload-logic.js";
 import { openPerson } from "../people/search.js";
 import { parseHistorySheet, findHeader, textToAoa, sendParts, yearOptions, linkState, STATE_TEXT, STATE_CLASS, whyText,
-  mergeChecks, exportAoa, exportName, EDIT_KEYS, REMATCH_KEYS, editPatch, uploadSummary, deepLink, groupSub, groupTeams,
+  mergeChecks, exportAoa, exportName, EDIT_KEYS, REMATCH_KEYS, editPatch, uploadSummary, deepLink, groupSub, groupTeams, groupPositions,
   exportOnly } from "./history-logic.js";
 
 const TITLE = `<h2 class="page-title">📜 사역 이력</h2>`;
@@ -51,13 +51,14 @@ function groupCardHtml(g, i) {
   return `<div class="be-row"><div class="be-row-h"><div class="be-row-nm"><b>${esc(g.name)}</b>` +
     `<span class="be-row-sub">${esc(groupSub(g))}</span><span class="be-badges">${NONE_BADGE}</span></div>` +
     `<button type="button" class="be-more" data-act="group" data-gi="${i}" aria-label="${esc(g.name)} 묶음 열기">⋯</button></div>` +
+    (groupPositions(g) ? `<div class="mh-why">당시 직분: ${esc(groupPositions(g))}</div>` : "") +
     `<div class="mh-why">${esc(groupTeams(g))}</div><div class="mh-why">${esc(g.reason)}</div></div>`;
 }
 function groupTableHtml(groups) {
-  const head = `<tr><th>이름</th><th>목장</th><th>해</th><th>줄</th><th>부서·팀</th><th>교적</th><th><span class="be-sr">열기</span></th></tr>`;
+  const head = `<tr><th>이름</th><th>목장</th><th>해</th><th>줄</th><th>당시 직분</th><th>부서·팀</th><th>교적</th><th><span class="be-sr">열기</span></th></tr>`;
   const body = groups.map((g, i) => `<tr><td><b>${esc(g.name)}</b></td><td>${esc(g.mok)}</td>` +
     `<td class="mh-gyears">${g.years.map((y) => `<span>${Number(y)}</span>`).join("·")}</td>` +
-    `<td>${num(g.n)}</td><td>${esc(groupTeams(g))}</td><td>${NONE_BADGE}<div class="mh-why">${esc(g.reason)}</div></td>` +
+    `<td>${num(g.n)}</td><td>${esc(groupPositions(g))}</td><td>${esc(groupTeams(g))}</td><td>${NONE_BADGE}<div class="mh-why">${esc(g.reason)}</div></td>` +
     `<td><button type="button" class="be-more" data-act="group" data-gi="${i}" aria-label="${esc(g.name)} 묶음 열기">⋯</button></td></tr>`).join("");
   return `<div class="be-tbl-wrap"><table class="be-table mh-gtable"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }

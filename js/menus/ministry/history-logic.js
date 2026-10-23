@@ -120,6 +120,18 @@ export function exportName(years, only = "", q = "", now = new Date()) {
 export const groupSub = (g) => [g.mok || "목장 칸 비어 있음", `${(g.years || []).join("·")}년`, `${num(g.n)}줄`].join(" · ");
 export const groupTeams = (g) =>
   [...new Set((g.rows || []).map((r) => [r.committee, r.team].filter(Boolean).join(" ")).filter(Boolean))].join(" / ");
+// 그 당시 직분 — 명단 줄에 적힌 직분을 해 차례로. 한 가지면 「집사」, 바뀌었으면 「2019~2021 집사 → 2023 권사」. 적힌 것이 없으면 빈 글자.
+export function groupPositions(g) {
+  const seq = [];
+  const rows = [...(g.rows || [])].filter((r) => r.position).sort((a, b) => a.year - b.year);
+  for (const r of rows) {
+    const last = seq[seq.length - 1];
+    if (last && last.pos === r.position) { last.to = r.year; continue; }
+    seq.push({ pos: r.position, from: r.year, to: r.year });
+  }
+  if (seq.length <= 1) return seq.length ? seq[0].pos : "";
+  return seq.map((s) => `${s.from === s.to ? s.from : `${s.from}~${s.to}`} ${s.pos}`).join(" → ");
+}
 // 묶어 보기는 「못 맞춘 줄」을 묶은 것 — 내려받기는 「못 맞춘 줄만」과 같은 줄로(서버 historyFilter 는 only:"groups" 를 모른다)
 export const exportOnly = (only) => (only === "groups" ? "none" : only);
 
