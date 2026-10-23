@@ -94,6 +94,7 @@ function candHtml(d) {
   const items = list.map((c, i) => `<button type="button" class="be-cand${c.current ? " on" : ""}" data-cand="${i}" aria-pressed="${c.current}">` +
     `<b>${esc(c.name)}</b>${c.reg_year ? ` ${c.reg_year}년 ·` : ""} ${esc(c.label)}${c.position ? ` · ${esc(c.position)}` : ""}` +
     (c.church_mok ? `<span class="be-cand-mok">교적: ${esc(c.church_mok)}</span>` : "") +
+    (c.about ? `<span class="be-cand-mok">교인: ${esc(c.about)}</span>` : "") +
     (c.served ? `<span class="mh-served">다른 해에 이 팀 ${c.served}번</span>` : "") +
     (c.ministry && c.ministry.length ? `<span class="be-cand-mok">사역: ${c.ministry.map(esc).join(" / ")}${c.ministryTotal > c.ministry.length ? ` 외 ${c.ministryTotal - c.ministry.length}건` : ""}</span>`
       : `<span class="be-cand-mok">사역: 이어진 이력 없음</span>`) +

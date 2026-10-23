@@ -154,14 +154,14 @@ export async function rematchHistoryRows(db: Db, ids: number[] | null, extraKeys
 async function candidatesFor(db: Db, row: any) {
   // postgrest .in() 은 " \ , ( ) 를 이스케이프하지 않는다 — 그런 열쇠는 묻지 않는다(괄호 든 이름은 괄호 뗀 열쇠로 묻는다)
   const keys = nameKeyVariants(row.name).filter((k) => !/["\\,()]/.test(k));
-  const people: any[] = keys.length ? await all(() => db.from("church_people").select(HISTORY_PEOPLE_COLS + ",name_key")
+  const people: any[] = keys.length ? await all(() => db.from("church_people").select(HISTORY_PEOPLE_COLS + ",name_key,age,reg_type,kind3")
     .in("name_key", keys).order("person_id", { ascending: true })) : [];
   // 「이름 한 글자 다름(오타로 봄)」같이 다른 이름 규칙으로 이어진 줄은 지금 이어진 분이 이름 열쇠 후보에 없을 수 있다 —
   // 그분을 빼고 보여 주면 담당자가 지금 이어진 분을 확인할 수 없으니 끝에 더한다(설계 §4.5·§5 줄 창).
   const pid = row.person_id !== null && row.person_id !== undefined ? Number(row.person_id) : null;
   let extra = false;                                     // 지금 이어진 분을 끝에 더했는가(기록에 extra:1 · 이름 열쇠로 찾은 분이 아니다)
   if (pid !== null && !people.some((p) => Number(p.person_id) === pid)) {
-    const { data, error } = await db.from("church_people").select(HISTORY_PEOPLE_COLS + ",name_key").eq("person_id", pid).maybeSingle();
+    const { data, error } = await db.from("church_people").select(HISTORY_PEOPLE_COLS + ",name_key,age,reg_type,kind3").eq("person_id", pid).maybeSingle();
     if (error) throw error;
     if (data) { people.push(data); extra = true; }
   }
@@ -185,6 +185,7 @@ async function candidatesFor(db: Db, row: any) {
     return {
       person_id: Number(p.person_id), name: nfc(p.name), label: personLabel(p), position: positionFromChurch(p),
       church_mok: churchMok(p), served: served.get(Number(p.person_id)) ?? 0, reg_year: toHPerson(p).reg_year ?? null,
+      about: [/^\d+$/.test(String(p.age ?? "").trim()) ? `${String(p.age).trim()}세` : "", p.reg_type, p.kind2, p.kind3].map((x) => nfc(x ?? "").trim()).filter(Boolean).join(" · "),
       ministry: m.slice(0, 5).map((x) => `${x.year}년 · ${x.text}`), ministryTotal: m.length,
     };
   });
@@ -193,7 +194,7 @@ async function candidatesFor(db: Db, row: any) {
 }
 const candOut = (c: any, full: boolean, current: number | null) => {
   const o: Record<string, unknown> = { name: c.name, label: c.label, position: c.position, church_mok: c.church_mok,
-    served: c.served, reg_year: c.reg_year ?? null, ministry: c.ministry ?? [], ministryTotal: c.ministryTotal ?? 0, current: current !== null && c.person_id === current };
+    served: c.served, reg_year: c.reg_year ?? null, about: c.about ?? "", ministry: c.ministry ?? [], ministryTotal: c.ministryTotal ?? 0, current: current !== null && c.person_id === current };
   if (full) o.person_id = c.person_id;
   return o;
 };
