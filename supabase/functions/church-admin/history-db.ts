@@ -184,7 +184,7 @@ async function candidatesFor(db: Db, row: any) {
     const m = (ministry.get(Number(p.person_id)) ?? []).sort((a, b) => b.year - a.year);
     return {
       person_id: Number(p.person_id), name: nfc(p.name), label: personLabel(p), position: positionFromChurch(p),
-      church_mok: churchMok(p), served: served.get(Number(p.person_id)) ?? 0,
+      church_mok: churchMok(p), served: served.get(Number(p.person_id)) ?? 0, reg_year: toHPerson(p).reg_year ?? null,
       ministry: m.slice(0, 5).map((x) => `${x.year}년 · ${x.text}`), ministryTotal: m.length,
     };
   });
@@ -193,7 +193,7 @@ async function candidatesFor(db: Db, row: any) {
 }
 const candOut = (c: any, full: boolean, current: number | null) => {
   const o: Record<string, unknown> = { name: c.name, label: c.label, position: c.position, church_mok: c.church_mok,
-    served: c.served, ministry: c.ministry ?? [], ministryTotal: c.ministryTotal ?? 0, current: current !== null && c.person_id === current };
+    served: c.served, reg_year: c.reg_year ?? null, ministry: c.ministry ?? [], ministryTotal: c.ministryTotal ?? 0, current: current !== null && c.person_id === current };
   if (full) o.person_id = c.person_id;
   return o;
 };

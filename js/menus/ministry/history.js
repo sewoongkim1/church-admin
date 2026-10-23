@@ -92,7 +92,7 @@ const readFields = (root) => Object.fromEntries(EDIT_KEYS.map((k) => [k, root.qu
 function candHtml(d) {
   const list = d.candidates || [];
   const items = list.map((c, i) => `<button type="button" class="be-cand${c.current ? " on" : ""}" data-cand="${i}" aria-pressed="${c.current}">` +
-    `<b>${esc(c.name)}</b> ${esc(c.label)}${c.position ? ` · ${esc(c.position)}` : ""}` +
+    `<b>${esc(c.name)}</b>${c.reg_year ? ` ${c.reg_year}년 ·` : ""} ${esc(c.label)}${c.position ? ` · ${esc(c.position)}` : ""}` +
     (c.church_mok ? `<span class="be-cand-mok">교적: ${esc(c.church_mok)}</span>` : "") +
     (c.served ? `<span class="mh-served">다른 해에 이 팀 ${c.served}번</span>` : "") +
     (c.ministry && c.ministry.length ? `<span class="be-cand-mok">사역: ${c.ministry.map(esc).join(" / ")}${c.ministryTotal > c.ministry.length ? ` 외 ${c.ministryTotal - c.ministry.length}건` : ""}</span>`
