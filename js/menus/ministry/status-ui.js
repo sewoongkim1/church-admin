@@ -4,7 +4,7 @@
 // ⚠️ ui.js dialog 의 본문은 white-space:pre-line 이다 — dialog 에 넘기는 html 에는 줄바꿈 글자를 넣지 않는다.
 // 이름을 누르면 교적 창(2026-09-30) — 카드·표·사람별 묶음 머리의 이름이 단추(person-link.js · 열쇠 = 신청 id). 확인 창 안의 이름은 글자 그대로.
 import { esc, dialog } from "../../core/ui.js";
-import { STATES, SHORT, CLS, personKey, teamKey, dupOthers } from "./status-logic.js";
+import { STATES, SHORT, CLS, personKey, teamKey, dupOthers, bulkTargets, groupByPerson, appointNote } from "./status-logic.js";
 import { churchBadgeHtml } from "../people/church-badge.js";
 import { personLinkHtml } from "./person-link.js";
 
@@ -165,6 +165,66 @@ export function groupsHtml(rows, view, openSet, dupM) {
     return `<details class="mn-grp" data-gk="${esc(gk)}"${openSet.has(gk) ? " open" : ""}>` +
       `<summary>${title}</summary><div class="mn-grp-body">${cards}</div></details>`;
   }).join("");
+}
+
+// ── 사람 카드(2026-10-25 친구가 고른 2안) — 사람별 보기의 기본 모양 ──
+// 한 사람 = 카드 하나: 이름·소속·신청일·전화 / 신청한 사역마다 상태 한 줄(눌러 바꾸기는 그대로 statusMenuHtml) / 그 사람 것을 한꺼번에 접수·임명·취소.
+// 왼쪽 네모를 누르면 그 사람을 고른다(아래 고정 줄에서 여럿을 한꺼번에). sel = 고른 personKey 모음.
+// ⚠️ 이름 단추의 열쇠·교적 표시·번호는 묶음 머리(groupsHtml)와 같은 건에서 꺼낸다(kr) — 교적 창이 그 건으로 묻는다.
+export function personCardsHtml(rows, sel, dupM) {
+  if (!rows.length) return `<p class="empty">조건에 맞는 신청이 없어요</p>`;
+  return groupByPerson(rows).map(({ key, rows: list }) => {
+    const r0 = list[0];
+    const kr = list.find((r) => r.phone) || r0;
+    const pos = list.map((r) => r.position).find(Boolean) || "";
+    const phone = list.map((r) => r.phone).find(Boolean) || "";
+    const first = String(list.map((r) => r.at).filter(Boolean).sort()[0] || "").replace(/-/g, ".");
+    const dup = dupBadgeHtml(dupOthers(dupM, list));
+    const on = sel && sel.has(key);
+    const k = esc(key);
+    const n = (to) => bulkTargets(list, [key], to).length;
+    const btn = (to, label, cls) => n(to)
+      ? `<button type="button" class="mn-pc-b ${cls}" data-act="pbulk" data-pk="${k}" data-to="${esc(to)}">${label} <em>${n(to)}</em></button>` : "";
+    const acc = n("접수완료");
+    const acts = btn("접수완료", "전부 접수", "main") + btn("임명확정", acc ? "임명" : "전부 임명", acc ? "ghost" : "main") + btn("취소", "취소", "del");
+    const teams = list.map((r) => {
+      const opt = r.option ? `<i>(${esc(r.option)})</i>` : "";
+      const paper = r.source === "paper" ? `<em class="mn-paper" title="담당자가 올린 종이 명단">📋 종이</em>` : "";
+      return `<div class="mn-pc-tm ${CLS[r.status] || ""}"><div class="mn-pc-t"><b>${esc(r.team)}</b>${opt}${paper}<small>${esc(r.committee)}</small></div>${statusMenuHtml(r)}</div>`;
+    }).join("");
+    return `<div class="mn-pc${on ? " sel" : ""}" data-pk="${k}">
+      <div class="mn-pc-hd">
+        <button type="button" class="mn-pc-cb" data-act="pick" data-pk="${k}" aria-pressed="${on ? "true" : "false"}" aria-label="${esc(r0.name)}님 고르기"><span>${on ? "✓" : ""}</span></button>
+        <div class="mn-pc-who"><div class="mn-pc-nm">${personLinkHtml(kr.id, r0.name)}${pos ? `<em class="mn-pos">${esc(pos)}</em>` : ""}${list.some((r) => r.tester) ? TESTER_HTML : ""}${churchBadgeHtml(kr.church)}</div>
+          <span class="mn-sub"><i>${esc(r0.who)}</i>${first ? `<span class="mn-date" title="처음 신청한 날">${first} 신청</span>` : ""}</span></div>
+        ${phone ? phoneHtml(phone, true) : ""}
+      </div>
+      ${dup ? `<div class="mn-pc-dup mn-dups">${dup}</div>` : ""}
+      <div class="mn-pc-teams">${teams}</div>
+      ${acts ? `<div class="mn-pc-act">${acts}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+// 아래 고정 줄 — 고른 사람이 있을 때만(status.js 가 비운다). nAcc·nApp = 지금 접수·임명으로 바꿀 수 있는 줄 수
+export function bulkBarHtml(nPeople, nAcc, nApp) {
+  return `<div class="mn-bulk" role="region" aria-label="고른 분 한꺼번에 처리">
+    <div class="mn-bulk-t"><b>${nPeople}명 골랐어요</b><span>접수 ${nAcc}건 · 임명 ${nApp}건</span></div>
+    <button type="button" class="mn-bulk-b" data-act="bulk" data-to="접수완료"${nAcc ? "" : " disabled"}>접수</button>
+    <button type="button" class="mn-bulk-b gold" data-act="bulk" data-to="임명확정"${nApp ? "" : " disabled"}>임명</button>
+    <button type="button" class="mn-bulk-x" data-act="unsel" aria-label="고른 것 모두 풀기">✕</button>
+  </div>`;
+}
+
+// 여럿 임명 확인 — 한 번만 묻는다. 알림은 한 해 한 번이라 이미 나간 분께는 다시 안 간다.
+export function confirmBulkAppoint(targets) {
+  const n = appointNote(targets);
+  const names = n.names.slice(0, 5).map((x) => esc(x)).join(", ") + (n.names.length > 5 ? ` 외 ${n.names.length - 5}명` : "");
+  return dialog({
+    title: "🎉 한꺼번에 임명", ok: "임명", cancel: "그만두기",
+    html: `<b>${n.people}명</b>의 <b>${n.teams}개</b> 사역을 <b>임명</b>합니다.<br><span class="muted">${names}</span>` +
+      `<p class="muted mn-dlg-note on">🔔 알림이 나가는 분 <b>${n.push}명</b> · 🔕 알림을 안 켜신 분 <b>${n.quiet}명</b> · ✅ 이미 알림이 나간 분 <b>${n.already}명</b><br>되돌려도 이미 나간 알림은 취소되지 않아요.</p>`,
+  });
 }
 
 // 임명 확인 — 성도님께 알림이 나가는 자리라 한 번 묻는다(되돌려도 이미 나간 알림은 못 무른다).

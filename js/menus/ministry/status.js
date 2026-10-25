@@ -6,22 +6,22 @@
 //   ② 메뉴를 열 때마다 새로 불러온다(옛 mnLoaded 캐시를 없앰 — 여러 담당자가 서로 옛 화면을 보던 것).
 //   ③ 임명 알림 결과 넷(이미 보냄 / 보냄 N대 / 안 켜심 / 발송 실패)을 가른다. 발송 실패는 toast 가 아니라 창으로.
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
-import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts, clearPhone, phoneClearCount }
+import { STATES, SHORT, CLS, rangeDates, filterRows, personKey, teamKey, dupMap, dupOthers, teamCounts, statusCounts, clearPhone, phoneClearCount, bulkTargets }
   from "./status-logic.js";
-import { cardHtml, groupsHtml, dupBadgeHtml, tableHtml, askCancelReason, confirmAppoint, confirmDelete } from "./status-ui.js";
+import { cardHtml, groupsHtml, dupBadgeHtml, tableHtml, askCancelReason, confirmAppoint, confirmDelete, personCardsHtml, bulkBarHtml, confirmBulkAppoint } from "./status-ui.js";
 import { CHURCH_LEGEND, hasChurch } from "../people/church-badge.js";
 import { pickDate, fmtDateLabel } from "../../core/picker.js";
 import { openChurchPerson } from "../bibleevent/person-popup.js";
 import { PERSON_ACTION, rowAsk } from "./person-link.js";
 
 const TITLE = `<h2 class="page-title">📋 신청 현황</h2>`;
-const VIEWS = [["row", "건별", "건"], ["person", "사람별", "명"], ["team", "사역별", "팀"]];
+const VIEWS = [["person", "사람별", "명"], ["row", "건별", "건"], ["team", "사역별", "팀"]];
 const RANGES = [["all", "전체"], ["today", "오늘"], ["7d", "7일"], ["custom", "직접"]];
 const TO = { "신청완료": "신청으로", "접수완료": "접수로", "취소": "취소로" };
 const PUSH_ERR = { "notify-failed": "알림을 보내는 서버에 닿지 못했어요" };
 
 // 보기·거르기는 메뉴를 옮겨 다녀도 남는다. 명단은 남기지 않는다 — 열 때마다 새로 불러온다.
-let view = "row";                      // row 건별 · person 사람별 · team 사역별
+let view = "person";                   // person 사람별(처음 · 사람 카드 · 2026-10-25 친구) · row 건별 · team 사역별
 const stOn = new Set(["신청완료"]);    // 상태 거르기 — 처음엔 처리할 것(신청완료)만. 비면 전체
 let range = "all", from = "", to = ""; // 신청일: all · today · 7d · custom
 let q = "";
@@ -75,10 +75,14 @@ export async function render(el, { call }) {
       </div>
       <div class="mn-list"></div>
       <div class="mn-teams"></div>
-    </div>`;
+    </div>
+    <div class="mn-bulkbox"></div>`;
   el.querySelector(".mn-q").value = q;
   const list = el.querySelector(".mn-list");
   const find = (id) => rows.find((x) => String(x.id) === String(id));
+  // 사람 카드에서 고른 사람(personKey) — 메뉴를 옮기면 비운다(명단처럼 열 때마다 새로). 지금 보이는 줄은 draw 가 적어 둔다
+  const sel = new Set();
+  let lastShown = [];
   // PC(≥1024px) 건별만 표로 — 창 폭을 바꾸면 다시 그린다(detach 는 아래 document 리스너와 함께 묶는다)
   const mqWide = matchMedia("(min-width:1024px)");
 
@@ -126,9 +130,17 @@ export async function render(el, { call }) {
     const dupM = dupMap(rows);
     // 건별 + PC(≥1024px)면 표로 — 사람별·사역별은 그대로 묶음
     const wide = view === "row" && mqWide.matches;
+    lastShown = shown;
+    // 거르기로 가려진 분은 고른 채 두지 않는다 — 안 보이는 사람이 한꺼번에 처리에 끼면 안 된다
+    const vis = new Set(shown.map(personKey));
+    for (const k of [...sel]) if (!vis.has(k)) sel.delete(k);
     list.innerHTML = !shown.length ? `<p class="empty">조건에 맞는 신청이 없어요</p>`
+      : view === "person" ? personCardsHtml(shown, sel, dupM)
       : view === "row" ? (wide ? tableHtml(shown, dupM) : shown.map((r) => cardHtml(r, "", dupBadgeHtml(dupOthers(dupM, r)))).join(""))
       : groupsHtml(shown, view, openSet, dupM);
+    // 아래 고정 줄 — 사람 카드에서 누군가를 골랐을 때만
+    const nAcc = bulkTargets(shown, sel, "접수완료").length, nApp = bulkTargets(shown, sel, "임명확정").length;
+    el.querySelector(".mn-bulkbox").innerHTML = view === "person" && sel.size ? bulkBarHtml(sel.size, nAcc, nApp) : "";
     // 팀별 신청 수 — **지금 걸러진 목록**으로 센다. 어느 보기에서나 아래에 있다
     const tc = teamCounts(shown);
     el.querySelector(".mn-teams").innerHTML = tc.length
@@ -187,6 +199,48 @@ export async function render(el, { call }) {
       toast(`${r.name}님 «${r.team}» — ${TO[r.status] || r.status} 바꿨어요`);
     }
     draw();
+  }
+
+  // 한꺼번에 바꾸기(2026-10-25 · 2안) — 사람 카드의 「전부 접수·임명·취소」와 아래 고정 줄이 쓴다. targets = 바꿀 줄(순수 bulkTargets 가 고른다).
+  // ⚠️ 줄마다 ministrySetStatus 를 따로 부른다(expect 로 다른 담당자가 먼저 바꿨는지 본다) — 서버에 새 액션을 만들지 않았다.
+  //    중간에 막히면 거기서 멈추고, 이미 바뀐 것은 그대로 두고 몇 건이 됐는지 알린다(되돌리지 않는다).
+  // ⚠️ 임명은 한 번만 묻고(알림은 한 해 한 번 — 이미 나간 분께는 다시 안 나간다) · 취소는 사유를 한 번만 받아 모두에 적는다.
+  async function bulkSet(targets, to, who) {
+    if (!targets.length) return;
+    let note;
+    if (to === "임명확정" && !(await confirmBulkAppoint(targets))) return;
+    if (to === "취소") { note = await askCancelReason({ name: who || "선택한 분", team: targets.length + "개 사역" }); if (note === null) return; }
+    if (!el.isConnected) return;
+    let done = 0, pushed = 0, quiet = 0, fail = null;
+    const pushFail = [];
+    await busy(el, async () => {
+      for (const r of targets) {
+        const before = r.status;
+        const d = await call("ministrySetStatus", { id: r.id, status: to, expect: before, ...(note !== undefined ? { note } : {}) });
+        if (!d.ok) { fail = d; break; }
+        r.status = d.status || to;
+        if (d.phoneCleared) clearPhone(r, d.church);
+        if (note !== undefined) r.note = note;
+        done++;
+        if (to === "임명확정") {
+          if (d.pushed > 0) { r.notified_at = new Date().toISOString(); pushed++; }
+          else if (d.pushError && d.pushError !== "not-subscribed") pushFail.push(r.name);
+          else if (!d.already) quiet++;
+        }
+      }
+    });
+    draw();
+    const what = to === "접수완료" ? "접수로" : to === "임명확정" ? "임명으로" : "취소로";
+    if (done) toast(to === "임명확정" ? `🎉 ${done}건 임명 · 🔔 ${pushed}명께 알림${quiet ? ` · 🔕 ${quiet}명은 안 켜심` : ""}` : `${done}건 ${what} 바꿨어요`);
+    if (pushFail.length) dialog({ title: "⚠️ 알림이 가지 않은 분이 있어요", cancel: null,
+      text: `임명은 저장됐지만 알림이 가지 않았어요 — 게시·연락으로 알려 주세요.\n${[...new Set(pushFail)].join(", ")}` });
+    if (fail) {
+      if (fail.error === "conflict" || fail.error === "not-found") {
+        await dialog({ title: "다른 분이 먼저 바꿨어요", text: `${done}건은 바꿨고 나머지는 멈췄어요 — 새로 불러올게요`, cancel: null });
+        return reload();
+      }
+      dialog({ title: "⚠️ 일부만 바꿨어요", text: `${done}건은 바꿨고 나머지는 멈췄어요.\n${errorText(fail)}`, cancel: null });
+    }
   }
 
   // 결정된(임명·취소) 신청의 휴대폰 번호를 그 해 것 모두 지운다(2026-10-01 · 결정 뒤에도 180일이 지나면 저절로 지워진다).
@@ -279,6 +333,11 @@ export async function render(el, { call }) {
     if (act === "reload") return reload();
     if (act === "phoneclear") return clearPhones();
     if (act === "set") return setStatus(b.dataset.id, b.dataset.st);
+    // 사람 카드(2안) — 고르기 · 그 사람 것 한꺼번에 · 고른 분들 한꺼번에 · 고른 것 풀기
+    if (act === "pick") { const k = b.dataset.pk; if (sel.has(k)) sel.delete(k); else sel.add(k); return draw(); }
+    if (act === "unsel") { sel.clear(); return draw(); }
+    if (act === "pbulk") { const k = b.dataset.pk, nm = (lastShown.find((r) => personKey(r) === k) || {}).name; return bulkSet(bulkTargets(lastShown, [k], b.dataset.to), b.dataset.to, nm); }
+    if (act === "bulk") return bulkSet(bulkTargets(lastShown, sel, b.dataset.to), b.dataset.to);
     if (act === "del") return remove(b.dataset.id);
     if (act === "cond") {
       condOpen = !condOpen;

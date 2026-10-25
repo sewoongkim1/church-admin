@@ -90,3 +90,37 @@ export function clearPhone(r, church) {
 export const PHONE_DECIDED = ["임명확정", "미채택", "취소"];
 export const phoneClearCount = (rows) =>
   (rows || []).filter((r) => PHONE_DECIDED.includes(r && r.status) && String((r && r.phone) || "") !== "").length;
+
+// ── 한꺼번에 처리(2026-10-25 친구가 고른 2안 · 사람 카드) ──
+// 어느 상태에서 어느 상태로 한꺼번에 갈 수 있나 — 「접수」는 신청에서만, 「임명」은 신청·접수에서(이미 임명·취소는 건드리지 않는다), 「취소」는 취소가 아닌 모든 것에서.
+export const BULK_FROM = { "접수완료": ["신청완료"], "임명확정": ["신청완료", "접수완료"], "취소": ["신청완료", "접수완료", "임명확정"] };
+
+// 고른 사람(keys = personKey 모음)들의 줄 가운데 to 로 바꿀 수 있는 것
+export function bulkTargets(rows, keys, to) {
+  const from = BULK_FROM[to] || [];
+  const set = keys instanceof Set ? keys : new Set(keys || []);
+  return (rows || []).filter((r) => set.has(personKey(r)) && from.includes(r.status));
+}
+
+// 사람별 묶음 — 가나다 차례(기존 사람별 보기와 같다). [{ key, rows }]
+export function groupByPerson(rows) {
+  const by = new Map();
+  for (const r of rows || []) { const k = personKey(r); if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
+  return [...by.entries()].map(([key, list]) => ({ key, rows: list })).sort((a, b) => a.key.localeCompare(b.key, "ko"));
+}
+
+// 임명 확인 창의 숫자 — 알림은 한 해 한 번(이미 나간 분은 다시 안 나간다) · 앱 알림을 켜신 분만 간다
+export function appointNote(targets) {
+  const by = new Map();
+  for (const r of targets || []) {
+    const k = personKey(r);
+    const p = by.get(k) || { name: r.name || "", already: false, push: false };
+    if (r.notified_at) p.already = true;
+    if (r.canPush) p.push = true;
+    by.set(k, p);
+  }
+  const people = [...by.values()];
+  const already = people.filter((p) => p.already).length;
+  const push = people.filter((p) => !p.already && p.push).length;
+  return { people: people.length, teams: (targets || []).length, already, push, quiet: people.length - already - push, names: people.map((p) => p.name) };
+}
