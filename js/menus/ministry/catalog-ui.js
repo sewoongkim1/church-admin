@@ -80,7 +80,7 @@ export function formHtml(r) {
   if (r.appoint) return `<div class="mc-note">지명 자리라 성도님이 고르지 않습니다 — 설명이 없어도 됩니다.</div>`;
   return `<div class="mc-in">
     <label>시간·요일<input type="text" data-f="sched" data-id="${r.id}"
-      value="${esc(r.sched)}" placeholder="예: 매주 화 오전 10시"></label>
+      value="${esc(r.sched)}" placeholder="예) 매주 화 오전 10시"></label>
     <div class="mc-when">
       <span class="mc-w-t">② 언제
         <em>성도님이 이걸로 사역을 찾습니다 — 비우면 「정해진 날 없음 · 때마다 다름」</em></span>
@@ -97,16 +97,16 @@ export function formHtml(r) {
         <i class="mc-w-off" data-off="${r.id}"${r.sun ? " hidden" : ""}>주일을 체크하면 넣을 수 있어요</i></span>
     </div>
     <label class="wide">하는 일<textarea data-f="desc" data-id="${r.id}" rows="2"
-      placeholder="예: 주일 예배 전 주차를 안내합니다. &lt;b&gt;굵게&lt;/b&gt; 도 됩니다">${esc(r.desc)}</textarea></label>
+      placeholder="예) 주일 예배 전 주차를 안내합니다. &lt;b&gt;굵게&lt;/b&gt; 도 됩니다">${esc(r.desc)}</textarea></label>
     <div class="mc-prev" data-prev="${r.id}">${r.desc || `<span class="mc-none">비어 있음 — 성도님 화면에는 이름만 보입니다</span>`}</div>
     <label>필요 인원<input type="text" data-f="capacity" data-id="${r.id}"
-      value="${esc(r.capacity)}" placeholder="예: 10명 (선택)"></label>
+      value="${esc(r.capacity)}" placeholder="예) 10명 (선택)"></label>
     <label class="wide">담당(문의) <span class="mc-hint">성도님 화면 「하는 일」 아래에 보입니다 · 비우면 줄이 안 나옵니다</span>
       <input type="text" data-f="leader" data-id="${r.id}"
-        value="${esc(r.leader)}" placeholder="예: 홍길동 집사 (010-1234-5678)"></label>
+        value="${esc(r.leader)}" placeholder="예) 홍길동 집사 (010-1234-5678)"></label>
     <label class="wide">지금 섬기는 분 <span class="mc-hint">한 줄에 한 분씩</span>
       <textarea data-f="members" data-id="${r.id}" rows="3"
-        placeholder="홍길동 집사 (화평-20)&#10;이영희 권사 (사랑-3)">${esc(mcLines(r.members))}</textarea>
+        placeholder="예) 홍길동 집사 (화평-20)&#10;이영희 권사 (사랑-3)">${esc(mcLines(r.members))}</textarea>
       <span class="mc-hint">접수완료된 신청자는 여기 안 적어도 자동으로 함께 보입니다.</span></label>
     <div class="mc-in-acts">
       <button type="button" class="mc-save" data-save="${r.id}">저장</button>

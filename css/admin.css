@@ -477,6 +477,8 @@ a.mn-tel.sm{padding:2px 8px}
    원문: docs/port/ministry-catalog-legacy.md 2.12~2.14. 크기는 토큰으로, 11~12px 글씨는 13px 이상으로 올렸다.
    ⚠️ 좁은 폰 규칙(마지막 @media 블록의 .mc-in label)은 반드시 아래 기본 .mc-in label 규칙보다 **뒤**에 둔다
       (원문 2.14 그대로 — 소스 순서가 뒤여야 같은 우선순위에서 이긴다). */
+/* 입력 예시(「예) …」)는 흐리게 — 입력한 값과 구분이 안 되던 것(친구 2026-10-25) */
+.mc-in input::placeholder,.mc-in textarea::placeholder{color:#a0a9b8;font-weight:400;opacity:1}
 .mc-acts{margin-bottom:var(--gap)}
 .mc-panel{padding-top:12px}
 /* 붙는 머리 — 찾기 · 부서 고르기(접기/펼치기, 가로 스크롤 없음) */
