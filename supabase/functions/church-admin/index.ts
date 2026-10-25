@@ -2774,6 +2774,26 @@ async function internalMyHistory(b: any) {
   return { ok: true, found: pid !== null, rows: sortHistory(rows.map(historyRowOut)), requests: reqs.slice(0, 100).map(requestOut) };
 }
 
+// 성도님이 낸 정정 신청을 스스로 취소한다(2026-10-25 친구 「빠진 사역 추가하기 신청 후 취소 할 수 있게」).
+//   · 본인(user_id)의 것만 · 상태가 「신청」(담당자가 아직 안 집은 것)일 때만 — 「확인 중」부터는 담당자가 다루고 있어 막는다(already-handled).
+//   · 지운다(자취를 남기는 「취소」 상태를 새로 만들지 않았다 — kind·status 글자는 SQL 008 CHECK·앱 MH_* 와 세 곳이라) · 되돌릴 수 없다.
+//   · 지우는 문장에 status='신청' 을 다시 걸어, 그사이 담당자가 「확인 중」으로 바꿨으면 지우지 않는다.
+async function internalHistoryCancel(b: any) {
+  const w = readLoginWho(b.who), uid = hcUserId(b.user_id);
+  if (!w || !uid) return { ok: false, error: "bad-who" };
+  const id = Number(b.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, error: "no-row" };
+  const { data, error } = await db.from("ministry_history_requests").select("id,status").eq("id", id).eq("user_id", uid).maybeSingle();
+  if (error) throw error;
+  if (!data) return { ok: false, error: "no-row" };
+  if (data.status !== "신청") return { ok: false, error: "already-handled" };
+  const { data: gone, error: de } = await db.from("ministry_history_requests").delete()
+    .eq("id", id).eq("user_id", uid).eq("status", "신청").select("id");
+  if (de) throw de;
+  if (!gone || !gone.length) return { ok: false, error: "already-handled" };
+  return { ok: true };
+}
+
 async function internalHistoryRequest(b: any) {
   const w = readLoginWho(b.who), uid = hcUserId(b.user_id);
   if (!w || !uid) return { ok: false, error: "bad-who" };
@@ -3040,6 +3060,7 @@ async function internalRoute(req: Request): Promise<Response> {
     switch (action) {
       case "internalMyHistory":      return json(await internalMyHistory(b));
       case "internalHistoryRequest": return json(await internalHistoryRequest(b));
+      case "internalHistoryCancel":  return json(await internalHistoryCancel(b));
       case "internalPinMatch":       return json(await internalPinMatch(b));
     }
     return json({ ok: false, error: "unknown-action" }, 400);

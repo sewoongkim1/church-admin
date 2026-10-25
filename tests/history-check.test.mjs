@@ -235,8 +235,8 @@ test("sortHistory — 연도 내림차순 · 같은 해는 부서·팀·id 차�
   assert.deepEqual(out.map((x) => x.id), [3, 2, 4, 1]);
 });
 
-test("내부 액션 둘은 역할 표에 없다 — 카카오 토큰으로 부르면 unknown-action", () => {
-  for (const a of ["internalMyHistory", "internalHistoryRequest"]) {
+test("내부 액션 셋은 역할 표에 없다 — 카카오 토큰으로 부르면 unknown-action", () => {
+  for (const a of ["internalMyHistory", "internalHistoryRequest", "internalHistoryCancel"]) {
     assert.ok(!(a in ACTION_ROLES), a);
     assert.equal(canCall(a, { status: "active", roles: ["super"] }), "unknown-action");
   }
