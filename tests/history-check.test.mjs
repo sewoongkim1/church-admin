@@ -108,12 +108,12 @@ test("parseRequest — 줄 정정은 history_id 필수 · 「그 밖에」는 �
 });
 
 test("parseRequest — 빠진 사역은 연도·부서팀 필수 · 찾아 주세요는 줄 없이", () => {
-  assert.deepEqual(parseRequest({ kind: "missing", year: "2023", team_text: " 시온성가대 ", history_id: 9 }),
-    { ok: true, req: { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: null, team_text: "시온성가대" } });
+  assert.deepEqual(parseRequest({ kind: "missing", year: "2025", team_text: " 시온성가대 ", history_id: 9 }),
+    { ok: true, req: { history_id: null, kind: "missing", detail: "", year: 2025, committee_text: null, team_text: "시온성가대" } });
   assert.deepEqual(parseRequest({ kind: "missing", year: "", team_text: "시온성가대" }), { ok: false, error: "bad-year" });
   assert.deepEqual(parseRequest({ kind: "missing", year: 1900, team_text: "시온성가대" }), { ok: false, error: "bad-year" });
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, team_text: "" }), { ok: false, error: "need-team" });
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, team_text: "가".repeat(101) }), { ok: false, error: "too-long" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, team_text: "" }), { ok: false, error: "need-team" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, team_text: "가".repeat(101) }), { ok: false, error: "too-long" });
   assert.deepEqual(parseRequest({ kind: "find_me", history_id: 5, detail: "목장이 바뀌었어요" }),
     { ok: true, req: { history_id: null, kind: "find_me", detail: "목장이 바뀌었어요", year: null, committee_text: null, team_text: "" } });
 });
@@ -121,40 +121,41 @@ test("parseRequest — 빠진 사역은 연도·부서팀 필수 · 찾아 주�
 // 2026-10-02 친구 요청 「네 두칸으로 해주세요」 — 빠진 사역 「부서」「팀」 두 칸(committee_text · SQL 009)
 //   committee_text 가 글자(빈 글자도)면 두 칸 신청 — 둘 다 다듬기만 하고 나누지 않는다. 글자가 아니면(옛 앱 · null) 한 칸 그대로.
 test("parseRequest — 두 칸(committee_text 가 글자) · 둘 중 하나는 · 칸마다 100자 · 나누지 않는다 · 옛 한 칸은 그대로", () => {
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: " 찬양위원회 ".normalize("NFD"), team_text: "시온   성가대" }),
-    { ok: true, req: { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: "찬양위원회", team_text: "시온 성가대" } });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, committee_text: " 찬양위원회 ".normalize("NFD"), team_text: "시온   성가대" }),
+    { ok: true, req: { history_id: null, kind: "missing", detail: "", year: 2025, committee_text: "찬양위원회", team_text: "시온 성가대" } });
   // 부서만 · 팀만(부서는 빈 글자 — 그래도 두 칸 신청)
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "새가족부", team_text: "" }).req,
-    { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: "새가족부", team_text: "" });
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "", team_text: "시온성가대" }).req,
-    { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: "", team_text: "시온성가대" });
-  assert.equal(parseRequest({ kind: "missing", year: 2023, committee_text: "새가족부" }).req.team_text, "");   // 팀이 없으면 빈 글자
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, committee_text: "새가족부", team_text: "" }).req,
+    { history_id: null, kind: "missing", detail: "", year: 2025, committee_text: "새가족부", team_text: "" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, committee_text: "", team_text: "시온성가대" }).req,
+    { history_id: null, kind: "missing", detail: "", year: 2025, committee_text: "", team_text: "시온성가대" });
+  assert.equal(parseRequest({ kind: "missing", year: 2025, committee_text: "새가족부" }).req.team_text, "");   // 팀이 없으면 빈 글자
   // 한 칸에 「부서 팀 직분」을 적어도 나누지 않는다(담당자가 「사역 이력에 넣을 내용」에서 고친다)
-  assert.equal(parseRequest({ kind: "missing", year: 2023, committee_text: "찬양위원회 시온성가대 집사", team_text: "" }).req.committee_text,
+  assert.equal(parseRequest({ kind: "missing", year: 2025, committee_text: "찬양위원회 시온성가대 집사", team_text: "" }).req.committee_text,
     "찬양위원회 시온성가대 집사");
   // 오류 — 둘 다 빔 · 칸마다 100자 · 연도는 지금처럼(연도를 먼저 본다)
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "  ", team_text: " " }), { ok: false, error: "need-team" });
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "", team_text: "" }), { ok: false, error: "need-team" });
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "가".repeat(101), team_text: "팀" }), { ok: false, error: "too-long" });
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: "부서", team_text: "가".repeat(101) }), { ok: false, error: "too-long" });
-  assert.equal(parseRequest({ kind: "missing", year: 2023, committee_text: "가".repeat(100), team_text: "나".repeat(100) }).ok, true);
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, committee_text: "  ", team_text: " " }), { ok: false, error: "need-team" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, committee_text: "", team_text: "" }), { ok: false, error: "need-team" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, committee_text: "가".repeat(101), team_text: "팀" }), { ok: false, error: "too-long" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, committee_text: "부서", team_text: "가".repeat(101) }), { ok: false, error: "too-long" });
+  assert.equal(parseRequest({ kind: "missing", year: 2025, committee_text: "가".repeat(100), team_text: "나".repeat(100) }).ok, true);
   assert.deepEqual(parseRequest({ kind: "missing", year: "", committee_text: "", team_text: "" }), { ok: false, error: "bad-year" });
   // 글자가 아니면 한 칸 신청 — null · 숫자 · 없음은 team_text 하나로 보고 committee_text 는 null(옛 앱이 보낸 것과 같다)
   for (const committee_text of [null, undefined, 3, {}]) {
-    const r = parseRequest({ kind: "missing", year: 2023, committee_text, team_text: "찬양위원회 시온성가대" });
-    assert.deepEqual(r.req, { history_id: null, kind: "missing", detail: "", year: 2023, committee_text: null, team_text: "찬양위원회 시온성가대" },
+    const r = parseRequest({ kind: "missing", year: 2025, committee_text, team_text: "찬양위원회 시온성가대" });
+    assert.deepEqual(r.req, { history_id: null, kind: "missing", detail: "", year: 2025, committee_text: null, team_text: "찬양위원회 시온성가대" },
       String(committee_text));
   }
-  assert.deepEqual(parseRequest({ kind: "missing", year: 2023, committee_text: null, team_text: "" }), { ok: false, error: "need-team" });
+  assert.deepEqual(parseRequest({ kind: "missing", year: 2025, committee_text: null, team_text: "" }), { ok: false, error: "need-team" });
   // 다른 종류는 늘 null(보내도 읽지 않는다)
   assert.equal(parseRequest({ kind: "wrong_team", history_id: 3, committee_text: "찬양위원회" }).req.committee_text, null);
   assert.equal(parseRequest({ kind: "find_me", committee_text: "찬양위원회" }).req.committee_text, null);
 });
 
-test("parseRequest — 빠진 사역 연도는 2000년부터 올해까지", () => {
+test("parseRequest — 빠진 사역 연도는 2025년부터 올해까지(2026-10-24 친구 · 그 앞 해는 고치지 않는다)", () => {
   const y = (year) => parseRequest({ kind: "missing", year, team_text: "시온성가대" }, 2026);
-  assert.deepEqual(y(1999), { ok: false, error: "bad-year" });
-  assert.equal(y(2000).ok, true);
+  assert.deepEqual(y(2000), { ok: false, error: "bad-year" });
+  assert.deepEqual(y(2024), { ok: false, error: "bad-year" });
+  assert.equal(y(2025).ok, true);
   assert.equal(y(2026).ok, true);
   assert.deepEqual(y(2027), { ok: false, error: "bad-year" });
 });
@@ -193,9 +194,9 @@ test("requestInsert — 신청 때 소속·이름 사본(교구는 교구·목�
   });
   // 두 칸 신청은 committee_text 를 그대로 넣는다(빈 글자도 — null 은 옛 한 칸 신청이라는 뜻이다)
   const w = { type: "교구", gu: "기쁨", mok: "12", bu: "", grade: "", name: "홍길동" };
-  const two = requestInsert(parseRequest({ kind: "missing", year: 2023, committee_text: "", team_text: "시온성가대" }).req, uid, 5, w);
+  const two = requestInsert(parseRequest({ kind: "missing", year: 2025, committee_text: "", team_text: "시온성가대" }).req, uid, 5, w);
   assert.deepEqual([two.committee_text, two.team_text], ["", "시온성가대"]);
-  const one = requestInsert(parseRequest({ kind: "missing", year: 2023, team_text: "찬양위원회 시온성가대" }).req, uid, 5, w);
+  const one = requestInsert(parseRequest({ kind: "missing", year: 2025, team_text: "찬양위원회 시온성가대" }).req, uid, 5, w);
   assert.deepEqual([one.committee_text, one.team_text], [null, "찬양위원회 시온성가대"]);
   const s = requestInsert(req, uid, null, { type: "교회학교", gu: "", mok: "", bu: "중등부", grade: "2학년", name: "홍길동" });
   assert.equal(s.who_group, "중등부"); assert.equal(s.who_sub, "2학년"); assert.equal(s.person_id, null);

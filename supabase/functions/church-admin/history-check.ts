@@ -13,7 +13,9 @@ export const REQ_OPEN = ["신청", "확인 중"];
 export const REQ_DETAIL_MAX = 200;
 export const REQ_TEAM_MAX = 100;
 export const REQ_OPEN_MAX = 20;
-export const REQ_YEAR_MIN = 2000;   // 빠진 사역 연도 — 2000년부터 올해까지(2026-10-19 친구)
+// 성도님 앱의 「사역 이력 확인」은 2025·2026 사역만 보이고 고치게 한다(2026-10-24 친구) — 그 앞 해는 보이지 않고 정정 신청도 못 낸다.
+// 빠진 사역 연도도 같은 해부터 올해까지. ⚠️ 2028 사역신청 때는 이 값을 2026 으로 올린다(대상 연도 − 2). 교회 어드민 「사역 이력」·DB 는 그대로.
+export const REQ_YEAR_MIN = 2025;
 // 직분은 성도님 앱에 보내지 않는다(2026-10-01 친구 요청 · 화면에서도 뺐다).
 export const HISTORY_SELECT = "id,year,committee,team,role_title";
 // committee_text — 빠진 사역 「부서」 칸(2026-10-02 두 칸 · SQL 009) · null 이면 옛 한 칸 신청(team_text 에 「부서·팀」 글)

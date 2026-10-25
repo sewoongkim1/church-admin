@@ -65,7 +65,7 @@ import { historyOrNull, withHistory, withEduTab } from "./people-links.ts";
 import { rematchHistoryRows } from "./history-db.ts";
 // 사역 이력 확인 · 정정 신청(성경암송 앱 · 2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { loginNameKey, matchLoginPerson, type LoginWho } from "./people-match.ts";
-import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, readLoginWho, REQ_OPEN, requestBlock, requestInsert, requestOut, REQUEST_SELECT, sortHistory } from "./history-check.ts";
+import { hcUserId, historyRowOut, HISTORY_SELECT, internalKeyOk, parseRequest, readLoginWho, REQ_OPEN, REQ_YEAR_MIN, requestBlock, requestInsert, requestOut, REQUEST_SELECT, sortHistory } from "./history-check.ts";
 // 「📮 정정 신청」 담당자 처리(2026-10-01) — ⚠️ 위 import 에 이미 든 이름은 적지 않는다
 import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, requestAdminOut, requestAuditDetail, requestCounts, requestSetBlock, requestSetNoop, requestSetPatch, ROW_ADMIN_SELECT } from "./history-check.ts";
 // 사역 이력(2026-10-01 · 설계 v2 docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md) — 표 읽기·쓰기는 history-db.ts 한 곳
@@ -2753,9 +2753,17 @@ async function internalMyHistory(b: any) {
   const w = readLoginWho(b.who), uid = hcUserId(b.user_id);
   if (!w || !uid) return { ok: false, error: "bad-who" };
   const pid = await hcFindPerson(w);
+  // 2025년 앞 사역은 보내지 않는다(2026-10-24 친구) — 그 줄에 걸린 정정 신청·빠진 사역(그 앞 해)도 함께 뺀다
   const rows = pid === null ? [] : await allRows(() => db.from("ministry_history").select(HISTORY_SELECT)
-    .eq("person_id", pid).is("deleted_at", null).order("id", { ascending: true }));
-  const reqs = await hcRequests(uid);
+    .eq("person_id", pid).is("deleted_at", null).gte("year", REQ_YEAR_MIN).order("id", { ascending: true }));
+  const old = new Set<number>();
+  if (pid !== null) {
+    const { data, error } = await db.from("ministry_history").select("id").eq("person_id", pid).lt("year", REQ_YEAR_MIN).limit(5000);
+    if (error) throw error;
+    for (const r of data ?? []) old.add(Number(r.id));
+  }
+  const reqs = (await hcRequests(uid)).filter((r: any) =>
+    !(r.history_id != null && old.has(Number(r.history_id))) && !(r.kind === "missing" && r.year != null && Number(r.year) < REQ_YEAR_MIN));
   return { ok: true, found: pid !== null, rows: sortHistory(rows.map(historyRowOut)), requests: reqs.slice(0, 100).map(requestOut) };
 }
 
@@ -2768,7 +2776,7 @@ async function internalHistoryRequest(b: any) {
   const mine = new Set<number>();
   if (pid !== null && p.req.history_id !== null) {
     const { data, error } = await db.from("ministry_history").select("id")
-      .eq("id", p.req.history_id).eq("person_id", pid).is("deleted_at", null).maybeSingle();
+      .eq("id", p.req.history_id).eq("person_id", pid).is("deleted_at", null).gte("year", REQ_YEAR_MIN).maybeSingle();
     if (error) throw error;
     if (data) mine.add(Number(data.id));
   }
