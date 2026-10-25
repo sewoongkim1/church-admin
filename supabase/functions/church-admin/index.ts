@@ -488,7 +488,7 @@ async function ministryYear(): Promise<number> {
 async function ministryAppointed() {
   const year = await ministryYear();
   const rows = await allRows(() => db.from("ministry_orders")
-    .select("user_id,name,who,committee,team,option,created_at,decided_at,source")
+    .select("user_id,name,who,committee,team,option,position,created_at,decided_at,source")
     .eq("year", year).eq("status", "임명확정")
     .order("created_at", { ascending: true }).order("id", { ascending: true }));
   // 이름·소속이 비어 있는 옛 행은 users 에서 채운다(api ministryList 와 같은 규칙)
@@ -499,6 +499,9 @@ async function ministryAppointed() {
     if (e2) throw e2;
     for (const u of (us ?? []) as any[]) umap.set(u.id, u);
   }
+  // 직분(2026-10-25 친구 — 신청 현황과 같은 규칙): 신청에 든 것이 먼저, 없으면 교적의 직분(같은 소속 한 분일 때만). 번호는 이 화면에 없으니 맞대는 데 쓰지 않는다.
+  const look = await churchLookupLinked(rows.map((r) => r.name || umap.get(r.user_id)?.name || ""));
+  const churchIdx = look ? look.idx : null;
   return {
     ok: true,
     year,
@@ -508,6 +511,8 @@ async function ministryAppointed() {
       return {
         name: r.name || u?.name || "",
         who: r.who || uWho,
+        position: r.position ?? "",
+        churchPosition: churchPositionFor(churchIdx, applicantFromWho(r.name || u?.name || "", r.who || uWho, "")),
         committee: r.committee ?? "",
         team: r.team ?? "",
         option: r.option ?? "",
