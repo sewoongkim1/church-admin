@@ -12,7 +12,7 @@ import { canCall, identityCandidates, identityKey, kakaoAvatar, kakaoNickname, n
 import { statusPatch } from "./ministry.ts";
 import { ministryFreqOf, ministryHtml, ministryMemberLine, ministryTimeIn, MINISTRY_FREQ_COLS, MINISTRY_FREQ_KEYS } from "./catalog.ts";
 import { appIdentityKey, legacyNorm, ministryPaperKeys, ministryPaperOne, paperName, PAPER_MAX_ROWS } from "./paper.ts";
-import { applicantFromPaper, applicantFromWho, churchFor, lookupKeys, toCand, type Cand } from "./people-match.ts";
+import { applicantFromPaper, applicantFromWho, churchFor, churchPositionFor, lookupKeys, toCand, type Cand } from "./people-match.ts";
 import { parseSearch, searchDetail, sortOrder, statsOf, PAGE_SIZE, PHOTO_TTL, FILTER_KEYS, type Search } from "./people-query.ts";
 // 성경필사(암송)(Task 5) — 기존 import 줄은 고치지 않고 새 줄로 더한다. Task 6~8 은 여기 든 이름을 다시 들이지 않는다(두 번 선언 = 배포 실패).
 import { applicantFromSignup, nameKey, type Church } from "./people-match.ts";
@@ -564,6 +564,8 @@ async function ministryList() {
         note: r.note ?? "", notified_at: r.notified_at ?? null, canPush: hasPush.has(r.user_id),
         phone: r.phone ?? "", source: r.source === "paper" ? "paper" : "app",
         church: churchFor(churchIdx, applicantFromWho(r.name || u?.name || "", r.who || uWho, r.phone ?? "")),
+        // 교적의 직분(2026-10-25 친구 — 앱이 직분을 받지 않는다) · 같은 소속에 한 분일 때만 · 신청에 직분이 들어 있으면 그게 먼저(옛 신청)
+        churchPosition: churchPositionFor(churchIdx, applicantFromWho(r.name || u?.name || "", r.who || uWho, r.phone ?? "")),
         tester: testerIds.has(r.user_id),
       };
     }),
@@ -1312,7 +1314,7 @@ async function churchLookupLinked(names: unknown[]): Promise<LinkLook | null> {
   const keys = lookupKeys(names);
   const idx = new Map<string, ReturnType<typeof toLinkCand>[]>();
   for (let i = 0; i < keys.length; i += 200) {
-    const { data, error } = await db.from("church_people").select("person_id,name_key,mok1,mok3,school_dept,phone_digits,kind2")
+    const { data, error } = await db.from("church_people").select("person_id,name_key,mok1,mok3,school_dept,phone_digits,kind2,position")
       .in("name_key", keys.slice(i, i + 200));
     if (error) throw error;
     for (const r of (data ?? []) as any[]) {

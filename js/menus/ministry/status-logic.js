@@ -22,12 +22,14 @@ export function filterRows(rows, { stOn, range, from, to, q }, now) {
     if (on.length && !on.includes(r.status)) return false;
     if (f && r.at < f) return false;
     if (t && r.at > t) return false;
-    if (s && ![r.name, r.who, r.position, r.team, r.committee, r.tester ? "시험" : ""].join(" ").includes(s)) return false;   // 「시험」 = 🧪 시험 참여자의 신청
+    if (s && ![r.name, r.who, r.position, r.churchPosition, r.team, r.committee, r.tester ? "시험" : ""].join(" ").includes(s)) return false;   // 「시험」 = 🧪 시험 참여자의 신청
     return true;
   });
 }
 
 export const personKey = (r) => (r.name || "") + "/" + (r.who || "");
+// 보일 직분 — 신청에 든 것(옛 신청·종이 명단)이 먼저, 없으면 교적의 직분(서버가 같은 소속 한 분일 때만 준다 · 2026-10-25)
+export const posOf = (r) => (r && (r.position || r.churchPosition)) || "";
 export const teamKey = (r) => (r.committee || "") + " · " + (r.team || "");
 const digits = (p) => String(p || "").replace(/[^0-9]/g, "");
 

@@ -2,6 +2,8 @@
 //   서버(Deno, index.ts)와 시험(Node, tests/people-match.test.mjs)이 **같은 파일**을 읽는다 —
 //   authz.ts 와 같은 제약(원격 import·enum 금지, node --experimental-strip-types 가 그대로 읽는다).
 // ⚠️ 사역 담당자에게는 { state, reason } 두 칸만 간다. 교적의 값(연락처·주소·생년월일·직분)은 이 모듈 밖으로 내보내지 않는다.
+//   단 하나의 예외(2026-10-25 친구) — 신청 현황의 **직분**. 앱이 직분을 받지 않게 되어(교적의 직분을 쓴다) 담당자가 임명에 쓰려면 보여야 한다.
+//   churchPositionFor 가 그 하나만 돌려준다 — **같은 소속에 한 분일 때만**(「맞음」과 같은 판정). 그 밖에는 빈 글자(추측하지 않는다).
 
 // 성경암송 앱 GU_LIST 와 같은 차례
 export const MATCH_GU = ["믿음", "소망", "사랑", "섬김", "은혜", "화평", "기쁨", "새가족"];
@@ -21,7 +23,7 @@ export function mokNumber(s: unknown): number | null {
 
 // kind2(장년·교회학교·학생 …)는 판정에만 쓴다 — 명부의 아이 가리기(candKid)와 성경필사 줄의 「옮겨 적은 줄」(events-person.ts transcribedSame).
 //   맨 위 ⚠️ 그대로, 밖으로 내보내지 않는다.
-export type Cand = { kind2: string; mok1: string; mok3: string; school_dept: string; phones: string[] };
+export type Cand = { kind2: string; mok1: string; mok3: string; school_dept: string; phones: string[]; position?: string };
 // men — 신청 쪽 목장 칸에 「남성」이 적혔다(「소망 남성」·「남성목장」). 교회학교 줄은 늘 false.
 export type Applicant = { type: "교구" | "교회학교"; gu: string; mok: number | null; men: boolean; bu: string; name: string; phone: string };
 export type Church = { state: "맞음" | "확인 필요" | "없음"; reason: string };
@@ -30,6 +32,7 @@ export function toCand(r: any): Cand {
   return {
     kind2: txt(r?.kind2), mok1: txt(r?.mok1), mok3: txt(r?.mok3), school_dept: txt(r?.school_dept),
     phones: String(r?.phone_digits ?? "").split(/\s+/).filter(Boolean),
+    position: txt(r?.position),
   };
 }
 
@@ -124,6 +127,16 @@ export function matchChurch(cands: Cand[] | undefined, a: Applicant, isSame?: (c
   const ph = phoneDigits(a.phone);
   if (ph && list.some((c) => c.phones.includes(ph))) return { state: "확인 필요", reason: "소속 다름" };
   return { state: "확인 필요", reason: `같은 이름 ${list.length}명` };
+}
+
+// 신청 현황에 보일 교적 직분(2026-10-25 친구 · 위 ⚠️ 의 하나뿐인 예외) — 같은 소속에 정확히 한 분일 때만 그분의 직분, 아니면 "".
+//   「맞음」(matchChurch)과 같은 후보·같은 판정이라 교적 표시가 「맞음」일 때만 직분이 붙는다(「확인 필요」에는 붙이지 않는다).
+export function churchPositionFor(idx: Map<string, Cand[]> | null, a: Applicant, isSame?: (c: Cand) => boolean): string {
+  if (!idx) return "";
+  const k = nameKey(a.name);
+  if (!k || LOOKUP_BAD.test(k)) return "";
+  const same = (idx.get(k) ?? []).filter(isSame ?? ((c: Cand) => sameAffiliation(c, a)));
+  return same.length === 1 ? txt(same[0].position) : "";
 }
 
 // supabase-js .in() 은 " \ 를 이스케이프하지 않고 , ( ) 는 감싸기만 한다(authz.parseIdentity 참고) — 그런 이름은 묻지 않는다

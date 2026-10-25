@@ -30,7 +30,7 @@ test("mokNumber — 명부 「기쁨-12목장」과 앱 「12」·「12목장」
 test("toCand — 전화 칸을 번호 목록으로 · kind2 도 읽는다(성경필사 「옮겨 적은 줄」 판정용)", () => {
   // 2026-09-30 kind2 를 더했다(events-person.ts transcribedSame 이 mapChurchPerson 으로 옮겨 적어 보려고) — 판정에만 쓴다
   assert.deepEqual(C({ mok1: "기쁨", mok3: "기쁨-12목장", phone_digits: "01011112222 026861234" }),
-    { kind2: "", mok1: "기쁨", mok3: "기쁨-12목장", school_dept: "", phones: ["01011112222", "026861234"] });
+    { kind2: "", mok1: "기쁨", mok3: "기쁨-12목장", school_dept: "", phones: ["01011112222", "026861234"], position: "" });   // position — 2026-10-25 신청 현황의 교적 직분(churchPositionFor 만 읽는다)
   assert.equal(toCand({ kind2: " 교회학교 " }).kind2, "교회학교");
   assert.equal(toCand({}).kind2, "");
 });
@@ -323,4 +323,17 @@ test("남성 — 가족 목장 칸이 「소망-남성1」인 아이는 「소�
   assert.equal(sameAffiliation(C({ kind2: "교회학교", mok1: "소망", mok3: "소망-남성2", school_dept: "유년부" }), applicantFromWho("김철수", "소망 남성2목장", "")), false);
   // ⚠️ 숫자 목장 갈래는 아이를 빼지 않는다(사역 줄 표시가 바뀐다 — 친구에게 물을 일). 바꾸면 이 줄이 알려 준다
   assert.equal(sameAffiliation(C({ kind2: "학생", mok1: "소망", mok3: "소망-3목장", school_dept: "중등부" }), applicantFromWho("김철수", "소망 3목장", "")), true);
+});
+
+// ── 교적 직분(2026-10-25 · 신청 현황) — 같은 소속에 정확히 한 분일 때만 ──
+import { churchPositionFor, toCand as _toCand, applicantFromWho as _aw, nameKey as _nk } from "../supabase/functions/church-admin/people-match.ts";
+test("churchPositionFor — 같은 소속 한 분이면 그분의 직분 · 동명이인·소속 다름·교적 없음이면 빈 글자", () => {
+  const cand = (mok1, mok3, position) => _toCand({ kind2: "장년", mok1, mok3, phone_digits: "", position });
+  const idx = new Map([[_nk("김성도"), [cand("화평", "화평-20목장", "안수집사")]]]);
+  assert.equal(churchPositionFor(idx, _aw("김성도", "화평 20목장", "")), "안수집사");
+  assert.equal(churchPositionFor(idx, _aw("김성도", "기쁨 12목장", "")), "", "소속이 다르면 붙이지 않는다");
+  const twin = new Map([[_nk("김성도"), [cand("화평", "화평-20목장", "집사"), cand("화평", "화평-20목장", "권사")]]]);
+  assert.equal(churchPositionFor(twin, _aw("김성도", "화평 20목장", "")), "", "같은 소속에 두 분이면 추측하지 않는다");
+  assert.equal(churchPositionFor(idx, _aw("모르는분", "화평 20목장", "")), "");
+  assert.equal(churchPositionFor(null, _aw("김성도", "화평 20목장", "")), "", "명부가 없으면 빈 글자");
 });

@@ -76,3 +76,16 @@ test("bulkBarHtml — 고른 수 · 건수 · 바꿀 줄이 없으면 그 단추
   assert.ok(/data-to="접수완료">접수</.test(b) && /data-to="임명확정" disabled>임명</.test(b));
   assert.ok(!/data-to="접수완료" disabled/.test(b));
 });
+
+import { posOf, filterRows } from "../js/menus/ministry/status-logic.js";
+test("posOf — 신청에 든 직분이 먼저 · 없으면 교적의 직분 · 둘 다 없으면 빈 글자 · 찾기에도 걸린다", () => {
+  assert.equal(posOf({ position: "집사", churchPosition: "권사" }), "집사");
+  assert.equal(posOf({ position: "", churchPosition: "권사" }), "권사");
+  assert.equal(posOf({}), "");
+  const rows2 = [{ name: "가", who: "a", status: "신청완료", at: "2026-10-01", churchPosition: "안수집사" }, { name: "나", who: "a", status: "신청완료", at: "2026-10-01" }];
+  assert.equal(filterRows(rows2, { stOn: [], range: "all", q: "안수집사" }, new Date()).length, 1);
+});
+test("personCardsHtml — 교적의 직분이 알약으로(마우스를 올리면 「교적의 직분」)", () => {
+  const html = personCardsHtml([{ ...r(21, "다", "b", "신청완료", "t"), churchPosition: "장로" }], new Set(), new Map());
+  assert.ok(html.includes('class="mn-pos"') && html.includes("장로"));
+});

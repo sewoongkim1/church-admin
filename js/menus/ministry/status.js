@@ -31,7 +31,7 @@ const openSet = new Set();             // 펼쳐 둔 묶음 — 다시 그려도
 const normalize = (x) => ({
   id: x.id, at: String(x.at || "").replace(/\./g, "-"), who: x.who || "", name: x.name || "", church: x.church || null,
   status: x.status, canPush: !!x.canPush, notified_at: x.notified_at || null,
-  phone: x.phone || "", position: x.position || "", note: x.note || "", source: x.source || "app", tester: !!x.tester,
+  phone: x.phone || "", position: x.position || "", churchPosition: x.churchPosition || "", note: x.note || "", source: x.source || "app", tester: !!x.tester,
   committee: x.committee || "", team: x.team || "", option: x.option || "",
 });
 
