@@ -373,7 +373,9 @@ async function lifeResetDo(ctx: Ctx, b: any) {
   await db.from("life_devices").delete().eq("user_id", uid);
   await db.from("life_reset_requests").update({ status: "done", handled_at: new Date().toISOString(), handled_by: ctx.member?.id ?? null }).eq("user_id", uid).eq("status", "open");
   await audit(ctx, "life.reset", String(reqId), {});   // 번호·user_id·이름 안 남긴다
-  return { ok: true };
+  // 푼 뒤에 그 성도님께 앱 알림(친구 2026-10-27) — 성경암송 api 의 내부 액션. 실패해도 푼 것은 그대로(notified 로만 알린다).
+  const j = await appApiInternal({ action: "internalLifeResetDone", user_id: uid }, "lifeResetDone");
+  return { ok: true, notified: j ? Number(j.sent) || 0 : null };
 }
 
 // 확인 번호 교적 맞대기(2026-10-08 · Plan 4) — 성경암송 api 가 내부 키로 부른다.

@@ -36,7 +36,7 @@ export async function render(el, { call }) {
         if (!okGo) return;
         await busy(el, async () => {
           const d = await call("lifeResetDo", { request_id: id });
-          if (d.ok) { toast("풀었어요."); rows = rows.filter((x) => x.id !== id); draw(); }
+          if (d.ok) { toast(d.notified > 0 ? "풀었어요. 그분께 앱 알림을 보냈어요." : "풀었어요. (알림을 켜 두지 않은 분이라 앱 알림은 가지 않았어요.)"); rows = rows.filter((x) => x.id !== id); draw(); }
           else toast(errorText(d));
         });
       });
