@@ -71,7 +71,7 @@ import { filterRequests, parseRequestSet, REQ_FILTERS, REQUEST_ADMIN_SELECT, req
 // 사역 이력(2026-10-01 · 설계 v2 docs/superpowers/specs/2026-10-01-church-admin-ministry-history-design.md) — 표 읽기·쓰기는 history-db.ts 한 곳
 import { makeHistory } from "./history-db.ts";
 import { buildStats as buildMinistryStats } from "./ministry-stats.ts";
-import { makeEdu } from "./edu-db.ts";
+import { findAppUserOfPerson, makeEdu } from "./edu-db.ts";
 import { makeDuty } from "./duty-db.ts";
 import { makeNf } from "./nf-db.ts";
 import { dutyNotifyOut } from "./duty-rules.ts";
@@ -2667,7 +2667,8 @@ async function eduPersonPick(name: unknown, pick: unknown, check: any) {
   return { ok: true as const, ident: r.ident, appUserId: r.use_app ? appId : null };
 }
 const edu = makeEdu(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "education"), personPick: eduPersonPick, allRows,
-  eduNotify: notifyEduConfirmed });   // 확정 알림(4단계) — 저장 뒤 성경암송 api internalEduNotify
+  eduNotify: notifyEduConfirmed,   // 확정 알림(4단계) — 저장 뒤 성경암송 api internalEduNotify
+  appUserOfPerson: (course, personId) => findAppUserOfPerson(db, allRows, course, personId) });   // 같은 교적ID 의 앱 신청이 있으면 한 건으로(2026-10-28)
 // 봉사 당번(2026-10-06 · duty-db.ts) — 대신 넣기의 명부 찾기·고르기는 교육과 **같은 함수**(같은 거르기·차례 · 교인ID 는 서버 안에만).
 //   찾기 기록은 people.lookup from:"duty". 알림(dutyNotify · 3단계 2026-10-06)은 저장 뒤 성경암송 api internalDutyNotify 로 부탁한다.
 const duty = makeDuty(db, audit, { peopleLookup: (ctx, b) => evPeopleLookup(ctx, b, "duty"), personPick: eduPersonPick, allRows,
@@ -2780,6 +2781,17 @@ async function internalMyHistory(b: any) {
 //   · 본인(user_id)의 것만 · 상태가 「신청」(담당자가 아직 안 집은 것)일 때만 — 「확인 중」부터는 담당자가 다루고 있어 막는다(already-handled).
 //   · 지운다(자취를 남기는 「취소」 상태를 새로 만들지 않았다 — kind·status 글자는 SQL 008 CHECK·앱 MH_* 와 세 곳이라) · 되돌릴 수 없다.
 //   · 지우는 문장에 status='신청' 을 다시 걸어, 그사이 담당자가 「확인 중」으로 바꿨으면 지우지 않는다.
+// 교육 신청 이어 붙이기(2026-10-28 친구 「교적ID가 같으면 한 건으로」) — 성경암송 api eduApply 가 신청 직전에 부른다.
+//   이 앱 계정이 명부의 **한 분**(같은 소속에 같은 이름 한 분 · 사역 이력 확인과 같은 규칙)이면 link_key 「person|교인ID」, 아니면 null.
+//   api 는 이 값을 edu_apply 의 p_ident.link_key 로 넘겨, 같은 교적ID 의 대신 등록 줄에 계정을 이어 붙인다(SQL edu_apply).
+//   ⚠️ 교인ID 를 응답에 그대로 싣지 않고 「person|N」 열쇠로만 준다(서버끼리 — 앱 화면으로는 나가지 않는다). 못 찾아도 오류가 아니다(null).
+async function internalEduFindPerson(b: any) {
+  const w = readLoginWho(b.who), uid = hcUserId(b.user_id);
+  if (!w || !uid) return { ok: false, error: "bad-who" };
+  const pid = await hcFindPerson(w);
+  return { ok: true, link_key: pid === null ? null : "person|" + pid };
+}
+
 async function internalHistoryCancel(b: any) {
   const w = readLoginWho(b.who), uid = hcUserId(b.user_id);
   if (!w || !uid) return { ok: false, error: "bad-who" };
@@ -3064,6 +3076,7 @@ async function internalRoute(req: Request): Promise<Response> {
       case "internalHistoryRequest": return json(await internalHistoryRequest(b));
       case "internalHistoryCancel":  return json(await internalHistoryCancel(b));
       case "internalPinMatch":       return json(await internalPinMatch(b));
+      case "internalEduFindPerson":  return json(await internalEduFindPerson(b));
     }
     return json({ ok: false, error: "unknown-action" }, 400);
   } catch (e) {

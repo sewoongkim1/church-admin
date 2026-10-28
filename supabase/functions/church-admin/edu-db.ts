@@ -18,9 +18,37 @@ import { attendCounts, attendExportRows, attendKinds, attendSessionOut, attendSu
   checkStaffIds, checkStaffKind, checkTypedIdent, courseOut, eduChief, EDU_STAFF_ROLES, EDU_STATUS_LABEL, EDU_TEACHER_ROLES, enrollOut,
   exportRows, kstDate, maybeDupIds, pickSession, seatsOpened, staffByCourse, staffCandidateOut, staffRolesFor, waitOrder, whoOf,
   certCourseOut, certIssueOrder, certListOut, certPeriod, certPrintPeople, certSettingsChanged, checkCertIds, checkCertSettings, eduCertBody,
-  checkStatsTerm, eduLinkedUserIds, eduNamePattern, eduRowsForPerson, eduTabItems, statsOut, firstSessionDates, sortByEduDateDesc } from "./edu-rules.ts";
+  checkStatsTerm, eduLinkedUserIds, eduNamePattern, eduRowsForPerson, personIdOfKey, eduTabItems, statsOut, firstSessionDates, sortByEduDateDesc } from "./edu-rules.ts";
 import { norm } from "./authz.ts";
 import { nameKey } from "./people-match.ts";
+
+// 같은 교적ID 의 분이 이 강좌에 **앱 계정으로** 이미 신청해 있나(2026-10-28 친구 「교적ID가 같으면 한 건으로」) — 있으면 그 계정 id, 없으면 null.
+//   「교적ID 가 같다」 = 교인명부 「🎓 교육」 탭과 **같은 규칙**(eduLinkedUserIds — 로그인의 소속·이름으로 명부를 찾아 같은 소속에 같은 이름 한 분일 때만 그분).
+//   그 강좌의 앱 신청 줄(user_id 있음 · 취소·반려 포함)의 계정만 읽어 맞대 본다 — 명부 전체를 앱 계정과 맞대지 않는다.
+//   살아 있는 줄(신청·확정·대기)을 먼저 고른다. 두 계정이 한 분으로 이어졌으면(드문 일) 살아 있는 쪽 · 그다음 번호가 큰 쪽.
+export async function findAppUserOfPerson(db: any, allRows: (build: () => any) => Promise<any[]>, course: string, personId: number): Promise<string | null> {
+  const pid = Number(personId);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  const rows = await allRows(() => db.from("edu_enrollments").select("id,user_id,status").eq("course_id", course).not("user_id", "is", null).order("id", { ascending: false }));
+  if (!rows.length) return null;
+  const { data: p, error } = await db.from("church_people").select("person_id,name_key").eq("person_id", pid).maybeSingle();
+  if (error) throw error;
+  const key = nameKey(p?.name_key);
+  if (!p || !key) return null;
+  const ids = [...new Set(rows.map((r) => String(r.user_id)))];
+  const users: any[] = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error: eu } = await db.from("users").select("id,type,gu,mok,bu,grade,name").in("id", ids.slice(i, i + 200));
+    if (eu) throw eu;
+    users.push(...(data ?? []));
+  }
+  const cands = await allRows(() => db.from("church_people").select("person_id,kind2,mok1,mok3,school_dept").eq("name_key", key).order("person_id"));
+  const linked = eduLinkedUserIds({ person_id: pid, name_key: key }, cands, users);
+  const mine = rows.filter((r) => linked.has(String(r.user_id)));
+  const alive = mine.find((r) => ["applied", "confirmed", "waitlisted"].includes(r.status));
+  const hit = alive ?? mine[0];
+  return hit ? String(hit.user_id) : null;
+}
 
 type Db = any;
 type Audit = (ctx: any, action: string, target: string, detail?: Record<string, unknown>) => Promise<void>;
@@ -45,6 +73,7 @@ export function makeEdu(db: Db, audit: Audit, deps: {
   personPick: (name: unknown, pick: unknown, check: any) => Promise<{ ok: false; error: string } | { ok: true; ident: any; appUserId: string | null }>;
   allRows: (build: () => any) => Promise<any[]>;
   eduNotify?: (ids: number[], promoted: boolean) => Promise<{ sent: number } | null>;
+  appUserOfPerson?: (course: string, personId: number) => Promise<string | null>;   // 같은 교적ID 의 앱 신청 계정(findAppUserOfPerson) — 없으면 이어 붙이기를 건너뛴다
 }) {
   // 확정 알림(4단계 · 2026-10-05) — 저장이 **끝난 뒤**(r 이 성공) 성경암송 api 에 「이분들께 확정 알림」을 부탁한다.
   //   ⚠️ 알림이 실패해도 저장은 그대로 성공 — 응답에 notified(이번에 알린 신청 수)·notifyError(null 또는 "notify-failed")만 더한다.
@@ -349,6 +378,11 @@ export function makeEdu(db: Db, audit: Audit, deps: {
       const p = await deps.personPick(b?.name, b?.pick, b?.check);
       if (!p.ok) return p;
       ident = p.ident; user = p.appUserId;
+      // 같은 교적ID 의 분이 이미 앱으로 신청해 있으면 그 줄로 한 건 처리 — 새 대신 등록 줄을 만들지 않는다(정원 한 자리 · 반려·취소 이력도 그 줄 하나)
+      if (!user && deps.appUserOfPerson) {
+        const pid = personIdOfKey(ident?.ident_key);
+        if (pid !== null) user = await deps.appUserOfPerson(course, pid);
+      }
     } else {
       const t = checkTypedIdent(b.ident);
       if (!t.ok) return t;
