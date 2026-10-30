@@ -897,6 +897,19 @@ test("성도 묻기 고르기 칸(2026-10-19): 목록은 값 · 인원만 · 고
   const empty = await call(d, "askPeople", { question: "", picks: { pos: [], gu: [] } });
   assert.equal(empty.body.error, "no-question");
   assert.equal((await call(people.ministry.token, "askPeopleOptions")).status, 403);
+  // 🗓️ 등록년도 · 🎂 연령대 칸(2026-10-30) — 목록은 값 · 이름 · 인원만 · 고르기만 하면 AI 없이 센다
+  for (const k of ["reg", "age"]) {
+    assert.ok(Array.isArray(o.body[k]), k);
+    for (const x of o.body[k]) assert.deepEqual(Object.keys(x).sort(), ["count", "label", "value"], k);
+  }
+  const reg = o.body.reg[0], age = o.body.age[0];
+  if (reg && age) {
+    const ra = await call(d, "askPeople", { question: "", picks: { reg: [reg.value], age: [age.value] } });
+    assert.equal(ra.status, 200);
+    assert.equal(ra.body.model, "");
+    assert.deepEqual(ra.body.tree.all.map((l) => l.field), ["reg_pick", "age_pick"]);
+    assert.ok(ra.body.total <= Math.min(reg.count, age.count));
+  } else console.log("성도 묻기 시험: 개발 명부에 등록일·나이가 없어 등록년도 · 연령대 셈은 건너뜀");
 });
 
 test("교인명부: 찾기(이름·전화 뒷자리·사진 없음) · 한 분 · 현황 · 내려받기 · 사진 주소 · 열람 기록은 따로", async () => {
