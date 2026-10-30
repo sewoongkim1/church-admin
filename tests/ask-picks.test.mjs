@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   askOptions, askPicks, askSchema, askSystemPrompt, buildAskData, checkTree, describeLeaf, picksToLeaves, posDetailOf,
-  runTree, statusOf, withPicks, ASK_MAX_LEAVES, PICK_FROM, PICK_MAX, REG_OLD, REG_PICK_FROM,
+  runTree, statusOf, withPicks, ASK_MAX_LEAVES, PICK_FROM, PICK_MAX, REG_OLD, REG_PICK_FROM, AGE_BANDS,
 } from "../supabase/functions/church-admin/ask-people.ts";
 
 const TODAY = "2026-10-19";
@@ -69,8 +69,8 @@ test("AI 트리 + 고른 잎 — 고른 잎이 「그리고」 맨 앞 · 잎 �
 });
 
 test("askPicks — 문자열만 · 빈 것 빼고 · 겹친 것 하나로 · 칸마다 PICK_MAX 개까지", () => {
-  assert.deepEqual(askPicks({ pos: ["시무장로", "시무장로", 3, "", null, "권사"], gu: "화평" }), { pos: ["시무장로", "권사"], gu: [], reg: [], cut: 0 });
-  assert.deepEqual(askPicks(null), { pos: [], gu: [], reg: [], cut: 0 });
+  assert.deepEqual(askPicks({ pos: ["시무장로", "시무장로", 3, "", null, "권사"], gu: "화평" }), { pos: ["시무장로", "권사"], gu: [], reg: [], age: [], cut: 0 });
+  assert.deepEqual(askPicks(null), { pos: [], gu: [], reg: [], age: [], cut: 0 });
 });
 
 test("칩 글 — 고른 직분", () => {
@@ -93,7 +93,8 @@ test("AI 에게 가는 것은 그대로 — 스키마 field 값에 pos_pick 없�
   const fields = askSchema().properties.all.items.properties.field.enum;
   assert.ok(!fields.includes("pos_pick"));
   const sys = askSystemPrompt(D.vocab, TODAY);
-  for (const w of ["pos_pick", "reg_pick", "시무장로", "은퇴장로", "시무안수집사", PICK_FROM.pos, PICK_FROM.gu, PICK_FROM.reg, REG_OLD]) assert.ok(!sys.includes(w), w);
+  for (const w of ["pos_pick", "reg_pick", "시무장로", "은퇴장로", "시무안수집사", PICK_FROM.pos, PICK_FROM.gu, PICK_FROM.reg, REG_OLD, "age_pick", PICK_FROM.age, "71세 이상"]) assert.ok(!sys.includes(w), w);
+  assert.ok(!fields.includes("age_pick"));
   assert.ok(!fields.includes("reg_pick"));
 });
 
@@ -164,4 +165,29 @@ test("등록년도 목록 — 2020 뒤 해는 사람 있는 해만 최근 해부
     { value: REG_OLD, label: REG_OLD, count: 2 },
   ]);
   assert.deepEqual(askOptions(D).reg, [{ value: REG_OLD, label: REG_OLD, count: 7 }]);   // 맨 위 일곱 분은 모두 2001년 등록
+});
+
+// 🎂 연령대 고르기 칸(2026-10-30 친구 「20세 이하 · 21~25 · 26~30 … 66~70 · 71세 이상」 — 5살씩 · 어린 쪽부터)
+test("연령대 — 칸 열둘(20세 이하 · 5살씩 · 71세 이상) · 경계 나이 · 같은 칸은 「또는」 · 나이 없는 분은 안 걸림", () => {
+  assert.deepEqual(AGE_BANDS.map((b) => b.label), ["20세 이하", "21~25세", "26~30세", "31~35세", "36~40세", "41~45세", "46~50세",
+    "51~55세", "56~60세", "61~65세", "66~70세", "71세 이상"]);
+  const A = (id, age) => ({ ...P(id, `시험-${id}`, "집사", "서리집사", "믿음"), age });
+  const DA = buildAskData([A(1, 20), A(2, 21), A(3, 25), A(4, 26), A(5, 60), A(6, 61), A(7, 70), A(8, 71), A(9, 95), A(10, null), A(11, 0)], [], [], [], [], []);
+  const nm = (list) => runTree(checkTree({ all: [{ field: "age_pick", op: "in", list, from_text: PICK_FROM.age }] }, DA.vocab, Y).tree, DA).map((p) => p.id).sort((a, b) => a - b);
+  assert.deepEqual(nm(["20세 이하"]), [1, 11]);
+  assert.deepEqual(nm(["21~25세"]), [2, 3]);
+  assert.deepEqual(nm(["56~60세", "61~65세"]), [5, 6]);
+  assert.deepEqual(nm(["66~70세", "71세 이상"]), [7, 8, 9]);
+  const c = checkTree({ all: [{ field: "age_pick", op: "in", list: ["21~25세", "100세"], from_text: PICK_FROM.age }] }, DA.vocab, Y);
+  assert.deepEqual(c.tree.all[0].list, ["21~25세"]);
+  assert.ok(c.notices.some((x) => x.includes("100세")));
+  assert.equal(describeLeaf(c.tree.all[0]), "연령대 21~25세");
+  assert.deepEqual(askPicks({ age: ["71세 이상", "71세 이상"] }).age, ["71세 이상"]);
+  assert.deepEqual(picksToLeaves({ pos: [], gu: [], reg: [], age: ["71세 이상"] }).map((l) => [l.field, l.from_text]), [["age_pick", PICK_FROM.age]]);
+  // 목록 — 사람 있는 칸만 · 어린 쪽부터 · 나이 없는 분은 세지 않는다
+  assert.deepEqual(askOptions(DA).age, [
+    { value: "20세 이하", label: "20세 이하", count: 2 }, { value: "21~25세", label: "21~25세", count: 2 }, { value: "26~30세", label: "26~30세", count: 1 },
+    { value: "56~60세", label: "56~60세", count: 1 }, { value: "61~65세", label: "61~65세", count: 1 }, { value: "66~70세", label: "66~70세", count: 1 },
+    { value: "71세 이상", label: "71세 이상", count: 2 },
+  ]);
 });

@@ -2235,10 +2235,10 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 /* 🤖 성도 묻기(시험판 · 2026-10-15 · js/menus/people/ask.js) — 접두사 ak- */
 .ak-intro{font-size:14px;color:var(--ink-2);line-height:1.6;margin:0 0 10px}
 .ak-form{display:flex;flex-direction:column;gap:8px}
-/* 성도 묻기 — 직분 · 교구 · 등록년도 고르기 칸(2026-10-19 · 등록년도 2026-10-30) · 단추 모양은 교인 찾기 거르기(.pp-pick-b)와 같다
-   넓으면 세 칸 한 줄 · 폰(560px 아래)은 직분 · 교구 두 칸 한 줄 + 등록년도 한 줄 가득 */
-.ak-picks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-@media (max-width:560px){.ak-picks{grid-template-columns:repeat(2,minmax(0,1fr))}.ak-picks [data-pick="reg"]{grid-column:1 / -1}}
+/* 성도 묻기 — 직분 · 교구 · 등록년도 · 연령대 고르기 칸(2026-10-19 · 등록년도 · 연령대 2026-10-30) · 단추 모양은 교인 찾기 거르기(.pp-pick-b)와 같다
+   넓으면 네 칸 한 줄 · 폰(560px 아래)은 두 칸씩 두 줄 */
+.ak-picks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.ak-picks{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .ak-form textarea{width:100%;box-sizing:border-box;min-height:64px;padding:10px 12px;border:1.5px solid var(--ghost-bd);border-radius:10px;font:inherit;font-size:16px;resize:vertical}
 .ak-exs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
 .ak-ex{min-height:36px;padding:4px 12px;border:1px solid var(--border);border-radius:999px;background:var(--light);font:inherit;font-size:13px;color:var(--ink);cursor:pointer;text-align:left}

@@ -29,13 +29,20 @@ export const POSITIONS = ["장로", "안수집사", "권사", "집사", "그 밖
 export const PICK_GROUPS = ["장로", "안수집사", "권사", "집사"];          // 「X 전체」로 고르는 큰 묶음
 export const PICK_ALL = " 전체";
 // 고른 잎의 from_text — ⚠️ 화면 js/menus/people/ask-logic.js 의 PICK_FROM 과 글자까지 같게(tests/ask-picks-ui.test.mjs 가 본다)
-export const PICK_FROM = { pos: "고른 직분", gu: "고른 교구", reg: "고른 등록년도" };
+export const PICK_FROM = { pos: "고른 직분", gu: "고른 교구", reg: "고른 등록년도", age: "고른 연령대" };
 export const PICK_MAX = 200;                                             // 칸마다 고른 값 상한(넘으면 앞에서 자르고 화면에 알린다 — 2026-10-19 결정)
 // 등록년도 칸(2026-10-30 친구 「2019년 이전은 하나로 · 그 뒤는 해마다 · 최근 해가 위로」) — 값은 「2026」 꼴 해 또는 REG_OLD 하나.
 //   등록일(registered_date)이 없는 분은 어느 값에도 안 걸린다(이 칸을 고르면 빠진다).
 export const REG_PICK_FROM = 2020;                                       // 이 해부터 해마다 · 그 앞은 모두 REG_OLD
 export const REG_OLD = `${REG_PICK_FROM - 1}년 이전`;
 const regToken = (x: string): string | null => (x === REG_OLD || (/^\d{4}$/.test(x) && Number(x) >= REG_PICK_FROM) ? x : null);
+// 연령대 칸(2026-10-30 친구 「20세 이하 · 21~25 · 26~30 … 66~70 · 71세 이상」) — 5살씩 · 값 = 이름 · 교인명부 기준일의 나이(age). 나이 없는 분은 안 걸린다.
+export const AGE_BANDS: { label: string; min: number; max: number }[] = [
+  { label: "20세 이하", min: 0, max: 20 },
+  ...Array.from({ length: 10 }, (_, i) => ({ label: `${21 + i * 5}~${25 + i * 5}세`, min: 21 + i * 5, max: 25 + i * 5 })),
+  { label: "71세 이상", min: 71, max: 999 },
+];
+const AGE_BY_LABEL = new Map(AGE_BANDS.map((b) => [b.label, b]));
 
 // 필드 목록 — 「물을 수 있는 것」. 이 목록 하나에서 AI 스키마의 field 값 · 지시문의 필드 표 · 검사 · 셈 · 칩 이름이 나온다.
 //   value: num(수) · year(해 — num 에 해, 또는 years_ago) · text(값 하나) · list(값 여럿)
@@ -69,6 +76,7 @@ const FIELD_BY_ID: Record<string, FieldDef> = Object.fromEntries(FIELDS.map((f) 
 export const PICK_FIELDS: FieldDef[] = [
   { id: "pos_pick", label: "직분", ops: ["in"], value: "list", service: false, desc: "화면 고르기 칸 — 「장로 전체」 꼴 큰 묶음 또는 세부 직분" },
   { id: "reg_pick", label: "등록년도", ops: ["in"], value: "list", service: false, desc: "화면 고르기 칸 — 「2026」 꼴 해(REG_PICK_FROM 부터) 또는 REG_OLD" },
+  { id: "age_pick", label: "연령대", ops: ["in"], value: "list", service: false, desc: "화면 고르기 칸 — AGE_BANDS 의 이름(「21~25세」 꼴)" },
 ];
 const CHECK_BY_ID: Record<string, FieldDef> = { ...FIELD_BY_ID, ...Object.fromEntries(PICK_FIELDS.map((f) => [f.id, f])) };
 export const FIELD_IDS = FIELDS.map((f) => f.id);
@@ -454,6 +462,8 @@ function checkLeaf(r: any, v: AskVocab, thisYear: number): LeafCheck {
       } else if (f.id === "reg_pick") {
         const tk = regToken(x);
         if (tk) { if (!ok.includes(tk)) ok.push(tk); } else bad.push(x);
+      } else if (f.id === "age_pick") {
+        if (AGE_BY_LABEL.has(x)) { if (!ok.includes(x)) ok.push(x); } else bad.push(x);
       }
     }
     if (!ok.length) return no("no_data", `「${str(raw.join(", ") || f.label, 30)}」을(를) ${f.label} 목록에서 찾지 못했어요`);
@@ -548,6 +558,7 @@ function leafTrue(l: Leaf, p: AskPerson, d: AskData): boolean {
     case "position": return l.list.includes(p.pos);
     case "pos_pick": return l.list.some((t) => { const g = pickGroup(t); return g ? p.pos === g : p.posDetail === t; });
     case "reg_pick": return p.regYear !== null && l.list.some((t) => (t === REG_OLD ? p.regYear! < REG_PICK_FROM : p.regYear === Number(t)));
+    case "age_pick": return p.age !== null && l.list.some((t) => { const b = AGE_BY_LABEL.get(t); return !!b && p.age! >= b.min && p.age! <= b.max; });
     case "gender": return p.gender === l.text;
     case "age": return p.age !== null && cmp(p.age, l.op, l.num!);
     case "kind": return mhKey(p.kind) === mhKey(l.text);
@@ -612,6 +623,7 @@ export function describeLeaf(l: Leaf): string {
     case "position": s = `직분 ${l.list.join("·")}`; break;
     case "pos_pick": s = `직분 ${l.list.join("·")}`; break;
     case "reg_pick": s = `등록년도 ${l.list.map((t) => (t === REG_OLD ? t : `${t}년`)).join("·")}`; break;
+    case "age_pick": s = `연령대 ${l.list.join("·")}`; break;
     case "gender": s = `성별 ${l.text}`; break;
     case "kind": s = `구분 ${l.text}`; break;
     case "age": s = `나이 ${l.num}${NUM_WORD[l.op]}`; break;
@@ -663,7 +675,7 @@ export function askOut(raw: any, d: AskData, today: string, fromAi: boolean) {
 }
 
 // ---------- 화면 고르기 칸(2026-10-19) ----------
-export type Picks = { pos: string[]; gu: string[]; reg: string[]; cut?: number };
+export type Picks = { pos: string[]; gu: string[]; reg: string[]; age: string[]; cut?: number };
 // 화면이 보낸 picks 를 다듬는다 — 문자열만 · 빈 것 빼고 · 겹친 것 하나로 · 칸마다 PICK_MAX 개까지(넘친 것은 버리고 cut 에 센다).
 //   「모두 고름」은 화면이 빈 배열로 보낸다(설계 §1-3) — 서버는 그 뜻을 따로 알 필요가 없다(모두 보내와도 같은 명단이다).
 export function askPicks(raw: any): Picks {
@@ -675,8 +687,8 @@ export function askPicks(raw: any): Picks {
     cut += Math.max(0, all.length - PICK_MAX);
     return all.slice(0, PICK_MAX);
   };
-  const pos = one(raw?.pos), gu = one(raw?.gu), reg = one(raw?.reg);
-  return { pos, gu, reg, cut };
+  const pos = one(raw?.pos), gu = one(raw?.gu), reg = one(raw?.reg), age = one(raw?.age);
+  return { pos, gu, reg, age, cut };
 }
 // 고른 값 → 조건 잎(검사 전 꼴 — checkTree 가 AI 잎과 같은 검사를 한다). 빈 칸은 잎을 만들지 않는다. 교구는 이미 있는 gu 잎.
 export function picksToLeaves(p: Picks): any[] {
@@ -684,6 +696,7 @@ export function picksToLeaves(p: Picks): any[] {
   if (p.pos.length) out.push({ field: "pos_pick", op: "in", list: p.pos, from_text: PICK_FROM.pos });
   if (p.gu.length) out.push({ field: "gu", op: "in", list: p.gu, from_text: PICK_FROM.gu });
   if (p.reg?.length) out.push({ field: "reg_pick", op: "in", list: p.reg, from_text: PICK_FROM.reg });
+  if (p.age?.length) out.push({ field: "age_pick", op: "in", list: p.age, from_text: PICK_FROM.age });
   return out;
 }
 // AI 트리 앞에 고른 잎을 둔다(「그리고」 맨 앞 — 잎 상한 ASK_MAX_LEAVES 안에서 고른 잎이 먼저 자리를 차지한다)
@@ -696,15 +709,17 @@ export function withPicks(raw: any, leaves: any[]): any {
 //   직분: 큰 묶음 넷(「X 전체」 · 사람이 있는 것만) → 세부(큰 묶음 차례 안에서 많은 순 · 「직분 없음」 맨 끝)
 //   교구: 교회 정한 차례(BE_GU) 가운데 명부에 있는 것 → 그 밖(많은 순)
 //   등록년도: REG_PICK_FROM 부터의 해 가운데 사람이 있는 해(최근 해부터) → REG_OLD(그 앞 모두 · 사람이 있으면) — 등록일 없는 분은 세지 않는다
+//   연령대: AGE_BANDS 차례(어린 쪽부터) 가운데 사람이 있는 칸 — 나이 없는 분은 세지 않는다
 const POS_ORDER = [...PICK_GROUPS, "그 밖"];
 const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export function askOptions(d: AskData) {
-  const groupN = new Map<string, number>(), detN = new Map<string, number>(), guN = new Map<string, number>(), regN = new Map<string, number>();
+  const groupN = new Map<string, number>(), detN = new Map<string, number>(), guN = new Map<string, number>(), regN = new Map<string, number>(), ageN = new Map<string, number>();
   for (const p of d.people) {
     if (PICK_GROUPS.includes(p.pos)) groupN.set(p.pos, (groupN.get(p.pos) ?? 0) + 1);
     detN.set(p.posDetail, (detN.get(p.posDetail) ?? 0) + 1);
     if (p.gu) guN.set(p.gu, (guN.get(p.gu) ?? 0) + 1);
     if (p.regYear !== null) { const k = p.regYear < REG_PICK_FROM ? REG_OLD : String(p.regYear); regN.set(k, (regN.get(k) ?? 0) + 1); }
+    if (p.age !== null) { const b = AGE_BANDS.find((x) => p.age! >= x.min && p.age! <= x.max); if (b) ageN.set(b.label, (ageN.get(b.label) ?? 0) + 1); }
   }
   const rank = (t: string) => (t === "직분 없음" ? 99 : Math.max(0, POS_ORDER.indexOf(positionBucket(t))));
   const details = [...detN.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || byName(a[0], b[0]));
@@ -718,5 +733,6 @@ export function askOptions(d: AskData) {
   const regYears = [...regN.keys()].filter((k) => k !== REG_OLD).sort((a, b) => Number(b) - Number(a));
   const reg = [...regYears.map((y) => ({ value: y, label: `${y}년`, count: regN.get(y)! })),
     ...(regN.has(REG_OLD) ? [{ value: REG_OLD, label: REG_OLD, count: regN.get(REG_OLD)! }] : [])];
-  return { people: d.people.length, positions, gu: [...known, ...rest].map((g) => ({ value: g, count: guN.get(g)! })), reg };
+  const age = AGE_BANDS.filter((b) => ageN.get(b.label)).map((b) => ({ value: b.label, label: b.label, count: ageN.get(b.label)! }));
+  return { people: d.people.length, positions, gu: [...known, ...rest].map((g) => ({ value: g, count: guN.get(g)! })), reg, age };
 }
