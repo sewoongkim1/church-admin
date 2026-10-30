@@ -1,7 +1,7 @@
 // 🤖 성도 묻기 — 고르기 칸 화면 순수 도우미(js/menus/people/ask-logic.js · 2026-10-19). DOM 없이 돈다.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PICK_FROM, posPickOptions, pickedView, picksToSend, pickSummary } from "../js/menus/people/ask-logic.js";
+import { PICK_FROM, posPickOptions, regPickOptions, pickedView, picksToSend, pickSummary } from "../js/menus/people/ask-logic.js";
 import { PICK_FROM as SERVER_PICK_FROM } from "../supabase/functions/church-admin/ask-people.ts";
 
 // 서버 askPeopleOptions 의 직분 목록 꼴(group 있는 새 서버)
@@ -80,4 +80,13 @@ test("교구(단계 없는) 목록도 같은 함수로", () => {
   assert.equal(pickSummary(["믿음"], GU), "믿음");
   assert.equal(pickSummary(["믿음", "화평"], GU), "모두");
   assert.deepEqual(picksToSend(["믿음", "화평"], GU), []);
+});
+
+test("등록년도 — 서버 목록 → 고르개 줄(차례 그대로 · 「N명」) · 단추 글 · 보낼 값 · 옛 서버(reg 없음)면 빈 목록", () => {
+  const REG = regPickOptions([{ value: "2026", label: "2026년", count: 12 }, { value: "2025", label: "2025년", count: 1234 }, { value: "2019년 이전", label: "2019년 이전", count: 5 }]);
+  assert.deepEqual(REG, [{ value: "2026", label: "2026년", hint: "12명" }, { value: "2025", label: "2025년", hint: "1,234명" }, { value: "2019년 이전", label: "2019년 이전", hint: "5명" }]);
+  assert.equal(pickSummary(["2026"], REG), "2026년");
+  assert.equal(pickSummary(["2026", "2019년 이전"], REG), "2026년 외 1");
+  assert.deepEqual(picksToSend(["2019년 이전", "2026"], REG), ["2026", "2019년 이전"]);
+  assert.deepEqual(regPickOptions(undefined), []);
 });

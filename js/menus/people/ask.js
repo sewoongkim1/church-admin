@@ -9,16 +9,16 @@ import { openPerson } from "./search.js";
 // 🏠 심방 준비 한 장(2026-10-15) — 줄의 「심방」 단추 · 서버 visitCard · visitPoints
 import { openVisitCard } from "./visit-card.js";
 import { aTitle, lineSvg } from "../../core/icons.js";
-// 🎚️ 직분 · 교구 고르기 칸(2026-10-19) — 공용 고르개(「전체선택」 allBtn) · 순수 도우미(시험 tests/ask-picks-ui.test.mjs)
+// 🎚️ 직분 · 교구 고르기 칸(2026-10-19) · 🗓️ 등록년도 칸(2026-10-30) — 공용 고르개(「전체선택」 allBtn) · 순수 도우미(시험 tests/ask-picks-ui.test.mjs)
 import { pickMany } from "../../core/picker.js";
-import { PICK_FROM, posPickOptions, picksToSend, pickSummary } from "./ask-logic.js";
+import { PICK_FROM, posPickOptions, regPickOptions, picksToSend, pickSummary } from "./ask-logic.js";
 
 const TITLE = aTitle("message", "성도 묻기", ` <span class="badge">시험판</span>`);   // 성경앱 스타일 머리(2026-10-17)
 const INTRO = `<p class="ak-intro">말로 물으시면 <b>교인명부</b> · <b>사역 이력</b> · <b>성경필사</b>에서 찾아 드려요.
 AI(Claude)에는 질문과 「물을 수 있는 것」 목록만 가고, 명단은 서버가 직접 찾아요 — 이름은 AI 에게 가지 않아요.
 교인명부 담당자에게 보이는 시험판이에요.</p>`;
 
-// 우리 자료로 답할 수 있는 예(2026-10-19 친구 — 직분·교구는 고르기 칸으로 · 말로는 사역·성경필사·나이·등록)
+// 우리 자료로 답할 수 있는 예(2026-10-19 친구 — 직분·교구는 고르기 칸으로 · 말로는 사역·성경필사·나이·등록 · 2026-10-30 등록년도 칸도 생겼지만 「최근 3년」 같은 말은 그대로 된다)
 export const EXAMPLES = [
   "올해 처음 사역을 시작하신 분",
   "최근 3년 안에 등록하신 분 중 아직 사역하지 않으신 분",
@@ -29,7 +29,7 @@ export const EXAMPLES = [
 ];
 
 const ERR = {
-  "no-question": "질문을 적거나 직분·교구를 골라 주세요",
+  "no-question": "질문을 적거나 직분·교구·등록년도를 골라 주세요",
   "question-too-long": "질문은 300자까지 적을 수 있어요",
   "ask-no-key": "AI 키가 설정되지 않았어요(서버)",
   "ask-ai": "AI 를 부르지 못했어요 — 잠시 뒤 다시 물어 주세요",
@@ -41,16 +41,17 @@ const ERR = {
 const errMsg = (r) => (ERR[r?.error] ? ERR[r.error] + (r.code ? ` (${r.code})` : "") : errorText(r));
 
 const GROUP_LABEL = { all: "그리고", any: "또는(하나 이상)", none: "아님(빼기)" };
-const PICK_LABEL = { pos: "직분", gu: "교구" };
+const PICK_LABEL = { pos: "직분", gu: "교구", reg: "등록년도" };
+const PICK_KEYS = ["pos", "gu", "reg"];
 const FORM = `<form class="card ak-form" autocomplete="off">
   <label class="sec-title" for="ak-q" style="margin-top:0">무엇이 궁금하세요?</label>
-  <div class="ak-picks">${["pos", "gu"].map((k) => `<button type="button" class="pp-pick-b" data-pick="${k}" aria-haspopup="dialog" ` +
+  <div class="ak-picks">${PICK_KEYS.map((k) => `<button type="button" class="pp-pick-b" data-pick="${k}" aria-haspopup="dialog" ` +
     `aria-expanded="false" disabled><span class="pp-pick-l">${PICK_LABEL[k]}</span><span class="pp-pick-v">전체</span>` +
     `<span class="pk-field-x" aria-hidden="true"></span></button>`).join("")}</div>
-  <textarea id="ak-q" maxlength="300" placeholder="예: 10년 동안 사역하신 분들 중에 올해는 안 하고 계신 분 (직분·교구만 골라도 찾아요)"></textarea>
+  <textarea id="ak-q" maxlength="300" placeholder="예: 10년 동안 사역하신 분들 중에 올해는 안 하고 계신 분 (직분·교구·등록년도만 골라도 찾아요)"></textarea>
   <div class="acts"><button type="submit" class="btn primary">묻기</button></div>
   <div class="ak-exs"><span class="muted">이렇게 물어보세요</span>
-    <p class="muted ak-exs-tip">직분·교구는 위에서 고르고, 사역·성경필사·나이·등록은 말로 물어보세요.</p>
+    <p class="muted ak-exs-tip">직분·교구·등록년도는 위에서 고르고, 사역·성경필사·나이는 말로 물어보세요.</p>
     ${EXAMPLES.map((q, i) => `<button type="button" class="ak-ex" data-ex="${i}"><span class="ak-ex-i" aria-hidden="true">${lineSvg("search")}</span>` +
       `<span class="ak-ex-t">${esc(q)}</span>${lineSvg("chev", "ak-ex-c")}</button>`).join("")}</div>
 </form>`;
@@ -134,8 +135,8 @@ export async function render(el, { call, me }) {
 
   // 🎚️ 고르기 칸 — 목록은 서버(askPeopleOptions · 값과 인원 수만)에서 한 번. 받기 전 · 못 받으면 단추를 잠가 둔다(질문은 그대로 된다).
   //   고른 값은 이 화면 안에서만(질문 칸과 같다).
-  let opts = null;                      // { pos: [{value, label, hint}], gu: [...] }
-  const picks = { pos: [], gu: [] };
+  let opts = null;                      // { pos: [{value, label, hint}], gu: [...], reg: [...] }
+  const picks = { pos: [], gu: [], reg: [] };
   const pickBtn = (k) => el.querySelector(`.ak-picks [data-pick="${k}"]`);
   function syncPick(k) {
     const b = pickBtn(k), s = pickSummary(picks[k], opts ? opts[k] : []);
@@ -149,12 +150,13 @@ export async function render(el, { call, me }) {
     try {
       const r = await call("askPeopleOptions", {});
       if (r && r.ok) got = { pos: posPickOptions(r.positions),
-        gu: r.gu.map((o) => ({ value: o.value, label: o.value, hint: hint(o.count) })) };
+        gu: r.gu.map((o) => ({ value: o.value, label: o.value, hint: hint(o.count) })), reg: regPickOptions(r.reg) };
     } catch (_) { got = null; }
     if (!el.isConnected) return;
-    if (!got) { for (const k of ["pos", "gu"]) pickBtn(k).title = "목록을 받지 못했어요 — 질문으로는 그대로 찾을 수 있어요"; return; }
+    if (!got) { for (const k of PICK_KEYS) pickBtn(k).title = "목록을 받지 못했어요 — 질문으로는 그대로 찾을 수 있어요"; return; }
     opts = got;
-    for (const k of ["pos", "gu"]) { pickBtn(k).disabled = false; syncPick(k); }
+    // 목록이 빈 칸(옛 서버라 등록년도가 없을 때 등)은 잠가 둔다
+    for (const k of PICK_KEYS) { if (opts[k].length) { pickBtn(k).disabled = false; syncPick(k); } else pickBtn(k).title = "고를 목록이 없어요"; }
   })();
   async function openPick(b) {
     const k = b.dataset.pick;
@@ -171,8 +173,8 @@ export async function render(el, { call, me }) {
 
   async function ask() {
     const question = qEl.value.trim();
-    const send = { pos: picksToSend(picks.pos, opts ? opts.pos : []), gu: picksToSend(picks.gu, opts ? opts.gu : []) };
-    if (!question && !send.pos.length && !send.gu.length) { out.innerHTML = `<p class="ak-err">${esc(ERR["no-question"])}</p>`; qEl.focus(); return; }
+    const send = Object.fromEntries(PICK_KEYS.map((k) => [k, picksToSend(picks[k], opts ? opts[k] : [])]));
+    if (!question && PICK_KEYS.every((k) => !send[k].length)) { out.innerHTML = `<p class="ak-err">${esc(ERR["no-question"])}</p>`; qEl.focus(); return; }
     out.innerHTML = question ? `<p class="ak-wait">조건을 만드는 중이에요… AI 가 질문을 읽고 있어요(10초 안팎).</p>`
       : `<p class="ak-wait">고르신 조건으로 찾는 중이에요…</p>`;
     const r = await busy(el, () => call("askPeople", { question, picks: send }));
@@ -215,8 +217,7 @@ export async function render(el, { call, me }) {
       const left = tree.all.length + tree.any.length + tree.none.length;
       if (!left) { toast("남은 조건이 없어요 — 질문을 고쳐 주세요"); return; }
       // 고른 조건을 빼면 그 고르기 칸도 비운다 — 보이는 것 = 걸린 것
-      if (leaf.from_text === PICK_FROM.pos) { picks.pos = []; syncPick("pos"); }
-      if (leaf.from_text === PICK_FROM.gu) { picks.gu = []; syncPick("gu"); }
+      for (const k of PICK_KEYS) if (leaf.from_text === PICK_FROM[k]) { picks[k] = []; syncPick(k); }
       rerun(tree, [...st.dropped, leaf.from_text || ""].filter(Boolean));
       return;
     }

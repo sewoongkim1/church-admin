@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   askOptions, askPicks, askSchema, askSystemPrompt, buildAskData, checkTree, describeLeaf, picksToLeaves, posDetailOf,
-  runTree, statusOf, withPicks, ASK_MAX_LEAVES, PICK_FROM, PICK_MAX,
+  runTree, statusOf, withPicks, ASK_MAX_LEAVES, PICK_FROM, PICK_MAX, REG_OLD, REG_PICK_FROM,
 } from "../supabase/functions/church-admin/ask-people.ts";
 
 const TODAY = "2026-10-19";
@@ -54,7 +54,7 @@ test("pos_pick — 목록 밖 값은 알리고 뺀다 · 모두 목록 밖이면
 });
 
 test("고르기 → 잎 — 직분 · 교구 · 빈 칸은 잎 없음 · 직분 칸과 교구 칸은 「그리고」", () => {
-  assert.deepEqual(picksToLeaves({ pos: [], gu: [] }), []);
+  assert.deepEqual(picksToLeaves({ pos: [], gu: [], reg: [] }), []);
   const leaves = picksToLeaves({ pos: ["시무장로"], gu: ["화평"] });
   assert.deepEqual(leaves.map((l) => [l.field, l.from_text]), [["pos_pick", PICK_FROM.pos], ["gu", PICK_FROM.gu]]);
   assert.deepEqual(names(withPicks({}, leaves)), ["시험-바"]);
@@ -69,8 +69,8 @@ test("AI 트리 + 고른 잎 — 고른 잎이 「그리고」 맨 앞 · 잎 �
 });
 
 test("askPicks — 문자열만 · 빈 것 빼고 · 겹친 것 하나로 · 칸마다 PICK_MAX 개까지", () => {
-  assert.deepEqual(askPicks({ pos: ["시무장로", "시무장로", 3, "", null, "권사"], gu: "화평" }), { pos: ["시무장로", "권사"], gu: [], cut: 0 });
-  assert.deepEqual(askPicks(null), { pos: [], gu: [], cut: 0 });
+  assert.deepEqual(askPicks({ pos: ["시무장로", "시무장로", 3, "", null, "권사"], gu: "화평" }), { pos: ["시무장로", "권사"], gu: [], reg: [], cut: 0 });
+  assert.deepEqual(askPicks(null), { pos: [], gu: [], reg: [], cut: 0 });
 });
 
 test("칩 글 — 고른 직분", () => {
@@ -93,7 +93,8 @@ test("AI 에게 가는 것은 그대로 — 스키마 field 값에 pos_pick 없�
   const fields = askSchema().properties.all.items.properties.field.enum;
   assert.ok(!fields.includes("pos_pick"));
   const sys = askSystemPrompt(D.vocab, TODAY);
-  for (const w of ["pos_pick", "시무장로", "은퇴장로", "시무안수집사", PICK_FROM.pos, PICK_FROM.gu]) assert.ok(!sys.includes(w), w);
+  for (const w of ["pos_pick", "reg_pick", "시무장로", "은퇴장로", "시무안수집사", PICK_FROM.pos, PICK_FROM.gu, PICK_FROM.reg, REG_OLD]) assert.ok(!sys.includes(w), w);
+  assert.ok(!fields.includes("reg_pick"));
 });
 
 test("askPicks — 상한 PICK_MAX(200) 넘으면 앞에서 자르고 cut 에 센다 · 작으면 cut 0 · 40자 넘는 값은 40자로", () => {
@@ -119,4 +120,48 @@ test("띄어쓰기만 다른 세부 직분 — 정확히 같은 값이 먼저 �
   const nm = (v) => runTree(checkTree({ all: [pick([v])] }, D3.vocab, Y).tree, D3).map((p) => p.name);
   assert.deepEqual(nm("시무 장로"), ["시험-나"]);
   assert.deepEqual(nm("시무장로"), ["시험-가"]);
+});
+
+// 🗓️ 등록년도 고르기 칸(2026-10-30 친구 「2019년 이전은 하나로 · 그 뒤는 해마다 · 최근 해가 위로」)
+const R = (id, name, registered_date) => ({ ...P(id, name, "집사", "서리집사", "믿음"), registered_date });
+const DR = buildAskData([
+  R(1, "시험-가", "2026-03-01"), R(2, "시험-나", "2024-05-05"), R(3, "시험-다", "2024-07-07"), R(4, "시험-라", "2020-01-01"),
+  R(5, "시험-마", "2019-12-31"), R(6, "시험-바", "1998-02-02"), R(7, "시험-사", null), R(8, "시험-아", ""),
+], [], [], [], [], []);
+const regPick = (list) => ({ field: "reg_pick", op: "in", list, from_text: PICK_FROM.reg });
+const regNames = (list) => runTree(checkTree({ all: [regPick(list)] }, DR.vocab, Y).tree, DR).map((p) => p.name).sort();
+
+test("등록년도 — 나누는 해는 2020 · 「2019년 이전」은 그 앞 모두 · 같은 칸은 「또는」 · 등록일 없는 분은 어느 해에도 안 걸림", () => {
+  assert.equal(REG_PICK_FROM, 2020);
+  assert.equal(REG_OLD, "2019년 이전");
+  assert.deepEqual(regNames(["2024"]), ["시험-나", "시험-다"]);
+  assert.deepEqual(regNames([REG_OLD]), ["시험-마", "시험-바"]);
+  assert.deepEqual(regNames(["2026", "2020"]), ["시험-가", "시험-라"]);
+  assert.deepEqual(regNames(["2026", "2025", "2024", "2023", "2022", "2021", "2020", REG_OLD]).length, 6);
+});
+
+test("등록년도 — 목록 밖 값(2019 · 글자)은 알리고 뺀다 · 모두 목록 밖이면 unsupported", () => {
+  const c = checkTree({ all: [regPick(["2024", "2019", "옛날"])] }, DR.vocab, Y);
+  assert.deepEqual(c.tree.all[0].list, ["2024"]);
+  assert.ok(c.notices.some((x) => x.includes("2019") && x.includes("옛날")));
+  const bad = checkTree({ all: [regPick(["1999"])] }, DR.vocab, Y);
+  assert.equal(bad.tree.all.length, 0);
+  assert.equal(bad.unsupported[0].kind, "no_data");
+});
+
+test("등록년도 — askPicks · 잎(직분 · 교구 다음) · 칩 글", () => {
+  assert.deepEqual(askPicks({ reg: ["2026", "2026", REG_OLD, 7] }).reg, ["2026", REG_OLD]);
+  const leaves = picksToLeaves({ pos: ["서리집사"], gu: [], reg: ["2024"] });
+  assert.deepEqual(leaves.map((l) => [l.field, l.from_text]), [["pos_pick", PICK_FROM.pos], ["reg_pick", PICK_FROM.reg]]);
+  assert.deepEqual(runTree(checkTree(withPicks({}, leaves), DR.vocab, Y).tree, DR).map((p) => p.name).sort(), ["시험-나", "시험-다"]);
+  const c = checkTree({ all: [regPick(["2026", REG_OLD])] }, DR.vocab, Y);
+  assert.equal(describeLeaf(c.tree.all[0]), "등록년도 2026년·2019년 이전");
+});
+
+test("등록년도 목록 — 2020 뒤 해는 사람 있는 해만 최근 해부터 · 「2019년 이전」 맨 끝 · 값 · 이름 · 인원 수만", () => {
+  assert.deepEqual(askOptions(DR).reg, [
+    { value: "2026", label: "2026년", count: 1 }, { value: "2024", label: "2024년", count: 2 }, { value: "2020", label: "2020년", count: 1 },
+    { value: REG_OLD, label: REG_OLD, count: 2 },
+  ]);
+  assert.deepEqual(askOptions(D).reg, [{ value: REG_OLD, label: REG_OLD, count: 7 }]);   // 맨 위 일곱 분은 모두 2001년 등록
 });

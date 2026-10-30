@@ -3,7 +3,7 @@
 
 // 고른 잎의 from_text — ⚠️ 서버 supabase/functions/church-admin/ask-people.ts 의 PICK_FROM 과 글자까지 같게(시험이 본다).
 //   칩 × 로 고른 조건을 빼면 화면이 이 글로 알아보고 그 고르기 칸을 비운다(보이는 것 = 걸린 것).
-export const PICK_FROM = { pos: "고른 직분", gu: "고른 교구" };
+export const PICK_FROM = { pos: "고른 직분", gu: "고른 교구", reg: "고른 등록년도" };
 
 // 서버 askPeopleOptions 의 직분 묶음 차례(서버 PICK_GROUPS 넷 + 「그 밖」)
 export const POS_TREE_GROUPS = ["장로", "안수집사", "권사", "집사", "그 밖"];
@@ -30,6 +30,11 @@ export function posPickOptions(positions) {
   for (const o of details.filter((d) => !POS_TREE_GROUPS.includes(d.group)))
     out.push({ value: o.value, label: o.label ?? o.value, hint: hintOf(o.count) });
   return out;
+}
+
+// 🗓️ 등록년도(2026-10-30) — 서버 목록(최근 해부터 · 「2019년 이전」 끝)을 차례 그대로 고르개 줄로. 옛 서버(reg 없음)면 빈 목록.
+export function regPickOptions(reg) {
+  return (Array.isArray(reg) ? reg : []).map((o) => ({ value: o.value, label: o.label ?? o.value, hint: hintOf(o.count) }));
 }
 
 // 고른 값 → { send: 서버로 보낼 값, show: 단추에 보일 이름 }.

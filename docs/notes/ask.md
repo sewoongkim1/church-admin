@@ -31,6 +31,9 @@
 - 화면(2026-10-19): `js/menus/people/ask.js`(단추 둘 · 목록은 `askPeopleOptions` 한 번 · 받기 전엔 잠금) · 순수 `js/menus/people/ask-logic.js` · 공용 고르개 `pickMany({ allBtn: true })` · CSS `.ak-picks`. 단추 글: 안 고름 「전체」 · 모두 「모두」(둘 다 조건 없음 · on 아님).
 - 직분은 **단계 고르개**(`pickMany` 옵션 `parent` · `treeCheck`) — 위를 누르면 아래 전부 · 일부면 반쯤 · 다 고른 위 단계는 「X 전체」로 접어 보낸다(「그 밖」은 화면에만 있는 `@그 밖` — 아래 세부를 보낸다). 서버 `askOptions` 줄마다 `group`. 옛 서버(`group` 없음)면 `posPickOptions` 가 한 줄씩으로 돌아간다.
 - 예시는 직분·교구를 빼고 말로 묻는 것(2026-10-19) — 직분·교구는 고르기 칸으로.
+- **🗓️ 등록년도 칸(2026-10-30 친구 「2019년 이전은 하나로 · 그 뒤는 해마다 · 최근 해가 위로」)** — 잎 `reg_pick`(`PICK_FIELDS` · AI 에 안 감) · 값은 「2026」 꼴 해(`REG_PICK_FROM` = 2020 부터) 또는 `REG_OLD`(「2019년 이전」) · 등록일(`registered_date` 의 해 = `regYear`)이 없는 분은 어느 값에도 안 걸린다(운영 2026-10-30 명부에 2,520명).
+  목록은 `askOptions().reg`(사람 있는 해만 최근부터 → 「2019년 이전」 끝 · 값·이름·인원 수만) · 화면 `regPickOptions` · 옛 서버(reg 없음)면 그 단추만 잠긴다. 폰(560px 아래)은 직분·교구 두 칸 + 등록년도 한 줄 가득. 기록 `people.ask.picks.reg`.
+  ⚠️ 나누는 해를 옮기려면 `REG_PICK_FROM` 한 줄 — 시험(`tests/ask-picks.test.mjs`)이 2020 · 「2019년 이전」을 글자로 지키니 함께 고친다.
 
 ## ⚠️ 함정
 - **AI 에게 가는 글은 `askSystemPrompt` · `askSchema` 둘뿐이다.** 사람 자료(이름 · 교인ID · 나이 · 목장 이름)를 넣지 말 것 — `tests/ask-people.test.mjs` 가 지시문에 이름·목장이 없는지 본다. 지시문의 예시에도 실제 있을 법한 목장 이름을 쓰지 않는다.

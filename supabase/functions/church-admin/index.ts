@@ -1699,7 +1699,7 @@ const askClaude = (question: string, vocab: AskData["vocab"], today: string, mod
 //   둘 다 비면 no-question — 재료도 안 읽고 AI 도 안 부른다(PROBE).
 async function askPeople(ctx: Ctx, b: any) {
   const picks = askPicks(b.picks);
-  const picked = picks.pos.length + picks.gu.length > 0;
+  const picked = picks.pos.length + picks.gu.length + picks.reg.length > 0;
   const q = askQuestion(b.question);
   if (!q.ok && (q.error !== "no-question" || !picked)) return q;
   const question = q.ok ? q.q : "";
@@ -1707,7 +1707,7 @@ async function askPeople(ctx: Ctx, b: any) {
   const today = kstToday();
   const leaves = picksToLeaves(picks);
   const cut = picks.cut ?? 0;
-  const pk = picked ? { picks: { pos: picks.pos, gu: picks.gu }, cut } : {};   // 기록 — 직분 · 교구 이름(사람 자료 아님) · 잘린 수
+  const pk = picked ? { picks: { pos: picks.pos, gu: picks.gu, reg: picks.reg }, cut } : {};   // 기록 — 직분 · 교구 이름 · 등록년도(사람 자료 아님) · 잘린 수
   const cutNote = (o: { notices: string[] }) => { if (cut > 0) o.notices.push(`고른 값이 많아 칸마다 앞의 ${PICK_MAX}개만 썼어요`); };
   if (!question) {
     const out = askOut({ all: leaves, any: [], none: [] }, data, today, false);
