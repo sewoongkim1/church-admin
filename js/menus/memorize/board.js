@@ -3,7 +3,8 @@
 //   역할 memorizeadmin. ⚠️ 내부 키로 부르니 isAdmin=true 로 숨김글까지 보이고, 답글은 「관리자」 표시(is_admin)로 · 공지는 rich(HTML)를 쓸 수 있다.
 //   공지·답글의 규칙(길이·빈 글·오류 문장·안내)은 board-logic.js(시험 tests/mem-board-logic.test.mjs).
 import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
-import { NAME_MAX, NOTICE_NAME, countInfo, noticeBody, replyBody, noticeHints, noticeConfirmHtml, replyConfirmHtml, boardErrorText } from "./board-logic.js";
+import { NAME_MAX, NOTICE_NAME, countInfo, noticeBody, replyBody, noticeHints, noticeConfirmHtml, replyConfirmHtml, boardErrorText,
+  PHOTO_MAX, PHOTO_SIDE, PHOTO_TARGET, PHOTO_HARD, PHOTO_TYPES, noticeWithImages, photoAddLabel, photoErrorText } from "./board-logic.js";
 
 const TITLE = `<h2 class="page-title">🚩 게시판 관리</h2>`;
 const kst = (v) => v ? new Date(v).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "";
@@ -17,6 +18,45 @@ export function reasonText(reasons, labels) {
   if (!reasons || typeof reasons !== "object") return "";
   return Object.entries(reasons).map(([k, n]) => esc(lab(k)) + (Number(n) > 1 ? ` ${Number(n)}` : "")).join(" · ");
 }
+// 글에 붙은 사진(api boardList 의 photos — 볼 수 있는 주소) — 목록에서는 작은 그림 · 누르면 새 창에서 크게
+const thumbsHtml = (x) => {
+  const list = (Array.isArray(x.photos) ? x.photos : []).filter((u) => /^https:\/\//.test(String(u)));
+  return list.length ? `<div class="bd-thumbs">${list.map((u, i) =>
+    `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>` : "";
+};
+
+// 📢 공지 사진을 이 기기에서 다시 그려 줄인다 — 성경암송 app.js shrinkImage 와 같은 규칙(긴 변 1080px · JPEG 0.7 에서 한 단계씩).
+//   캔버스로 다시 그리면 화소만 남아 사진 속 정보(EXIF — 찍은 곳의 GPS 등)가 빠진다. 공개 게시판이라 꼭 이 길로 보낸다.
+function shrinkPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const draw = (side) => {
+        const long = Math.max(img.width, img.height) || 1;
+        const k = Math.min(1, side / long);
+        const w = Math.max(1, Math.round(img.width * k)), h = Math.max(1, Math.round(img.height * k));
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext("2d");
+        ctx.fillStyle = "#fff";          // 투명 PNG 가 검게 나오지 않게
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        let q = 0.7, out = cv.toDataURL("image/jpeg", q);
+        while (out.length > PHOTO_TARGET && q > 0.4) { q -= 0.1; out = cv.toDataURL("image/jpeg", q); }
+        return out;
+      };
+      let out = draw(PHOTO_SIDE);
+      if (out.length > PHOTO_TARGET) out = draw(Math.round(PHOTO_SIDE * 0.7));   // 품질만으론 안 줄면 그림을 더 줄인다
+      if (out.length > PHOTO_HARD) { reject(new Error("사진이 너무 커요 — 다른 사진으로 해 주세요")); return; }
+      resolve({ name: file.name || "photo.jpg", dataUrl: out });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("사진을 열지 못했어요 — JPG·PNG·WEBP 사진으로 해 주세요")); };
+    img.src = url;
+  });
+}
+
 const notesHtml = (notes) => (Array.isArray(notes) && notes.length)
   ? `<div class="muted" style="margin:3px 0">덧붙인 말: ${notes.map((n) => esc(n)).join(" / ")}</div>` : "";
 
@@ -31,7 +71,7 @@ export async function render(el, { call }) {
     <div id="bd-body"><p class="muted">불러오는 중…</p></div>`;
   const body = el.querySelector("#bd-body");
   // 쓰던 것 — 탭을 옮기거나 목록을 새로 불러와도 남는다(이 메뉴를 떠나면 사라진다 · 기기에 저장하지 않는다)
-  const notice = { name: NOTICE_NAME, content: "", rich: false };
+  const notice = { name: NOTICE_NAME, content: "", rich: false, photos: [] };   // photos = [{ name, dataUrl }] — 줄여 둔 것 · 올리기 전
   const replyDrafts = new Map();   // 글 번호 → 쓰던 답글(열어 둔 답글 칸)
   let posts = [];
   let cur = "list";                // 지금 탭 — 늦게 온 글 목록이 그사이 연 「공지 쓰기」를 덮지 않게
@@ -47,7 +87,7 @@ export async function render(el, { call }) {
     // rich = HTML 로 그린 공지 — 여기서는 태그까지 글자 그대로 보인다(성도님 앱은 그려서 보여 준다)
     return `<div class="card" style="${kind === "reply" ? "margin-left:16px" : ""}">
       <div>${tag(x)}${x.rich ? '<span class="muted">[HTML 공지]</span> ' : ""}<b>${esc(x.name || "이름 없음")}</b> <span class="muted">${esc(kst(x.created_at))}</span></div>
-      <div style="margin:4px 0;white-space:pre-wrap">${esc(x.content || "")}</div>
+      <div style="margin:4px 0;white-space:pre-wrap">${esc(x.content || "")}</div>${thumbsHtml(x)}
       <div class="acts">
         ${kind === "post" ? `<button class="btn" data-reply="${esc(x.id)}">답글</button>` : ""}
         ${canHide ? `<button class="btn" data-m="hide" data-k="${kind}" data-id="${esc(x.id)}">숨기기</button>` : ""}
@@ -116,6 +156,7 @@ export async function render(el, { call }) {
   }
 
   // 📢 공지 쓰기 — 불러올 때 올리지 않는다(「공지 올리기」를 누르고 확인 창에서 한 번 더)
+  //   사진은 고를 때 이 기기에서 줄여 쓰던 것(notice.photos)에 담아 두고, 확인 창에서 「올리기」를 누른 뒤에야 한 장씩 올린다(2026-10-31).
   function loadWrite() {
     body.innerHTML = `<div class="card bd-form">
       <p class="bd-note">여기서 올린 공지는 성도님 앱 게시판에 글 하나로 올라가요. 잘못 올렸으면 「글 목록」에서 숨기거나 지울 수 있어요.</p>
@@ -128,6 +169,13 @@ export async function render(el, { call }) {
       <div class="bd-warn" id="bw-rich-on" hidden>앱은 정해 둔 태그(굵게·기울임·밑줄·문단·목록·제목·링크·가로줄 등)만 그리고, 그 밖의 태그는 떼어 내고 안의 글자만 보여 줘요.
         엔터로 바꾼 줄은 이어져 보이니 줄을 바꾸려면 &lt;br&gt; 이나 &lt;p&gt;…&lt;/p&gt; 를 써 주세요. 링크는 http·https 주소만 살아요.</div>
       <div id="bw-hints"></div>
+      <div class="bd-photos">
+        <div class="bd-tray" id="bw-tray"></div>
+        <button class="btn" type="button" id="bw-photo-add"></button>
+        <input type="file" id="bw-file" accept="${PHOTO_TYPES}" multiple hidden>
+        <p class="bd-hint">사진은 글 아래에 이 차례대로 보여요(${PHOTO_MAX}장까지 · ◀ 로 차례를 바꿔요). 긴 변 ${PHOTO_SIDE}px 로 줄여 올리고, 찍은 곳 같은 사진 속 정보는 빠져요.</p>
+      </div>
+      <p class="bd-note" id="bw-status" hidden></p>
       <div class="acts"><button class="btn primary" id="bw-send">📢 공지 올리기</button></div>
     </div>`;
     const $ = (id) => body.querySelector("#" + id);
@@ -144,15 +192,56 @@ export async function render(el, { call }) {
     ta.addEventListener("input", show);
     rich.addEventListener("change", show);
     show();
+    const tray = $("bw-tray"), addBtn = $("bw-photo-add"), fileIn = $("bw-file");
+    const drawTray = () => {
+      tray.innerHTML = notice.photos.map((p, i) => `<div class="bd-ph">
+          <img src="${esc(p.dataUrl)}" alt="사진 ${i + 1}"><span class="bd-ph-no">${i + 1}</span>
+          <div class="bd-ph-acts">${i ? `<button class="btn" type="button" data-ph-left="${i}" aria-label="${i + 1}번 사진을 앞으로">◀</button>` : ""}<button class="btn" type="button" data-ph-rm="${i}" aria-label="${i + 1}번 사진 빼기">✕ 빼기</button></div>
+        </div>`).join("");
+      addBtn.textContent = photoAddLabel(notice.photos.length);
+      addBtn.disabled = notice.photos.length >= PHOTO_MAX;
+    };
+    tray.addEventListener("click", (e) => {
+      const rm = e.target.closest("[data-ph-rm]"), left = e.target.closest("[data-ph-left]");
+      if (rm) notice.photos.splice(Number(rm.dataset.phRm), 1);
+      else if (left) { const i = Number(left.dataset.phLeft); [notice.photos[i - 1], notice.photos[i]] = [notice.photos[i], notice.photos[i - 1]]; }
+      else return;
+      drawTray();
+    });
+    addBtn.addEventListener("click", () => fileIn.click());
+    fileIn.addEventListener("change", async () => {
+      const all = [...fileIn.files], room = PHOTO_MAX - notice.photos.length;
+      fileIn.value = "";
+      addBtn.disabled = true; addBtn.textContent = "사진 줄이는 중…";
+      for (const f of all.slice(0, room)) {
+        try { notice.photos.push(await shrinkPhoto(f)); } catch (err) { toast(err.message); }
+      }
+      if (all.length > room) toast(`사진은 ${PHOTO_MAX}장까지예요 — ${all.length - room}장은 넣지 않았어요`);
+      drawTray();
+    });
+    drawTray();
     $("bw-send").addEventListener("click", async () => {
       const v = noticeBody(notice);
       if (!v.ok) { toast(v.message); ta.focus(); return; }
-      const go = await dialog({ title: "공지를 올릴까요?", html: noticeConfirmHtml(v.body), ok: "올리기", cancel: "그만두기" });
+      const photos = notice.photos.slice();
+      const go = await dialog({ title: "공지를 올릴까요?", html: noticeConfirmHtml(v.body, photos.length), ok: "올리기", cancel: "그만두기" });
       if (!go) return;
+      const status = $("bw-status");
       await busy(el, async () => {
-        const r = await call("boardPost", v.body);
+        // 한 장씩 올리며 몇 번째인지 보여 준다 — 말없이 멈춰 있으면 고장인 줄 알고 다시 누른다.
+        //   도중에 하나라도 안 되면 글을 올리지 않는다(올라간 사진은 글에 안 붙어 api 가 하루 뒤 치운다).
+        const names = [];
+        for (let i = 0; i < photos.length; i++) {
+          status.hidden = false; status.textContent = `사진 올리는 중 (${i + 1}/${photos.length})…`;
+          const u = await call("boardUpload", { mime: "image/jpeg", data: photos[i].dataUrl });
+          if (!u.ok || !u.path) { status.hidden = true; toast(photoErrorText(u)); return; }
+          names.push(u.path);
+        }
+        if (photos.length) status.textContent = "글 올리는 중…";
+        const r = await call("boardPost", noticeWithImages(v.body, names));
+        status.hidden = true;
         if (!r.ok) { toast(boardErrorText(r)); return; }
-        notice.content = ""; notice.rich = false;   // 글쓴이는 다음 공지에도 그대로 둔다
+        notice.content = ""; notice.rich = false; notice.photos = [];   // 글쓴이는 다음 공지에도 그대로 둔다
         toast(r.id ? `공지를 올렸어요 (글 #${r.id})` : "공지를 올렸어요.");
         showTab("list");
       });

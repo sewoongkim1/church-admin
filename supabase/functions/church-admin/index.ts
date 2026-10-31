@@ -610,6 +610,7 @@ async function appApiInternal(body: Record<string, unknown>, label: string): Pro
 //   api 는 생성을 150초 안에서 나눠 쓴다 — 여기서는 그보다 조금 짧게 기다린다(이 함수의 벽시계도 넘지 않게).
 const MEM_SLOW_MS: Record<string, number> = {
   verseImgGenerate: 140000, verseImgScenes: 60000, verseImgAlt: 60000, generateNiv: 60000,
+  boardUpload: 30000,   // 공지 사진 한 장(≈300KB)을 Storage 에 — 느린 통신에서 15초를 넘길 수 있다
 };
 async function memCall(action: string, body: Record<string, unknown>): Promise<any> {
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -629,6 +630,7 @@ const MEM_WRITE = new Set(["boardModerate", "boardReply", "boardPost", "boardRep
   "embedSermons", "clearChatCache", "clearSummaryCache",
   "sermonJobCreate", "sermonJobRetry", "sermonStaffSave", "staffVerseSave", "sermonDelete",
   "verseImgGenerate", "verseImgAlt", "verseImgSave", "verseImgHide"]);
+// boardUpload(공지 사진)는 「바꾼 기록」에 따로 남기지 않는다 — 사진이 붙은 글(boardPost)이 남고, 글에 안 붙은 사진은 api 가 하루 뒤 치운다(boardSweepUploads).
 async function memProxy(ctx: Ctx, action: string, b: any) {
   if (MEM_WRITE.has(action)) await audit(ctx, "mem." + action, String(b.id ?? b.key ?? b.op ?? ""), {});
   const r = await memCall(action, b);
@@ -3138,7 +3140,7 @@ Deno.serve(async (req) => {
       // 성경암송 관리 — api 내부 키 프록시(2026-10-09). canCall 이 역할(memorizeadmin)을 이미 걸렀다.
       case "stats": case "participants": case "verses": case "blessingUsage": case "ranking":
       case "getVerses":   // 📊 통계 구절별 현황의 말씀 이름(2026-10-13 · 앱 공개 말씀 목록 · 읽기만)
-      case "boardList": case "boardModerate": case "boardReply": case "boardPost":
+      case "boardList": case "boardModerate": case "boardReply": case "boardPost": case "boardUpload":
       case "boardReports": case "boardReportResolve": case "sermonAnswerReports": case "sermonAnswerReportResolve":
       case "getConfig": case "saveConfig": case "eventEntrants":
       case "getPassages": case "savePassage": case "deletePassage":

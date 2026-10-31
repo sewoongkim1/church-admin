@@ -86,6 +86,7 @@ export const ACTION_ROLES: Record<string, string | string[] | null> = {
   getVerses: "memorizeadmin",
   boardList: "memorizeadmin", boardModerate: "memorizeadmin", boardReply: "memorizeadmin",
   boardPost: "memorizeadmin", boardReports: "memorizeadmin", boardReportResolve: "memorizeadmin",
+  boardUpload: "memorizeadmin",   // 📢 공지 사진(2026-10-31) — 성경암송 api 가 관리자 사진으로 받는다(INTERNAL_ADMIN_OK)
   sermonAnswerReports: "memorizeadmin", sermonAnswerReportResolve: "memorizeadmin",
   getConfig: "memorizeadmin", saveConfig: "memorizeadmin", eventEntrants: "memorizeadmin",
   getPassages: "memorizeadmin", savePassage: "memorizeadmin", deletePassage: "memorizeadmin",

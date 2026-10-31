@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   BOARD_MAX, NAME_MAX, NOTICE_NAME, boardLen, countInfo, contentProblem, noticeBody, replyBody,
   looksLikeHtml, noticeHints, excerpt, noticeConfirmHtml, replyConfirmHtml, boardErrorText,
+  PHOTO_MAX, PHOTO_SIDE, PHOTO_TARGET, PHOTO_HARD, PHOTO_TYPES, noticeWithImages, photoAddLabel, photoErrorText,
 } from "../js/menus/memorize/board-logic.js";
 import { reasonText } from "../js/menus/memorize/board.js";
 
@@ -93,4 +94,39 @@ test("신고 까닭(reasonText) — 그대로 · { 코드: 건수 } 와 옛 배�
   assert.equal(reasonText({ spam: 2, rude: 1 }, { spam: "광고", rude: "무례" }), "광고 2 · 무례");
   assert.equal(reasonText(["spam", { reason: "rude" }], { spam: "광고" }), "광고 · rude");
   assert.equal(reasonText(null), "");
+});
+
+// 📢 공지 사진(2026-10-31) — 성경암송 앱 게시판 사진과 같은 규칙(app.js BOARD_PHOTO_* · api BOARD_IMG_MAX·BOARD_MIME)
+const UUID = "8a22f858-dae1-4f77-b42a-72a9fb44675f";
+
+test("공지 사진 — 크기 규칙은 성경암송 앱과 같다(넉 장 · 긴 변 1080px · ≈300KB · 900KB 넘으면 안 보냄)", () => {
+  assert.equal(PHOTO_MAX, 4);
+  assert.equal(PHOTO_SIDE, 1080, "키우지 말 것 — 1280px 에서 폰 업로드가 끊겼다");
+  assert.equal(PHOTO_TARGET, 400000);
+  assert.equal(PHOTO_HARD, 900000);
+  assert.deepEqual(PHOTO_TYPES.split(","), ["image/jpeg", "image/png", "image/webp"], "api BOARD_MIME 셋");
+});
+
+test("공지 사진 — 글에는 올린 사진 이름만 · 넉 장까지 · 없으면 images 칸도 없다", () => {
+  const body = { name: "제자양육부", content: "알림", rich: true };
+  assert.deepEqual(noticeWithImages(body, []), body, "사진 없는 공지는 예전 꼴 그대로");
+  assert.deepEqual(noticeWithImages(body, undefined), body);
+  assert.deepEqual(noticeWithImages(body, [UUID + ".jpg"]).images, [UUID + ".jpg"]);
+  assert.deepEqual(noticeWithImages(body, ["https://x.supabase.co/storage/v1/object/public/board/" + UUID + ".jpg", "../" + UUID + ".jpg", UUID + ".gif", 7]),
+    body, "주소·경로·다른 확장자는 버린다(api isBoardImgName 도 버린다)");
+  const five = [1, 2, 3, 4, 5].map((n) => UUID.slice(0, -1) + n + ".jpg");
+  assert.deepEqual(noticeWithImages(body, five).images, five.slice(0, 4), "고른 차례대로 넉 장");
+  assert.equal(body.images, undefined, "받은 본문은 고치지 않는다");
+});
+
+test("공지 사진 — 단추 이름 · 확인 창의 사진 수 · 올리기 오류 문장", () => {
+  assert.equal(photoAddLabel(0), "🖼️ 사진 넣기 (0/4)");
+  assert.equal(photoAddLabel(3), "🖼️ 사진 넣기 (3/4)");
+  assert.equal(photoAddLabel(4), "사진 넉 장 다 넣었어요");
+  const b = { name: "제자양육부", content: "알림", rich: false };
+  assert.ok(noticeConfirmHtml(b, 3).includes("사진 3장"));
+  assert.ok(!noticeConfirmHtml(b).includes("사진"), "사진이 없으면 말하지 않는다");
+  assert.equal(photoErrorText({ ok: false, error: "사진은 JPG·PNG·WEBP만 올릴 수 있어요" }), "사진은 JPG·PNG·WEBP만 올릴 수 있어요", "api 의 한글 문장은 그대로");
+  assert.equal(photoErrorText({ ok: false, error: "network" }), "인터넷 연결을 확인해 주세요");
+  assert.match(photoErrorText({ ok: false, error: "unauthorized" }), /관리자 글로 받지 않았어요/, "api INTERNAL_ADMIN_OK 에 boardUpload 가 빠졌을 때");
 });

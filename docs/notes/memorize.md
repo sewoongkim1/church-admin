@@ -7,7 +7,7 @@
 | 메뉴 | 파일 | 중계하는 api 액션 |
 |---|---|---|
 | 📊 통계 — 기간별 · 구절별 · 도전 · 축복 기도문(2026-10-13 탭 넷) | `stats.js` · `stats-logic.js` | stats · verses · ranking · blessingUsage · getVerses(말씀 이름) |
-| 🚩 게시판 관리 — 글 목록 · 📢 공지 쓰기 · 관리자 답글 · 🚩 신고 · AI답 신고 | `board.js` · `board-logic.js` | boardList · boardModerate · boardPost · boardReply · boardReports · boardReportResolve · sermonAnswerReports · sermonAnswerReportResolve |
+| 🚩 게시판 관리 — 글 목록 · 📢 공지 쓰기(사진 넉 장까지 · 2026-10-31) · 관리자 답글 · 🚩 신고 · AI답 신고 | `board.js` · `board-logic.js` | boardList · boardModerate · boardPost · boardUpload · boardReply · boardReports · boardReportResolve · sermonAnswerReports · sermonAnswerReportResolve |
 | ⚙️ 앱 설정·문구 | `config.js` | getConfig · saveConfig |
 | 📜 내 안에 거하는 말씀(2026-10-13) | `passages.js` · `passages-logic.js` | getPassages · savePassage · deletePassage · getConfig/saveConfig(`passagesPublic`) |
 | ✍️ 필사 명단 · 💬 말씀 질문 기록 · 📣 알림 현황 · 🩺 시스템 상태 | `pilsa.js` · `chatlog.js` · `push.js` · `monitor.js` · `status-format.js` | pilsa* · sermonChatLog 등 · push* · monitor |
@@ -17,6 +17,7 @@
 - **push_log 의 시각 칸은 `sent_at`**(created_at 없음) — `status-format.js` `pushWhen`. 발송 종류(mode)는 `PUSH_MODE` 에서 한글로(봉사 당번은 api 가 `duty-` + 종류 · 교육 `edu-`). 새 종류를 만들면 한 줄 더한다(모르는 것은 영어 그대로 보인다).
 - **`passagesPublic` 은 📜 메뉴에서만 켜고 끈다** — ⚙️ 앱 설정·문구(JSON 편집)에서 `"false"` 를 따옴표째 적으면 글자로 저장되고 성도님 앱은 글자가 있으면 「켜짐」으로 읽는다. 그래서 앱 설정 목록에서 뺐다.
 - 📜 「목록에 보이기」를 끈 본문은 `getPassages` 가 돌려주지 않아 **여기서 되살릴 길이 없다**(끌 때 경고 창). 미리 보기 주소 `?passages=1` 은 공개를 꺼도 열린다.
+- **📢 공지 사진(2026-10-31)** — 공지 HTML 은 `<img>` 를 떼므로(성경암송 `boardRich`) 그림은 **사진 칸으로만** 붙는다(글 아래 · 고른 차례). 고를 때 이 기기에서 캔버스로 다시 그려 줄이고(`board.js` `shrinkPhoto` — 성경암송 `app.js` `shrinkImage` 와 같은 규칙 · 사진 속 정보(EXIF·GPS)가 빠진다) 「올리기」를 누른 뒤에야 `boardUpload` 로 한 장씩 → `boardPost` 의 `images`(이름만). 하나라도 안 되면 글을 올리지 않는다(올라간 사진은 api 가 하루 뒤 치운다). ⚠️ 줄이는 크기(`PHOTO_SIDE` 1080)를 키우지 말 것 — 폰 업로드가 끊긴다. ⚠️ api 쪽 `INTERNAL_ADMIN_OK` 에 `boardUpload` 가 있어야 한다(없으면 「관리자 글로 받지 않았어요 (unauthorized)」). `boardUpload` 는 「바꾼 기록」에 따로 남기지 않는다(`MEM_WRITE` 밖 — 글이 남는다).
 - 📢 공지·관리자 답글은 내부 키 길이라 api 가 관리자로 본다(공지의 HTML `rich` 도 관리자 글에만). 답글 본문에 `id`(글 번호)를 함께 싣는다 — 「바꾼 기록」 대상 칸 몫(api 는 읽지 않는다).
 - 쓰기(공지·답글·본문 저장·지우기)는 **개발 DB(localhost:8000)에서만** 시험한다 — 운영에서 누르면 성도님 게시판·앱에 그대로 나간다.
 - 아직 `<select>`·`type="date"` 를 쓰는 옛 화면: `config.js` · `pilsa.js` · `sermon.js`(규칙 위반 · 고칠 때 `picker.js` 로).

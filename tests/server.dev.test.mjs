@@ -297,6 +297,7 @@ const PROBE = {
   dutyPeople: { board_id: ZERO },                                  // 없는 당번 → not-found(총괄) · not-assigned(담당)
   dutyPersonHistory: { signup_id: 0 },                             // bad-id
   dutyPeopleExport: { board_id: ZERO },                            // 없는 당번 → not-found(기록하지 않는다)
+  boardUpload: { mime: "image/gif" },                              // 📢 공지 사진(2026-10-31) — 성경암송 api 가 올리기 전에 거절(JPG·PNG·WEBP만) · 아무것도 안 남는다
 };
 const GATES = ["unknown-action", "not-registered", "pending", "disabled", "forbidden"];
 

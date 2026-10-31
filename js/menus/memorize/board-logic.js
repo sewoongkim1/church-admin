@@ -34,6 +34,31 @@ export function noticeBody({ name, content, rich } = {}) {
   return { ok: true, body: { name: nm, content: String(content).trim(), rich: rich === true } };
 }
 
+// 📢 공지 사진(2026-10-31) — 성경암송 앱 게시판 사진과 같은 규칙(app.js BOARD_PHOTO_* · api BOARD_IMG_MAX·BOARD_IMG_BYTES).
+//   글 아래에 고른 차례대로 보인다. 공지 HTML 은 <img> 를 떼어 내므로(앱 boardRich) 그림은 이 칸으로만 붙는다.
+//   ⚠️ 줄이는 크기를 키우지 말 것 — 1280px 로 두었을 때 한 장이 1MB 를 넘겨 폰 업로드가 끊겼다(성경암송 docs/notes/board.md).
+export const PHOTO_MAX = 4;               // api BOARD_IMG_MAX
+export const PHOTO_SIDE = 1080;           // 긴 변(px)
+export const PHOTO_TARGET = 400_000;      // dataURL 글자 수 ≈ 300KB — 품질을 0.7 에서 한 단계씩 낮춰 여기에 맞춘다
+export const PHOTO_HARD = 900_000;        // 이보다 크면 보내지 않는다(api 는 1.5MB 에서 거절)
+export const PHOTO_TYPES = "image/jpeg,image/png,image/webp";   // api BOARD_MIME — 줄여 보낼 때는 늘 JPEG
+
+// 올린 사진 이름(api 가 준 path · UUID.확장자)만 글에 붙인다 — 주소를 통째로 넣으면 api 가 버린다(isBoardImgName)
+const IMG_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
+export function noticeWithImages(body, names) {
+  const images = (Array.isArray(names) ? names : []).filter((n) => IMG_NAME.test(String(n))).slice(0, PHOTO_MAX);
+  return images.length ? { ...body, images } : { ...body };
+}
+// 사진 칸 단추 이름 — 「🖼️ 사진 넣기 (2/4)」 · 다 차면 「사진 넉 장 다 넣었어요」
+export function photoAddLabel(n) {
+  return n >= PHOTO_MAX ? "사진 넉 장 다 넣었어요" : `🖼️ 사진 넣기 (${n}/${PHOTO_MAX})`;
+}
+// api boardUpload 의 거절은 읽을 수 있는 한글 문장이다(「사진은 JPG·PNG·WEBP만 …」·「사진이 너무 커요」) — 그대로 보인다
+export function photoErrorText(r) {
+  const e = r?.error;
+  return typeof e === "string" && /[가-힣]/.test(e) ? e : boardErrorText(r);
+}
+
 // 관리자 답글 → { ok:true, body:{ post_id, id, content } } | { ok:false, message }
 //   id 는 교회 어드민 「바꾼 기록」의 대상 칸 몫이다(memProxy 가 b.id 로 채운다 · 성경암송 boardReply 는 id 를 읽지 않는다 · 2026-10-13).
 export function replyBody(postId, content) {
@@ -70,9 +95,9 @@ export function excerpt(s, n = 120) {
 }
 
 // 확인 창 본문(html) — 이름·글은 esc 로 감싼다
-export function noticeConfirmHtml(body) {
+export function noticeConfirmHtml(body, photos = 0) {
   const n = boardLen(body.content);
-  return `<p>글쓴이 <b>${esc(body.name)}</b> · ${comma(n)}자${body.rich ? " · <b>HTML 로 그려요</b>" : ""}</p>` +
+  return `<p>글쓴이 <b>${esc(body.name)}</b> · ${comma(n)}자${body.rich ? " · <b>HTML 로 그려요</b>" : ""}${photos ? ` · <b>사진 ${photos}장</b>` : ""}</p>` +
     `<p class="muted" style="margin:6px 0;white-space:pre-wrap">${esc(excerpt(body.content))}</p>` +
     `<p class="muted">올리면 게시판을 여는 성도님께 바로 보여요. 앱 알림은 따로 가지 않아요. 잘못 올렸으면 「글 목록」에서 숨기거나 지울 수 있어요.</p>`;
 }
