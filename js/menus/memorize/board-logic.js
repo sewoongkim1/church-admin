@@ -36,9 +36,11 @@ export function noticeBody({ name, content, rich } = {}) {
 
 // 📢 공지 사진(2026-10-31) — 성경암송 앱 게시판 사진과 같은 규칙(app.js BOARD_PHOTO_* · api BOARD_IMG_MAX·BOARD_IMG_BYTES).
 //   글 아래에 고른 차례대로 보인다. 공지 HTML 은 <img> 를 떼어 내므로(앱 boardRich) 그림은 이 칸으로만 붙는다.
-//   ⚠️ 줄이는 크기를 키우지 말 것 — 1280px 로 두었을 때 한 장이 1MB 를 넘겨 폰 업로드가 끊겼다(성경암송 docs/notes/board.md).
+//   긴 변만 앱(1080)보다 크다 — 공지는 포스터·책 쪽처럼 글씨가 든 그림이 많아, 1080 이면 세로 A5 쪽이 폭 762px 로 줄어 글씨가 흐렸다(2026-10-31).
+//   ⚠️ 올라가는 크기는 PHOTO_TARGET(≈300KB)이 막는다(품질을 낮추고 → 그래도 크면 그림을 0.7 배로). 이 상한을 올리지 말 것 —
+//      성경암송 앱에서 한 장이 1MB 를 넘겨 폰 업로드가 끊겼다(성경암송 docs/notes/board.md).
 export const PHOTO_MAX = 4;               // api BOARD_IMG_MAX
-export const PHOTO_SIDE = 1080;           // 긴 변(px)
+export const PHOTO_SIDE = 1600;           // 긴 변(px) — 세로 A5 쪽이 폭 1,130px 안팎
 export const PHOTO_TARGET = 400_000;      // dataURL 글자 수 ≈ 300KB — 품질을 0.7 에서 한 단계씩 낮춰 여기에 맞춘다
 export const PHOTO_HARD = 900_000;        // 이보다 크면 보내지 않는다(api 는 1.5MB 에서 거절)
 export const PHOTO_TYPES = "image/jpeg,image/png,image/webp";   // api BOARD_MIME — 줄여 보낼 때는 늘 JPEG

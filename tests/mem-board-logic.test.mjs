@@ -99,10 +99,10 @@ test("신고 까닭(reasonText) — 그대로 · { 코드: 건수 } 와 옛 배�
 // 📢 공지 사진(2026-10-31) — 성경암송 앱 게시판 사진과 같은 규칙(app.js BOARD_PHOTO_* · api BOARD_IMG_MAX·BOARD_MIME)
 const UUID = "8a22f858-dae1-4f77-b42a-72a9fb44675f";
 
-test("공지 사진 — 크기 규칙은 성경암송 앱과 같다(넉 장 · 긴 변 1080px · ≈300KB · 900KB 넘으면 안 보냄)", () => {
+test("공지 사진 — 넉 장 · 긴 변 1600px(글씨 든 그림) · 크기 상한은 성경암송 앱과 같다(≈300KB · 900KB 넘으면 안 보냄)", () => {
   assert.equal(PHOTO_MAX, 4);
-  assert.equal(PHOTO_SIDE, 1080, "키우지 말 것 — 1280px 에서 폰 업로드가 끊겼다");
-  assert.equal(PHOTO_TARGET, 400000);
+  assert.equal(PHOTO_SIDE, 1600);
+  assert.equal(PHOTO_TARGET, 400000, "올리지 말 것 — 한 장이 1MB 를 넘으면 폰 업로드가 끊긴다(성경암송 앱)");
   assert.equal(PHOTO_HARD, 900000);
   assert.deepEqual(PHOTO_TYPES.split(","), ["image/jpeg", "image/png", "image/webp"], "api BOARD_MIME 셋");
 });

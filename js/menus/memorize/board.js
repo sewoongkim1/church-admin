@@ -25,7 +25,7 @@ const thumbsHtml = (x) => {
     `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>` : "";
 };
 
-// 📢 공지 사진을 이 기기에서 다시 그려 줄인다 — 성경암송 app.js shrinkImage 와 같은 규칙(긴 변 1080px · JPEG 0.7 에서 한 단계씩).
+// 📢 공지 사진을 이 기기에서 다시 그려 줄인다 — 성경암송 app.js shrinkImage 와 같은 차례(JPEG 0.7 에서 한 단계씩 · 긴 변만 PHOTO_SIDE).
 //   캔버스로 다시 그리면 화소만 남아 사진 속 정보(EXIF — 찍은 곳의 GPS 등)가 빠진다. 공개 게시판이라 꼭 이 길로 보낸다.
 function shrinkPhoto(file) {
   return new Promise((resolve, reject) => {
