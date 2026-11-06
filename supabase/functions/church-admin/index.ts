@@ -611,6 +611,7 @@ async function appApiInternal(body: Record<string, unknown>, label: string): Pro
 const MEM_SLOW_MS: Record<string, number> = {
   verseImgGenerate: 140000, verseImgScenes: 60000, verseImgAlt: 60000, generateNiv: 60000,
   boardUpload: 30000,   // 공지 사진 한 장(≈300KB)을 Storage 에 — 느린 통신에서 15초를 넘길 수 있다
+  featureUsage: 30000,  // 📤 보내기 · 💬 게시판 — 「전체기간」이면 feature_log 다섯 값과 users 를 1,000줄씩 넘겨 읽는다(blessingUsage 와 같은 길 · 줄이 쌓이면 15초를 넘길 수 있다)
 };
 async function memCall(action: string, body: Record<string, unknown>): Promise<any> {
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -3139,6 +3140,7 @@ Deno.serve(async (req) => {
       case "memberMerge":        return json(await memberMerge(ctx, b));
       // 성경암송 관리 — api 내부 키 프록시(2026-10-09). canCall 이 역할(memorizeadmin)을 이미 걸렀다.
       case "stats": case "participants": case "verses": case "blessingUsage": case "ranking":
+      case "featureUsage":   // 📊 통계 「📤 보내기 · 💬 게시판」(2026-11 · 읽기만 — MEM_WRITE 아님)
       case "getVerses":   // 📊 통계 구절별 현황의 말씀 이름(2026-10-13 · 앱 공개 말씀 목록 · 읽기만)
       case "boardList": case "boardModerate": case "boardReply": case "boardPost": case "boardUpload":
       case "boardReports": case "boardReportResolve": case "sermonAnswerReports": case "sermonAnswerReportResolve":

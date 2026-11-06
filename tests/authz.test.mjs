@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   ACTION_ROLES, canCall, knownRoles, norm, parseIdentity, identityKey,
   identityCandidates, parseRoles, kakaoNickname, kakaoAvatar,
@@ -343,4 +344,35 @@ test("새가족 — 함께 쓰는 분·수료 대상 바꾸기는 운영팀만 �
   // 새가족 액션은 이 둘에 모두 들어 있다 — 새 액션을 더하면 여기에도
   const all = Object.keys(ACTION_ROLES).filter((a) => a.startsWith("nf"));
   assert.deepEqual(all.sort(), [...chiefOnly, ...both].sort());
+});
+
+// ---------- 📤 보내기 · 💬 게시판(featureUsage · 2026-11 · 성경암송 docs/superpowers/specs/2026-11-06-share-board-usage-log-design.md 2-6) ----------
+const readSrc = (p) => readFileSync(new URL(p, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const srcBlock = (src, head, tail) => {
+  const at = src.indexOf(head);
+  const end = at < 0 ? -1 : src.indexOf(tail, at);
+  assert.ok(at >= 0 && end > at, "못 찾음: " + head);
+  return src.slice(at, end);
+};
+
+test("featureUsage — 📊 통계와 같은 성경암송 관리(memorizeadmin) · 총괄은 통과 · 다른 역할은 막는다", () => {
+  assert.equal(ACTION_ROLES.featureUsage, "memorizeadmin");
+  const cases = [
+    [null, "not-registered"],
+    [{ status: "pending", roles: ["memorizeadmin"] }, "pending"],
+    [{ status: "disabled", roles: ["memorizeadmin"] }, "disabled"],
+    [{ status: "active", roles: ["ministry", "directory", "bibleevent"] }, "forbidden"],
+    [{ status: "active", roles: ["memorizeadmin"] }, "ok"],
+    [{ status: "active", roles: ["super"] }, "ok"],
+  ];
+  for (const [m, want] of cases) assert.equal(canCall("featureUsage", m), want, JSON.stringify(m));
+});
+
+test("featureUsage — 성경암송 중계(memProxy) case 에 있다 · 읽기라 바꾼 기록(MEM_WRITE)에 없다 · 30초 기다린다 · 개발 서버 시험 입력(PROBE)에 있다", () => {
+  const idx = readSrc("../supabase/functions/church-admin/index.ts");
+  assert.match(srcBlock(idx, 'case "stats": case "participants":', "return json(await memProxy(ctx, action, b));"), /case "featureUsage":/);
+  assert.ok(!srcBlock(idx, "const MEM_WRITE = new Set([", "]);").includes('"featureUsage"'),
+    "읽기 액션 — MEM_WRITE 에 넣으면 탭을 열 때마다 「바꾼 기록」이 쌓인다");
+  assert.match(srcBlock(idx, "const MEM_SLOW_MS: Record<string, number> = {", "};"), /\bfeatureUsage: 30000,/);
+  assert.match(readSrc("./server.dev.test.mjs"), /^  featureUsage: \{\},/m);
 });

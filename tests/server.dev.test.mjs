@@ -130,6 +130,7 @@ async function call(token, action, extra = {}) {
 const PROBE = {
   meditationWeeks: {},                                             // 🌿 매일 묵상 — 읽기만
   getVerses: {},                                                   // 📊 통계 구절별 현황의 말씀 이름 — 성경암송 공개 말씀 목록 읽기만(2026-10-13)
+  featureUsage: {},                                                // 📤 보내기 · 💬 게시판(2026-11) — 성경암송 feature_log 다섯 값 읽기만 · 기간 없음 = 전체 · 아무것도 쓰지 않는다
   // 새가족(1단계 · 2026-10-07) — 읽기거나, 없는 줄(not-found)·틀린 입력(no-consent·no-name·bad-which)이라 아무것도 쓰지도 기록하지도 않는다
   nfMe: {},
   nfStaffList: {},
