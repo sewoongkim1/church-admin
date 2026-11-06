@@ -232,3 +232,15 @@ test("안내 글은 해요체 · 「전체」 소속 안내", () => {
   for (const t of Object.values(MSG)) assert.match(t, /요\.$/);
   assert.match(MSG.allSosok, /교구나 교회학교를 고르면/);
 });
+
+test("개인정보 안내(privacy.html) 1번 — 성경암송 메뉴에서 게시판을 연 기록·보내기 기록을 이름·소속별로 본다는 한 줄(2026-11)", () => {
+  const pv = readFileSync(new URL("../privacy.html", import.meta.url), "utf8");
+  const s1 = pv.indexOf("<h3>1. "), s2 = pv.indexOf("<h3>2. ");
+  assert.ok(s1 > 0 && s2 > s1);
+  const p1 = pv.slice(s1, s2).replace(/\s+/g, " ");
+  assert.ok(p1.includes("총괄 관리자와 「성경암송 관리」 역할을 드린 담당자는 이 화면의 성경암송 메뉴에서 성경암송 앱의 열람 기록 가운데 게시판을 연 날·횟수와 보내기 기록("),
+    "1번에 성경암송 기록 보기 한 줄이 없다");
+  assert.ok(p1.includes(")을 이름·소속별로 볼 수 있어요. 무엇을 남기고 얼마나 두는지는 앱의 안내를 따라요."));
+  // featureUsage 는 다섯 값만 읽는다 — 쉴만한 물가·매일 묵상 같은 다른 열람 기록까지 이름으로 보는 것처럼 쓰지 않는다
+  assert.ok(!p1.includes("앱의 열람 기록(게시판"), "열람 기록 전부를 이름으로 보는 것처럼 읽힌다");
+});

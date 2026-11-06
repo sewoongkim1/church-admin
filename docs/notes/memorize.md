@@ -6,7 +6,7 @@
 ## 메뉴(`js/menus/memorize/`)
 | 메뉴 | 파일 | 중계하는 api 액션 |
 |---|---|---|
-| 📊 통계 — 기간별 · 구절별 · 도전 · 축복 기도문(2026-10-13 탭 넷) | `stats.js` · `stats-logic.js` | stats · verses · ranking · blessingUsage · getVerses(말씀 이름) |
+| 📊 통계 — 기간별 · 구절별 · 도전 · 축복 기도문(2026-10-13 탭 넷) · 📤 보내기 · 💬 게시판(2026-11 다섯째 탭 · 탭 이름 `featureUsage` — `usage` 는 ① 이 쓴다) | `stats.js` · `stats-logic.js`(`usageView`) | stats · verses · ranking · blessingUsage · featureUsage · getVerses(말씀 이름) |
 | 🚩 게시판 관리 — 글 목록 · 📢 공지 쓰기(사진 넉 장까지 · 2026-10-31) · 관리자 답글 · 🚩 신고 · AI답 신고 | `board.js` · `board-logic.js` | boardList · boardModerate · boardPost · boardUpload · boardReply · boardReports · boardReportResolve · sermonAnswerReports · sermonAnswerReportResolve |
 | ⚙️ 앱 설정·문구 | `config.js` | getConfig · saveConfig |
 | 📜 내 안에 거하는 말씀(2026-10-13) | `passages.js` · `passages-logic.js` | getPassages · savePassage · deletePassage · getConfig/saveConfig(`passagesPublic`) |
@@ -21,3 +21,4 @@
 - 📢 공지·관리자 답글은 내부 키 길이라 api 가 관리자로 본다(공지의 HTML `rich` 도 관리자 글에만). 답글 본문에 `id`(글 번호)를 함께 싣는다 — 「바꾼 기록」 대상 칸 몫(api 는 읽지 않는다).
 - 쓰기(공지·답글·본문 저장·지우기)는 **개발 DB(localhost:8000)에서만** 시험한다 — 운영에서 누르면 성도님 게시판·앱에 그대로 나간다.
 - 아직 `<select>`·`type="date"` 를 쓰는 옛 화면: `config.js` · `pilsa.js` · `sermon.js`(규칙 위반 · 고칠 때 `picker.js` 로).
+- **📤 보내기 · 💬 게시판(featureUsage · 2026-11)** — 성경암송 api 의 `featureUsage` 가 **그 환경(개발/운영)에 먼저** 있어야 한다(없으면 api 가 `unknown action` 400 → 탭에 「처리하지 못했어요」). 응답에 `user_id` 가 없고 어린 부서(만 14세 미만) 줄은 api 가 뺀다 — 화면도 `usageView` 가 칸을 골라 담는다. 읽기라 `MEM_WRITE` 에 없다(「바꾼 기록」에 안 남는다) · 「전체기간」은 `MEM_SLOW_MS` 30초 · 내려받기(CSV)는 만들지 않는다 · 카톡인지 문자인지·실제로 보냈는지는 알 수 없다(화면 안내 한 줄 `USAGE_NOTE`) · 「누가」 표는 참고(이 api 에는 JWT 가 없다). 설계: 성경암송 `docs/superpowers/specs/2026-11-06-share-board-usage-log-design.md` · 개인정보 `privacy.html` 1번.
