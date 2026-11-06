@@ -1,11 +1,12 @@
-// 📊 통계 — 성경암송 사용 통계 네 보기(2026-10-13 · 옛 성경암송 admin-stats.html 의 네 화면을 옮겼다). 역할 memorizeadmin.
+// 📊 통계 — 성경암송 사용 통계 다섯 보기(2026-10-13 · 옛 성경암송 admin-stats.html 의 네 화면을 옮겼다 · ⑤ 는 2026-11 새로). 역할 memorizeadmin.
 //   ① 기간별 사용현황(stats — 구분·소속별 수 카드 · 막대 · 상세 표) ② 구절별 현황(verses — 말씀 순번마다 참여자·참여횟수)
-//   ③ 도전 현황(ranking — 사람마다 타이핑·음성 · 구분·소속 거르기) ④ 축복 기도문 사용현황(blessingUsage — 많이 읽히는 편 · 누가 얼마나).
+//   ③ 도전 현황(ranking — 사람마다 타이핑·음성 · 구분·소속 거르기) ④ 축복 기도문 사용현황(blessingUsage — 많이 읽히는 편 · 누가 얼마나)
+//   ⑤ 📤 보내기 · 💬 게시판(featureUsage · 2026-11 — 게시판을 연 분 · 보내기 판 열기·카톡 열기·공유 창·내려받기/복사 · 누가).
 //   성경암송 api 를 교회 어드민 서버가 내부 키로 부른다(index.ts memProxy). 말씀 이름은 getVerses(앱이 로그인 없이 받는 말씀 목록 · 읽기만).
-//   기간(from·to)은 네 보기가 함께 쓴다 — 날짜는 picker.js pickDate 단추(시스템 날짜 칸 금지) · 빠른 기간 「전체기간·이번 달·최근 7일」.
+//   기간(from·to)은 다섯 보기가 함께 쓴다 — 날짜는 picker.js pickDate 단추(시스템 날짜 칸 금지) · 빠른 기간 「전체기간·이번 달·최근 7일」.
 //   날짜를 고르거나 빠른 기간을 누르면 곧 다시 받는다 · 「조회」는 같은 기간을 새로 받는다(보기마다 받은 것을 기간과 함께 기억해 둔다).
 //   ⚠️ 참여자별 세부·성도 검색은 「성도 계정」 메뉴로 — 옛 「참여자 현황」(participants)은 여기에 옮기지 않았다.
-//      이름이 보이는 표는 옛 화면에도 있던 둘(③ 도전 현황 · ④ 누가 얼마나)뿐이다.
+//      이름이 보이는 표는 옛 화면에도 있던 둘(③ 도전 현황 · ④ 누가 얼마나)과 ⑤ 누가(2026-11 · 교회 어드민 privacy.html 1번에 적었다) 셋이다.
 //   ⚠️ 옛 화면의 CSV 내려받기는 옮기지 않았다(js/core 에 내려받기 도구가 없다 · 이름이 든 표를 기록 없이 내보내게 된다).
 //   글·차례·합계는 stats-logic.js(시험 tests/mem-stats-logic.test.mjs) · 이벤트는 route() 가 만든 이 화면의 el 에만.
 import { esc, errorText, busy } from "../../core/ui.js";
@@ -13,7 +14,7 @@ import { pickDate, pickMany, kstToday } from "../../core/picker.js";
 import { pickSummary, sameSet } from "../people/people-logic.js";
 import { TABS, QUICK, GUBUNS, MSG, nText, sumOf, quickRange, quickOf, defaultRange, rangeText, dateText, gubunCls,
   USAGE_KPI, usageCols, usageCell, usageBars, barPct, verseLabels, verseView, sosokOptions, challengeView, sosokLabel,
-  blessingView, blessingWho } from "./stats-logic.js";
+  blessingView, blessingWho, usageView, USAGE_NOTE } from "./stats-logic.js";
 
 const TITLE = `<h2 class="page-title">📊 통계</h2>`;
 // 메뉴를 나갔다 와도 남는 것(모듈 안) — 보던 보기 · 기간 · 도전 현황 거르기. 수는 메뉴를 열 때마다 새로 받는다.
@@ -87,6 +88,27 @@ function blessingHtml(d, from, to) {
     table(th("구분", "l") + th("소속", "l") + th("이름", "l") + th("본 날수") + th("본 편수") + th("횟수") + th("마지막", "c"),
       d.byUser.map((r) => `<tr>${tag(r.gubun)}${td(blessingWho(r), "l")}${td(r.name || "-", "l")}${td(nText(r.days))}${td(nText(r.prayers))}` +
         `${tdB(r.count)}${td(r.last || "-", "c")}</tr>`).join(""));
+}
+
+// ⑤ 📤 보내기 · 💬 게시판(featureUsage · 2026-11) — 요약 넷 · 종류별 · 누가(서버 차례 그대로) · 글은 모두 esc(td · tag · kpis)
+//   「보내기 횟수」는 카톡 열기 · 공유 창 · 내려받기·복사의 합(판 열기는 넣지 않는다 — 열고 안 보낸 분을 가르려고 · 설계 2-5).
+function featureUsageHtml(d, from, to) {
+  const note = `<p class="muted ms-note">${esc(USAGE_NOTE)}</p>`;
+  if (d.empty) return empty(MSG.empty) + note;
+  const s = d.summary;
+  return kpis([[s.boardPeople, "게시판 연 분"], [s.boardCount, "게시판 연 횟수"], [s.sharePeople, "보내기 쓴 분"], [s.shareCount, "보내기 횟수"]]) +
+    toolbar(from, to, `기록 있는 분 ${nText(d.byUser.length)}명`) + note +
+    `<h3 class="sec-title">종류별</h3>` +
+    (d.byKind.length
+      ? table(th("종류", "l") + th("판 열기") + th("카톡 열기") + th("공유 창") + th("내려받기·복사") + th("쓴 분"),
+        d.byKind.map((r) => `<tr>${td(r.label, "l ms-wrap")}${td(nText(r.open))}${td(nText(r.kakao))}${td(nText(r.sheet))}` +
+          `${td(nText(r.save))}${tdB(r.people)}</tr>`).join(""))
+      : empty(MSG.noShare)) +
+    `<h3 class="sec-title">누가</h3><p class="muted ms-note">${esc(MSG.usageWho)}</p>` +
+    table(th("구분", "l") + th("소속", "l") + th("이름", "l") + th("게시판 날수") + th("게시판 횟수") + th("카톡 열기") + th("공유 창") +
+      th("내려받기·복사") + th("판 열기") + th("마지막", "c"),
+      d.byUser.map((r) => `<tr>${tag(r.gubun)}${td(blessingWho(r), "l")}${td(r.name || "-", "l")}${td(nText(r.boardDays))}${td(nText(r.boardCount))}` +
+        `${td(nText(r.kakao))}${td(nText(r.sheet))}${td(nText(r.save))}${td(nText(r.open))}${td(r.last || "-", "c")}</tr>`).join(""));
 }
 
 const dateBtn = (k, label) => `<button type="button" class="pk-field ms-${k}" data-act="date" data-k="${k}" aria-haspopup="dialog" aria-expanded="false"` +
@@ -165,6 +187,7 @@ export async function render(el, { call }) {
       return r.ok ? { ok: true, list: r.list || [], labels: labels || {}, noLabels: !labels } : r;
     }
     if (t === "challenge") { const r = await call("ranking", p); return r.ok ? { ok: true, list: r.list || [] } : r; }
+    if (t === "featureUsage") { const r = await call("featureUsage", p); return r.ok ? { ok: true, ...usageView(r) } : r; }
     const r = await call("blessingUsage", p);
     return r.ok ? { ok: true, ...blessingView(r) } : r;
   }
@@ -178,7 +201,8 @@ export async function render(el, { call }) {
     body.innerHTML = tab === "usage" ? usageHtml(d.list, from, to)
       : tab === "verses" ? versesHtml(d, from, to)
         : tab === "challenge" ? challengeHtml(d.list, chal, from, to)
-          : blessingHtml(d, from, to);
+          : tab === "featureUsage" ? featureUsageHtml(d, from, to)
+            : blessingHtml(d, from, to);
   }
 
   // 지금 보기를 보인다 — 같은 기간으로 받아 둔 것이 있으면 그대로, 없거나 force 면 새로 받는다

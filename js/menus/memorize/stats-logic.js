@@ -1,11 +1,13 @@
 // 📊 성경암송 통계 — 화면 논리(순수 함수 · DOM 없음 · tests/mem-stats-logic.test.mjs 가 읽는다 · 2026-10-13)
-//   네 보기(기간별 사용현황 · 구절별 현황 · 도전 현황 · 축복 기도문 사용현황)가 기간(from·to) 하나를 함께 쓴다.
+//   다섯 보기(기간별 사용현황 · 구절별 현황 · 도전 현황 · 축복 기도문 사용현황 · 📤 보내기 · 💬 게시판)가 기간(from·to) 하나를 함께 쓴다.
 //   옛 성경암송 admin-stats.html 의 renderUsageReport · renderVerses · renderChallengeReport · renderBlessingUsage 를 옮겼다 —
-//   수는 성경암송 api 가 센 그대로(stats · verses · ranking · blessingUsage). 여기서는 거르기·차례·합계·글만 만든다.
+//   수는 성경암송 api 가 센 그대로(stats · verses · ranking · blessingUsage · featureUsage). 여기서는 거르기·차례·합계·글만 만든다.
 import { GU_ORDER, BU_ORDER } from "../bibleevent/roster-logic.js";
 import { fmtDateLabel } from "../../core/picker.js";
 
-export const TABS = [["usage", "기간별 사용현황"], ["verses", "구절별 현황"], ["challenge", "도전 현황"], ["blessing", "축복 기도문 사용현황"]];
+// ⑤ 의 이름은 "featureUsage"(2026-11) — "usage" 는 ① 기간별 사용현황이 이미 쓴다(lastTab · cache · data-tab 이 이 이름으로 가른다).
+export const TABS = [["usage", "기간별 사용현황"], ["verses", "구절별 현황"], ["challenge", "도전 현황"], ["blessing", "축복 기도문 사용현황"],
+  ["featureUsage", "📤 보내기 · 💬 게시판"]];
 // 빠른 기간 — 옛 화면의 단추 셋 그대로(전체기간 · 이번 달 · 최근 7일)
 export const QUICK = [["all", "전체기간"], ["month", "이번 달"], ["week", "최근 7일"]];
 export const GUBUNS = ["전체", "교구", "교회학교"];
@@ -16,6 +18,8 @@ export const MSG = {
   allSosok: "「전체」에서는 모든 소속을 함께 세요 — 교구나 교회학교를 고르면 소속을 고를 수 있어요.",
   noLabels: "말씀 이름을 불러오지 못해 순번으로만 보여요. 「조회」를 누르면 다시 불러와요.",
   someUnnamed: "말씀 이름은 앱의 주간 암송 말씀 목록에서 가져와요 — 그 목록에 없는 순번(시편 말씀 액자 등)은 「No.순번」으로 보여요.",
+  noShare: "이 기간에 보내기 기록이 없어요.",
+  usageWho: "이 표는 앱이 남긴 기록을 그대로 센 것이라, 참고로만 봐 주세요.",
 };
 
 // 화면에 찍는 수 — 천 단위 쉼표(옛 화면 nf 와 같다)
@@ -142,3 +146,23 @@ export function blessingView(d) {
 }
 // 「누가 얼마나」 소속 칸 — 「화평-20」 · 「유년부-3」 · 둘 다 비면 「-」(옛 화면 그대로)
 export const blessingWho = (r) => [r?.sosok, r?.sebu].filter(Boolean).join("-") || "-";
+
+// ── ⑤ 📤 보내기 · 💬 게시판(featureUsage · 2026-11) ──
+// 화면 안내 한 줄 — 앱이 알 수 있는 것까지만(카카오·공유 창은 무엇을 골라 실제로 보냈는지 돌려주지 않는다 · feature_log 는 날짜까지 · 어린 부서는 앱·api 가 남기지 않는다).
+//   MSG 밖에 둔다 — 이름 표(설계 2-6)의 글자 그대로라 끝에 마침표가 없다(MSG 는 「요.」로 끝나야 한다 — 시험).
+export const USAGE_NOTE = "카톡인지 문자인지, 실제로 보냈는지는 앱이 알 수 없어요 · 날짜까지만 남아요 · 만 14세 미만 어린 부서는 남기지 않아요";
+const n0 = (v) => Number(v) || 0;
+const s0 = (v) => String(v ?? "");
+// 서버 답 → 화면이 쓰는 꼴. 이름·소속은 원값 그대로(esc 는 stats.js 가 그릴 때) · 차례는 서버가 준 그대로(종류 = item 차례 · 누가 = 횟수 많은 차례).
+//   칸을 하나씩 골라 담는다 — 서버가 잘못해 user_id 같은 칸을 실어 보내도 화면 꼴에는 들어오지 않는다.
+//   한 줄도 없으면 빈 기간(표가 아직 없는 DB 도 서버가 빈 결과로 준다).
+export function usageView(d) {
+  const s = d?.summary || {}, b = s.board || {}, sh = s.share || {};
+  const summary = { boardPeople: n0(b.people), boardCount: n0(b.count), sharePeople: n0(sh.people), shareCount: n0(sh.count) };
+  const byKind = (d?.byKind || []).map((k) => ({ item: n0(k?.item), label: s0(k?.label) || `종류 ${n0(k?.item)}`,
+    open: n0(k?.open), kakao: n0(k?.kakao), sheet: n0(k?.sheet), save: n0(k?.save), people: n0(k?.people) }));
+  const byUser = (d?.byUser || []).map((u) => ({ gubun: s0(u?.gubun), sosok: s0(u?.sosok), sebu: s0(u?.sebu), name: s0(u?.name),
+    boardDays: n0(u?.boardDays), boardCount: n0(u?.boardCount), open: n0(u?.open), kakao: n0(u?.kakao), sheet: n0(u?.sheet),
+    save: n0(u?.save), last: s0(u?.last) }));
+  return { summary, byKind, byUser, empty: !byKind.length && !byUser.length };
+}

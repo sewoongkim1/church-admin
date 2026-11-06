@@ -15,7 +15,7 @@ export const MENUS = [
   { id: "people-ask", group: "교인명부", icon: "🤖", label: "성도 묻기 (시험)", desc: "말로 물으면 교인명부·사역 이력에서 찾기 · AI 는 조건만 만들어요",
     role: "directory", load: () => import("./people/ask.js") },
   // 성경암송 관리(2026-10-09 · admin-stats 안전 묶음 이전) — 성경암송 api 를 내부 키로 부른다.
-  { id: "mem-stats", group: "성경암송", icon: "📊", label: "통계", desc: "기간별 사용현황 · 구절별 현황 · 도전 현황 · 축복 기도문 사용현황",
+  { id: "mem-stats", group: "성경암송", icon: "📊", label: "통계", desc: "기간별 사용현황 · 구절별 현황 · 도전 현황 · 축복 기도문 사용현황 · 보내기·게시판 이용",
     role: "memorizeadmin", load: () => import("./memorize/stats.js") },
   { id: "mem-board", group: "성경암송", icon: "🚩", label: "게시판 관리", desc: "글·답글 숨김/삭제 · 관리자 답글 · 📢 공지 쓰기 · 🚩 신고 · AI답 신고",
     role: "memorizeadmin", load: () => import("./memorize/board.js") },

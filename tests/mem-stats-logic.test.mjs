@@ -2,14 +2,15 @@
 //   옛 성경암송 admin-stats.html 네 화면(기간별·구절별·도전·축복 기도문)의 거르기·차례·합계·글이 그대로인지 본다.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { TABS, QUICK, MSG, nText, sumOf, addDays, quickRange, defaultRange, quickOf, rangeText, dateText, gubunCls,
   USAGE_KPI, usageCols, usageCell, usageBars, barPct, verseLabels, verseLabel, verseView,
-  sosokOptions, challengeView, sosokLabel, blessingView, blessingWho } from "../js/menus/memorize/stats-logic.js";
+  sosokOptions, challengeView, sosokLabel, blessingView, blessingWho, usageView, USAGE_NOTE } from "../js/menus/memorize/stats-logic.js";
 import { GU_ORDER, BU_ORDER } from "../js/menus/bibleevent/roster-logic.js";
 
-test("보기 넷 · 빠른 기간 셋(옛 화면의 단추 이름)", () => {
-  assert.deepEqual(TABS.map(([k]) => k), ["usage", "verses", "challenge", "blessing"]);
-  assert.deepEqual(TABS.map(([, t]) => t), ["기간별 사용현황", "구절별 현황", "도전 현황", "축복 기도문 사용현황"]);
+test("보기 다섯(⑤ 는 2026-11 · 이름 featureUsage — usage 는 ① 이 쓴다) · 빠른 기간 셋(옛 화면의 단추 이름)", () => {
+  assert.deepEqual(TABS.map(([k]) => k), ["usage", "verses", "challenge", "blessing", "featureUsage"]);
+  assert.deepEqual(TABS.map(([, t]) => t), ["기간별 사용현황", "구절별 현황", "도전 현황", "축복 기도문 사용현황", "📤 보내기 · 💬 게시판"]);
   assert.deepEqual(QUICK.map(([, t]) => t), ["전체기간", "이번 달", "최근 7일"]);
 });
 
@@ -161,6 +162,70 @@ test("④ 축복 기도문 — 본 사람이 0 이면 빈 기간 · 소속 칸 �
   assert.equal(blessingWho({ sosok: "화평", sebu: "20" }), "화평-20");
   assert.equal(blessingWho({ sosok: "유년부", sebu: "" }), "유년부");
   assert.equal(blessingWho({}), "-");
+});
+
+// ⑤ 📤 보내기 · 💬 게시판 — 성경암송 api featureUsage 의 답(설계 2-5 꼴 · user_id 없음 · 어린 부서 줄은 api 가 뺀다)
+const FEATURE = {
+  ok: true,
+  summary: { board: { people: 2, count: 9 }, share: { people: 1, count: "3" } },
+  byKind: [
+    { item: 1, label: "가정 축복 기도문", open: 4, kakao: 0, sheet: 2, save: 1, people: 1 },
+    { item: 3, label: "이번 주 말씀", open: 1, kakao: 1, sheet: 0, save: 0, people: 1 },
+  ],
+  byUser: [
+    { gubun: "교구", sosok: "화평", sebu: "20", name: "<b>나</b>", boardDays: 2, boardCount: 7, open: 5, kakao: 1, sheet: 2, save: 1, last: "2026-11-06",
+      user_id: "00000000-0000-0000-0000-000000000001" },   // 서버가 잘못 실어 보내도 화면 꼴에는 들어오지 않아야 한다
+    { gubun: "교회학교", sosok: "중등부", sebu: 2, name: "가", boardDays: 1, boardCount: 2, open: 0, kakao: 0, sheet: 0, save: 0, last: "2026-11-05" },
+  ],
+};
+
+test("⑤ 보내기·게시판 — 서버 답을 화면 꼴로 · 이름은 원값 그대로(esc 는 그릴 때) · 차례는 서버 그대로 · user_id 는 싣지 않는다", () => {
+  const d = usageView(FEATURE);
+  assert.deepEqual(d.summary, { boardPeople: 2, boardCount: 9, sharePeople: 1, shareCount: 3 });
+  assert.equal(d.empty, false);
+  assert.deepEqual(d.byKind.map((k) => [k.item, k.label, k.open, k.kakao, k.sheet, k.save, k.people]),
+    [[1, "가정 축복 기도문", 4, 0, 2, 1, 1], [3, "이번 주 말씀", 1, 1, 0, 0, 1]]);
+  assert.deepEqual(d.byUser.map((u) => u.name), ["<b>나</b>", "가"]);
+  assert.deepEqual(Object.keys(d.byUser[0]), ["gubun", "sosok", "sebu", "name", "boardDays", "boardCount", "open", "kakao", "sheet", "save", "last"]);
+  for (const u of d.byUser) assert.ok(!("user_id" in u), "user_id 를 화면 꼴에 싣지 않는다");
+  assert.equal(d.byUser[1].sebu, "2");
+  assert.equal(blessingWho(d.byUser[0]), "화평-20");   // 소속 칸은 ④ 와 같은 꼴(gubun · sosok · sebu)
+  assert.deepEqual([d.byUser[1].boardDays, d.byUser[1].last], [1, "2026-11-05"]);
+});
+
+test("⑤ 보내기·게시판 — 빈 답(표가 아직 없는 DB 도 서버가 이 꼴로 준다) · 게시판만 쓴 기간 · 이름 없는 종류", () => {
+  const none = usageView({ ok: true, summary: { board: { people: 0, count: 0 }, share: { people: 0, count: 0 } }, byKind: [], byUser: [] });
+  assert.deepEqual(none.summary, { boardPeople: 0, boardCount: 0, sharePeople: 0, shareCount: 0 });
+  assert.equal(none.empty, true);
+  assert.equal(usageView({}).empty, true);
+  assert.equal(usageView(null).empty, true);
+  const board = usageView({ summary: { board: { people: 1, count: 1 } }, byUser: [{ name: "가", boardDays: 1, boardCount: 1, last: "2026-11-06" }] });
+  assert.equal(board.empty, false);
+  assert.deepEqual(board.summary, { boardPeople: 1, boardCount: 1, sharePeople: 0, shareCount: 0 });
+  assert.deepEqual(board.byKind, []);
+  assert.deepEqual([board.byUser[0].open, board.byUser[0].kakao, board.byUser[0].gubun, board.byUser[0].sosok], [0, 0, "", ""]);
+  assert.equal(usageView({ byKind: [{ item: 9, sheet: 1 }] }).byKind[0].label, "종류 9");
+});
+
+test("⑤ 화면 안내 한 줄 — 앱이 알 수 있는 것까지만(이름 표 글자 그대로) · 종류가 없을 때 · 누가 표는 참고", () => {
+  assert.equal(USAGE_NOTE, "카톡인지 문자인지, 실제로 보냈는지는 앱이 알 수 없어요 · 날짜까지만 남아요 · 만 14세 미만 어린 부서는 남기지 않아요");
+  assert.equal(MSG.noShare, "이 기간에 보내기 기록이 없어요.");
+  assert.equal(MSG.usageWho, "이 표는 앱이 남긴 기록을 그대로 센 것이라, 참고로만 봐 주세요.");
+});
+
+test("⑤ 화면(stats.js) — featureUsage 를 기간과 함께 부르고 · 실패면 그 답 그대로(다른 탭과 같은 errorText) · 그 탭을 그리고 · 글은 모두 esc", () => {
+  const src = readFileSync(new URL("../js/menus/memorize/stats.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.ok(src.includes('if (t === "featureUsage") { const r = await call("featureUsage", p); return r.ok ? { ok: true, ...usageView(r) } : r; }'),
+    "fetchTab 에 featureUsage 갈래가 없다");
+  assert.ok(src.includes(': tab === "featureUsage" ? featureUsageHtml(d, from, to)'), "draw 에 featureUsage 갈래가 없다");
+  const at = src.indexOf("function featureUsageHtml(");
+  const end = src.indexOf("\n}\n", at);
+  assert.ok(at > 0 && end > at, "featureUsageHtml 이 없다");
+  const body = src.slice(at, end);
+  assert.ok(body.includes("esc(USAGE_NOTE)"), "안내 한 줄이 없다");
+  assert.ok(body.includes("esc(MSG.usageWho)"), "누가 표 안내가 없다");
+  assert.ok(!/\$\{(r|d|s)\.[a-zA-Z]+/.test(body), "이름·소속·종류 글을 esc 없이 끼우지 않는다(td · tag · kpis 를 거친다)");
+  assert.ok(!body.includes("user_id"));
 });
 
 test("안내 글은 해요체 · 「전체」 소속 안내", () => {
