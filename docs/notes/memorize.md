@@ -10,6 +10,7 @@
 | 🚩 게시판 관리 — 글 목록 · 📢 공지 쓰기(사진 넉 장까지 · 2026-10-31) · 관리자 답글 · 🚩 신고 · AI답 신고 | `board.js` · `board-logic.js` | boardList · boardModerate · boardPost · boardUpload · boardReply · boardReports · boardReportResolve · sermonAnswerReports · sermonAnswerReportResolve |
 | ⚙️ 앱 설정·문구 | `config.js` | getConfig · saveConfig |
 | 📜 내 안에 거하는 말씀(2026-10-13) | `passages.js` · `passages-logic.js` | getPassages · savePassage · deletePassage · getConfig/saveConfig(`passagesPublic`) |
+| 💌 말씀카드 기간(2026-11-10) — 「💌 축복기도 말씀카드」 철마다 카드(🎄 성탄 · 🌅 새해)가 「지금 이때」에 보이는 기간 | `card-seasons.js` · `card-seasons-logic.js` | getConfig/saveConfig(`cardSeasons`) |
 | ✍️ 필사 명단 · 💬 말씀 질문 기록 · 📣 알림 현황 · 🩺 시스템 상태 | `pilsa.js` · `chatlog.js` · `push.js` · `monitor.js` · `status-format.js` | pilsa* · sermonChatLog 등 · push* · monitor |
 
 ## ⚠️ 함정(2026-10-13 운영 확인에서 찾은 것)
@@ -22,3 +23,10 @@
 - 쓰기(공지·답글·본문 저장·지우기)는 **개발 DB(localhost:8000)에서만** 시험한다 — 운영에서 누르면 성도님 게시판·앱에 그대로 나간다.
 - 아직 `<select>`·`type="date"` 를 쓰는 옛 화면: `config.js` · `pilsa.js` · `sermon.js`(규칙 위반 · 고칠 때 `picker.js` 로).
 - **📤 보내기 · 💬 게시판(featureUsage · 2026-11)** — 성경암송 api 의 `featureUsage` 가 **그 환경(개발/운영)에 먼저** 있어야 한다(없으면 api 가 `unknown action` 400 → 탭에 「처리하지 못했어요」). 응답에 `user_id` 가 없고 어린 부서(만 14세 미만) 줄은 api 가 뺀다 — 화면도 `usageView` 가 칸을 골라 담는다. 읽기라 `MEM_WRITE` 에 없다(「바꾼 기록」에 안 남는다) · 「전체기간」은 `MEM_SLOW_MS` 30초 · 내려받기(CSV)는 만들지 않는다 · 카톡인지 문자인지·실제로 보냈는지는 알 수 없다(화면 안내 한 줄 `USAGE_NOTE`) · 「누가」 표는 참고(이 api 에는 JWT 가 없다). 설계: 성경암송 `docs/superpowers/specs/2026-11-06-share-board-usage-log-design.md` · 개인정보 `privacy.html` 1번.
+
+## 💌 말씀카드 기간(2026-11-10 · `card-seasons.js`)
+- 값 `app_config.cardSeasons` = `{ "christmas": {"from","to"}, "newyear": {...} }` — 한국 날짜 · 두 끝 포함 · **키가 없으면 앱의 기본 기간**(「기본으로」 = 키 지우기). 성경암송 앱과 함께 쓰는 약속이라 꼴을 바꾸지 않는다.
+- 카드 목록(`SEASONS` — 키 · 이름 · 기본 기간)은 성경암송 `js/pray-share.js` `CARD_SETS` 의 `season` 과 **두 곳** — 카드를 더하면 둘 다.
+- ⚠️ 저장은 카드 하나씩 · **저장 직전에 다시 읽은 값 위에** 그 키만 바꾼다(`mergeSeason` — 모르는 키·카드 안 모르는 칸은 그대로). 못 불러왔으면(실패 · 「허용되지 않은 키」 = 성경암송 api 가 `cardSeasons` 를 아직 모르는 판 · 객체가 아닌 값) 카드를 그리지 않고 저장을 막는다.
+- 확인: 두 날짜 · 시작일 ≤ 끝날 · 두 끝 포함 92일까지. 교회 어드민 서버(`church-admin` 프록시)는 키를 거르지 않는다 — 막는 곳은 성경암송 api `PUBLIC_CONFIG_KEYS`/`ADMIN_CONFIG_KEYS`.
+- ⚙️ 앱 설정·문구(JSON 편집) 목록에는 넣지 않는다(`passagesPublic` 과 같은 까닭 — 이 화면 한 곳).

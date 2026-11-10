@@ -25,6 +25,9 @@ export const MENUS = [
   //   아이콘은 옛 화면·성도님 앱과 같은 📜(📖 는 이 묶음 머리 아이콘이라 피한다).
   { id: "mem-passages", group: "성경암송", icon: "📜", label: "내 안에 거하는 말씀", desc: "주기도문·사도신경 같은 긴 본문 더하기·고치기·지우기 · 성도님께 공개",
     role: "memorizeadmin", load: () => import("./memorize/passages.js") },
+  // 💌 말씀카드 기간(2026-11-10) — 「💌 축복기도 말씀카드」의 철마다 카드(성탄·새해)가 보이는 기간 · app_config cardSeasons(여기 한 곳).
+  { id: "mem-card-seasons", group: "성경암송", icon: "💌", label: "말씀카드 기간", desc: "축복기도 말씀카드의 철마다 카드(🎄 성탄 · 🌅 새해)가 보이는 기간",
+    role: "memorizeadmin", load: () => import("./memorize/card-seasons.js") },
   { id: "mem-pilsa", group: "성경암송", icon: "✍️", label: "필사 신청 명단", desc: "성경필사 노트 신청 명단 · 상태",
     role: "memorizeadmin", load: () => import("./memorize/pilsa.js") },
   { id: "mem-chatlog", group: "성경암송", icon: "💬", label: "말씀 질문 기록", desc: "AI 질문 기록 · 색인 · 캐시",

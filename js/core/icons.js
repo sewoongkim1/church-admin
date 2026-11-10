@@ -56,7 +56,7 @@ export function lineSvg(name, cls = "") {
 //   메뉴를 더하면(registry.js) 여기에도 한 줄 — 빠지면 그림 글자로 나올 뿐 깨지지는 않는다(tests/home-view.test.mjs 가 빠진 것을 센다).
 export const MENU_ICON = {
   people: "search", "people-stats": "chart", "member-accounts": "user", "people-ask": "message",
-  "mem-stats": "chart", "mem-board": "flag", "mem-config": "sliders", "mem-passages": "scroll", "mem-pilsa": "pen",
+  "mem-stats": "chart", "mem-board": "flag", "mem-config": "sliders", "mem-passages": "scroll", "mem-card-seasons": "calendar", "mem-pilsa": "pen",
   "mem-chatlog": "message", "mem-push": "bell", "mem-monitor": "shield",
   "sermon-manage": "tv", "sermon-image": "image", "sermon-meditation": "leaf", "praise-archive": "music",
   status: "list", catalog: "folder", paper: "doc", appointed: "medal", "mn-history": "scroll", "mn-requests": "reply", "mn-stats": "chart",
