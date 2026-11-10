@@ -2201,7 +2201,7 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .cs-dates{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .cs-date{flex:1 1 0;min-width:0;flex-direction:column;gap:0;padding:6px 10px;line-height:1.25}
 .cs-date small{font-size:12px;font-weight:700;color:var(--gray)}
-.cs-date b{font-size:15px;font-weight:800;color:var(--navy);white-space:nowrap}
+.cs-date b{font-size:15px;font-weight:800;color:var(--navy);word-break:keep-all}   /* 해가 다르면 「2027년 1월 15일」 — 폰에서 두 줄로(넘치지 않게 · 11-10 검토) */
 .cs-tilde{flex:none;color:var(--gray);font-weight:800}
 .cs-card .be-note,.cs-card .be-warn{margin:0 0 10px}
 .cs-def{margin:10px 0 0;font-size:13px}

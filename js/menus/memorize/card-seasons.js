@@ -7,8 +7,7 @@ import { esc, toast, dialog, busy, errorText } from "../../core/ui.js";
 import { pickDate, kstToday } from "../../core/picker.js";
 import {
   CONFIG_KEY, SEASONS, EXPLAIN, UNKNOWN_TEXT, UNKNOWN_WHY, readStored, effective, statusOf, checkWin, mergeSeason,
-  draftOf, draftWin, draftDirty, setDraftDate, defaultDraft, fmtRange, fmtMD, savedText,
-} from "./card-seasons-logic.js";
+  draftOf, draftWin, draftDirty, setDraftDate, defaultDraft, fmtRange, fmtMD, savedText, sameWin, CHANGED_TEXT } from "./card-seasons-logic.js";
 
 const TITLE = `<h2 class="page-title">💌 말씀카드 기간</h2>`;
 const STATUS_CLS = { now: " ok", soon: " cs-soon", past: " cs-past" };
@@ -120,6 +119,13 @@ export async function render(el, { call }) {
         if (fresh.state !== "ok") {
           await dialog({ title: "저장하지 않았어요", cancel: null,
             text: `지금 저장된 값을 다시 읽지 못했어요 — 잠시 뒤 다시 해 주세요. ${UNKNOWN_WHY[fresh.why] || errorText(fr)}` });
+          return;
+        }
+        // 이 화면을 연 뒤 다른 분이 같은 카드의 날짜를 바꿨으면 덮어쓰지 않는다 — 새 값을 보여 주고 다시 저장하게(고치던 날짜는 남긴다)
+        if (!sameWin(fresh.stored[season.key], got.stored[season.key])) {
+          await load();
+          draw();
+          await dialog({ title: "저장하지 않았어요", cancel: null, text: CHANGED_TEXT });
           return;
         }
         const r = await call("saveConfig", { key: CONFIG_KEY, value: mergeSeason(fresh.stored, season.key, win) });

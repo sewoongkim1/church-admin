@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   CONFIG_KEY, SEASONS, MAX_DAYS, EXPLAIN, UNKNOWN_TEXT, isDate, spanDays, fmtMD, fmtRange, readStored, validWin, effective,
-  statusOf, checkWin, mergeSeason, draftOf, draftWin, draftDirty, setDraftDate, defaultDraft, savedText,
+  statusOf, checkWin, mergeSeason, draftOf, draftWin, draftDirty, setDraftDate, defaultDraft, savedText, sameWin, CHANGED_TEXT,
 } from "../js/menus/memorize/card-seasons-logic.js";
 import { MENUS, menusFor, GROUP_ICON } from "../js/menus/registry.js";
 import { canCall } from "../supabase/functions/church-admin/authz.ts";
@@ -157,4 +157,17 @@ test("화면 — 시스템 날짜 칸·브라우저 확인창을 쓰지 않는�
   assert.match(src, /pickDate\(/);
   assert.match(src, /busy\(el/);
   assert.match(src, /mergeSeason\(fresh\.stored/, "저장 직전에 다시 읽은 값 위에 합친다");
+});
+
+test("저장 직전 견주기 — 다른 분이 그사이 같은 카드를 바꿨으면 저장하지 않는다(sameWin)", () => {
+  assert.equal(sameWin(undefined, undefined), true, "둘 다 없음(기본)");
+  assert.equal(sameWin({ from: "2026-11-29", to: "2026-12-26" }, { from: "2026-11-29", to: "2026-12-26" }), true);
+  assert.equal(sameWin({ from: "2026-11-29", to: "2026-12-26" }, undefined), false, "그사이 등록됨");
+  assert.equal(sameWin(undefined, { from: "2026-11-29", to: "2026-12-26" }), false, "그사이 기본으로");
+  assert.equal(sameWin({ from: "2026-11-30", to: "2026-12-26" }, { from: "2026-11-29", to: "2026-12-26" }), false);
+  const src = readFileSync(new URL("../js/menus/memorize/card-seasons.js", import.meta.url), "utf8");
+  const i = src.indexOf("const fresh = readStored(fr);"), j = src.indexOf('call("saveConfig"');
+  assert.ok(i > 0 && j > i, "저장은 다시 읽은 뒤");
+  assert.ok(src.slice(i, j).includes("sameWin(fresh.stored[season.key], got.stored[season.key])"), "저장 앞에서 견준다");
+  assert.match(CHANGED_TEXT, /다른 분이/);
 });

@@ -52,6 +52,8 @@ export function fmtRange(from, to) {
 // getConfig 답 → { state:"ok", stored } · { state:"unknown", why }
 //   why: "key"(성경암송 api 가 아직 cardSeasons 를 모르는 판 — 「허용되지 않은 키」) · "shape"(저장된 값이 객체가 아니다) · "fail"(그 밖)
 //   값이 없음(null) = 아무것도 넣지 않음 = 모두 기본.
+//   ⚠️ 성경암송 api getConfig 는 다른 키의 읽기 오류를 null 로 뭉갠다 — cardSeasons 는 STRICT_CONFIG_KEYS 라 오류를 ok:false 로 알린다
+//      (null 을 「없음」으로 믿고 그 위에 한 카드만 써서 다른 카드 날짜를 지우지 않게 · 2026-11-10 검토).
 export function readStored(r) {
   if (!r || r.ok !== true) return { state: "unknown", why: r && r.error === "허용되지 않은 키" ? "key" : "fail" };
   if (r.value == null) return { state: "ok", stored: {} };
@@ -63,6 +65,10 @@ export const UNKNOWN_WHY = {
   shape: "저장된 값의 꼴이 이상해요 — 덮어쓰지 않도록 저장을 막았어요. 개발 담당에게 알려 주세요.",
   fail: "",   // 화면이 ui.js errorText 로 까닭을 붙인다
 };
+
+// 저장 직전에 다시 읽은 값과 화면을 연 때의 값이 같은가(한 카드) — 다르면 다른 분이 그사이 고친 것이다
+export const sameWin = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+export const CHANGED_TEXT = "다른 분이 방금 이 카드의 날짜를 바꿨어요 — 새 값으로 다시 불러왔으니, 확인한 뒤 다시 저장해 주세요.";
 
 // 한 카드의 저장된 기간이 쓸 수 있는 꼴인가(두 날짜 · 시작일 ≤ 끝날)
 export const validWin = (w) => isObj(w) && isDate(w.from) && isDate(w.to) && w.from <= w.to;
