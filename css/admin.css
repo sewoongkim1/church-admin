@@ -2205,6 +2205,7 @@ select{min-height:var(--tap);padding:0 10px;border:1px solid var(--border);borde
 .cs-tilde{flex:none;color:var(--gray);font-weight:800}
 .cs-card .be-note,.cs-card .be-warn{margin:0 0 10px}
 .cs-def{margin:10px 0 0;font-size:13px}
+.cs-note{margin:0 0 8px;font-size:13px;line-height:1.5;word-break:keep-all}
 .cs-top{margin-top:4px}
 .cs-unknown .be-warn{margin:0 0 10px}
 .cs-unknown .muted{margin:0 0 8px;line-height:1.6}

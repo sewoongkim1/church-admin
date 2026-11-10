@@ -36,6 +36,7 @@ function seasonCard(season, stored, d, today) {
   }
   return `<div class="card cs-card" data-key="${esc(season.key)}">
     <div class="cs-h"><b>${esc(season.name)}</b>${st ? ` <span class="badge${STATUS_CLS[st.kind]}">${esc(st.text)}</span>` : ""}</div>
+    ${season.note ? `<p class="muted cs-note">${esc(season.note)}</p>` : ""}
     ${now}
     <div class="cs-dates">${dateBtn("from", "시작일", d.from, today.slice(0, 4))}<span class="cs-tilde" aria-hidden="true">~</span>${dateBtn("to", "끝날", d.to, today.slice(0, 4))}</div>
     ${pending}

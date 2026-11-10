@@ -11,10 +11,16 @@ import { canCall } from "../supabase/functions/church-admin/authz.ts";
 
 const XMAS = SEASONS.find((s) => s.key === "christmas"), NY = SEASONS.find((s) => s.key === "newyear");
 
-test("약속 — 키 이름 cardSeasons · 알려진 카드 둘과 기본 기간(성경암송 pray-share.js CARD_SETS 와 같게)", () => {
+test("약속 — 키 이름 cardSeasons · 알려진 카드 셋(수험생 · 성탄 · 새해)과 기본 기간(성경암송 pray-share.js CARD_SETS · app.js CARD_SUNEUNG_SEASON 과 같게)", () => {
   assert.equal(CONFIG_KEY, "cardSeasons");
   assert.deepEqual(SEASONS.map((s) => [s.key, s.from, s.to]),
-    [["christmas", "2026-11-29", "2026-12-26"], ["newyear", "2026-12-26", "2027-01-15"]]);
+    [["suneung", "2026-11-07", "2026-12-11"], ["christmas", "2026-11-29", "2026-12-26"], ["newyear", "2026-12-26", "2027-01-15"]]);
+  const SUN = SEASONS.find((s) => s.key === "suneung");
+  assert.match(SUN.name, /수험생 응원기도카드/);
+  assert.match(SUN.note, /시험·취업 준비/, "수험생은 기간 밖에도 사라지지 않는다는 한 줄");
+  assert.equal(XMAS.note, undefined); assert.equal(NY.note, undefined);
+  const SRC = readFileSync(new URL("../js/menus/memorize/card-seasons.js", import.meta.url), "utf8");
+  assert.ok(SRC.includes('${season.note ? `<p class="muted cs-note">${esc(season.note)}</p>` : ""}'), "note 는 esc 로 그린다");
   assert.match(XMAS.name, /성탄 축복기도카드/);
   assert.match(NY.name, /새해 축복기도카드/);
   for (const s of SEASONS) assert.ok(checkWin(s.from, s.to).ok, `${s.key} 기본 기간도 확인을 통과한다`);
